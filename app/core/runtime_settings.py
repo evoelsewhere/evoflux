@@ -184,6 +184,8 @@ class WebBridgeSettings(BaseModel):
     # Allow the `evaluate` action (arbitrary JS in the real browser). Off in
     # locked-down installs; the far safer selector/snapshot actions stay on.
     allow_evaluate: bool = True
+    # Fail closed instead of implicitly targeting the browser's active tab.
+    require_tab_binding: bool = True
     # Recent actions kept in the in-memory audit ring buffer (GET /audit).
     audit_log_size: int = 200
     sharing: WebBridgeSharingSettings = Field(default_factory=WebBridgeSharingSettings)

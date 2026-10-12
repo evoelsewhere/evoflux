@@ -1881,6 +1881,20 @@ async def create_side_chat(
     """
     from app.services.chat_service import create_side_chat_session
 
+    # Hit on every panel mount (ensureSideChat runs eagerly): a main session
+    # owns exactly one side chat — reuse it instead of minting a fresh one.
+    existing = (
+        await db.exec(
+            select(ChatSession)
+            .where(col(ChatSession.session_type) == "side_chat")
+            .where(col(ChatSession.source_session_id) == session_id)
+            .order_by(col(ChatSession.created_at).desc())
+            .limit(1)
+        )
+    ).first()
+    if existing is not None:
+        return SessionResponse.model_validate(existing)
+
     try:
         side_chat = await create_side_chat_session(
             db,

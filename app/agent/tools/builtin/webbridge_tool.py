@@ -118,6 +118,9 @@ class NavigateAction(BaseModel):
     action: Literal["navigate"]
     url: str = Field(description="URL to navigate to.")
     tab_id: int | None = None
+    target: Literal["active"] | None = Field(
+        default=None, description="Use the user's current tab; only honored when no tab is bound."
+    )
 
 
 class ClickAction(BaseModel):
@@ -126,6 +129,9 @@ class ClickAction(BaseModel):
     y: float = Field(description="Y coordinate to click.")
     button: Literal["left", "right", "middle"] = Field(default="left")
     tab_id: int | None = None
+    target: Literal["active"] | None = Field(
+        default=None, description="Use the user's current tab; only honored when no tab is bound."
+    )
 
 
 class DblClickAction(BaseModel):
@@ -133,12 +139,18 @@ class DblClickAction(BaseModel):
     x: float = Field(description="X coordinate to double-click.")
     y: float = Field(description="Y coordinate to double-click.")
     tab_id: int | None = None
+    target: Literal["active"] | None = Field(
+        default=None, description="Use the user's current tab; only honored when no tab is bound."
+    )
 
 
 class TypeAction(BaseModel):
     action: Literal["type"]
     text: str = Field(description="Text to type.")
     tab_id: int | None = None
+    target: Literal["active"] | None = Field(
+        default=None, description="Use the user's current tab; only honored when no tab is bound."
+    )
 
 
 class KeyAction(BaseModel):
@@ -149,6 +161,9 @@ class KeyAction(BaseModel):
         description="Modifier keys held during the press (e.g. ['Meta'] for Cmd on macOS).",
     )
     tab_id: int | None = None
+    target: Literal["active"] | None = Field(
+        default=None, description="Use the user's current tab; only honored when no tab is bound."
+    )
 
 
 class ScrollAction(BaseModel):
@@ -156,6 +171,9 @@ class ScrollAction(BaseModel):
     dx: int = Field(default=0, description="Horizontal scroll delta.")
     dy: int = Field(default=0, description="Vertical scroll delta.")
     tab_id: int | None = None
+    target: Literal["active"] | None = Field(
+        default=None, description="Use the user's current tab; only honored when no tab is bound."
+    )
 
 
 class ResizeAction(BaseModel):
@@ -168,6 +186,9 @@ class ResizeAction(BaseModel):
     touch: bool | None = None
     color_scheme: Literal["light", "dark"] | None = None
     tab_id: int | None = None
+    target: Literal["active"] | None = Field(
+        default=None, description="Use the user's current tab; only honored when no tab is bound."
+    )
 
     @model_validator(mode="after")
     def _validate_size(self) -> "ResizeAction":
@@ -179,6 +200,9 @@ class ResizeAction(BaseModel):
 class ResetViewportAction(BaseModel):
     action: Literal["reset_viewport"]
     tab_id: int | None = None
+    target: Literal["active"] | None = Field(
+        default=None, description="Use the user's current tab; only honored when no tab is bound."
+    )
 
 
 class DialogsAction(BaseModel):
@@ -186,6 +210,9 @@ class DialogsAction(BaseModel):
     clear: bool = False
     limit: int = Field(default=20, ge=1, le=100)
     tab_id: int | None = None
+    target: Literal["active"] | None = Field(
+        default=None, description="Use the user's current tab; only honored when no tab is bound."
+    )
 
 
 class HandleDialogAction(BaseModel):
@@ -193,6 +220,9 @@ class HandleDialogAction(BaseModel):
     accept: bool = False
     prompt_text: str | None = Field(default=None, max_length=10_000)
     tab_id: int | None = None
+    target: Literal["active"] | None = Field(
+        default=None, description="Use the user's current tab; only honored when no tab is bound."
+    )
 
 
 _DEVTOOLS_SCOPE_DESC = (
@@ -219,6 +249,9 @@ class ConsoleAction(BaseModel):
         description="Empty the recorded console after reading, so the next read shows only what happens from here.",
     )
     tab_id: int | None = None
+    target: Literal["active"] | None = Field(
+        default=None, description="Use the user's current tab; only honored when no tab is bound."
+    )
 
 
 class NetworkAction(BaseModel):
@@ -241,6 +274,9 @@ class NetworkAction(BaseModel):
         default=False, description="Empty the recorded requests after reading."
     )
     tab_id: int | None = None
+    target: Literal["active"] | None = Field(
+        default=None, description="Use the user's current tab; only honored when no tab is bound."
+    )
 
 
 class NetworkBodyAction(BaseModel):
@@ -248,6 +284,9 @@ class NetworkBodyAction(BaseModel):
     request_id: str = Field(description="The request id shown by the network action.")
     max_chars: int = Field(default=20_000, ge=100, le=100_000)
     tab_id: int | None = None
+    target: Literal["active"] | None = Field(
+        default=None, description="Use the user's current tab; only honored when no tab is bound."
+    )
 
 
 _PAGE_POWER_DESC = (
@@ -269,6 +308,9 @@ class StorageAction(BaseModel):
         description=f"Return values, not just keys and sizes. {_PAGE_POWER_DESC}",
     )
     tab_id: int | None = None
+    target: Literal["active"] | None = Field(
+        default=None, description="Use the user's current tab; only honored when no tab is bound."
+    )
 
 
 class CookiesAction(BaseModel):
@@ -295,6 +337,9 @@ class CookiesAction(BaseModel):
     secure: bool = False
     http_only: bool = False
     tab_id: int | None = None
+    target: Literal["active"] | None = Field(
+        default=None, description="Use the user's current tab; only honored when no tab is bound."
+    )
 
 
 class InspectAction(BaseModel):
@@ -308,6 +353,9 @@ class InspectAction(BaseModel):
         description="Computed CSS properties to read; default is a layout/visibility set.",
     )
     tab_id: int | None = None
+    target: Literal["active"] | None = Field(
+        default=None, description="Use the user's current tab; only honored when no tab is bound."
+    )
 
     @model_validator(mode="after")
     def _needs_target(self) -> InspectAction:
@@ -327,6 +375,9 @@ class UploadFileAction(BaseModel):
         description="Files in the workspace (or this session's uploads) to put in the <input type=file>.",
     )
     tab_id: int | None = None
+    target: Literal["active"] | None = Field(
+        default=None, description="Use the user's current tab; only honored when no tab is bound."
+    )
 
     @model_validator(mode="after")
     def _needs_target(self) -> UploadFileAction:
@@ -360,6 +411,9 @@ class EmulateAction(BaseModel):
     )
     clear: bool = Field(default=False, description="Remove every override first.")
     tab_id: int | None = None
+    target: Literal["active"] | None = Field(
+        default=None, description="Use the user's current tab; only honored when no tab is bound."
+    )
 
 
 class MockAction(BaseModel):
@@ -398,6 +452,9 @@ class MockAction(BaseModel):
     )
     id: str | None = Field(default=None, description="Rule id to remove.")
     tab_id: int | None = None
+    target: Literal["active"] | None = Field(
+        default=None, description="Use the user's current tab; only honored when no tab is bound."
+    )
 
     @model_validator(mode="after")
     def _check(self) -> MockAction:
@@ -411,6 +468,9 @@ class MockAction(BaseModel):
 class PerformanceAction(BaseModel):
     action: Literal["performance"]
     tab_id: int | None = None
+    target: Literal["active"] | None = Field(
+        default=None, description="Use the user's current tab; only honored when no tab is bound."
+    )
 
 
 class WaitForHmrAction(BaseModel):
@@ -422,6 +482,9 @@ class WaitForHmrAction(BaseModel):
         description="How long to wait for the dev server's update to reach the page.",
     )
     tab_id: int | None = None
+    target: Literal["active"] | None = Field(
+        default=None, description="Use the user's current tab; only honored when no tab is bound."
+    )
 
 
 class DebugSummaryAction(BaseModel):
@@ -433,6 +496,9 @@ class DebugSummaryAction(BaseModel):
         description="Most recent errors / failed requests listed.",
     )
     tab_id: int | None = None
+    target: Literal["active"] | None = Field(
+        default=None, description="Use the user's current tab; only honored when no tab is bound."
+    )
 
 
 class ScreenshotAction(BaseModel):
@@ -444,6 +510,9 @@ class ScreenshotAction(BaseModel):
         description="Capture the whole scrollable page instead of just the viewport.",
     )
     tab_id: int | None = None
+    target: Literal["active"] | None = Field(
+        default=None, description="Use the user's current tab; only honored when no tab is bound."
+    )
 
 
 class ExtractAction(BaseModel):
@@ -465,6 +534,9 @@ class ExtractAction(BaseModel):
     )
     max_chars: int = Field(default=15000, ge=100, le=200000)
     tab_id: int | None = None
+    target: Literal["active"] | None = Field(
+        default=None, description="Use the user's current tab; only honored when no tab is bound."
+    )
 
 
 class ExtractElementsAction(BaseModel):
@@ -495,6 +567,9 @@ class ExtractElementsAction(BaseModel):
         ),
     )
     tab_id: int | None = None
+    target: Literal["active"] | None = Field(
+        default=None, description="Use the user's current tab; only honored when no tab is bound."
+    )
 
 
 class ScrollToBottomAction(BaseModel):
@@ -518,6 +593,9 @@ class ScrollToBottomAction(BaseModel):
         default=None, description="The scrolling element, if no ref."
     )
     tab_id: int | None = None
+    target: Literal["active"] | None = Field(
+        default=None, description="Use the user's current tab; only honored when no tab is bound."
+    )
 
 
 class CrawlAction(BaseModel):
@@ -562,7 +640,7 @@ class CrawlAction(BaseModel):
     )
     timeout_ms: int = Field(default=30000, ge=1000, le=60000)
     close_tabs: bool = Field(
-        default=True, description="Close the tabs opened for the crawl when done."
+        default=False, description="Close the tabs opened for the crawl when done. Off by default so the grouped result tabs stay visible after the task completes."
     )
 
 
@@ -576,6 +654,11 @@ class SwitchTabAction(BaseModel):
     id: int | None = Field(default=None, description="Tab ID (overrides index).")
 
 
+class FocusTabAction(BaseModel):
+    action: Literal["focus_tab"]
+    tab_id: int = Field(gt=0, description="Explicit tab ID to bring to the foreground.")
+
+
 class WaitAction(BaseModel):
     action: Literal["wait"]
     ms: int = Field(default=1000, ge=0, le=60000, description="Milliseconds to pause.")
@@ -587,6 +670,9 @@ class WaitForSelectorAction(BaseModel):
     state: Literal["visible", "attached", "hidden"] = Field(default="visible")
     timeout_ms: int = Field(default=10000, ge=100, le=60000)
     tab_id: int | None = None
+    target: Literal["active"] | None = Field(
+        default=None, description="Use the user's current tab; only honored when no tab is bound."
+    )
 
 
 class WaitForTextAction(BaseModel):
@@ -600,6 +686,9 @@ class WaitForTextAction(BaseModel):
     exact: bool = Field(default=False, description="Match the normalized text exactly.")
     timeout_ms: int = Field(default=10000, ge=100, le=60000)
     tab_id: int | None = None
+    target: Literal["active"] | None = Field(
+        default=None, description="Use the user's current tab; only honored when no tab is bound."
+    )
 
 
 class WaitForLoadAction(BaseModel):
@@ -607,6 +696,9 @@ class WaitForLoadAction(BaseModel):
     state: Literal["load", "domcontentloaded"] = Field(default="load")
     timeout_ms: int = Field(default=30000, ge=100, le=60000)
     tab_id: int | None = None
+    target: Literal["active"] | None = Field(
+        default=None, description="Use the user's current tab; only honored when no tab is bound."
+    )
 
 
 class WaitForNetworkIdleAction(BaseModel):
@@ -619,6 +711,9 @@ class WaitForNetworkIdleAction(BaseModel):
     )
     timeout_ms: int = Field(default=20000, ge=500, le=60000)
     tab_id: int | None = None
+    target: Literal["active"] | None = Field(
+        default=None, description="Use the user's current tab; only honored when no tab is bound."
+    )
 
 
 class WaitForUrlAction(BaseModel):
@@ -636,6 +731,9 @@ class WaitForUrlAction(BaseModel):
     )
     timeout_ms: int = Field(default=15000, ge=100, le=60000)
     tab_id: int | None = None
+    target: Literal["active"] | None = Field(
+        default=None, description="Use the user's current tab; only honored when no tab is bound."
+    )
 
 
 class TargetMixin(BaseModel):
@@ -657,6 +755,9 @@ class TargetMixin(BaseModel):
         description="Which match to use when a selector matches several.",
     )
     tab_id: int | None = None
+    target: Literal["active"] | None = Field(
+        default=None, description="Use the user's current tab; only honored when no tab is bound."
+    )
 
     @model_validator(mode="after")
     def _one_target(self) -> "TargetMixin":
@@ -679,6 +780,9 @@ class ClickTextAction(BaseModel):
         default=False, description="Require an exact (not substring) text match."
     )
     tab_id: int | None = None
+    target: Literal["active"] | None = Field(
+        default=None, description="Use the user's current tab; only honored when no tab is bound."
+    )
 
 
 class HoverAction(TargetMixin):
@@ -726,6 +830,9 @@ class DragAction(BaseModel):
         description="Number of pointer-move steps between source and target.",
     )
     tab_id: int | None = None
+    target: Literal["active"] | None = Field(
+        default=None, description="Use the user's current tab; only honored when no tab is bound."
+    )
 
     @model_validator(mode="after")
     def _both_ends(self) -> "DragAction":
@@ -758,6 +865,9 @@ class DragToPointAction(BaseModel):
         description="Number of pointer-move steps along the way.",
     )
     tab_id: int | None = None
+    target: Literal["active"] | None = Field(
+        default=None, description="Use the user's current tab; only honored when no tab is bound."
+    )
 
     @model_validator(mode="after")
     def _needs_source(self) -> "DragToPointAction":
@@ -775,8 +885,20 @@ class FillAction(TargetMixin):
 
 class OpenTabAction(BaseModel):
     action: Literal["open_tab"]
+    label: str | None = Field(
+        default=None,
+        description=(
+            "Short label naming this tab's Chrome tab-group — the agent's current "
+            "action/summary/intention (e.g. 'Compare prices', 'Research flights'). "
+            "ALWAYS set this when opening a tab so the group title says what you "
+            "are doing instead of a generic 'EvoFlux'. Reuse the SAME label on "
+            "later open_tab calls to add tabs to that group; use a new label for a "
+            "new task. Keep it under ~40 characters. Shown directly as the Chrome "
+            "tab-group title."
+        ),
+    )
     url: str = Field(description="URL to open in a new tab.")
-    active: bool = Field(default=True, description="Focus the new tab.")
+    focus: bool = Field(default=False, description="Explicitly focus the new tab; defaults to background.")
 
 
 class CloseTabAction(BaseModel):
@@ -800,6 +922,9 @@ class SnapshotAction(BaseModel):
         ),
     )
     tab_id: int | None = None
+    target: Literal["active"] | None = Field(
+        default=None, description="Use the user's current tab; only honored when no tab is bound."
+    )
 
 
 class SemanticRefTarget(BaseModel):
@@ -918,6 +1043,9 @@ class SemanticSnapshotAction(BaseModel):
     max_items: int = Field(default=80, ge=1, le=200)
     max_chars: int = Field(default=20_000, ge=100, le=50_000)
     tab_id: int | None = None
+    target: Literal["active"] | None = Field(
+        default=None, description="Use the user's current tab; only honored when no tab is bound."
+    )
 
 
 class SemanticReadAction(BaseModel):
@@ -947,22 +1075,40 @@ class SemanticWriteAction(BaseModel):
 class EvaluateAction(BaseModel):
     action: Literal["evaluate"]
     script: str = Field(description="JavaScript to evaluate.")
+    await_promise: bool = Field(
+        default=True, description="Await a Promise result before reading the value."
+    )
+    timeout_ms: int = Field(
+        default=30_000, ge=100, le=60_000, description="Give up after this long."
+    )
     tab_id: int | None = None
+    target: Literal["active"] | None = Field(
+        default=None, description="Use the user's current tab; only honored when no tab is bound."
+    )
 
 
 class BackAction(BaseModel):
     action: Literal["back"]
     tab_id: int | None = None
+    target: Literal["active"] | None = Field(
+        default=None, description="Use the user's current tab; only honored when no tab is bound."
+    )
 
 
 class ForwardAction(BaseModel):
     action: Literal["forward"]
     tab_id: int | None = None
+    target: Literal["active"] | None = Field(
+        default=None, description="Use the user's current tab; only honored when no tab is bound."
+    )
 
 
 class ReloadAction(BaseModel):
     action: Literal["reload"]
     tab_id: int | None = None
+    target: Literal["active"] | None = Field(
+        default=None, description="Use the user's current tab; only honored when no tab is bound."
+    )
 
 
 AnyAction = Annotated[
@@ -993,6 +1139,7 @@ AnyAction = Annotated[
     | ExtractAction
     | GetTabsAction
     | SwitchTabAction
+    | FocusTabAction
     | EvaluateAction
     | BackAction
     | ForwardAction
@@ -1351,9 +1498,10 @@ def _front_tab(session_id: str) -> int | None:
 async def _choose_tab(session_id: str, act: Any) -> tuple[str, int | None]:
     """Open or switch to a tab and pin it; the result line and its id."""
     if act.action == "open_tab":
-        resp = await _send_command(
-            session_id, "open_tab", {"url": act.url, "active": act.active}
-        )
+        # Shared builder: P0 renamed `active` -> `focus` — the old inline path
+        # read the removed `.active` (AttributeError on browser-use new_tab).
+        params = _build_open_tab_params(session_id, act)
+        resp = await _send_command(session_id, "open_tab", params)
         verb = f"Opened {act.url} in a new tab"
     else:
         params = {"id": act.id} if act.id is not None else {"index": act.index}
@@ -1617,6 +1765,8 @@ async def _dispatch_webbridge(act: Any, session_id: str) -> str | ToolResult:
         return await _handle_get_tabs(session_id)
     if action == "switch_tab":
         return await _handle_switch_tab(session_id, act)
+    if action == "focus_tab":
+        return await _handle_focus_tab(session_id, act)
     if action == "evaluate":
         return await _handle_evaluate(session_id, act)
     if action == "back":
@@ -1689,6 +1839,9 @@ def _tab_params(act: Any, **extra: Any) -> dict[str, Any]:
     tab_id = getattr(act, "tab_id", None)
     if tab_id is not None:
         params["tab_id"] = tab_id
+    target = getattr(act, "target", None)
+    if target is not None and "target" not in params:
+        params["target"] = target
     return params
 
 
@@ -1796,9 +1949,23 @@ async def _handle_key(session_id: str, act: KeyAction) -> str:
 
 async def _handle_scroll(session_id: str, act: ScrollAction) -> str:
     resp = await _send_command(session_id, "scroll", _params_scroll(act))
-    if resp.get("success"):
-        return f"Scrolled ({act.dx}, {act.dy})"
-    return f"Scroll failed: {resp.get('error', 'unknown')}"
+    if not resp.get("success"):
+        return f"Scroll failed: {resp.get('error', 'unknown')}"
+    data = resp.get("data") or {}
+    dx, dy = data.get("dx", act.dx), data.get("dy", act.dy)
+    if data.get("moved") is False:
+        return (
+            f"Scroll command sent ({dx}, {dy}) but the page did not move "
+            f"(scrollY {data.get('scroll_y_before')} -> {data.get('scroll_y_after')}). "
+            "This page may not scroll at the window level - use scroll_into_view "
+            "on an element ref, or scroll_to_bottom for a chat/data pane."
+        )
+    if data.get("scroll_y_before") is not None:
+        return (
+            f"Scrolled ({dx}, {dy}): scrollY {data.get('scroll_y_before')} "
+            f"-> {data.get('scroll_y_after')}"
+        )
+    return f"Scrolled ({dx}, {dy})"
 
 
 async def _handle_resize(session_id: str, act: ResizeAction) -> str:
@@ -2931,14 +3098,35 @@ async def _handle_switch_tab(session_id: str, act: SwitchTabAction) -> str:
         params["index"] = act.index
 
     resp = await _send_command(session_id, "switch_tab", params)
+    if not resp.get("success"):
+        return f"Switch tab failed: {resp.get('error', 'unknown')}"
+    tab_id = (resp.get("data") or {}).get("tab_id")
+    ext = webbridge_manager.resolve_target(session_id, _webbridge_target_id.get())
+    if isinstance(tab_id, int) and ext is not None:
+        selected = next((tab for tab in ext.tabs if tab.get("id") == tab_id), {})
+        webbridge_manager.bind_session_tab(
+            session_id, ext.extension_id, tab_id, _origin(str(selected.get("url", "")))
+        )
+    return f"Selected tab {act.index if act.id is None else f'id={act.id}'} (id={tab_id}); browser focus was not changed."
+
+
+async def _handle_focus_tab(session_id: str, act: FocusTabAction) -> str:
+    resp = await _send_command(session_id, "focus_tab", {"tab_id": act.tab_id})
     if resp.get("success"):
-        return f"Switched to tab {act.index if act.id is None else f'id={act.id}'}"
-    return f"Switch tab failed: {resp.get('error', 'unknown')}"
+        return f"Focused tab {act.tab_id} by explicit request."
+    return f"focus_tab failed: {resp.get('error', 'unknown')}"
 
 
 async def _handle_evaluate(session_id: str, act: EvaluateAction) -> str:
     resp = await _send_command(
-        session_id, "evaluate", _tab_params(act, script=act.script)
+        session_id,
+        "evaluate",
+        _tab_params(
+            act,
+            script=act.script,
+            await_promise=act.await_promise,
+            timeout_ms=act.timeout_ms,
+        ),
     )
     if not resp.get("success"):
         return f"Evaluate failed: {resp.get('error', 'unknown')}"
@@ -3260,10 +3448,30 @@ async def _handle_fill(session_id: str, act: FillAction) -> str:
     return f"fill failed: {resp.get('error', 'unknown')}"
 
 
+def _build_open_tab_params(session_id: str, act: OpenTabAction) -> dict[str, Any]:
+    """Build the wire params for an ``open_tab`` command.
+
+    Shared by ``_handle_open_tab`` and the browser-use ``_choose_tab`` path so
+    both agree on the focus/active feature shim and the group label. The label
+    names the session's Chrome tab-group after the agent's action/summary so
+    task groups are distinguishable (ignored by extensions that predate it).
+    """
+    ext = webbridge_manager.resolve_target(session_id, _webbridge_target_id.get())
+    features = (ext.capabilities.get("features") or []) if ext is not None else []
+    if "non_intrusive_v1" in features:
+        params: dict[str, Any] = {"url": act.url, "focus": act.focus}
+    else:
+        # Legacy extensions read `active`, not `focus`; false stays non-intrusive.
+        params = {"url": act.url, "active": act.focus}
+    label = (act.label or "").strip()
+    if label:
+        params["_webbridge_group_label"] = label
+    return params
+
+
 async def _handle_open_tab(session_id: str, act: OpenTabAction) -> str:
-    resp = await _send_command(
-        session_id, "open_tab", {"url": act.url, "active": act.active}
-    )
+    params = _build_open_tab_params(session_id, act)
+    resp = await _send_command(session_id, "open_tab", params)
     if not resp.get("success"):
         return f"open_tab failed: {resp.get('error', 'unknown')}"
     tab_id = (resp.get("data") or {}).get("tab_id")
@@ -3455,7 +3663,14 @@ async def _crawl_page(session_id: str, act: CrawlAction, url: str) -> dict[str, 
     """
     try:
         open_resp = await _send_command(
-            session_id, "open_tab", {"url": url, "active": False}
+            session_id,
+            "open_tab",
+            {
+                "url": url,
+                "active": False,
+                # Group the crawl's tabs so they stay together under one title.
+                "_webbridge_group_label": "Crawl",
+            },
         )
         if not open_resp.get("success"):
             return {
