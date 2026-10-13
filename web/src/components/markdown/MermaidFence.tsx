@@ -18,6 +18,34 @@ type MermaidApi = typeof import('mermaid')['default']
 let initializedTheme: string | null = null
 let renderCounter = 0
 
+type AmdDefineGlobal = { define?: unknown }
+
+/**
+ * Monaco's editor loads through its AMD loader, which installs a global
+ * `define` (a `var`-declared global: non-configurable but writable).
+ * Mermaid's pre-bundled UMD dependencies detect that `define`, register
+ * anonymously, and the loader throws "Can only have one anonymous define
+ * call per script file" — failing the whole render. Clear the global for the
+ * duration of mermaid's import+render and restore it afterwards; monaco only
+ * needs it while its own plugin scripts execute.
+ */
+async function withAmdDefineHidden<T>(run: () => Promise<T>): Promise<T> {
+  const scope = globalThis as AmdDefineGlobal
+  const savedDefine = scope.define
+  if (typeof savedDefine !== 'function') return run()
+  try {
+    scope.define = undefined
+  } catch {
+    return run()
+  }
+  if (scope.define !== undefined) return run() // read-only in this environment
+  try {
+    return await run()
+  } finally {
+    scope.define = savedDefine
+  }
+}
+
 async function getMermaid(theme: 'default' | 'dark'): Promise<MermaidApi> {
   const mermaid = (await import('mermaid')).default
   if (initializedTheme !== theme) {
@@ -46,8 +74,9 @@ export default function MermaidFence({ rawText, streaming, fallback }: MermaidFe
     let cancelled = false
     const theme = currentTheme()
     const id = `evoflux-mermaid-${++renderCounter}`
-    getMermaid(theme)
-      .then((mermaid) => mermaid.render(id, rawText))
+    withAmdDefineHidden(() =>
+      getMermaid(theme).then((mermaid) => mermaid.render(id, rawText)),
+    )
       .then((result) => {
         if (!cancelled) {
           setSvg(result.svg)
@@ -55,6 +84,9 @@ export default function MermaidFence({ rawText, streaming, fallback }: MermaidFe
         }
       })
       .catch((cause: unknown) => {
+        // Keep the failure reason visible in the console — the UI only shows
+        // a one-line notice, so this is the only place to debug render errors.
+        console.error('[mermaid] render failed:', cause)
         if (!cancelled) {
           setSvg(null)
           setError(cause instanceof Error ? cause.message : String(cause))
