@@ -2,8 +2,9 @@
 
 ``ui_block`` is the structured sibling of ``show_widget``: instead of a raw
 HTML iframe it emits one validated, declarative UI block list (stat cards,
-charts, steps, table, key/value, callout, buttons, form, progress) as a
-single complete ``ui_block`` SSE event — never delta-streamed.
+charts, steps, table, key/value, callout, buttons, form, progress,
+flashcards, checklist, calculator) as a single complete ``ui_block`` SSE
+event — never delta-streamed.
 
 The block payload persists through the tool's own arguments; history reload
 reconstructs the block from ``SessionMessage.tool_calls`` (no migration).
@@ -31,6 +32,9 @@ _VALID_TYPES = (
     "buttons",
     "form",
     "progress",
+    "flashcards",
+    "checklist",
+    "calculator",
 )
 
 
@@ -41,12 +45,13 @@ _VALID_TYPES = (
         "Render a declarative UI block in the conversation. "
         "Accepts {blocks: [...]} where each block has type one of: "
         "stat_cards, chart, steps, table, key_value, callout, buttons, "
-        "form, progress. Use instead of show_widget for structured data UI "
-        "(metrics, charts, step progress, tables, forms) — no raw HTML, "
-        "server-validated, small SSE frames, and the block survives history "
-        "reload. Optionally pass title: a short snake_case title for the "
-        "block group. Blocks should explain themselves: form and steps take "
-        "an optional 240-char 'description', form fields an optional "
+        "form, progress, flashcards, checklist, calculator. Use instead of "
+        "show_widget for structured data UI (metrics, charts, step progress, "
+        "tables, forms, interactive flashcards/checklists/calculators) — no "
+        "raw HTML, server-validated, small SSE frames, and the block survives "
+        "history reload. Optionally pass title: a short snake_case title for "
+        "the block group. Blocks should explain themselves: form and steps "
+        "take an optional 240-char 'description', form fields an optional "
         "160-char 'helper', and buttons an optional 160-char 'hint' — use "
         "them to say what the UI does and what happens when it is submitted."
     ),
@@ -58,10 +63,18 @@ async def ui_block(
         Field(
             description=(
                 "Array of UI block objects, each with a 'type' of stat_cards, "
-                "chart, steps, table, key_value, callout, buttons, form, or "
-                "progress (a JSON-array string is also accepted). Optional "
-                "guidance fields: form/steps 'description', form field "
-                "'helper', buttons 'hint' (all optional, capped length)"
+                "chart, steps, table, key_value, callout, buttons, form, "
+                "progress, flashcards, checklist, or calculator (a "
+                "JSON-array string is also accepted). Optional guidance "
+                "fields: form/steps 'description', form field 'helper', "
+                "buttons 'hint' (all optional, capped length). flashcards: "
+                "{title?, cards:[{front,back}]} flips on tap. checklist: "
+                "{title?, description?, items:[{label,detail?,checked?}]} "
+                "shows a live done-counter. calculator: {description?, "
+                "inputs:[{name,label,value,unit?,min?,max?,step?}], "
+                "outputs:[{label,formula,unit?,decimals?}]} recomputes live; "
+                "formulas allow only numbers, input names, + - * / ( ) "
+                "(e.g. 'total / people')"
             ),
         ),
     ],

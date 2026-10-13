@@ -209,6 +209,9 @@ class TestUiBlock:
             "buttons",
             "form",
             "progress",
+            "flashcards",
+            "checklist",
+            "calculator",
         }
         assert pushed == []
 
@@ -415,4 +418,226 @@ class TestUiBlock:
             )
             assert result["success"] is False, block["type"]
             assert field_name in result["error"]
+        assert pushed == []
+
+    @pytest.mark.asyncio
+    async def test_interactive_blocks_accepted(self, monkeypatch):
+        """flashcards / checklist / calculator round-trip through the pushed
+        envelope (spec §5.1 catalog additions)."""
+        pushed = self._capture(monkeypatch)
+        result = await ui_block(
+            blocks=[
+                {
+                    "type": "flashcards",
+                    "title": "Quiz",
+                    "cards": [
+                        {
+                            "front": "What does CPU throttling mean?",
+                            "back": "The CPU reducing clock speed to stay cool.",
+                        },
+                        {
+                            "front": "What is RAM?",
+                            "back": "Fast, volatile working memory.",
+                        },
+                    ],
+                },
+                {
+                    "type": "checklist",
+                    "title": "Roast ingredients",
+                    "description": "Everything you need before you start.",
+                    "items": [
+                        {
+                            "label": "Lamb",
+                            "detail": "shoulder, 3.6 kg",
+                            "checked": True,
+                        },
+                        {"label": "Potatoes"},
+                    ],
+                },
+                {
+                    "type": "calculator",
+                    "description": "Split the bill evenly.",
+                    "inputs": [
+                        {"name": "total", "label": "Total", "value": 90.0, "unit": "$"},
+                        {
+                            "name": "people",
+                            "label": "People",
+                            "value": 3,
+                            "min": 1,
+                            "step": 1,
+                        },
+                    ],
+                    "outputs": [
+                        {
+                            "label": "Each pays",
+                            "formula": "total / people",
+                            "unit": "$",
+                            "decimals": 2,
+                        },
+                    ],
+                },
+            ],
+            title="interactive_demo",
+            _injected={
+                "agent_name": "lead",
+                "tool_call_id": "call-20",
+                "session_id": "sess-1",
+            },
+        )
+        assert result["success"] is True
+        assert result["types"] == ["flashcards", "checklist", "calculator"]
+        assert len(pushed) == 1
+        blocks = pushed[0][1].data["blocks"]
+        assert blocks[0]["cards"][0]["front"].startswith("What does CPU")
+        assert blocks[1]["items"][0]["checked"] is True
+        assert blocks[2]["outputs"][0]["formula"] == "total / people"
+
+    @pytest.mark.asyncio
+    async def test_calculator_showcase_examples_validate(self, monkeypatch):
+        """The two catalog examples — bill split and roast planner — pass."""
+        self._capture(monkeypatch)
+        examples = [
+            # Bill split: total / people
+            {
+                "type": "calculator",
+                "inputs": [
+                    {"name": "total", "label": "Total", "value": 90},
+                    {"name": "people", "label": "People", "value": 3},
+                ],
+                "outputs": [{"label": "Each", "formula": "total / people"}],
+            },
+            # Roast planner: per-guest amounts
+            {
+                "type": "calculator",
+                "inputs": [{"name": "guests", "label": "Guests", "value": 8}],
+                "outputs": [
+                    {"label": "Lamb", "formula": "guests*0.45", "unit": "kg"},
+                    {"label": "Potatoes", "formula": "guests * 0.5", "unit": "kg"},
+                ],
+            },
+        ]
+        for block in examples:
+            result = await ui_block(
+                blocks=[block],
+                _injected={
+                    "agent_name": "lead",
+                    "tool_call_id": "call-21",
+                    "session_id": "sess-1",
+                },
+            )
+            assert result["success"] is True, block["outputs"]
+
+    @pytest.mark.asyncio
+    async def test_calculator_unsafe_formulas_rejected(self, monkeypatch):
+        """Formulas outside the safe grammar (numbers, input names, + - * / ( ))
+        are rejected server-side with a message naming the output."""
+        pushed = self._capture(monkeypatch)
+        bad_formulas = [
+            "alert(1)",  # function call
+            "eval(total)",  # function call
+            "total ** 2",  # exponent operator not in grammar
+            "__import__(total)",  # dunder call
+            "total; people",  # statement separator
+            "total, people",  # comma
+            "tax * 2",  # unknown input reference
+            "(total + 1",  # unbalanced parens
+            "total /",  # trailing operator
+            "",  # empty
+            "`total`",  # backticks
+            "total\t+ 1\n#",  # comment/hash
+        ]
+        for formula in bad_formulas:
+            result = await ui_block(
+                blocks=[
+                    {
+                        "type": "calculator",
+                        "inputs": [
+                            {"name": "total", "label": "T", "value": 1},
+                            {"name": "people", "label": "P", "value": 2},
+                        ],
+                        "outputs": [{"label": "Bad", "formula": formula}],
+                    }
+                ],
+                _injected={
+                    "agent_name": "lead",
+                    "tool_call_id": "call-22",
+                    "session_id": "sess-1",
+                },
+            )
+            assert result["success"] is False, repr(formula)
+            # Field-level errors (e.g. empty formula) name the field path;
+            # validator errors name the output label.
+            assert "Bad" in result["error"] or "formula" in result["error"], repr(
+                formula
+            )
+        assert pushed == []
+
+    @pytest.mark.asyncio
+    async def test_calculator_duplicate_and_bad_input_names_rejected(self, monkeypatch):
+        pushed = self._capture(monkeypatch)
+        blocks = [
+            # Duplicate input names
+            {
+                "type": "calculator",
+                "inputs": [
+                    {"name": "x", "label": "A", "value": 1},
+                    {"name": "x", "label": "B", "value": 2},
+                ],
+                "outputs": [{"label": "L", "formula": "x"}],
+            },
+            # Input name must be a lowercase identifier
+            {
+                "type": "calculator",
+                "inputs": [{"name": "Total Amount!", "label": "T", "value": 1}],
+                "outputs": [{"label": "L", "formula": "1"}],
+            },
+        ]
+        for block in blocks:
+            result = await ui_block(
+                blocks=[block],
+                _injected={
+                    "agent_name": "lead",
+                    "tool_call_id": "call-23",
+                    "session_id": "sess-1",
+                },
+            )
+            assert result["success"] is False, block
+        assert pushed == []
+
+    @pytest.mark.asyncio
+    async def test_interactive_blocks_limits_enforced(self, monkeypatch):
+        """Card/item caps and empty-list rejection match the catalog limits."""
+        pushed = self._capture(monkeypatch)
+        limited = [
+            (
+                {"type": "flashcards", "cards": [{"front": "f", "back": "b"}] * 21},
+                "flashcards",
+            ),
+            (
+                {"type": "checklist", "items": [{"label": "i"}] * 41},
+                "checklist",
+            ),
+            (
+                {"type": "checklist", "items": []},
+                "checklist",
+            ),
+            (
+                {
+                    "type": "calculator",
+                    "inputs": [{"name": "a", "label": "A", "value": 1}],
+                    "outputs": [],
+                },
+                "calculator",
+            ),
+        ]
+        for block, type_name in limited:
+            result = await ui_block(
+                blocks=[block],
+                _injected={
+                    "agent_name": "lead",
+                    "tool_call_id": "call-24",
+                    "session_id": "sess-1",
+                },
+            )
+            assert result["success"] is False, type_name
         assert pushed == []

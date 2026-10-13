@@ -41,6 +41,9 @@ arbitrary HTML** (iframe/CSS escape hatch).
 | `buttons` | prompt-dispatching button row | 1–5 buttons |
 | `form` | fields + submit | 1–8 fields, ≤8 form size |
 | `progress` | labeled progress bar | `0 ≤ value`, `max > 0` |
+| `flashcards` | tap-to-flip review cards | 1–20 cards, front ≤400 / back ≤800 |
+| `checklist` | interactive tick list with progress | 1–40 items, label ≤200 / detail ≤300 |
+| `calculator` | live-recompute calculator | 1–12 inputs & outputs, safe arithmetic formulas |
 
 One call carries 1–6 blocks. Unknown `type` values fail validation and the
 tool returns `success: false` with `valid_types` instead of emitting a broken
@@ -66,6 +69,16 @@ the user always knows what the UI does and what happens on submit:
 | `steps` | `description` | 240 | muted text above the list, framing the walkthrough |
 | `steps` | status word | — | next to every step: done → **Done**, active → **Now**, pending → **Next**, error → **Blocked**; the active step's title is bold |
 | `stat_cards` card | `hint` | 160 | small muted text under the value |
+| `flashcards` | `title` | 120 | bold title above the "Card n of m" counter; the card itself flips on tap/click (keyboard: it is a real button) |
+| `checklist` | `title` / `description` | 120 / 300 | title above, description under it; a live "N of M done" counter and thin progress bar sit above the items — tick state stays local to the viewer |
+| `calculator` | `description` | 300 | muted text under the title; number inputs have − / + steppers and outputs recompute on every keystroke |
+
+**Calculator safety.** Output formulas are validated server-side (Pydantic)
+and evaluated client-side by a hand-rolled arithmetic parser — numbers,
+input names, and `+ - * / ( )` only. No `eval`/`Function` anywhere; anything
+else (function calls, `**`, unknown names, unbalanced parentheses) is
+rejected at validation time and surfaces as an inline error if it ever
+reaches the renderer.
 
 **Example showcase.** Copy-pasteable `blocks` argument for `ui_block` — a
 guided four-step walkthrough: a purpose-framed intake form with helper text,
@@ -119,6 +132,53 @@ buttons that say what they do, and stat cards with hints:
 **Persistence.** The block payload is the tool's own arguments, so history
 reload reconstructs it losslessly from the persisted `tool_calls` JSON — no
 database migration; the live event is deduplicated by `tool_call_id`.
+
+**Interactive showcase.** One compact call using all three interactive
+blocks — flashcards for review, a checklist with progress, and a
+calculator whose outputs recompute live as the user types or steppers:
+
+```json
+{
+  "title": "Sunday roast planner",
+  "blocks": [
+    {
+      "type": "flashcards",
+      "title": "Roast basics",
+      "cards": [
+        { "front": "Why rest the lamb after roasting?", "back": "It lets the juices redistribute — carving too early loses them onto the board." },
+        { "front": "Crispiest potatoes, in one sentence?", "back": "Rough up the boiled edges, then roast in hot fat, turning once." }
+      ]
+    },
+    {
+      "type": "checklist",
+      "title": "Shopping list",
+      "description": "For 8 guests — tick items as you shop.",
+      "items": [
+        { "label": "Lamb shoulder", "detail": "3.6 kg (guests × 0.45 kg)", "checked": true },
+        { "label": "Potatoes", "detail": "4 kg (guests × 0.5 kg)" },
+        { "label": "Rosemary & garlic", "detail": "2 bulbs, 1 bunch" },
+        { "label": "Olive oil, salt, pepper" }
+      ]
+    },
+    {
+      "type": "calculator",
+      "title": "Adjust the numbers",
+      "description": "Change the guest count — shopping amounts update live.",
+      "inputs": [
+        { "name": "guests", "label": "Guests", "value": 8, "min": 1, "step": 1 }
+      ],
+      "outputs": [
+        { "label": "Lamb", "formula": "guests * 0.45", "unit": "kg", "decimals": 2 },
+        { "label": "Potatoes", "formula": "guests * 0.5", "unit": "kg", "decimals": 1 },
+        { "label": "Gravy", "formula": "guests / 4", "unit": "L", "decimals": 2 }
+      ]
+    }
+  ]
+}
+```
+
+A bill-split calculator is the same shape: inputs `total` and `people`,
+one output with formula `total / people`.
 
 ## Agent Skills
 

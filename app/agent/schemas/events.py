@@ -11,9 +11,10 @@ clients that parse only the ``data:`` payload can still distinguish events.
 
 from __future__ import annotations
 
+import re
 from typing import Annotated, Any, Literal, Union
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class SessionEvent(BaseModel):
@@ -496,6 +497,172 @@ class UiProgressBlock(BaseModel):
     unit: str | None = Field(default=None, max_length=20)
 
 
+# Interactive "wow" blocks (flashcards / checklist / calculator). Their state
+# lives in the browser; the payload only carries the starting configuration.
+
+
+class UiFlashcard(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    front: str = Field(min_length=1, max_length=400)
+    back: str = Field(min_length=1, max_length=800)
+
+
+class UiFlashcardsBlock(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    type: Literal["flashcards"] = "flashcards"
+    title: str | None = Field(default=None, max_length=120)
+    cards: list[UiFlashcard] = Field(min_length=1, max_length=20)
+
+
+class UiChecklistItem(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    label: str = Field(min_length=1, max_length=200)
+    detail: str | None = Field(default=None, max_length=300)
+    checked: bool = False
+
+
+class UiChecklistBlock(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    type: Literal["checklist"] = "checklist"
+    title: str | None = Field(default=None, max_length=120)
+    description: str | None = Field(default=None, max_length=300)
+    items: list[UiChecklistItem] = Field(min_length=1, max_length=40)
+
+
+class UiCalculatorInput(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    name: str = Field(pattern=r"^[a-z][a-z0-9_]{0,29}$")
+    label: str = Field(min_length=1, max_length=80)
+    value: float = 0
+    unit: str | None = Field(default=None, max_length=20)
+    min: float | None = None
+    max: float | None = None
+    step: float | None = Field(default=None, gt=0)
+
+
+class UiCalculatorOutput(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    label: str = Field(min_length=1, max_length=80)
+    formula: str = Field(min_length=1, max_length=200)
+    unit: str | None = Field(default=None, max_length=20)
+    decimals: int | None = Field(default=None, ge=0, le=6)
+
+
+_CALCULATOR_FORMULA_TOKEN = re.compile(
+    r"(?:\d+(?:\.\d+)?|[A-Za-z_][A-Za-z0-9_]*|[+\-*/()])"
+)
+
+
+def _formula_identifiers(formula: str, input_names: set[str]) -> set[str]:
+    """Validate one calculator formula and return the input names it uses.
+
+    The grammar is numbers, declared input names, ``+ - * / ( )`` and
+    whitespace — nothing else. Function calls, ``**``, commas, quotes and
+    statement separators all raise ``ValueError`` with a clear message so the
+    ``ui_block`` tool reports a friendly error instead of emitting a payload
+    the renderer must refuse to evaluate.
+    """
+
+    tokens: list[str] = []
+    pos = 0
+    while pos < len(formula):
+        if formula[pos].isspace():
+            pos += 1
+            continue
+        match = _CALCULATOR_FORMULA_TOKEN.match(formula, pos)
+        if not match or match.end() == pos:
+            snippet = formula[pos : pos + 12]
+            raise ValueError(
+                f"unsupported characters near {snippet!r}; formulas may only "
+                "use numbers, input names, + - * / and ( )"
+            )
+        tokens.append(match.group(0))
+        pos = match.end()
+    if not tokens:
+        raise ValueError("formula is empty")
+
+    index = 0
+
+    def peek() -> str | None:
+        return tokens[index] if index < len(tokens) else None
+
+    def parse_primary() -> None:
+        nonlocal index
+        token = peek()
+        if token is None:
+            raise ValueError(f"formula {formula!r} ends unexpectedly")
+        if token in {"+", "-"}:  # unary sign, e.g. "-total" or "2*-3"
+            index += 1
+            parse_primary()
+            return
+        if token == "(":
+            index += 1
+            parse_expr()
+            if peek() != ")":
+                raise ValueError(f"formula {formula!r} has unbalanced parentheses")
+            index += 1
+        elif token[0].isdigit() or token[0] == ".":
+            index += 1
+        elif token[0].isalpha() or token[0] == "_":
+            index += 1
+            if token not in input_names:
+                raise ValueError(
+                    f"formula {formula!r} references unknown input {token!r}"
+                )
+        else:
+            raise ValueError(f"formula {formula!r} has unexpected operator {token!r}")
+
+    def parse_term() -> None:
+        nonlocal index
+        parse_primary()
+        while peek() in {"*", "/"}:
+            index += 1
+            parse_primary()
+
+    def parse_expr() -> None:
+        nonlocal index
+        parse_term()
+        while peek() in {"+", "-"}:
+            index += 1
+            parse_term()
+
+    # Leading unary + / - is handled inside parse_primary.
+    parse_expr()
+    if index != len(tokens):
+        raise ValueError(f"formula {formula!r} has trailing tokens")
+    return {token for token in tokens if token[0].isalpha() or token[0] == "_"}
+
+
+class UiCalculatorBlock(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    type: Literal["calculator"] = "calculator"
+    title: str | None = Field(default=None, max_length=120)
+    description: str | None = Field(default=None, max_length=300)
+    inputs: list[UiCalculatorInput] = Field(min_length=1, max_length=12)
+    outputs: list[UiCalculatorOutput] = Field(min_length=1, max_length=12)
+
+    @model_validator(mode="after")
+    def _validate_formulas(self) -> UiCalculatorBlock:
+        names = [item.name for item in self.inputs]
+        duplicates = sorted({name for name in names if names.count(name) > 1})
+        if duplicates:
+            raise ValueError(f"calculator input names must be unique: {duplicates}")
+        known = set(names)
+        for output in self.outputs:
+            try:
+                _formula_identifiers(output.formula, known)
+            except ValueError as exc:
+                raise ValueError(f"output {output.label!r}: {exc}") from exc
+        return self
+
+
 UiBlockNode = Annotated[
     Union[
         UiStatCardsBlock,
@@ -507,6 +674,9 @@ UiBlockNode = Annotated[
         UiButtonsBlock,
         UiFormBlock,
         UiProgressBlock,
+        UiFlashcardsBlock,
+        UiChecklistBlock,
+        UiCalculatorBlock,
     ],
     Field(discriminator="type"),
 ]
