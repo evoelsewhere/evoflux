@@ -2544,7 +2544,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
         type: 'tips',
         items: [
           'Providers — API キー、OAuth、ローカルデーモン、モデルレジストリ',
-          'Agents — チームメンバーごとのモデル、ツール、システムプロンプト',
+          'Agents — チームメンバーごとのモデル、ツール、システムプロンプト、Response style（Simple / Visual）',
           'Skills — SKILL.md フォルダの作成/編集、各スキルのオン/オフ',
           'MCP servers — stdio / HTTP / SSE 外部ツール',
           'Memory — 長期 wiki + Dream スケジュール',
@@ -2573,7 +2573,8 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
         items: [
           '横断: 主要な Guidelines 記事は利用可能なとき openAction で正しいページへディープリンク。',
           '横断: ロケール変更は UI クロムのみ — チャット本文は書いたまま。',
-          '横断: 空の telemetry はしばしば extras 無効を意味し、チャット障害ではない。'
+          '横断: 空の telemetry はしばしば extras 無効を意味し、チャット障害ではない。',
+          'Settings → Agents の Response style は新しい返信の書き方を決めます: Simple はプレーンテキスト優先、Visual は見出し・リスト・テーブル・コードブロックを許可。次のメッセージから適用され、過去の返信は書き換えません。'
 ],
       }
 ],
@@ -2785,5 +2786,40 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
         { type: 'p', text: 'Snake の矢印キーと WASD は盤面にフォーカスがあるときだけ有効です。Space で一時停止・再開できます。視差効果を減らす設定では Snake の速度が下がり、2048 のタイルアニメーションは無効になります。Minesweeper Mini、Tic-tac-toe、Memory Pairs は矢印キーでマスを移動し、Enter または Space で操作します。Mini Breakout は左右の矢印キーまたは A/D でパドルを動かし、Space で開始・一時停止します。2048 は盤面にフォーカスしてから矢印キーを使います。Close、Escape、またはパネル外のクリックで閉じられます。' },
     ],
     related: ['chat', 'composer-power', 'troubleshooting'],
+  },
+  {
+    id: 'chat-charts',
+    category: 'chat',
+    title: 'チャートとダイアグラム',
+    summary:
+      '```chart と ```mermaid のコードフェンスで、返信内にチャートや Mermaid ダイアグラムを描画できます。',
+    keywords: [
+      'chart',
+      'mermaid',
+      'diagram',
+      'graph',
+      'inline',
+      'fence',
+      'bar chart',
+      'line chart',
+      'pie',
+      'flowchart',
+      'biểu đồ',
+      'sơ đồ',
+      'lưu đồ',
+      'チャート',
+      '図表',
+      'ダイアグラム',
+    ],
+    blocks: [
+      { type: 'p', text: '```chart フェンスに小さな JSON spec を書くと、line / bar / area / pie のネイティブ図がアプリのテーマ色で描画されます。spec には type、xKey、series、data 配列が必要で、title、yLabel、unit、bar 用の stacked は任意です。' },
+      { type: 'p', text: '```mermaid フェンスは securityLevel: strict の Mermaid ランタイムで描画されるため、図のテキストがスクリプトを実行することはありません。フローチャート、シーケンス図など Mermaid の全文法が使えます。' },
+      { type: 'p', text: 'エージェントのストリーミング中は、未完成のフェンスをプレースホルダーで表示します。フェンスが閉じた後に spec や図が不正だった場合は、1 行の通知付きでコピー可能なコードブロックにフォールバックします — データは失われません。' },
+      { type: 'p', text: '両レンダラーはオンデマンドロードなので、チャートライブラリを使わないチャットの初回描画が遅くなることはありません。' },
+    ],
+    tricks: [
+      '不正なフェンスもコピーできます — フォールバックのコードブロックから元の spec や図のソースを取り出し、次のメッセージで直せます。',
+    ],
+    related: ['chat', 'chat-team', 'composer-power'],
   }
 ]

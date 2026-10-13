@@ -4,8 +4,16 @@ All notable changes to EvoFlux are documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- **Settings → Agents** now has a **Response style** choice: **Simple** asks the assistant for plain-prose replies, **Visual** (default) lets it use headings, lists, tables and code blocks when they help scanning. The setting applies from the next message onward, needs no restart, and never rewrites earlier replies.
+- Chat replies now render ` ```chart ` and ` ```mermaid ` code fences natively: charts (line, bar, area, pie) through Recharts and diagrams through Mermaid, both loaded on demand. A half-finished fence shows a placeholder while streaming; an invalid spec or unparseable diagram falls back to the regular copyable code block.
+- New **`ui_block`** tool renders structured, native-looking UI blocks directly in the chat — stat cards, charts, steps, tables, key/value lists, callouts, buttons, forms and progress bars — server-validated and streamed as a single event. Buttons and form replies come back to the agent as a normal follow-up message; **show_widget** stays available for arbitrary HTML widgets.
+- **`ui_block`** results now survive reloads and reconnects: the block is rebuilt from the tool's saved arguments in history and replayed from the stream, with no database migration.
+
 ### Fixed
 
+- Chat-rendered **```chart** charts no longer crash the transcript with `import_decimal.default is not a constructor`: Recharts now always loads the ES build of its decimal library in the dev server.
 - **Built-in Browser** keeps agent pointer actions inside the page instead of moving the desktop cursor; pages that require trusted OS gestures or browser-managed CSS `:hover` may still need another control path.
 
 ## [3.0.6] - 2026-10-10

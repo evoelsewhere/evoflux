@@ -2579,7 +2579,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'Diagnostics is for live subsystem checks — complementary to HealthDot’s binary signal.',
       'Intelligence vs System vs Application groupings keep risky toggles from mixing with theme picks.',
       'Notifications include a test ping — use it before trusting unfocused alerts. Unread alerts count on the app icon and request taskbar or Dock attention; returning to EvoFlux clears them. Windows question alerts support quick choices and a reply field.',
-      'Open the command palette if you forget which settings page owns a toggle.'
+      'Open the command palette if you forget which settings page owns a toggle.',
+      'Response style on Settings → Agents controls how new replies are worded: Simple asks for plain prose, Visual lets the model use headings, lists, tables and code blocks. It applies from the next message onward and never rewrites earlier replies.'
 ],
     blocks: [
       {
@@ -2594,7 +2595,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
         type: 'tips',
         items: [
           'Providers — API keys, OAuth, local daemons, model registry',
-          'Agents — model, tools, system prompt per team member',
+          'Agents — model, tools, system prompt, and Response style (Simple/Visual) per team member',
           'Skills — create/edit SKILL.md folders, turn any skill on or off',
           'MCP servers — stdio / HTTP / SSE external tools',
           'Memory — long-term wiki + Dream schedule',
@@ -2836,5 +2837,40 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
         { type: 'p', text: 'Snake responds to arrow keys or WASD only when its board has keyboard focus; Space pauses or resumes it. With reduced motion enabled, Snake moves more slowly and 2048 tile animations are disabled. Use arrow keys to move through Minesweeper Mini, Tic-tac-toe, and Memory Pairs cells, then Enter or Space to act. Mini Breakout uses left/right arrows or A/D for the paddle; Space launches or pauses. For 2048, focus its board before using arrow keys. Use the close button, Escape, or an outside click to dismiss the panel.' },
     ],
     related: ['chat', 'composer-power', 'troubleshooting'],
+  },
+  {
+    id: 'chat-charts',
+    category: 'chat',
+    title: 'Charts and diagrams',
+    summary:
+      'Replies can render charts and Mermaid diagrams inline from ```chart and ```mermaid code fences.',
+    keywords: [
+      'chart',
+      'mermaid',
+      'diagram',
+      'graph',
+      'inline',
+      'fence',
+      'bar chart',
+      'line chart',
+      'pie',
+      'flowchart',
+      'biểu đồ',
+      'sơ đồ',
+      'lưu đồ',
+      'チャート',
+      '図表',
+      'ダイアグラム',
+    ],
+    blocks: [
+      { type: 'p', text: 'A ```chart fence with a small JSON spec renders a native figure — line, bar, area, or pie — using the app’s theme colors. The spec needs a type, an xKey, a series list, and a data array; optional fields are title, yLabel, unit, and stacked for bars.' },
+      { type: 'p', text: 'A ```mermaid fence renders the diagram through the Mermaid runtime with securityLevel: strict, so diagram text cannot run scripts. Flowcharts, sequence diagrams, and the rest of the Mermaid grammar work.' },
+      { type: 'p', text: 'While an agent is still streaming, a half-finished fence shows a placeholder instead of code. If a fence finishes but its spec or diagram is invalid, the reply falls back to a copyable code block with a one-line notice — nothing is lost.' },
+      { type: 'p', text: 'Both renderers load on demand, so chat never waits on chart libraries it is not using.' },
+    ],
+    tricks: [
+      'Invalid fences stay copyable — grab the raw spec or diagram source from the fallback code block and fix it in your next message.',
+    ],
+    related: ['chat', 'chat-team', 'composer-power'],
   }
 ]
