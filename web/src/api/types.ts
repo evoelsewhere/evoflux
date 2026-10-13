@@ -1,5 +1,7 @@
 // API Response Types
 
+import type { UiBlockNode } from '@/components/ui/ui-block-types'
+
 export type DiagnosticsStatus = 'ok' | 'warn' | 'fail'
 
 /** A fix the user can trigger from the check's row. */
@@ -828,6 +830,7 @@ export type SSEEventType =
   | 'summarization_content'
   | 'summarization_end'
   | 'browser_session'
+  | 'ui_block'
 
 export interface SSEEvent {
   type: SSEEventType
@@ -837,7 +840,7 @@ export interface SSEEvent {
 // Content Block Types
 export interface ContentBlock {
   id: string
-  type: 'thinking' | 'tool' | 'text' | 'user' | 'compaction' | 'provider_status' | 'widget'
+  type: 'thinking' | 'tool' | 'text' | 'user' | 'compaction' | 'provider_status' | 'widget' | 'ui_block'
   content: string
   toolName?: string
   toolArgs?: string
@@ -855,6 +858,8 @@ export interface ContentBlock {
   widgetHtml?: string   // HTML content for widget blocks
   isStreaming?: boolean // whether widget is still streaming
   title?: string        // widget title
+  /** ui_block-specific fields (Feature B) */
+  uiBlocks?: UiBlockNode[] // validated declarative UI block nodes
   /** Variant-specific metadata. ``user`` inbox blocks carry ``from_agent``;
    *  ``compaction`` blocks are content-free status markers carrying
    *  ``state: 'compacting' | 'compacted'`` and optional ``error: true``.

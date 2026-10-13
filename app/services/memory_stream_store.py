@@ -65,6 +65,7 @@ _AGENT_CONTENT_EVENT_TYPES = frozenset(
         "tool_output_delta",
         "tool_end",
         "widget_delta",
+        "ui_block",
         "provider_status",
     }
 )

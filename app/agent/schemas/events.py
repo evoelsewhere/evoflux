@@ -11,9 +11,9 @@ clients that parse only the ``data:`` payload can still distinguish events.
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Annotated, Any, Literal, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class SessionEvent(BaseModel):
@@ -373,4 +373,152 @@ class WidgetDeltaEvent(BaseModel):
     tool_call_id: str
     html: str  # partial HTML content
     is_final: bool = False  # True when streaming complete
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+# ── ui_block nodes (Feature B, spec §5.1) ─────────────────────────────────
+# Server-side validated declarative UI blocks emitted by the ``ui_block``
+# tool as one complete frame. Node models use extra="ignore"; all limits are
+# enforced here so one SSE frame stays small, and unknown ``type`` values
+# fail validation so the tool returns a friendly error instead of emitting
+# a broken event.
+
+
+class UiStatCard(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    label: str = Field(max_length=80)
+    value: str | int | float
+    delta: str | None = Field(default=None, max_length=40)
+    delta_tone: Literal["up", "down", "neutral"] = "neutral"
+    hint: str | None = Field(default=None, max_length=160)
+
+
+class UiStatCardsBlock(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    type: Literal["stat_cards"] = "stat_cards"
+    cards: list[UiStatCard] = Field(min_length=1, max_length=6)
+
+
+class UiChartBlock(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    type: Literal["chart"] = "chart"
+    spec: dict[str, Any]  # ChartSpec (§4.1); frontend validates — see §8.3 stub rule
+
+
+class UiStep(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    title: str = Field(max_length=160)
+    status: Literal["done", "active", "pending", "error"] = "pending"
+    detail: str | None = Field(default=None, max_length=400)
+
+
+class UiStepsBlock(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    type: Literal["steps"] = "steps"
+    steps: list[UiStep] = Field(min_length=1, max_length=12)
+
+
+class UiTableBlock(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    type: Literal["table"] = "table"
+    columns: list[dict[str, str]] = Field(min_length=1, max_length=12)
+    rows: list[dict[str, Any]] = Field(max_length=200)
+
+
+class UiKeyValueBlock(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    type: Literal["key_value"] = "key_value"
+    pairs: list[dict[str, str]] = Field(min_length=1, max_length=20)
+
+
+class UiCalloutBlock(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    type: Literal["callout"] = "callout"
+    tone: Literal["info", "success", "warning", "error"] = "info"
+    title: str | None = Field(default=None, max_length=120)
+    body: str = Field(max_length=1000)
+
+
+class UiButton(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    label: str = Field(max_length=80)
+    prompt: str = Field(max_length=500)
+    style: Literal["primary", "secondary"] = "primary"
+
+
+class UiButtonsBlock(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    type: Literal["buttons"] = "buttons"
+    buttons: list[UiButton] = Field(min_length=1, max_length=5)
+
+
+class UiFormField(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    name: str = Field(max_length=40, pattern=r"^[a-z0-9_]{1,40}$")
+    label: str = Field(max_length=80)
+    kind: Literal["text", "textarea", "select", "checkbox"] = "text"
+    options: list[str] = Field(default_factory=list, max_length=30)
+    placeholder: str | None = Field(default=None, max_length=120)
+    default: str | None = None
+
+
+class UiFormBlock(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    type: Literal["form"] = "form"
+    title: str | None = Field(default=None, max_length=120)
+    fields: list[UiFormField] = Field(min_length=1, max_length=8)
+    submit_label: str = Field(default="Send", max_length=40)
+
+
+class UiProgressBlock(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    type: Literal["progress"] = "progress"
+    label: str = Field(max_length=120)
+    value: int = Field(ge=0)
+    max: int = Field(gt=0)
+    unit: str | None = Field(default=None, max_length=20)
+
+
+UiBlockNode = Annotated[
+    Union[
+        UiStatCardsBlock,
+        UiChartBlock,
+        UiStepsBlock,
+        UiTableBlock,
+        UiKeyValueBlock,
+        UiCalloutBlock,
+        UiButtonsBlock,
+        UiFormBlock,
+        UiProgressBlock,
+    ],
+    Field(discriminator="type"),
+]
+
+
+class UiBlockEvent(BaseModel):
+    """Single complete frame for one ``ui_block`` tool call (not delta-streamed).
+
+    ``metadata`` carries ``{"title": ...}`` when the tool got a title.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    type: Literal["ui_block"] = "ui_block"
+    agent: str
+    tool_call_id: str
+    blocks: list[UiBlockNode] = Field(min_length=1, max_length=6)
+    is_final: bool = True
     metadata: dict[str, Any] = Field(default_factory=dict)

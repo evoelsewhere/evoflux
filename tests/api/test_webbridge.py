@@ -222,6 +222,28 @@ def test_webbridge_tool_routes_spawned_members_through_lead_session():
             },
             {"type": "summarization_end", "agent": "lead", "error": False},
         ),
+        (
+            # Feature B: ui_block projects validated block data only (§5.3 list 4).
+            "ui_block",
+            {
+                "agent": "lead",
+                "tool_call_id": "call-ui",
+                "is_final": True,
+                "blocks": [
+                    {"type": "callout", "tone": "info", "body": "hello"}
+                ],
+                "metadata": {"title": "private", "private": "must-not-leak"},
+            },
+            {
+                "type": "ui_block",
+                "id": "call-ui",
+                "agent": "lead",
+                "is_final": True,
+                "blocks": [
+                    {"type": "callout", "tone": "info", "body": "hello"}
+                ],
+            },
+        ),
     ],
 )
 def test_side_chat_stream_sanitizes_typed_block_payloads(

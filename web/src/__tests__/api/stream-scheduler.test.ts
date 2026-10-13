@@ -53,4 +53,24 @@ describe('createStreamScheduler', () => {
       { agent: 'reviewer', text: 'b' },
     ])
   })
+
+  it('passes ui_block frames through without coalescing (spec §8.2 skip)', () => {
+    vi.stubGlobal('requestAnimationFrame', vi.fn(() => 1))
+    vi.stubGlobal('cancelAnimationFrame', vi.fn())
+    const dispatch = vi.fn()
+    const scheduler = createStreamScheduler(dispatch)
+
+    const payload = {
+      agent: 'lead',
+      tool_call_id: 'call-1',
+      blocks: [{ type: 'progress', label: 'Run', value: 1, max: 3 }],
+    }
+    scheduler.push('ui_block', payload)
+    scheduler.push('ui_block', payload)
+
+    // Single complete frames: never treated as visual deltas, so duplicates
+    // are NOT collapsed here — the reducer dedupes by tool_call_id.
+    expect(dispatch).toHaveBeenCalledTimes(2)
+    expect(dispatch.mock.calls.map(([type]) => type)).toEqual(['ui_block', 'ui_block'])
+  })
 })

@@ -22,6 +22,7 @@ import {
 import { isBackgroundCompletion, sendDesktopNotification } from '@/lib/desktop-notifications'
 import { createNotificationActivation } from '@/lib/notification-activation'
 import type { GoalResponse, SuggestedTask, TurnCost, TurnUsage, TurnUsageBreakdown } from '@/api/types'
+import type { UiBlockNode } from '@/components/ui/ui-block-types'
 import { parseTurnChanges } from '@/utils/turn-changes'
 import type { ActivityItem, CacheInvalidation, TeamStore } from './types'
 
@@ -297,6 +298,40 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
         break
       }
 
+      case 'ui_block': {
+        const agent = d.agent as string
+        const toolCallId = d.tool_call_id as string
+        const blocks = d.blocks
+        if (!Array.isArray(blocks)) break
+        const metadata = d.metadata as Record<string, unknown> | undefined
+        const title = (d.title as string | undefined)
+          ?? (metadata?.title as string | undefined)
+        set((draft) => {
+          ensureAgent(draft, agent)
+          const stream = draft.agentStreams[agent]
+          // Dedupe by toolCallId (§5.4): first arrival creates the block,
+          // later duplicates just refresh the same block idempotently.
+          const existing = stream.currentBlocks.find(
+            (b) => b.type === 'ui_block' && b.toolCallId === toolCallId,
+          )
+          if (existing) {
+            existing.uiBlocks = blocks as UiBlockNode[]
+            if (title) existing.title = title
+            return
+          }
+          stream.currentBlocks.push({
+            id: generateBlockId(),
+            type: 'ui_block',
+            content: '',
+            uiBlocks: blocks as UiBlockNode[],
+            toolCallId,
+            isStreaming: false,
+            ...(title ? { title } : {}),
+          })
+        })
+        break
+      }
+
       case 'tool_end': {
         const agent = d.agent as string
         const toolName = d.name as string
@@ -357,6 +392,44 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
                     toolCallId,
                     isStreaming: false,
                     title: (parsedArgs?.title as string) || 'Widget',
+                  })
+                }
+              }
+            }
+
+            // Fallback: when the ui_block event never arrived (e.g. backend
+            // push failure), reconstruct the block from the persisted
+            // tool-call arguments at tool_end time (Feature C, §6.2).
+            if (toolName === 'ui_block' && toolCallId) {
+              const blocks = draft.agentStreams[agent].currentBlocks
+              const hasUiBlock = blocks.some(
+                (b) => b.type === 'ui_block' && b.toolCallId === toolCallId,
+              )
+              if (!hasUiBlock) {
+                const toolBlock = blocks.find(
+                  (b) => b.type === 'tool' && b.toolCallId === toolCallId,
+                )
+                let parsedArgs: Record<string, unknown> | undefined
+                try {
+                  parsedArgs =
+                    typeof toolBlock?.toolArgs === 'string'
+                      ? JSON.parse(toolBlock.toolArgs)
+                      : (toolBlock?.toolArgs as Record<string, unknown> | undefined)
+                } catch {
+                  // malformed args — skip
+                }
+                if (Array.isArray(parsedArgs?.blocks)) {
+                  blocks.push({
+                    id: generateBlockId(),
+                    type: 'ui_block',
+                    content: '',
+                    uiBlocks: parsedArgs.blocks as UiBlockNode[],
+                    toolCallId,
+                    isStreaming: false,
+                    title:
+                      typeof parsedArgs.title === 'string'
+                        ? parsedArgs.title
+                        : 'UI Block',
                   })
                 }
               }

@@ -127,6 +127,7 @@ SIDE_CHAT_ALWAYS_EXCLUDED_TOOLS: frozenset[str] = frozenset(
         "team_worktree",
         "sleep",
         "show_widget",
+        "ui_block",
         "visualize_read_me",
     }
 )

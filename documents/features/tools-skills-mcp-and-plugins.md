@@ -23,6 +23,40 @@ tools expose only compact catalogue metadata until selected. Tool execution
 passes through argument validation, observation policy, permission/sandbox
 checks, output bounding and streaming telemetry.
 
+### `ui_block` — native structured UI
+
+`ui_block` renders declarative, shadcn-native UI blocks in the conversation as
+one complete `ui_block` SSE event (never delta-streamed). It is the structured
+sibling of `show_widget`: **`ui_block` for the catalog; `show_widget` only for
+arbitrary HTML** (iframe/CSS escape hatch).
+
+| Block `type` | Renders | Limits (server-validated) |
+|---|---|---|
+| `stat_cards` | metric cards with delta/hint | 1–6 cards |
+| `chart` | chart placeholder/visualization | free-form `spec` object |
+| `steps` | step progress with status icons | 1–12 steps, detail ≤400 |
+| `table` | column-keyed data table | ≤12 columns, ≤200 rows |
+| `key_value` | label/value list | 1–20 pairs |
+| `callout` | info/success/warning/error note | body ≤1000 |
+| `buttons` | prompt-dispatching button row | 1–5 buttons |
+| `form` | fields + submit | 1–8 fields, ≤8 form size |
+| `progress` | labeled progress bar | `0 ≤ value`, `max > 0` |
+
+One call carries 1–6 blocks. Unknown `type` values fail validation and the
+tool returns `success: false` with `valid_types` instead of emitting a broken
+event; the frontend additionally renders a neutral "Unsupported block" card.
+
+**Interactivity round-trip (no new endpoint).** Buttons dispatch their
+`prompt` as a normal user message through the store's `sendMessage` action;
+form submits compose `${title}` plus one `- label: value` line per filled
+field. The agent therefore sees the answers as a normal user message — the
+tool itself receives no structured result (accepted trade-off; a future
+`ui_interaction` continuation may replace it). Toggles stay client-side.
+
+**Persistence.** The block payload is the tool's own arguments, so history
+reload reconstructs it losslessly from the persisted `tool_calls` JSON — no
+database migration; the live event is deduplicated by `tool_call_id`.
+
 ## Agent Skills
 
 EvoFlux follows Anthropic's Agent Skills architecture; the full contract is
