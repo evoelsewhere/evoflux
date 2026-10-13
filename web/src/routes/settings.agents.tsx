@@ -49,8 +49,10 @@ import {
   useBulkUpdateAgentModelMutation,
   useRegistryQuery,
   useFollowUpSettingsQuery,
+  useResponseStyleSettingsQuery,
   useTeamSpawnSettingsQuery,
   useUpdateFollowUpSettingsMutation,
+  useUpdateResponseStyleSettingsMutation,
   useUpdateTeamSpawnSettingsMutation,
 } from '@/queries'
 import { useToastStore } from '@/stores/useToastStore'
@@ -215,6 +217,8 @@ export function AgentsListPage() {
             <AgentRosterSummary agents={agents} teams={teams} />
 
             <FollowUpBehaviorCard />
+
+            <ResponseStyleCard />
 
             <section className="overflow-hidden rounded-2xl border border-(--color-border) bg-(--bg-card) shadow-[0_16px_44px_rgba(0,0,0,0.035)]">
             <div className="flex flex-col gap-3 border-b border-(--color-border-subtle) p-3 sm:p-4">
@@ -400,6 +404,44 @@ function FollowUpBehaviorCard() {
         ]}
         layoutId="follow-up-delivery"
         ariaLabel="Default follow-up behavior while an agent is working"
+        className="shrink-0"
+      />
+    </section>
+  )
+}
+
+/**
+ * Response style (Intelligent UI feature A): how new replies are worded by
+ * default. `simple` asks the model for plain prose; `visual` lets it use
+ * headings, lists, tables and code. Saved server-side and appended to the
+ * system prompt on the next message — no restart.
+ *
+ * Exported for its focused component test.
+ */
+export function ResponseStyleCard() {
+  const { data: responseStyle } = useResponseStyleSettingsQuery()
+  const update = useUpdateResponseStyleSettingsMutation()
+  const style = responseStyle?.style ?? 'visual'
+
+  return (
+    <section className="flex flex-col gap-3 rounded-2xl border border-(--color-border) bg-(--bg-card) p-3 sm:flex-row sm:items-center sm:justify-between sm:p-4">
+      <div className="min-w-0">
+        <h2 className="text-sm font-medium text-(--color-text)">Response style</h2>
+        <p className="mt-0.5 text-[11px] text-(--color-text-muted)">
+          {style === 'simple'
+            ? 'Replies default to plain prose — headings, tables and lists only on request.'
+            : 'Replies may use headings, lists, tables and code blocks when they help scanning.'}
+        </p>
+      </div>
+      <SegmentedControl
+        value={style}
+        onChange={(val) => update.mutate({ style: val as 'simple' | 'visual' })}
+        options={[
+          { label: 'Simple', value: 'simple' },
+          { label: 'Visual', value: 'visual' },
+        ]}
+        layoutId="response-style"
+        ariaLabel="Default response style for new replies"
         className="shrink-0"
       />
     </section>
