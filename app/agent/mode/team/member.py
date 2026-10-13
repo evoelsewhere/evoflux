@@ -38,6 +38,7 @@ from app.agent.hooks.folder_context import FolderContextHook
 from app.agent.hooks.goal import GoalContextHook, GoalUsageHook
 from app.agent.hooks.dynamic_prompt import inject_current_date
 from app.agent.hooks.prefix_snapshot import SessionPrefixSnapshotHook
+from app.agent.hooks.response_style import inject_response_style
 from app.agent.hooks.memory_context import (
     MemoryContextHook,
     default_memory_context_hook,
@@ -1394,6 +1395,7 @@ class TeamMemberBase(abc.ABC):
 
         pipeline = HookPipeline()
         pipeline.add(HookStage.BASE_CONTEXT, "clock", inject_current_date)
+        pipeline.add(HookStage.BASE_CONTEXT, "response-style", inject_response_style)
         pipeline.add(
             HookStage.BASE_CONTEXT, "wiki-context", default_wiki_injection_hook
         )

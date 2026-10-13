@@ -145,3 +145,7 @@ export {
   useFollowUpSettingsQuery,
   useUpdateFollowUpSettingsMutation,
 } from './useFollowUpSettingsQuery'
+export {
+  useResponseStyleSettingsQuery,
+  useUpdateResponseStyleSettingsMutation,
+} from './useResponseStyleSettingsQuery'
