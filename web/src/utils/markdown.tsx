@@ -6,7 +6,7 @@
  * across all views.
  */
 
-import { memo, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, memo, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
@@ -26,6 +26,12 @@ import {
   openWorkspaceFileLink,
   workspaceFilePathFromHref,
 } from '@/lib/workspace-file-link'
+
+// Intelligent UI feature D: ```chart / ```mermaid fences render natively.
+// Lazy so Recharts and Mermaid stay out of the initial bundle — each chunk
+// only loads when such a fence is actually rendered.
+const LazyChartFence = lazy(() => import('@/components/markdown/ChartFence'))
+const LazyMermaidFence = lazy(() => import('@/components/markdown/MermaidFence'))
 
 // Me: extensions we render as ``<video>`` instead of ``<img>``. The backend
 // `generate_video` tool writes ``.mp4`` files today, but keep the list
@@ -594,6 +600,19 @@ function useNearViewport(
   return !enabled || nearViewport
 }
 
+/**
+ * Outer Suspense placeholder while a lazy ```chart / ```mermaid fence chunk
+ * loads. Keeps the reserved block height so streaming layout stays stable.
+ */
+function FenceSkeletonBox() {
+  return (
+    <div
+      className="my-3 h-[260px] w-full animate-pulse rounded-xl border border-(--color-border-subtle) bg-(--bg-card)"
+      aria-hidden="true"
+    />
+  )
+}
+
 // ── MarkdownBlock ─────────────────────────────────────────────────────────────
 
 /** Shared prose markdown renderer — handles nested fences with math and syntax highlighting.
@@ -646,11 +665,22 @@ export const MarkdownBlock = memo(function MarkdownBlock({
         }>
         const codeText = extractText(codeEl?.props?.children)
         const language = codeEl?.props?.className?.match(/(?:^|\s)language-([^\s]+)/)?.[1]
-        return (
+        const fallback = (
           <CodeBlock language={language} rawText={codeText}>
             {codeEl?.props?.children as React.ReactNode}
           </CodeBlock>
         )
+        if (language === 'chart' || language === 'mermaid') {
+          // Streaming swaps a mid-fence skeleton for the finished render once
+          // the fence closes; a settled-but-invalid spec keeps CodeBlock.
+          const Fence = language === 'chart' ? LazyChartFence : LazyMermaidFence
+          return (
+            <Suspense fallback={<FenceSkeletonBox />}>
+              <Fence rawText={codeText} streaming={Boolean(isStreaming)} fallback={fallback} />
+            </Suspense>
+          )
+        }
+        return fallback
       },
       a: ({ onClick, children, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => {
         if (
@@ -701,7 +731,7 @@ export const MarkdownBlock = memo(function MarkdownBlock({
         )
       },
     }),
-    [allowHtml, onLinkClick, sessionId, transformImageSrc],
+    [allowHtml, onLinkClick, isStreaming, sessionId, transformImageSrc],
   )
 
   const segments = useMemo(
