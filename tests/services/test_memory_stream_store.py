@@ -11,7 +11,12 @@ import json
 import pytest
 
 from app.services import memory_stream_store as store
-from app.services.memory_stream_store import _turns, _SENTINEL
+from app.services.memory_stream_store import (
+    _AGENT_CONTENT_EVENT_TYPES,
+    _NON_REPLAYABLE_EVENT_TYPES,
+    _SENTINEL,
+    _turns,
+)
 from app.services.stream_envelope import StreamEnvelope
 
 
@@ -1401,3 +1406,46 @@ class TestClose:
         await store.init_turn("sid-2")
         await store.close()
         assert len(_turns) == 0
+
+
+# ---------------------------------------------------------------------------
+# ui_block classification (Feature B/C — §5.3 lists 3)
+# ---------------------------------------------------------------------------
+
+
+class TestUiBlockClassification:
+    def test_ui_block_is_agent_content_and_replayable(self):
+        """ui_block journals like widget_delta: agent content, replay on
+        reconnect, never classified as non-replayable side-channel."""
+        assert "ui_block" in _AGENT_CONTENT_EVENT_TYPES
+        assert "ui_block" not in _NON_REPLAYABLE_EVENT_TYPES
+        # Same class as its streaming sibling — keep the pair aligned.
+        assert "widget_delta" in _AGENT_CONTENT_EVENT_TYPES
+        assert "widget_delta" not in _NON_REPLAYABLE_EVENT_TYPES
+
+    @pytest.mark.asyncio
+    async def test_ui_block_envelope_is_pushed_and_replayed(self):
+        from app.agent.schemas.events import UiBlockEvent
+
+        await store.init_turn("sid-ui")
+        event = UiBlockEvent(
+            agent="lead",
+            tool_call_id="call-ui",
+            blocks=[{"type": "progress", "label": "Run", "value": 1, "max": 3}],
+            metadata={"title": "Metrics"},
+        )
+        await store.push_event("sid-ui", StreamEnvelope.from_event(event))
+
+        events = []
+        async for frame in store.attach("sid-ui"):
+            events.append(frame)
+            break
+
+        assert events, "ui_block frame must be journaled for replay"
+        assert events[0]["event"] == "ui_block"
+        data = json.loads(events[0]["data"])
+        assert data["type"] == "ui_block"
+        assert data["tool_call_id"] == "call-ui"
+        assert data["is_final"] is True
+        assert data["metadata"]["title"] == "Metrics"
+        assert data["blocks"][0]["type"] == "progress"

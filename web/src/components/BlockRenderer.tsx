@@ -20,6 +20,7 @@ import { Thinking } from './Thinking'
 import { ToolCall } from './ToolCall'
 import { MCPAppResult } from './MCPAppResult'
 import { WidgetRenderer } from './WidgetRenderer'
+import { UiBlockRenderer } from './ui/UiBlockRenderer'
 import { InboxBubble } from './InboxBubble'
 import { HandoffCard } from './HandoffCard'
 import { CompactionDivider } from './CompactionDivider'
@@ -457,6 +458,17 @@ export const BlockRenderer = memo(function BlockRenderer({ block, isStreaming, s
             isStreaming={isStreaming}
             title={title}
             sessionId={sessionId}
+          />
+        </div>
+      )
+    }
+    case 'ui_block': {
+      return (
+        <div className="my-2">
+          <UiBlockRenderer
+            blocks={block.uiBlocks ?? []}
+            title={block.title}
+            live={block.isStreaming}
           />
         </div>
       )

@@ -1931,6 +1931,7 @@ _BROWSER_PANEL_STREAM_EVENT_TYPES = frozenset(
         "tool_start",
         "tool_output_delta",
         "widget_delta",
+        "ui_block",
         "tool_end",
         "rate_limit",
         "provider_status",
@@ -2073,6 +2074,16 @@ def _browser_panel_stream_event(event: dict[str, Any]) -> dict[str, str] | None:
             title = metadata.get("title")
             if isinstance(title, str):
                 projected["title"] = title
+    elif event_type == "ui_block":
+        # Model-generated payload (validated UiBlockEvent) — not raw HTML.
+        identifier = data.get("id") or data.get("tool_call_id")
+        if isinstance(identifier, str):
+            projected["id"] = identifier
+        copy_strings("agent")
+        copy_bools("is_final")
+        blocks = data.get("blocks")
+        if isinstance(blocks, list):
+            projected["blocks"] = blocks
     elif event_type == "rate_limit":
         copy_numbers("retry_after", "attempt", "max_attempts")
     elif event_type == "provider_status":

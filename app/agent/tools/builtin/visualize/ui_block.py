@@ -1,0 +1,147 @@
+"""UI block tool — render declarative shadcn-native UI blocks inline.
+
+``ui_block`` is the structured sibling of ``show_widget``: instead of a raw
+HTML iframe it emits one validated, declarative UI block list (stat cards,
+charts, steps, table, key/value, callout, buttons, form, progress) as a
+single complete ``ui_block`` SSE event — never delta-streamed.
+
+The block payload persists through the tool's own arguments; history reload
+reconstructs the block from ``SessionMessage.tool_calls`` (no migration).
+"""
+
+from __future__ import annotations
+
+import json
+from typing import Annotated, Any
+
+from loguru import logger
+from pydantic import Field, ValidationError
+
+from app.agent.schemas.events import UiBlockEvent
+from app.agent.tools import tool
+from app.agent.tools.registry import InjectedArg
+
+_VALID_TYPES = (
+    "stat_cards",
+    "chart",
+    "steps",
+    "table",
+    "key_value",
+    "callout",
+    "buttons",
+    "form",
+    "progress",
+)
+
+
+@tool(
+    name="ui_block",
+    tiers=("work", "coding"),
+    description=(
+        "Render a declarative UI block in the conversation. "
+        "Accepts {blocks: [...]} where each block has type one of: "
+        "stat_cards, chart, steps, table, key_value, callout, buttons, "
+        "form, progress. Use instead of show_widget for structured data UI "
+        "(metrics, charts, step progress, tables, forms) — no raw HTML, "
+        "server-validated, small SSE frames, and the block survives history "
+        "reload. Optionally pass title: a short snake_case title for the "
+        "block group."
+    ),
+    concurrency_safe=False,
+)
+async def ui_block(
+    blocks: Annotated[
+        list[Any] | str,
+        Field(
+            description=(
+                "Array of UI block objects, each with a 'type' of stat_cards, "
+                "chart, steps, table, key_value, callout, buttons, form, or "
+                "progress (a JSON-array string is also accepted)"
+            ),
+        ),
+    ],
+    title: Annotated[
+        str,
+        Field(
+            description="Short snake_case title for the block group",
+            max_length=80,
+        ),
+    ] = "",
+    _injected: dict[str, Any] | None = None,
+    # Tool.arun only merges InjectedArg-annotated params (registry.py), so the
+    # executor keys are declared explicitly; _injected (spec §5.2 / show_widget
+    # contract) still serves direct calls and wins when present.
+    agent_name: Annotated[str, InjectedArg()] = "",
+    tool_call_id: Annotated[str, InjectedArg()] = "",
+    session_id: Annotated[str, InjectedArg()] = "",
+) -> dict[str, Any]:
+    """Validate the block list, emit exactly one ``ui_block`` event (§5.2)."""
+    # 2. Normalize a string payload (models sometimes JSON-stringify arrays).
+    if isinstance(blocks, str):
+        try:
+            parsed: Any = json.loads(blocks)  # noqa: ANN401 - external payload
+        except ValueError:
+            return {
+                "success": False,
+                "error": "blocks must be a JSON array of objects",
+            }
+        if not isinstance(parsed, list):
+            return {
+                "success": False,
+                "error": "blocks must be a JSON array of objects",
+            }
+        blocks = parsed
+
+    # Injected context — direct calls pass _injected (show_widget contract);
+    # Tool.arun merges the InjectedArg params above.
+    if _injected:
+        agent = str(_injected.get("agent_name") or "")
+        tool_call_id = str(_injected.get("tool_call_id") or "")
+        session_id = str(_injected.get("session_id") or "")
+    else:
+        agent = agent_name or ""
+        tool_call_id = tool_call_id or ""
+        session_id = session_id or ""
+
+    # 3. Validate through the event itself; friendly error, never raise.
+    try:
+        event = UiBlockEvent.model_validate(
+            {
+                "agent": agent,
+                "tool_call_id": tool_call_id,
+                "blocks": blocks,
+                **({"metadata": {"title": title}} if title else {}),
+            }
+        )
+    except ValidationError as exc:
+        return {
+            "success": False,
+            "error": str(exc),
+            "valid_types": list(_VALID_TYPES),
+        }
+
+    # 4-5. Push exactly one complete frame through the session stream.
+    pushed = False
+    if session_id:
+        try:
+            from app.services import memory_stream_store as stream_store
+            from app.services.stream_envelope import StreamEnvelope
+
+            await stream_store.push_event(session_id, StreamEnvelope.from_event(event))
+            pushed = True
+        except Exception:  # noqa: BLE001 - logged-failure per spec §5.2 step 5
+            logger.opt(exception=True).warning(
+                "ui_block_push_failed session_id={}", session_id
+            )
+    else:
+        logger.warning("ui_block_push_skipped reason=missing_session_id")
+
+    # 6. Do not echo blocks — history persistence uses the tool arguments.
+    types = [node.type for node in event.blocks]
+    return {
+        "success": True,
+        "block_count": len(event.blocks),
+        "types": types,
+        "message": f"Rendered {len(event.blocks)} UI block(s)",
+        "pushed": pushed,
+    }

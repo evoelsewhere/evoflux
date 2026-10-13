@@ -238,6 +238,26 @@ function assistantBlocks(
       continue
     }
 
+    // ui_block persists through its own tool arguments (Feature C, §6.1) —
+    // reconstruct the declarative block from history instead of falling back
+    // to a generic collapsed tool-call chip. No DB migration: the full args
+    // already live in SessionMessage.tool_calls.
+    if (name === 'ui_block' && Array.isArray(parsedArgs?.blocks)) {
+      const block: ContentBlock = {
+        id: `${msg.id}:ui_block:${tool.id || toolIndex}`,
+        type: 'ui_block',
+        content: '',
+        toolCallId: tool.id,
+        uiBlocks: parsedArgs.blocks,
+        isStreaming: false,
+        title: typeof parsedArgs.title === 'string' ? parsedArgs.title : 'UI Block',
+        timestamp,
+      }
+      blocks.push(block)
+      if (tool.id) pendingToolBlocks.set(tool.id, block)
+      continue
+    }
+
     const block: ContentBlock = {
       id: `${msg.id}:tool:${tool.id || toolIndex}`,
       type: 'tool',

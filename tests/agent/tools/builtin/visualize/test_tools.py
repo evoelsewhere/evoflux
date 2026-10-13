@@ -4,6 +4,7 @@ import pytest
 
 from app.agent.tools.builtin.visualize.read_me import visualize_read_me
 from app.agent.tools.builtin.visualize.show_widget import show_widget
+from app.agent.tools.builtin.visualize.ui_block import ui_block
 
 
 class TestVisualizeReadMe:
@@ -109,3 +110,209 @@ class TestShowWidget:
             },
         )
         assert result["widget_code"] == html
+
+
+class TestUiBlock:
+    """Test ui_block tool (Feature B, spec §9.3)."""
+
+    @staticmethod
+    def _capture(monkeypatch):
+        pushed: list = []
+
+        async def capture(session_id, envelope):
+            pushed.append((session_id, envelope))
+
+        monkeypatch.setattr("app.services.memory_stream_store.push_event", capture)
+        return pushed
+
+    @pytest.mark.asyncio
+    async def test_valid_blocks_push_single_envelope(self, monkeypatch):
+        pushed = self._capture(monkeypatch)
+        result = await ui_block(
+            blocks=[
+                {"type": "stat_cards", "cards": [{"label": "CPU", "value": 42}]},
+                {"type": "progress", "label": "Upload", "value": 1, "max": 4},
+            ],
+            title="my_stats",
+            _injected={
+                "agent_name": "lead",
+                "tool_call_id": "call-1",
+                "session_id": "sess-1",
+            },
+        )
+        assert result["success"] is True
+        assert result["block_count"] == 2
+        assert result["types"] == ["stat_cards", "progress"]
+
+        assert len(pushed) == 1
+        session_id, envelope = pushed[0]
+        assert session_id == "sess-1"
+        assert envelope.event == "ui_block"
+        assert envelope.data["type"] == "ui_block"
+        assert envelope.data["tool_call_id"] == "call-1"
+        assert envelope.data["agent"] == "lead"
+        assert envelope.data["is_final"] is True
+        assert envelope.data["metadata"]["title"] == "my_stats"
+        assert len(envelope.data["blocks"]) == 2
+
+    @pytest.mark.asyncio
+    async def test_blocks_as_json_string_is_normalized(self, monkeypatch):
+        pushed = self._capture(monkeypatch)
+        result = await ui_block(
+            blocks='[{"type": "progress", "label": "l", "value": 1, "max": 2}]',
+            _injected={
+                "agent_name": "lead",
+                "tool_call_id": "call-2",
+                "session_id": "sess-1",
+            },
+        )
+        assert result["success"] is True
+        assert result["block_count"] == 1
+        assert len(pushed) == 1
+        assert pushed[0][1].data["blocks"][0]["type"] == "progress"
+
+    @pytest.mark.asyncio
+    async def test_malformed_json_string_returns_error(self, monkeypatch):
+        pushed = self._capture(monkeypatch)
+        result = await ui_block(
+            blocks="{not json",
+            _injected={
+                "agent_name": "lead",
+                "tool_call_id": "call-3",
+                "session_id": "sess-1",
+            },
+        )
+        assert result["success"] is False
+        assert "JSON array" in result["error"]
+        assert pushed == []  # never raises, never pushes a broken frame
+
+    @pytest.mark.asyncio
+    async def test_unknown_block_type_lists_valid_types(self, monkeypatch):
+        pushed = self._capture(monkeypatch)
+        result = await ui_block(
+            blocks=[{"type": "timeline", "entries": []}],
+            _injected={
+                "agent_name": "lead",
+                "tool_call_id": "call-4",
+                "session_id": "sess-1",
+            },
+        )
+        assert result["success"] is False
+        assert "timeline" in result["error"]
+        assert set(result["valid_types"]) == {
+            "stat_cards",
+            "chart",
+            "steps",
+            "table",
+            "key_value",
+            "callout",
+            "buttons",
+            "form",
+            "progress",
+        }
+        assert pushed == []
+
+    @pytest.mark.asyncio
+    async def test_more_than_six_blocks_rejected(self, monkeypatch):
+        pushed = self._capture(monkeypatch)
+        blocks = [
+            {"type": "progress", "label": f"l{i}", "value": i, "max": 9}
+            for i in range(7)
+        ]
+        result = await ui_block(
+            blocks=blocks,
+            _injected={
+                "agent_name": "lead",
+                "tool_call_id": "call-5",
+                "session_id": "sess-1",
+            },
+        )
+        assert result["success"] is False
+        assert "error" in result
+        assert pushed == []
+
+    @pytest.mark.asyncio
+    async def test_over_limit_row_count_rejected(self, monkeypatch):
+        pushed = self._capture(monkeypatch)
+        blocks = [
+            {
+                "type": "table",
+                "columns": [{"k": "K"}],
+                "rows": [{"k": str(i)} for i in range(201)],
+            }
+        ]
+        result = await ui_block(
+            blocks=blocks,
+            _injected={
+                "agent_name": "lead",
+                "tool_call_id": "call-6",
+                "session_id": "sess-1",
+            },
+        )
+        assert result["success"] is False
+        assert "rows" in result["error"]
+        assert pushed == []
+
+    @pytest.mark.asyncio
+    async def test_push_failure_is_logged_not_raised(self, monkeypatch):
+        async def boom(session_id, envelope):
+            raise RuntimeError("push exploded")
+
+        monkeypatch.setattr("app.services.memory_stream_store.push_event", boom)
+        result = await ui_block(
+            blocks=[{"type": "callout", "tone": "success", "body": "done"}],
+            _injected={
+                "agent_name": "lead",
+                "tool_call_id": "call-7",
+                "session_id": "sess-1",
+            },
+        )
+        assert result["success"] is True
+        assert result["pushed"] is False
+
+    @pytest.mark.asyncio
+    async def test_missing_tool_call_id_still_pushes_one_envelope(self, monkeypatch):
+        pushed = self._capture(monkeypatch)
+        result = await ui_block(
+            blocks=[{"type": "callout", "tone": "success", "body": "done"}],
+            _injected={
+                "agent_name": "lead",
+                "tool_call_id": "",
+                "session_id": "sess-1",
+            },
+        )
+        assert result["success"] is True
+        assert len(pushed) == 1
+        assert pushed[0][1].data["tool_call_id"] == ""
+
+    @pytest.mark.asyncio
+    async def test_arun_merges_injected_context(self, monkeypatch):
+        """Production path: Tool.arun merges the InjectedArg params."""
+        pushed = self._capture(monkeypatch)
+        result = await ui_block.arun(
+            blocks=[{"type": "key_value", "pairs": [{"k": "v"}]}],
+            _injected={
+                "agent_name": "lead",
+                "tool_call_id": "call-8",
+                "session_id": "sess-9",
+            },
+        )
+        assert result["success"] is True
+        assert len(pushed) == 1
+        assert pushed[0][0] == "sess-9"
+        assert pushed[0][1].data["tool_call_id"] == "call-8"
+
+    @pytest.mark.asyncio
+    async def test_no_session_skips_push_without_crash(self, monkeypatch):
+        pushed = self._capture(monkeypatch)
+        result = await ui_block(
+            blocks=[{"type": "steps", "steps": [{"title": "s"}]}],
+            _injected={
+                "agent_name": "lead",
+                "tool_call_id": "call-9",
+                "session_id": "",
+            },
+        )
+        assert result["success"] is True
+        assert result["pushed"] is False
+        assert pushed == []
