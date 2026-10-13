@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const storeMock = vi.hoisted(() => ({
@@ -61,9 +61,9 @@ describe('UiBlockRenderer (spec §5.5 / §9.4)', () => {
         onSendPrompt={onSendPrompt}
       />,
     )
-    fireEvent.click(screen.getByRole('button', { name: 'Approve' }))
+    fireEvent.click(screen.getByRole('button', { name: /Approve/ }))
     expect(onSendPrompt).toHaveBeenCalledWith('approve this plan')
-    expect(await screen.findByText(/Sent/)).toBeInTheDocument()
+    expect(await screen.findByText('Sent — the agent will reply in this chat.')).toBeInTheDocument()
   })
 
   it('falls back to the store sendMessage action when no override is given', async () => {
@@ -72,9 +72,48 @@ describe('UiBlockRenderer (spec §5.5 / §9.4)', () => {
         blocks={[{ type: 'buttons', buttons: [{ label: 'Run', prompt: 'run the tests' }] }]}
       />,
     )
-    fireEvent.click(screen.getByRole('button', { name: 'Run' }))
-    expect(await screen.findByText(/Sent/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Run/ }))
+    expect(await screen.findByText('Sent — the agent will reply in this chat.')).toBeInTheDocument()
     expect(storeMock.sendMessage).toHaveBeenCalledWith('run the tests')
+  })
+
+  it('buttons hint and accessible names explain that each button sends a message', () => {
+    render(
+      <UiBlockRenderer
+        blocks={[
+          {
+            type: 'buttons',
+            buttons: [{ label: 'Approve', prompt: 'approve this plan' }],
+            hint: 'Each button sends that message to the agent.',
+          },
+        ]}
+        onSendPrompt={vi.fn()}
+      />,
+    )
+    expect(
+      screen.getByRole('button', { name: 'Approve — sends this message to the agent' }),
+    ).toBeInTheDocument()
+    expect(screen.getByText('Each button sends that message to the agent.')).toBeInTheDocument()
+  })
+
+  it('keeps the pending and failed round-trip copy in the status region', async () => {
+    let settle: (ok: boolean) => void = () => {}
+    storeMock.sendMessage.mockReturnValueOnce(
+      new Promise<boolean>((resolve) => {
+        settle = resolve
+      }),
+    )
+    render(
+      <UiBlockRenderer
+        blocks={[{ type: 'buttons', buttons: [{ label: 'Run', prompt: 'run' }] }]}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: /Run/ }))
+    expect(await screen.findByText('Sending…')).toBeInTheDocument()
+    await act(async () => {
+      settle(false)
+    })
+    expect(await screen.findByText('Could not send — please try again.')).toBeInTheDocument()
   })
 
   it('disables form submit until required fields have values', () => {
@@ -117,5 +156,88 @@ describe('UiBlockRenderer (spec §5.5 / §9.4)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Send' }))
     expect(onSendPrompt).toHaveBeenCalledTimes(1)
     expect(onSendPrompt).toHaveBeenCalledWith('Task report:\n- Owner: alice')
+  })
+
+  it('form shows its purpose, per-field helpers, and required markers with a blocked hint', () => {
+    const onSendPrompt = vi.fn()
+    render(
+      <UiBlockRenderer
+        blocks={[
+          {
+            type: 'form',
+            title: 'Project intake',
+            description:
+              'Your answers are sent to the agent as one message — it replies right in this chat.',
+            fields: [
+              {
+                name: 'goal',
+                label: 'Goal',
+                kind: 'text',
+                helper: 'One sentence: what should the agent build?',
+              },
+              { name: 'channel', label: 'Channel', kind: 'select', options: ['slack'] },
+            ],
+            submit_label: 'Send answers',
+          },
+        ]}
+        onSendPrompt={onSendPrompt}
+      />,
+    )
+    expect(
+      screen.getByText(
+        'Your answers are sent to the agent as one message — it replies right in this chat.',
+      ),
+    ).toBeInTheDocument()
+    expect(screen.getByText('One sentence: what should the agent build?')).toBeInTheDocument()
+
+    const goal = screen.getByRole('textbox', { name: 'Goal' })
+    expect(goal).toHaveAttribute('aria-required', 'true')
+    expect(screen.getByLabelText('Channel')).not.toHaveAttribute('aria-required')
+    expect(screen.getByText('*')).toBeInTheDocument()
+
+    // Submit is blocked while the free-text field is empty — and the UI says why.
+    expect(screen.getByRole('button', { name: 'Send answers' })).toBeDisabled()
+    expect(screen.getByText('Fill in the required (*) fields to send.')).toBeInTheDocument()
+
+    fireEvent.change(goal, { target: { value: 'a task runner' } })
+    expect(screen.getByRole('button', { name: 'Send answers' })).toBeEnabled()
+    expect(screen.queryByText('Fill in the required (*) fields to send.')).not.toBeInTheDocument()
+  })
+
+  it('steps read like a guided sequence with status words and a framing description', () => {
+    render(
+      <UiBlockRenderer
+        blocks={[
+          {
+            type: 'steps',
+            description: 'Follow these four steps to launch your first project.',
+            steps: [
+              { title: 'Create a project', status: 'done', detail: 'Any name works' },
+              { title: 'Add a repository', status: 'active' },
+              { title: 'Invite your team', status: 'pending' },
+              { title: 'Ship it', status: 'error' },
+            ],
+          },
+        ]}
+      />,
+    )
+    expect(
+      screen.getByText('Follow these four steps to launch your first project.'),
+    ).toBeInTheDocument()
+    expect(screen.getByText('Done')).toBeInTheDocument()
+    expect(screen.getByText('Now')).toBeInTheDocument()
+    expect(screen.getByText('Next')).toBeInTheDocument()
+    expect(screen.getByText('Blocked')).toBeInTheDocument()
+    expect(screen.getByText('Add a repository').className).toContain('font-semibold')
+    expect(screen.getByText('Create a project').className).not.toContain('font-semibold')
+  })
+
+  it('stat cards render the per-card hint under the value', () => {
+    render(
+      <UiBlockRenderer
+        blocks={[{ type: 'stat_cards', cards: [{ label: 'CPU', value: 42, hint: '12% of 8 cores' }] }]}
+      />,
+    )
+    expect(screen.getByText('12% of 8 cores')).toBeInTheDocument()
   })
 })

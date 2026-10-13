@@ -53,6 +53,69 @@ field. The agent therefore sees the answers as a normal user message — the
 tool itself receives no structured result (accepted trade-off; a future
 `ui_interaction` continuation may replace it). Toggles stay client-side.
 
+**Guidance fields (optional, server-capped).** Blocks explain themselves so
+the user always knows what the UI does and what happens on submit:
+
+| Block | Field | Cap | Where it renders |
+|---|---|---|---|
+| `form` | `description` | 240 | muted text directly under the form title — what the form does and what happens on submit |
+| `form` field | `helper` | 160 | small muted text under the field label, wired as `aria-describedby` |
+| `form` field | required marker | — | free-text fields (`text`/`textarea`) show `*` + `aria-required`; submit stays disabled with an inline "fill in the required (*) fields" hint until they are filled |
+| `buttons` | `hint` | 160 | small muted text under the button row |
+| `buttons` | accessible name | — | each button is announced as `<label> — sends this message to the agent` |
+| `steps` | `description` | 240 | muted text above the list, framing the walkthrough |
+| `steps` | status word | — | next to every step: done → **Done**, active → **Now**, pending → **Next**, error → **Blocked**; the active step's title is bold |
+| `stat_cards` card | `hint` | 160 | small muted text under the value |
+
+**Example showcase.** Copy-pasteable `blocks` argument for `ui_block` — a
+guided four-step walkthrough: a purpose-framed intake form with helper text,
+buttons that say what they do, and stat cards with hints:
+
+```json
+{
+  "title": "Your first project",
+  "blocks": [
+    {
+      "type": "steps",
+      "description": "Follow these four steps to launch your first project — I'll check each one off as you go.",
+      "steps": [
+        { "title": "Name your project", "status": "done", "detail": "Any name works; you can rename it later." },
+        { "title": "Connect a repository", "status": "active", "detail": "Paste a Git URL or let me scaffold one for you." },
+        { "title": "Pick the agents you need", "status": "pending", "detail": "A coder plus a reviewer covers most projects." },
+        { "title": "Run the first task", "status": "pending", "detail": "I'll open a session and start working." }
+      ]
+    },
+    {
+      "type": "form",
+      "title": "Project intake",
+      "description": "Your answers are sent to the agent as one message — it replies right in this chat.",
+      "fields": [
+        { "name": "project_name", "label": "Project name", "kind": "text", "placeholder": "invoice-tracker", "helper": "Shown in the sidebar; you can rename it any time." },
+        { "name": "goal", "label": "What should the agent build first?", "kind": "textarea", "helper": "One or two sentences — this becomes your first task." },
+        { "name": "stack", "label": "Preferred stack", "kind": "select", "options": ["Python + FastAPI", "TypeScript + React"], "helper": "Leave blank and I'll infer it from the repository." }
+      ],
+      "submit_label": "Send answers"
+    },
+    {
+      "type": "buttons",
+      "buttons": [
+        { "label": "Use my template", "prompt": "Use my standard project template and show me the summary." },
+        { "label": "Start from scratch", "prompt": "Guide me through a blank project setup, one step at a time." }
+      ],
+      "hint": "Each button sends that message to the agent."
+    },
+    {
+      "type": "stat_cards",
+      "cards": [
+        { "label": "Projects", "value": 3, "delta": "+1 this week", "delta_tone": "up", "hint": "Across Work and Coding mode" },
+        { "label": "Open tasks", "value": 7, "hint": "3 waiting on your review" },
+        { "label": "Agents ready", "value": 5, "hint": "Coder, reviewer, researcher and 2 more" }
+      ]
+    }
+  ]
+}
+```
+
 **Persistence.** The block payload is the tool's own arguments, so history
 reload reconstructs it losslessly from the persisted `tool_calls` JSON — no
 database migration; the live event is deduplicated by `tool_call_id`.

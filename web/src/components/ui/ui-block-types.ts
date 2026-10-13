@@ -36,6 +36,7 @@ export interface UiStep {
 export interface UiStepsBlock {
   type: 'steps'
   steps: UiStep[]
+  description?: string | null
 }
 
 export interface UiTableBlock {
@@ -67,6 +68,7 @@ export interface UiButton {
 export interface UiButtonsBlock {
   type: 'buttons'
   buttons: UiButton[]
+  hint?: string | null
 }
 
 export interface UiFormField {
@@ -75,12 +77,14 @@ export interface UiFormField {
   kind?: 'text' | 'textarea' | 'select' | 'checkbox'
   options?: string[]
   placeholder?: string | null
+  helper?: string | null
   default?: string | null
 }
 
 export interface UiFormBlock {
   type: 'form'
   title?: string | null
+  description?: string | null
   fields: UiFormField[]
   submit_label?: string
 }

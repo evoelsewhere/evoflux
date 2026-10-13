@@ -86,7 +86,7 @@ export function UiBlockRenderer({ blocks, title, onSendPrompt, live }: UiBlockRe
       })}
       <p role="status" aria-live="polite" className="min-h-4 text-xs text-(--color-text-muted)">
         {state === 'pending' && 'Sending…'}
-        {state === 'submitted' && 'Sent — the agent has your response.'}
+        {state === 'submitted' && 'Sent — the agent will reply in this chat.'}
         {state === 'failed' && 'Could not send — please try again.'}
       </p>
     </div>
