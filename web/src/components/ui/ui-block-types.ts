@@ -97,6 +97,56 @@ export interface UiProgressBlock {
   unit?: string | null
 }
 
+export interface UiFlashcard {
+  front: string
+  back: string
+}
+
+export interface UiFlashcardsBlock {
+  type: 'flashcards'
+  title?: string | null
+  cards: UiFlashcard[]
+}
+
+export interface UiChecklistItem {
+  label: string
+  detail?: string | null
+  checked?: boolean
+}
+
+export interface UiChecklistBlock {
+  type: 'checklist'
+  title?: string | null
+  description?: string | null
+  items: UiChecklistItem[]
+}
+
+export interface UiCalculatorInput {
+  name: string
+  label: string
+  value: number
+  unit?: string | null
+  min?: number | null
+  max?: number | null
+  step?: number | null
+}
+
+export interface UiCalculatorOutput {
+  label: string
+  /** Arithmetic over input names: numbers, + - * / ( ) only (mirrors server validation). */
+  formula: string
+  unit?: string | null
+  decimals?: number | null
+}
+
+export interface UiCalculatorBlock {
+  type: 'calculator'
+  title?: string | null
+  description?: string | null
+  inputs: UiCalculatorInput[]
+  outputs: UiCalculatorOutput[]
+}
+
 export type UiBlockNode =
   | UiStatCardsBlock
   | UiChartBlock
@@ -107,6 +157,9 @@ export type UiBlockNode =
   | UiButtonsBlock
   | UiFormBlock
   | UiProgressBlock
+  | UiFlashcardsBlock
+  | UiChecklistBlock
+  | UiCalculatorBlock
 
 /** Round-trip payload (§5.4): buttons/forms send prompts; toggle is local. */
 export type UiInteraction =

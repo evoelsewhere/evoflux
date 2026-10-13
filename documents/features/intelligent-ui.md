@@ -56,7 +56,10 @@ Primary code: `web/src/components/markdown/` (`chart-spec`, `ChartFence`,
 
 `ui_block` renders declarative, shadcn-native blocks in the conversation as
 one complete `ui_block` SSE event: stat cards, chart, steps, table, key/value
-list, callout, buttons, form and progress. One call carries 1–6 blocks; the
+list, callout, buttons, form, progress, plus the interactive flashcards,
+checklist and calculator blocks (flip-cards, tick-lists with a live done
+counter, and steppers whose outputs recompute from safe arithmetic formulas).
+One call carries 1–6 blocks; the
 server validates every block against the Pydantic `UiBlockEvent` model before
 emitting, unknown types return `success: false` with `valid_types` instead of
 a broken event, and the frontend keeps a neutral "Unsupported block" card for

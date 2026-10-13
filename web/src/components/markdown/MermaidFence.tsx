@@ -10,6 +10,7 @@
 
 import { useEffect, useState, type ReactNode } from 'react'
 
+import { cleanupMermaidTempNodes } from './mermaidTempNodes'
 import { FenceSkeleton } from './ChartFence'
 
 type MermaidApi = typeof import('mermaid')['default']
@@ -48,14 +49,22 @@ export default function MermaidFence({ rawText, streaming, fallback }: MermaidFe
     getMermaid(theme)
       .then((mermaid) => mermaid.render(id, rawText))
       .then((result) => {
-        if (cancelled) return
-        setSvg(result.svg)
-        setError(null)
+        if (!cancelled) {
+          setSvg(result.svg)
+          setError(null)
+        }
       })
       .catch((cause: unknown) => {
-        if (cancelled) return
-        setSvg(null)
-        setError(cause instanceof Error ? cause.message : String(cause))
+        if (!cancelled) {
+          setSvg(null)
+          setError(cause instanceof Error ? cause.message : String(cause))
+        }
+      })
+      .finally(() => {
+        // Successful renders self-clean, but failed renders leave mermaid's
+        // temp container (#d{id}) in document.body — sweep it so a retry
+        // (theme change, content edit) starts from a clean slate.
+        cleanupMermaidTempNodes(id)
       })
     return () => {
       cancelled = true

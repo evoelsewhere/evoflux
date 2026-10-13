@@ -1,8 +1,11 @@
 import { useState } from 'react'
 import { useTeamStore } from '@/stores/useTeamStore'
 import { UiButtons } from './UiButtons'
+import { UiCalculator } from './UiCalculator'
 import { UiCallout } from './UiCallout'
 import { UiChart } from './UiChart'
+import { UiChecklist } from './UiChecklist'
+import { UiFlashcards } from './UiFlashcards'
 import { UiForm } from './UiForm'
 import { UiKeyValue } from './UiKeyValue'
 import { UiProgress } from './UiProgress'
@@ -48,6 +51,12 @@ function renderNode(node: UiBlockNode, live?: boolean) {
       return <UiCallout block={node} />
     case 'progress':
       return <UiProgress block={node} live={live} />
+    case 'flashcards':
+      return <UiFlashcards block={node} />
+    case 'checklist':
+      return <UiChecklist block={node} />
+    case 'calculator':
+      return <UiCalculator block={node} />
     default:
       // Forward-compat: unknown node types render a neutral card (§5.5).
       return <UnsupportedCard type={(node as { type?: string }).type} />
