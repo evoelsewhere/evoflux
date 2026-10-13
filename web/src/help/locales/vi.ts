@@ -2532,7 +2532,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
         type: 'tips',
         items: [
           'Providers — API key, OAuth, daemon local, model registry',
-          'Agents — model, tool, system prompt theo thành viên team',
+          'Agents — model, tool, system prompt, và Response style (Simple/Visual) theo thành viên team',
           'Skills — tạo/sửa thư mục SKILL.md, bật/tắt bất kỳ skill nào',
           'MCP servers — tool ngoài stdio / HTTP / SSE',
           'Memory — wiki dài hạn + lịch Dream',
@@ -2561,7 +2561,8 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
         items: [
           'Mỗi bài Guidelines lớn deep-link qua openAction tới đúng trang khi có.',
           'Locale chỉ đổi phần giao diện dùng chung — nội dung chat giữ như bạn viết.',
-          'Telemetry trống thường nghĩa extras tắt, không phải chat outage.'
+          'Telemetry trống thường nghĩa extras tắt, không phải chat outage.',
+          'Response style trong Settings → Agents quyết định cách diễn đạt câu trả lời mới: Simple dùng văn bản thuần, Visual cho phép tiêu đề, danh sách, bảng và code block. Chỉ áp dụng từ tin nhắn kế tiếp, không viết lại câu trả lời cũ.'
 ],
       }
 ],
@@ -2769,5 +2770,40 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
         { type: 'p', text: 'Snake nhận phím mũi tên hoặc WASD chỉ khi bàn cờ được focus; nhấn Space để tạm dừng hoặc tiếp tục. Khi bật giảm chuyển động, Snake chạy chậm hơn và hiệu ứng 2048 được tắt. Dùng phím mũi tên để di chuyển giữa các ô Minesweeper Mini, Tic-tac-toe và Ghép cặp, rồi nhấn Enter hoặc Space để thao tác. Mini Breakout dùng phím trái/phải hoặc A/D để điều khiển thanh đỡ; Space để bắt đầu hoặc tạm dừng. Với 2048, hãy focus bàn cờ trước khi dùng phím mũi tên. Đóng bằng nút Close, Escape hoặc click bên ngoài panel.' },
     ],
     related: ['chat', 'composer-power', 'troubleshooting'],
+  },
+  {
+    id: 'chat-charts',
+    category: 'chat',
+    title: 'Biểu đồ và sơ đồ',
+    summary:
+      'Câu trả lời có thể hiển thị biểu đồ và sơ đồ Mermaid inline từ fence ```chart và ```mermaid.',
+    keywords: [
+      'chart',
+      'mermaid',
+      'diagram',
+      'graph',
+      'inline',
+      'fence',
+      'bar chart',
+      'line chart',
+      'pie',
+      'flowchart',
+      'biểu đồ',
+      'sơ đồ',
+      'lưu đồ',
+      'チャート',
+      '図表',
+      'ダイアグラム',
+    ],
+    blocks: [
+      { type: 'p', text: 'Fence ```chart với một spec JSON nhỏ sẽ hiển thị biểu đồ native — line, bar, area hoặc pie — theo màu theme của app. Spec cần có type, xKey, series và mảng data; các trường tùy chọn là title, yLabel, unit và stacked cho bar.' },
+      { type: 'p', text: 'Fence ```mermaid hiển thị sơ đồ qua runtime Mermaid với securityLevel: strict, nên nội dung sơ đồ không thể chạy script. Flowchart, sequence diagram và toàn bộ ngữ pháp Mermaid đều hoạt động.' },
+      { type: 'p', text: 'Khi agent còn đang streaming, fence chưa hoàn chỉnh hiển thị placeholder thay vì code. Nếu fence đã đóng nhưng spec hoặc sơ đồ không hợp lệ, câu trả lời quay về code block có thể copy kèm một dòng thông báo — không mất dữ liệu nào.' },
+      { type: 'p', text: 'Cả hai renderer đều load on demand, nên chat không bao giờ phải chờ thư viện biểu đồ mà mình không dùng.' },
+    ],
+    tricks: [
+      'Fence không hợp lệ vẫn copy được — lấy spec gốc hoặc nguồn sơ đồ từ code block fallback và sửa ở tin nhắn kế tiếp.',
+    ],
+    related: ['chat', 'chat-team', 'composer-power'],
   }
 ]
