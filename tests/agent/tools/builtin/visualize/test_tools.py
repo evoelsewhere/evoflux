@@ -316,3 +316,103 @@ class TestUiBlock:
         assert result["success"] is True
         assert result["pushed"] is False
         assert pushed == []
+
+    @pytest.mark.asyncio
+    async def test_guidance_fields_accepted(self, monkeypatch):
+        """Form/steps description, field helper, and buttons hint validate and
+        round-trip through the pushed envelope (all optional, spec §5.1)."""
+        pushed = self._capture(monkeypatch)
+        result = await ui_block(
+            blocks=[
+                {
+                    "type": "steps",
+                    "description": "Follow these four steps to launch your first project.",
+                    "steps": [
+                        {"title": "Create a project", "status": "done"},
+                        {"title": "Add a repository", "status": "active"},
+                    ],
+                },
+                {
+                    "type": "form",
+                    "title": "project_intake",
+                    "description": (
+                        "Your answers are sent to the agent as one message — "
+                        "it replies right in this chat."
+                    ),
+                    "fields": [
+                        {
+                            "name": "goal",
+                            "label": "Goal",
+                            "helper": "One sentence: what should the agent build?",
+                        }
+                    ],
+                    "submit_label": "Send answers",
+                },
+                {
+                    "type": "buttons",
+                    "buttons": [{"label": "Approve", "prompt": "approve"}],
+                    "hint": "Each button sends that message to the agent.",
+                },
+            ],
+            title="guided_demo",
+            _injected={
+                "agent_name": "lead",
+                "tool_call_id": "call-10",
+                "session_id": "sess-1",
+            },
+        )
+        assert result["success"] is True
+        assert result["types"] == ["steps", "form", "buttons"]
+        assert len(pushed) == 1
+        blocks = pushed[0][1].data["blocks"]
+        assert blocks[0]["description"].startswith("Follow these four steps")
+        assert blocks[1]["description"].startswith("Your answers are sent")
+        assert blocks[1]["fields"][0]["helper"].startswith("One sentence")
+        assert blocks[2]["hint"] == "Each button sends that message to the agent."
+
+    @pytest.mark.asyncio
+    async def test_guidance_fields_over_length_rejected(self, monkeypatch):
+        """Each new guidance field is capped: 240 for block descriptions,
+        160 for field helper / buttons hint."""
+        pushed = self._capture(monkeypatch)
+        overlong = [
+            (
+                {"type": "steps", "steps": [{"title": "s"}], "description": "x" * 241},
+                "description",
+            ),
+            (
+                {
+                    "type": "form",
+                    "fields": [{"name": "a", "label": "A"}],
+                    "description": "x" * 241,
+                },
+                "description",
+            ),
+            (
+                {
+                    "type": "form",
+                    "fields": [{"name": "a", "label": "A", "helper": "x" * 161}],
+                },
+                "helper",
+            ),
+            (
+                {
+                    "type": "buttons",
+                    "buttons": [{"label": "Go", "prompt": "go"}],
+                    "hint": "x" * 161,
+                },
+                "hint",
+            ),
+        ]
+        for block, field_name in overlong:
+            result = await ui_block(
+                blocks=[block],
+                _injected={
+                    "agent_name": "lead",
+                    "tool_call_id": "call-11",
+                    "session_id": "sess-1",
+                },
+            )
+            assert result["success"] is False, block["type"]
+            assert field_name in result["error"]
+        assert pushed == []

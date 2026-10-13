@@ -45,7 +45,10 @@ _VALID_TYPES = (
         "(metrics, charts, step progress, tables, forms) — no raw HTML, "
         "server-validated, small SSE frames, and the block survives history "
         "reload. Optionally pass title: a short snake_case title for the "
-        "block group."
+        "block group. Blocks should explain themselves: form and steps take "
+        "an optional 240-char 'description', form fields an optional "
+        "160-char 'helper', and buttons an optional 160-char 'hint' — use "
+        "them to say what the UI does and what happens when it is submitted."
     ),
     concurrency_safe=False,
 )
@@ -56,7 +59,9 @@ async def ui_block(
             description=(
                 "Array of UI block objects, each with a 'type' of stat_cards, "
                 "chart, steps, table, key_value, callout, buttons, form, or "
-                "progress (a JSON-array string is also accepted)"
+                "progress (a JSON-array string is also accepted). Optional "
+                "guidance fields: form/steps 'description', form field "
+                "'helper', buttons 'hint' (all optional, capped length)"
             ),
         ),
     ],

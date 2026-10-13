@@ -1,6 +1,14 @@
 import { AlertCircle, CheckCircle2, Circle, Loader2 } from 'lucide-react'
 import type { UiStepsBlock, UiStep } from './ui-block-types'
 
+/** Word shown next to each step so the list reads like a guided sequence. */
+const STATUS_WORD: Record<NonNullable<UiStep['status']>, string> = {
+  done: 'Done',
+  active: 'Now',
+  pending: 'Next',
+  error: 'Blocked',
+}
+
 function stepIcon(status?: UiStep['status']) {
   switch (status) {
     case 'done':
@@ -16,18 +24,36 @@ function stepIcon(status?: UiStep['status']) {
 
 export function UiSteps({ block }: { block: UiStepsBlock }) {
   return (
-    <ol className="space-y-2" aria-label="Steps">
-      {block.steps.map((step, i) => (
-        <li key={`${step.title}-${i}`} className="flex items-start gap-2">
-          <span className="mt-0.5">{stepIcon(step.status)}</span>
-          <span className="min-w-0">
-            <span className="block text-sm">{step.title}</span>
-            {step.detail && (
-              <span className="block text-xs text-(--color-text-muted)">{step.detail}</span>
-            )}
-          </span>
-        </li>
-      ))}
-    </ol>
+    <div>
+      {block.description && (
+        <p className="mb-2 text-xs text-(--color-text-muted)">{block.description}</p>
+      )}
+      <ol className="space-y-2" aria-label="Steps">
+        {block.steps.map((step, i) => (
+          <li key={`${step.title}-${i}`} className="flex items-start gap-2">
+            <span className="mt-0.5">{stepIcon(step.status)}</span>
+            <span className="min-w-0">
+              <span className="flex items-baseline gap-1.5">
+                <span
+                  className={
+                    step.status === 'active'
+                      ? 'block text-sm font-semibold'
+                      : 'block text-sm'
+                  }
+                >
+                  {step.title}
+                </span>
+                <span className="text-[11px] text-(--color-text-muted)">
+                  {step.status ? STATUS_WORD[step.status] : STATUS_WORD.pending}
+                </span>
+              </span>
+              {step.detail && (
+                <span className="block text-xs text-(--color-text-muted)">{step.detail}</span>
+              )}
+            </span>
+          </li>
+        ))}
+      </ol>
+    </div>
   )
 }

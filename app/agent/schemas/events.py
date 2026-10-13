@@ -421,6 +421,7 @@ class UiStepsBlock(BaseModel):
 
     type: Literal["steps"] = "steps"
     steps: list[UiStep] = Field(min_length=1, max_length=12)
+    description: str | None = Field(default=None, max_length=240)
 
 
 class UiTableBlock(BaseModel):
@@ -460,6 +461,7 @@ class UiButtonsBlock(BaseModel):
 
     type: Literal["buttons"] = "buttons"
     buttons: list[UiButton] = Field(min_length=1, max_length=5)
+    hint: str | None = Field(default=None, max_length=160)
 
 
 class UiFormField(BaseModel):
@@ -470,6 +472,7 @@ class UiFormField(BaseModel):
     kind: Literal["text", "textarea", "select", "checkbox"] = "text"
     options: list[str] = Field(default_factory=list, max_length=30)
     placeholder: str | None = Field(default=None, max_length=120)
+    helper: str | None = Field(default=None, max_length=160)
     default: str | None = None
 
 
@@ -478,6 +481,7 @@ class UiFormBlock(BaseModel):
 
     type: Literal["form"] = "form"
     title: str | None = Field(default=None, max_length=120)
+    description: str | None = Field(default=None, max_length=240)
     fields: list[UiFormField] = Field(min_length=1, max_length=8)
     submit_label: str = Field(default="Send", max_length=40)
 
