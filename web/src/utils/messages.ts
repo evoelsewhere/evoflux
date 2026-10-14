@@ -256,7 +256,19 @@ function assistantBlocks(
       if (target) {
         // Hit — update in place; id / uiBlockIdentity / position stay put,
         // title only when a later call supplies one (§1.6).
-        target.uiBlocks = parsedArgs.blocks
+        //
+        // Exception: history can deliver the `replace_id` call before the
+        // `block_id` create it updates (messages sharing one `created_at` are
+        // returned in arbitrary order). That unmatched replace seeded the
+        // group, so the create re-finding it here is the ORIGINAL arriving
+        // late — letting it overwrite would clobber the replace's content and
+        // render stale blocks with the replace's tool result. Keep the
+        // seeded content; a replace or a later block_id upsert (unseeded
+        // group) still replaces wholesale (§1.4 rule 3).
+        const seededByReplace = target.extra?.ui_block_replace_seeded === true
+        if (!(replaceId === undefined && seededByReplace)) {
+          target.uiBlocks = parsedArgs.blocks
+        }
         const laterTitle = typeof parsedArgs.title === 'string' ? parsedArgs.title : undefined
         if (laterTitle) target.title = laterTitle
         if (tool.id) {
@@ -276,6 +288,10 @@ function assistantBlocks(
         isStreaming: false,
         title: typeof parsedArgs.title === 'string' ? parsedArgs.title : 'UI Block',
         timestamp,
+        // Rule 4: an unmatched replace_id names the new group. Flag it so a
+        // block_id create that chains in later (out-of-order history delivery)
+        // cannot clobber the replace's content — see the hit branch above.
+        extra: replaceId === undefined ? undefined : { ui_block_replace_seeded: true },
       }
       uiBlockGroups.set(identity, block)
       blocks.push(block)
