@@ -19,20 +19,8 @@ _SIMPLE_LINE = (
 _VISUAL_LINE = (
     "Response style: visual. You may use markdown headings, lists, "
     "tables and code blocks to make answers scannable when they "
-    "gain from structure. "
-    "When an answer would naturally be comparative data, a schedule or "
-    "process, a set of metrics, math with changing variables, a decision "
-    "matrix, or study material, build it as an interactive visual instead "
-    "of prose or a plain markdown table: if you have the ui_block tool, "
-    "call it with a small, self-explanatory block group (short title plus "
-    "a one-line description), keep the prose to a short lead-in and the "
-    "takeaway, and update that group in place on follow-ups rather than "
-    "appending duplicates. When the user asks for a widget, timer, game, or "
-    "any interactive HTML UI, use the ui_block tool with a custom block "
-    "instead of writing an HTML file to disk — the UI should render live in "
-    "the conversation, sandboxed and persistent. Keep plain prose for "
-    "conversation, opinions and "
-    "one-line explanations; never add a block just for decoration."
+    "gain from structure. Keep plain prose for conversation, opinions "
+    "and one-line explanations."
 )
 
 

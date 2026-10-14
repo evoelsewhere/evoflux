@@ -16,17 +16,13 @@ Plan of record: `documents/plans/2026-10-13-intelligent-ui.md`.
   skip markdown headings, tables, bullet lists, emojis and interactive UI
   blocks unless the user explicitly asks for them.
 - **Visual** (default) lets the assistant use headings, lists, tables and
-  code blocks when they make an answer scannable, and additionally steers it
-  toward **interactive visuals**: when an answer would naturally be
-  comparative data, a schedule or process, a metric set, math with changing
-  variables, a decision matrix or study material, the directive tells the
-  assistant to build a small self-explanatory `ui_block` group (short title
-  plus a one-line description) instead of prose or a plain markdown table,
-  and to update that group in place on follow-ups. The wording names the
-  tool conditionally ("if you have the `ui_block` tool"), so agents without
-  the tool simply ignore that sentence. The `ui_block` tool description
-  carries the same when-to-use triggers, so the guidance holds even when a
-  profile strips the response-style hook.
+  code blocks when they make an answer scannable. The line is deliberately
+  style-only: the when-to-render heuristics for `ui_block` (comparisons,
+  schedules, metrics, math with variables, widgets, never write widget
+  files to disk) live in the built-in **intelligent-ui** Skill, so the
+  system prompt stays tool-agnostic and the guidance loads on demand
+  instead of costing tokens on every call. The `ui_block` tool description
+  carries a one-line trigger that points at the same skill.
 
 The choice is stored in `settings.yaml` under `response_style.style` and
 served by `GET/PUT /api/settings/response-style`. A `@dynamic_prompt` hook
