@@ -20,6 +20,7 @@ import { resolveApiUrl } from '@/api/client'
 import { apiUrl } from '@/api/base-url'
 import { withTokenParam } from '@/api/auth'
 import { ImageLightbox } from '@/components/ImageLightbox'
+import MarkdownTable from '@/components/markdown/MarkdownTable'
 import { useStreamingReveal } from '@/hooks/useStreamingReveal'
 import { cn } from '@/lib/utils'
 import {
@@ -730,6 +731,13 @@ export const MarkdownBlock = memo(function MarkdownBlock({
           />
         )
       },
+      // Interactive table upgrade — sortable/filterable only when the message
+      // is settled and the table clears the size gate; streaming or small
+      // tables render react-markdown's plain <table> (unwrapped, so the
+      // streaming cursor CSS keeps matching).
+      table: (
+        props: React.TableHTMLAttributes<HTMLTableElement> & { node?: unknown },
+      ) => <MarkdownTable {...props} streaming={Boolean(isStreaming)} />,
     }),
     [allowHtml, onLinkClick, isStreaming, sessionId, transformImageSrc],
   )
