@@ -213,6 +213,8 @@ class TestUiBlock:
             "flashcards",
             "checklist",
             "calculator",
+            "layout",
+            "custom",
         }
         assert pushed == []
 

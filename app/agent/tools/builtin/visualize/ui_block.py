@@ -3,8 +3,8 @@
 ``ui_block`` is the structured sibling of ``show_widget``: instead of a raw
 HTML iframe it emits one validated, declarative UI block list (stat cards,
 charts, steps, table, key/value, callout, buttons, form, progress,
-flashcards, checklist, calculator) as a single complete ``ui_block`` SSE
-event — never delta-streamed.
+flashcards, checklist, calculator, layout, custom) as a single complete
+``ui_block`` SSE event — never delta-streamed.
 
 The block payload persists through the tool's own arguments; history reload
 reconstructs the block from ``SessionMessage.tool_calls`` (no migration).
@@ -35,6 +35,8 @@ _VALID_TYPES = (
     "flashcards",
     "checklist",
     "calculator",
+    "layout",
+    "custom",
 )
 
 
@@ -45,11 +47,18 @@ _VALID_TYPES = (
         "Render a declarative UI block in the conversation. "
         "Accepts {blocks: [...]} where each block has type one of: "
         "stat_cards, chart, steps, table, key_value, callout, buttons, "
-        "form, progress, flashcards, checklist, calculator. Use instead of "
+        "form, progress, flashcards, checklist, calculator, layout, "
+        "custom. Use instead of "
         "show_widget for structured data UI (metrics, charts, step progress, "
-        "tables, forms, interactive flashcards/checklists/calculators) — no "
+        "tables, forms, interactive flashcards/checklists/calculators, "
+        "side-by-side sections, embedded HTML widgets) — no "
         "raw HTML, server-validated, small SSE frames, and the block survives "
-        "history reload. Optionally pass title: a short snake_case title for "
+        "history reload. layout: {orientation?: 'columns'|'stack', "
+        "sections: [{title?, children: [...]}]} groups other blocks in a "
+        "grid, nested at most 3 levels deep. custom: {html, height?} renders "
+        "agent-authored HTML in a sandboxed widget iframe — prefer layout "
+        "for shadcn-native UI. Optionally pass title: a short snake_case "
+        "title for "
         "the block group. Blocks should explain themselves: form and steps "
         "take an optional 240-char 'description', form fields an optional "
         "160-char 'helper', and buttons an optional 160-char 'hint' — use "
@@ -68,8 +77,13 @@ async def ui_block(
             description=(
                 "Array of UI block objects, each with a 'type' of stat_cards, "
                 "chart, steps, table, key_value, callout, buttons, form, "
-                "progress, flashcards, checklist, or calculator (a "
-                "JSON-array string is also accepted). Optional guidance "
+                "progress, flashcards, checklist, calculator, layout, or "
+                "custom (a "
+                "JSON-array string is also accepted). layout: "
+                "{orientation?: 'columns'|'stack', sections: [{title?, "
+                "children: [block, ...]}]}, nesting <= 3 levels; custom: "
+                "{html, height?} (raw HTML, <= 100000 chars, height 64-2000). "
+                "Optional guidance "
                 "fields: form/steps 'description', form field 'helper', "
                 "buttons 'hint' (all optional, capped length). flashcards: "
                 "{title?, cards:[{front,back}]} flips on tap. checklist: "
