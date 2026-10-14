@@ -1,6 +1,6 @@
 ---
 name: intelligent-ui
-description: "Decides when to render interactive UI in the chat with the ui_block tool instead of static markdown or writing HTML files to disk, and how to compose the 14 declarative block types — comparison tables, plans and timelines, checklists, metrics dashboards, math with changing variables, study flashcards, timers, pomodoro widgets, games, and custom sandboxed HTML. Use when the user asks to compare plans or options, schedule or timeline a project, track a checklist, render or visualize UI, build a widget, timer, pomodoro or game, show metrics or a dashboard, or do math with variables that may change. Not for Mermaid diagrams, which stay a fenced code block."
+description: "Decides when to render interactive UI in the chat with the ui_block tool instead of static markdown or writing HTML files to disk, and how to compose the 14 declarative block types — comparison tables, plans and timelines, checklists, metrics dashboards, math with changing variables, study flashcards, timers, pomodoro widgets, games, and custom sandboxed HTML. Use when the user asks to compare plans or options, schedule or timeline a project, track a checklist, render or visualize UI, build a widget, timer, pomodoro or game, show metrics or a dashboard, or do math with variables that may change — and whenever your own answer would lay out contenders, options, tradeoffs, a plan, or metrics, render it as UI even if the user never said render or compare. Not for Mermaid diagrams, which stay a fenced code block."
 ---
 
 # Intelligent UI
@@ -24,8 +24,9 @@ interactive UI is the right answer and *which* block type fits.
    an exchanged round of questions.
 3. **Prefer `ui_block` over a static markdown table** whenever the user will
    interact with or revisit the data — comparing, sorting, ticking off,
-   recomputing. Static markdown is for prose answers, code, and one-shot
-   excerpts.
+   recomputing. An opinion or recommendation answer that lays out contenders
+   with tradeoffs counts: render the comparison, don't just list it in prose.
+   Static markdown is for short answers, code, and one-shot excerpts.
 4. **One call, one frame.** Pass up to 6 top-level blocks in a single
    `ui_block` call (at most 50 nodes total, `layout` nesting at most 3
    levels) instead of several sequential calls.
