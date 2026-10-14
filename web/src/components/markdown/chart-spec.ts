@@ -32,6 +32,36 @@ const MAX_TITLE_LENGTH = 120
 const MAX_SERIES = 6
 const MAX_DATA_POINTS = 500
 
+/** Trailing numeric value, optionally thousands-separated or percent. */
+const SIMPLE_ROW = /^(.*?)\s*(-?[\d,]+(?:\.\d+)?)\s*%?$/
+
+function parseSimpleChart(text: string): ChartSpec | null {
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+  if (lines.length < 2) return null
+  const type = lines[0].toLowerCase()
+  if (!CHART_TYPES.has(type)) return null
+  const data: Array<Record<string, string | number>> = []
+  for (const line of lines.slice(1)) {
+    if (data.length >= MAX_DATA_POINTS) return null
+    const match = SIMPLE_ROW.exec(line)
+    if (!match) return null
+    const label = (match[1] ?? '').trim()
+    const value = Number((match[2] ?? '').replace(/,/g, ''))
+    if (!label || !Number.isFinite(value)) return null
+    data.push({ label, value })
+  }
+  if (data.length === 0) return null
+  return {
+    type: type as ChartSpec['type'],
+    xKey: 'label',
+    series: [{ key: 'value' }],
+    data,
+  }
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
@@ -49,7 +79,7 @@ export function parseChartSpec(text: string): ChartSpec | null {
   try {
     raw = JSON.parse(text)
   } catch {
-    return null
+    return parseSimpleChart(text)
   }
   if (!isRecord(raw)) return null
 

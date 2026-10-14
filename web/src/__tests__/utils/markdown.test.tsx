@@ -184,7 +184,7 @@ describe('MarkdownBlock native chart/mermaid fences', () => {
       { timeout: 5_000 },
     )
     expect(container.querySelector('.hljs')).toBeNull()
-    expect(screen.queryByText('Invalid chart spec')).toBeNull()
+    expect(screen.queryByText(/Invalid chart spec/)).toBeNull()
   })
 
   it('falls back to CodeBlock with a notice when a settled chart spec is invalid', async () => {
@@ -193,7 +193,7 @@ describe('MarkdownBlock native chart/mermaid fences', () => {
     )
 
     // The lazy fence chunk loads first, then it swaps in the fallback.
-    await screen.findByText('Invalid chart spec', {}, { timeout: 5_000 })
+    await screen.findByText(/Invalid chart spec/, {}, { timeout: 5_000 })
     expect(container.querySelector('pre > code')).toHaveClass('hljs')
   })
 

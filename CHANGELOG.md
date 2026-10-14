@@ -13,6 +13,7 @@ All notable changes to EvoFlux are documented in this file.
 
 ### Fixed
 
+- A ```` ```chart ```` fence written as a type line plus simple `label value` rows (for example `bar` then `Mon 12`) now renders instead of failing with a bare "Invalid chart spec" — the fence accepts that natural tabular form alongside the JSON spec, and a genuinely invalid chart now states the expected JSON shape in its fallback notice.
 - Chat-rendered **```chart** charts no longer crash the transcript with `import_decimal.default is not a constructor`: Recharts now always loads the ES build of its decimal library in the dev server.
 - **Built-in Browser** keeps agent pointer actions inside the page instead of moving the desktop cursor; pages that require trusted OS gestures or browser-managed CSS `:hover` may still need another control path.
 
