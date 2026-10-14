@@ -24,16 +24,22 @@ interactive UI is the right answer and *which* block type fits.
    an exchanged round of questions.
 3. **Prefer `ui_block` over a static markdown table** whenever the user will
    interact with or revisit the data — comparing, sorting, ticking off,
-   recomputing. An opinion or recommendation answer that lays out contenders
-   with tradeoffs counts: render the comparison, don't just list it in prose.
-   Static markdown is for short answers, code, and one-shot excerpts.
+   recomputing. **Judge by the shape of your answer, not the verb the user
+   used.** If your reply to a plain-prose question would be a comparison, a
+   plan, a checklist, a set of metrics, or a recomputable split, render it
+   instead of listing it. "What do you think I should use?", "help me pick",
+   and "is it worth it" all land here. Static markdown is for short answers,
+   code, and one-shot excerpts.
 4. **One call, one frame.** Pass up to 6 top-level blocks in a single
    `ui_block` call (at most 50 nodes total, `layout` nesting at most 3
    levels) instead of several sequential calls.
 
 ## Decision table
 
-| The user asks for | Render with |
+Render when **your answer** would take this shape — regardless of how the
+user phrased the question:
+
+| When your answer would be | Render with |
 | --- | --- |
 | Comparing plans, pricing, options, features | `table`; or `layout` with a `key_value` per option when each column is rich |
 | A plan, schedule, timeline, roadmap, phases | `steps` for ordered phases; wrap with `checklist` in a `layout` for tasks |

@@ -16,13 +16,18 @@ Plan of record: `documents/plans/2026-10-13-intelligent-ui.md`.
   skip markdown headings, tables, bullet lists, emojis and interactive UI
   blocks unless the user explicitly asks for them.
 - **Visual** (default) lets the assistant use headings, lists, tables and
-  code blocks when they make an answer scannable. The line is deliberately
+  code blocks when they make an answer scannable, and asks for the
+  interactive form whenever a **comparison of options** would be easier to
+  use as a widget than as flat text. The line is deliberately
   style-only: the when-to-render heuristics for `ui_block` (comparisons,
   schedules, metrics, math with variables, widgets, never write widget
   files to disk) live in the built-in **intelligent-ui** Skill, so the
   system prompt stays tool-agnostic and the guidance loads on demand
   instead of costing tokens on every call. The `ui_block` tool description
-  carries a one-line trigger that points at the same skill.
+  carries a one-line trigger that points at the same skill, and the
+  Skill's decision table is framed around the shape of the answer
+  ("when your answer would be…") rather than the user's verb, so a
+  plain-prose "which should I pick" still reaches a block.
 
 The choice is stored in `settings.yaml` under `response_style.style` and
 served by `GET/PUT /api/settings/response-style`. A `@dynamic_prompt` hook
@@ -166,14 +171,19 @@ sit in the system prompt for every lead turn, while other agents still
 discover the Skill from the catalog on demand.
 
 Known boundary: on small tool-use models, subjective prompts that never
-name a comparison ("which database should I use?") can still be answered
-in plain prose even with the Skill body preloaded — verified live on
-`xiaomi:mimo-v2.6-flash` (three of three attempts). This is accepted for
-now: requests with a lexical or explicit trigger render reliably, and
-markdown tables stay interactive through sortable headers and the
-ten-row quick filter, so the floor is still usable. A deterministic `ui`
-fence — markdown in, rendered block out, no tool-call decision — is held
-in reserve if the boundary starts to matter in practice.
+name a comparison ("which database should I use?", "is it worth it") are
+the hardest to reach — with the Skill body preloaded they usually answer
+in plain prose, and only sometimes read the Skill and render, verified
+live on `xiaomi:mimo-v2.6-flash`. The three tuning passes (the **Visual**
+line's "comparison of options" clause, the answer-shape trigger in the
+`ui_block` description, and the answer-framed decision table) raise the
+hit rate but do not make it deterministic — the same prompt can land one
+run and miss the next. This is accepted for now: requests with a lexical
+or explicit trigger render reliably, and markdown tables stay interactive
+through sortable headers and the ten-row quick filter, so the floor is
+still usable. A deterministic `ui` fence — markdown in, rendered block
+out, no tool-call decision — is held in reserve if the boundary starts to
+matter in practice.
 
 Validation: `uv run python scripts/validate_skills.py --strict-warnings`;
 discovery is the existing directory scan of `app/agent/builtin_skills/` — no
