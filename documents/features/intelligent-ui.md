@@ -165,6 +165,16 @@ Skill body through the `skills:` frontmatter field — the decision rules
 sit in the system prompt for every lead turn, while other agents still
 discover the Skill from the catalog on demand.
 
+Known boundary: on small tool-use models, subjective prompts that never
+name a comparison ("which database should I use?") can still be answered
+in plain prose even with the Skill body preloaded — verified live on
+`xiaomi:mimo-v2.6-flash` (three of three attempts). This is accepted for
+now: requests with a lexical or explicit trigger render reliably, and
+markdown tables stay interactive through sortable headers and the
+ten-row quick filter, so the floor is still usable. A deterministic `ui`
+fence — markdown in, rendered block out, no tool-call decision — is held
+in reserve if the boundary starts to matter in practice.
+
 Validation: `uv run python scripts/validate_skills.py --strict-warnings`;
 discovery is the existing directory scan of `app/agent/builtin_skills/` — no
 runtime or discovery code changed.
