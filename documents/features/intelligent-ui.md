@@ -156,6 +156,15 @@ and its `reference/` files load only when a task matches. The Skill carries:
   tables for interactive data, writing widget HTML to disk, and asking
   clarifying questions instead of rendering a best guess.
 
+The trigger judges the shape of the answer as well as the request: an
+opinion or recommendation that lays out contenders with tradeoffs renders
+as a `table` plus `callout`, even when the user never said "render" or
+"compare". Small tool-use models often skip the read step, so the lead
+agent (`seed/agents/evoflux.md` and the local agent copy) preloads the
+Skill body through the `skills:` frontmatter field — the decision rules
+sit in the system prompt for every lead turn, while other agents still
+discover the Skill from the catalog on demand.
+
 Validation: `uv run python scripts/validate_skills.py --strict-warnings`;
 discovery is the existing directory scan of `app/agent/builtin_skills/` — no
 runtime or discovery code changed.
