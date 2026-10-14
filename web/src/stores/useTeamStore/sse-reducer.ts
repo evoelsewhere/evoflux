@@ -21,7 +21,7 @@ import {
 } from './helpers'
 import { isBackgroundCompletion, sendDesktopNotification } from '@/lib/desktop-notifications'
 import { createNotificationActivation } from '@/lib/notification-activation'
-import type { GoalResponse, SuggestedTask, TurnCost, TurnUsage, TurnUsageBreakdown } from '@/api/types'
+import type { ContentBlock, GoalResponse, SuggestedTask, TurnCost, TurnUsage, TurnUsageBreakdown } from '@/api/types'
 import type { UiBlockNode } from '@/components/ui/ui-block-types'
 import { parseTurnChanges } from '@/utils/turn-changes'
 import type { ActivityItem, CacheInvalidation, TeamStore } from './types'
@@ -183,6 +183,59 @@ function appendStreamingText(
   }
 }
 
+// ─── ui_block shared apply algorithm (§1.4/§1.6) ────────────────────────────
+// One implementation feeds the live `ui_block` SSE event, the `tool_end`
+// fallback, and — mirrored — history reconstruction in `@/utils/messages`, so
+// replay and reload stay idempotent (§1.7). Identity = block_id ?? tool_call_id;
+// a set replace_id matches the group carrying that identity instead. Hits
+// update in place (identity/id/position immutable); misses append with
+// identity = replace_id ?? block_id ?? tool_call_id.
+
+type UiBlockScope = Pick<TeamStore['agentStreams'][string], 'blocks' | 'currentBlocks'>
+
+interface UiBlockApplyCtx {
+  toolCallId: string
+  blockId?: string | null
+  replaceId?: string | null
+  blocks: UiBlockNode[]
+  title?: string
+  /** Append-only fallback title when the call supplies none (tool_end's legacy "UI Block"). */
+  defaultTitle?: string
+}
+
+function uiBlockTarget(scope: UiBlockScope, ctx: UiBlockApplyCtx): ContentBlock | undefined {
+  const key = ctx.replaceId ?? ctx.blockId ?? ctx.toolCallId
+  // §1.5: a flush moves groups into stream.blocks — both count as scope.
+  return [...scope.blocks, ...scope.currentBlocks].find(
+    (b) => b.type === 'ui_block' && b.uiBlockIdentity === key,
+  )
+}
+
+function applyUiBlock(scope: UiBlockScope, ctx: UiBlockApplyCtx): ContentBlock {
+  const target = uiBlockTarget(scope, ctx)
+  if (target) {
+    // Hit — update in place; identity, id and position stay put, title only
+    // when a later call supplies one.
+    target.uiBlocks = ctx.blocks
+    if (ctx.title) target.title = ctx.title
+    target.toolCallId = ctx.toolCallId // latest writer
+    return target
+  }
+  const title = ctx.title ?? ctx.defaultTitle
+  const group: ContentBlock = {
+    id: generateBlockId(),
+    type: 'ui_block',
+    content: '',
+    uiBlocks: ctx.blocks,
+    uiBlockIdentity: ctx.replaceId ?? ctx.blockId ?? ctx.toolCallId,
+    toolCallId: ctx.toolCallId,
+    isStreaming: false,
+    ...(title ? { title } : {}),
+  }
+  scope.currentBlocks.push(group)
+  return group
+}
+
 export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
   return (type: string, data: unknown) => {
     const d = data as Record<string, unknown>
@@ -306,27 +359,19 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
         const metadata = d.metadata as Record<string, unknown> | undefined
         const title = (d.title as string | undefined)
           ?? (metadata?.title as string | undefined)
+        const blockId = typeof d.block_id === 'string' ? d.block_id : undefined
+        const replaceId = typeof d.replace_id === 'string' ? d.replace_id : undefined
         set((draft) => {
           ensureAgent(draft, agent)
-          const stream = draft.agentStreams[agent]
-          // Dedupe by toolCallId (§5.4): first arrival creates the block,
-          // later duplicates just refresh the same block idempotently.
-          const existing = stream.currentBlocks.find(
-            (b) => b.type === 'ui_block' && b.toolCallId === toolCallId,
-          )
-          if (existing) {
-            existing.uiBlocks = blocks as UiBlockNode[]
-            if (title) existing.title = title
-            return
-          }
-          stream.currentBlocks.push({
-            id: generateBlockId(),
-            type: 'ui_block',
-            content: '',
-            uiBlocks: blocks as UiBlockNode[],
+          // Shared apply (§1.4/§1.6): first arrival creates the group,
+          // later same-identity/replace arrivals refresh it in place — over
+          // stream.blocks too, so flushed replays never duplicate (§1.7).
+          applyUiBlock(draft.agentStreams[agent], {
             toolCallId,
-            isStreaming: false,
-            ...(title ? { title } : {}),
+            blockId,
+            replaceId,
+            blocks: blocks as UiBlockNode[],
+            title,
           })
         })
         break
@@ -400,13 +445,16 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
             // Fallback: when the ui_block event never arrived (e.g. backend
             // push failure), reconstruct the block from the persisted
             // tool-call arguments at tool_end time (Feature C, §6.2).
+            // block_id/replace_id in the args run through the same
+            // applyUiBlock as the event (§1.6), so a replace upserts the
+            // existing group instead of appending a duplicate.
             if (toolName === 'ui_block' && toolCallId) {
-              const blocks = draft.agentStreams[agent].currentBlocks
-              const hasUiBlock = blocks.some(
+              const stream = draft.agentStreams[agent]
+              const hasUiBlock = [...stream.blocks, ...stream.currentBlocks].some(
                 (b) => b.type === 'ui_block' && b.toolCallId === toolCallId,
               )
               if (!hasUiBlock) {
-                const toolBlock = blocks.find(
+                const toolBlock = stream.currentBlocks.find(
                   (b) => b.type === 'tool' && b.toolCallId === toolCallId,
                 )
                 let parsedArgs: Record<string, unknown> | undefined
@@ -419,17 +467,22 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
                   // malformed args — skip
                 }
                 if (Array.isArray(parsedArgs?.blocks)) {
-                  blocks.push({
-                    id: generateBlockId(),
-                    type: 'ui_block',
-                    content: '',
-                    uiBlocks: parsedArgs.blocks as UiBlockNode[],
+                  applyUiBlock(stream, {
                     toolCallId,
-                    isStreaming: false,
+                    blockId:
+                      typeof parsedArgs.block_id === 'string'
+                        ? parsedArgs.block_id
+                        : undefined,
+                    replaceId:
+                      typeof parsedArgs.replace_id === 'string'
+                        ? parsedArgs.replace_id
+                        : undefined,
+                    blocks: parsedArgs.blocks as UiBlockNode[],
                     title:
                       typeof parsedArgs.title === 'string'
                         ? parsedArgs.title
-                        : 'UI Block',
+                        : undefined,
+                    defaultTitle: 'UI Block',
                   })
                 }
               }

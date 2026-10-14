@@ -2,6 +2,7 @@
 
 import pytest
 
+from app.agent.errors import ToolArgumentError
 from app.agent.tools.builtin.visualize.read_me import visualize_read_me
 from app.agent.tools.builtin.visualize.show_widget import show_widget
 from app.agent.tools.builtin.visualize.ui_block import ui_block
@@ -641,3 +642,78 @@ class TestUiBlock:
             )
             assert result["success"] is False, type_name
         assert pushed == []
+
+    # ── block identity (spec §1.1 / §6.1 Stream 1) ──────────────────────
+
+    @pytest.mark.asyncio
+    async def test_identity_args_round_trip_into_envelope(self, monkeypatch):
+        pushed = self._capture(monkeypatch)
+        result = await ui_block.arun(
+            blocks=[{"type": "progress", "label": "Upload", "value": 1, "max": 4}],
+            title="Metrics",
+            block_id="metrics",
+            replace_id="old-metrics",
+            _injected={
+                "agent_name": "lead",
+                "tool_call_id": "call-25",
+                "session_id": "sess-1",
+            },
+        )
+        assert result["success"] is True
+
+        assert len(pushed) == 1
+        envelope = pushed[0][1]
+        assert envelope.data["block_id"] == "metrics"
+        assert envelope.data["replace_id"] == "old-metrics"
+        assert envelope.data["tool_call_id"] == "call-25"
+
+    @pytest.mark.asyncio
+    async def test_empty_identity_args_normalize_to_none(self, monkeypatch):
+        # "" must never become a literal group identity (§5.1).
+        pushed = self._capture(monkeypatch)
+        result = await ui_block.arun(
+            blocks=[{"type": "progress", "label": "Upload", "value": 1, "max": 4}],
+            block_id="",
+            replace_id="",
+            _injected={
+                "agent_name": "lead",
+                "tool_call_id": "call-26",
+                "session_id": "sess-1",
+            },
+        )
+        assert result["success"] is True
+
+        assert len(pushed) == 1
+        envelope = pushed[0][1]
+        assert envelope.data["block_id"] is None
+        assert envelope.data["replace_id"] is None
+
+    @pytest.mark.asyncio
+    async def test_invalid_identity_rejected_at_tool_arg_level(self, monkeypatch):
+        self._capture(monkeypatch)
+        with pytest.raises(ToolArgumentError):
+            await ui_block.arun(
+                blocks=[{"type": "progress", "label": "Upload", "value": 1, "max": 4}],
+                block_id="-leading",
+                _injected={
+                    "agent_name": "lead",
+                    "tool_call_id": "call-27",
+                    "session_id": "sess-1",
+                },
+            )
+        with pytest.raises(ToolArgumentError):
+            await ui_block.arun(
+                blocks=[{"type": "progress", "label": "Upload", "value": 1, "max": 4}],
+                replace_id="b" * 129,
+                _injected={
+                    "agent_name": "lead",
+                    "tool_call_id": "call-28",
+                    "session_id": "sess-1",
+                },
+            )
+
+    def test_description_gains_identity_guidance(self):
+        description = ui_block.description
+
+        assert "block_id" in description
+        assert "replace_id" in description

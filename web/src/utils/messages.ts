@@ -146,10 +146,14 @@ function finishImportedToolBlocks(pendingToolBlocks: Map<string, ContentBlock>):
   }
 }
 
-// Me extract ContentBlock[] from one assistant MessageResponse
+// Me extract ContentBlock[] from one assistant MessageResponse.
+// `uiBlockGroups` mirrors `pendingToolBlocks`: threaded through the whole
+// parse so a later call with the same identity (or a replace_id) can find
+// and update the group in place instead of appending a duplicate (§1.4/§1.6).
 function assistantBlocks(
   msg: MessageResponse,
   pendingToolBlocks: Map<string, ContentBlock>,
+  uiBlockGroups: Map<string, ContentBlock>,
   timestamp?: Date,
 ): ContentBlock[] {
   const blocks: ContentBlock[] = []
@@ -243,16 +247,37 @@ function assistantBlocks(
     // to a generic collapsed tool-call chip. No DB migration: the full args
     // already live in SessionMessage.tool_calls.
     if (name === 'ui_block' && Array.isArray(parsedArgs?.blocks)) {
+      const blockId = typeof parsedArgs.block_id === 'string' ? parsedArgs.block_id : undefined
+      const replaceId = typeof parsedArgs.replace_id === 'string' ? parsedArgs.replace_id : undefined
+      // Identity per §1.4: block_id ?? tool_call_id; a set replace_id finds
+      // (and, on append, names) the group instead (§1.6 rule 4).
+      const identity = replaceId ?? blockId ?? (tool.id || `${msg.id}#${toolIndex}`)
+      const target = uiBlockGroups.get(identity)
+      if (target) {
+        // Hit — update in place; id / uiBlockIdentity / position stay put,
+        // title only when a later call supplies one (§1.6).
+        target.uiBlocks = parsedArgs.blocks
+        const laterTitle = typeof parsedArgs.title === 'string' ? parsedArgs.title : undefined
+        if (laterTitle) target.title = laterTitle
+        if (tool.id) {
+          target.toolCallId = tool.id // latest writer
+          // The replaced call's tool-result still attaches to this group.
+          pendingToolBlocks.set(tool.id, target)
+        }
+        continue
+      }
       const block: ContentBlock = {
-        id: `${msg.id}:ui_block:${tool.id || toolIndex}`,
+        id: `${msg.id}:ui_block:${identity}`, // identity-based, not toolIndex (§1.6)
         type: 'ui_block',
         content: '',
         toolCallId: tool.id,
         uiBlocks: parsedArgs.blocks,
+        uiBlockIdentity: identity,
         isStreaming: false,
         title: typeof parsedArgs.title === 'string' ? parsedArgs.title : 'UI Block',
         timestamp,
       }
+      uiBlockGroups.set(identity, block)
       blocks.push(block)
       if (tool.id) pendingToolBlocks.set(tool.id, block)
       continue
@@ -299,6 +324,7 @@ function assistantBlocks(
 export function parseApiMessages(msgs: MessageResponse[]): ChatMessage[] {
   const result: ChatMessage[] = []
   const pendingToolBlocks: Map<string, ContentBlock> = new Map()
+  const uiBlockGroups: Map<string, ContentBlock> = new Map()
 
   for (const msg of sortMessages(msgs)) {
     // Summaries surface as an inline "Session compacted" divider rather
@@ -349,7 +375,7 @@ export function parseApiMessages(msgs: MessageResponse[]): ChatMessage[] {
 
     if (msg.role === 'assistant') {
       const timestamp = msg.created_at ? new Date(msg.created_at) : new Date()
-      const blocks = assistantBlocks(msg, pendingToolBlocks, timestamp)
+      const blocks = assistantBlocks(msg, pendingToolBlocks, uiBlockGroups, timestamp)
       const extra = msg.extra as {
         usage?: { input?: number; output?: number; cache?: number }
         turn_usage?: {
@@ -454,6 +480,7 @@ export function sumUsageFromMessages(msgs: MessageResponse[]): AgentUsage {
 export function parseTeamBlocks(msgs: MessageResponse[]): ContentBlock[] {
   const result: ContentBlock[] = []
   const pendingToolBlocks: Map<string, ContentBlock> = new Map()
+  const uiBlockGroups: Map<string, ContentBlock> = new Map()
 
   for (const msg of sortMessages(msgs)) {
     if (msg.extra?.queue_status === 'queued') continue
@@ -504,7 +531,7 @@ export function parseTeamBlocks(msgs: MessageResponse[]): ContentBlock[] {
 
     if (msg.role === 'assistant') {
       const timestamp = msg.created_at ? new Date(msg.created_at) : new Date()
-      for (const block of assistantBlocks(msg, pendingToolBlocks, timestamp)) {
+      for (const block of assistantBlocks(msg, pendingToolBlocks, uiBlockGroups, timestamp)) {
         const lastBlock = result[result.length - 1]
         if (msg.extra?.is_continuation && block.type === 'text' && lastBlock?.type === 'text') {
           lastBlock.content += continuationSeparator(lastBlock.content, block.content) + block.content

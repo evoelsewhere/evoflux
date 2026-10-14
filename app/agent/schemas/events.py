@@ -682,6 +682,9 @@ UiBlockNode = Annotated[
 ]
 
 
+_BLOCK_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
+
+
 class UiBlockEvent(BaseModel):
     """Single complete frame for one ``ui_block`` tool call (not delta-streamed).
 
@@ -696,3 +699,16 @@ class UiBlockEvent(BaseModel):
     blocks: list[UiBlockNode] = Field(min_length=1, max_length=6)
     is_final: bool = True
     metadata: dict[str, Any] = Field(default_factory=dict)
+    block_id: str | None = Field(
+        default=None,
+        description=(
+            "Optional stable identity for this UI block group; later calls "
+            "with the same block_id update the group in place."
+        ),
+        pattern=_BLOCK_ID_RE,
+    )
+    replace_id: str | None = Field(
+        default=None,
+        description="Optional identity of an existing group to replace in place.",
+        pattern=_BLOCK_ID_RE,
+    )

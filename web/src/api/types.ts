@@ -860,6 +860,7 @@ export interface ContentBlock {
   title?: string        // widget title
   /** ui_block-specific fields (Feature B) */
   uiBlocks?: UiBlockNode[] // validated declarative UI block nodes
+  uiBlockIdentity?: string // group identity (block_id ?? replace_id ?? tool_call_id)
   /** Variant-specific metadata. ``user`` inbox blocks carry ``from_agent``;
    *  ``compaction`` blocks are content-free status markers carrying
    *  ``state: 'compacting' | 'compacted'`` and optional ``error: true``.

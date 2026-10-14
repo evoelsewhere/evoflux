@@ -224,14 +224,15 @@ def test_webbridge_tool_routes_spawned_members_through_lead_session():
         ),
         (
             # Feature B: ui_block projects validated block data only (§5.3 list 4).
+            # Stream 1 (§1.3): block_id/replace_id ride along as optional strings.
             "ui_block",
             {
                 "agent": "lead",
                 "tool_call_id": "call-ui",
                 "is_final": True,
-                "blocks": [
-                    {"type": "callout", "tone": "info", "body": "hello"}
-                ],
+                "block_id": "metrics",
+                "replace_id": "old-metrics",
+                "blocks": [{"type": "callout", "tone": "info", "body": "hello"}],
                 "metadata": {"title": "private", "private": "must-not-leak"},
             },
             {
@@ -239,9 +240,28 @@ def test_webbridge_tool_routes_spawned_members_through_lead_session():
                 "id": "call-ui",
                 "agent": "lead",
                 "is_final": True,
-                "blocks": [
-                    {"type": "callout", "tone": "info", "body": "hello"}
-                ],
+                "block_id": "metrics",
+                "replace_id": "old-metrics",
+                "blocks": [{"type": "callout", "tone": "info", "body": "hello"}],
+            },
+        ),
+        (
+            # Null identity fields are inert: copy_strings skips them.
+            "ui_block",
+            {
+                "agent": "lead",
+                "tool_call_id": "call-legacy",
+                "is_final": True,
+                "block_id": None,
+                "replace_id": None,
+                "blocks": [{"type": "callout", "tone": "info", "body": "legacy"}],
+            },
+            {
+                "type": "ui_block",
+                "id": "call-legacy",
+                "agent": "lead",
+                "is_final": True,
+                "blocks": [{"type": "callout", "tone": "info", "body": "legacy"}],
             },
         ),
     ],
