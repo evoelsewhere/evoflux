@@ -2079,7 +2079,7 @@ def _browser_panel_stream_event(event: dict[str, Any]) -> dict[str, str] | None:
         identifier = data.get("id") or data.get("tool_call_id")
         if isinstance(identifier, str):
             projected["id"] = identifier
-        copy_strings("agent")
+        copy_strings("agent", "block_id", "replace_id")
         copy_bools("is_final")
         blocks = data.get("blocks")
         if isinstance(blocks, list):

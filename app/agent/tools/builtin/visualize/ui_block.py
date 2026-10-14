@@ -53,7 +53,11 @@ _VALID_TYPES = (
         "the block group. Blocks should explain themselves: form and steps "
         "take an optional 240-char 'description', form fields an optional "
         "160-char 'helper', and buttons an optional 160-char 'hint' — use "
-        "them to say what the UI does and what happens when it is submitted."
+        "them to say what the UI does and what happens when it is submitted. "
+        "Pass block_id (a stable id like 'metrics') to give the group a "
+        "repeatable identity, and later calls with the same block_id update "
+        "it in place instead of appending. Pass replace_id to update an "
+        "existing group in place; if nothing matches, a new group is appended."
     ),
     concurrency_safe=False,
 )
@@ -83,6 +87,32 @@ async def ui_block(
         Field(
             description="Short snake_case title for the block group",
             max_length=80,
+        ),
+    ] = "",
+    block_id: Annotated[
+        str,
+        Field(
+            description=(
+                "Optional stable identity for this block group (e.g. "
+                "'metrics'). Omit for one-off groups; later calls with the "
+                "same block_id update the group in place instead of "
+                "appending a new one."
+            ),
+            max_length=128,
+            pattern=r"^$|^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+        ),
+    ] = "",
+    replace_id: Annotated[
+        str,
+        Field(
+            description=(
+                "Update the existing group whose block_id (or earlier "
+                "replace_id) matches this value in place, keeping its "
+                "position; if no match, a new group is appended. Use to "
+                "refresh data without adding another block."
+            ),
+            max_length=128,
+            pattern=r"^$|^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
         ),
     ] = "",
     _injected: dict[str, Any] | None = None,
@@ -129,6 +159,10 @@ async def ui_block(
                 "tool_call_id": tool_call_id,
                 "blocks": blocks,
                 **({"metadata": {"title": title}} if title else {}),
+                # Empty strings normalize to None (§5.1): "" must never
+                # become a literal group identity.
+                **({"block_id": block_id or None} if block_id else {}),
+                **({"replace_id": replace_id or None} if replace_id else {}),
             }
         )
     except ValidationError as exc:

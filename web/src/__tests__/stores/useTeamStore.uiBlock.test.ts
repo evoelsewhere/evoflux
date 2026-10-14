@@ -186,3 +186,234 @@ describe('sse-reducer tool_end fallback reconstruction (Feature C, §6.2)', () =
     ).toBe(true)
   })
 })
+
+function flushedLeadBlocks(): ContentBlock[] {
+  return useTeamStore.getState().agentStreams.lead?.blocks ?? []
+}
+
+const NEXT_NODES = [
+  { type: 'callout', tone: 'info', body: 'next' },
+  { type: 'stat_cards', cards: [{ label: 'RAM', value: 7 }] },
+]
+
+describe('sse-reducer ui_block identity protocol (spec §1.4/§1.6)', () => {
+  it('replace hits currentBlocks in place — index/id preserved, identity immutable', () => {
+    handle('ui_block', {
+      agent: 'lead',
+      tool_call_id: 'call-1',
+      block_id: 'a',
+      blocks: NODES,
+    })
+    handle('ui_block', {
+      agent: 'lead',
+      tool_call_id: 'call-2',
+      block_id: 'b',
+      blocks: NODES,
+      metadata: { title: 'B' },
+    })
+    handle('ui_block', {
+      agent: 'lead',
+      tool_call_id: 'call-3',
+      block_id: 'c',
+      blocks: NODES,
+    })
+    const before = uiBlocks()
+    expect(before.map((b) => b.uiBlockIdentity)).toEqual(['a', 'b', 'c'])
+    const middleId = before[1].id
+
+    handle('ui_block', {
+      agent: 'lead',
+      tool_call_id: 'call-4',
+      replace_id: 'b',
+      blocks: NEXT_NODES,
+    })
+
+    const blocks = uiBlocks()
+    expect(blocks).toHaveLength(3)
+    expect(blocks[1].id).toBe(middleId)
+    expect(blocks[1].uiBlockIdentity).toBe('b')
+    expect(blocks[1].uiBlocks).toEqual(NEXT_NODES)
+    // Later call supplied no title — the original title survives.
+    expect(blocks[1].title).toBe('B')
+    // Latest writer refreshes toolCallId (§1.6).
+    expect(blocks[1].toolCallId).toBe('call-4')
+  })
+
+  it('same-block_id upserts without appending or moving the group', () => {
+    handle('ui_block', {
+      agent: 'lead',
+      tool_call_id: 'call-1',
+      block_id: 'metrics',
+      blocks: NODES,
+      metadata: { title: 'Metrics' },
+    })
+    const before = uiBlocks()
+    const id = before[0].id
+
+    handle('ui_block', {
+      agent: 'lead',
+      tool_call_id: 'call-2',
+      block_id: 'metrics',
+      blocks: NEXT_NODES,
+    })
+
+    const blocks = uiBlocks()
+    expect(blocks).toHaveLength(1)
+    expect(blocks[0].id).toBe(id)
+    expect(blocks[0].uiBlockIdentity).toBe('metrics')
+    expect(blocks[0].uiBlocks).toEqual(NEXT_NODES)
+    expect(blocks[0].title).toBe('Metrics')
+    expect(blocks[0].toolCallId).toBe('call-2')
+  })
+
+  it('unmatched replace_id appends with identity = replace_id', () => {
+    handle('ui_block', {
+      agent: 'lead',
+      tool_call_id: 'call-1',
+      replace_id: 'ghost',
+      blocks: NODES,
+    })
+    const blocks = uiBlocks()
+    expect(blocks).toHaveLength(1)
+    expect(blocks[0].uiBlockIdentity).toBe('ghost')
+  })
+
+  it('replace hits a group flushed into stream.blocks', () => {
+    handle('ui_block', {
+      agent: 'lead',
+      tool_call_id: 'call-1',
+      block_id: 'metrics',
+      blocks: NODES,
+      metadata: { title: 'Metrics' },
+    })
+    const id = uiBlocks()[0].id
+
+    handle('done', {}) // flush: currentBlocks → stream.blocks
+    expect(uiBlocks()).toHaveLength(0)
+    expect(flushedLeadBlocks().filter((b) => b.type === 'ui_block')).toHaveLength(1)
+
+    handle('ui_block', {
+      agent: 'lead',
+      tool_call_id: 'call-2',
+      replace_id: 'metrics',
+      blocks: NEXT_NODES,
+    })
+
+    // The hit lives in the flushed history — no duplicate, no re-append.
+    expect(uiBlocks()).toHaveLength(0)
+    const flushed = flushedLeadBlocks().filter((b) => b.type === 'ui_block')
+    expect(flushed).toHaveLength(1)
+    expect(flushed[0].id).toBe(id)
+    expect(flushed[0].uiBlockIdentity).toBe('metrics')
+    expect(flushed[0].uiBlocks).toEqual(NEXT_NODES)
+  })
+
+  it('double-replay converges to a single group with final content', () => {
+    const create = {
+      agent: 'lead',
+      tool_call_id: 'call-1',
+      block_id: 'metrics',
+      blocks: NODES,
+      metadata: { title: 'A' },
+    }
+    const replace = {
+      agent: 'lead',
+      tool_call_id: 'call-2',
+      replace_id: 'metrics',
+      blocks: NEXT_NODES,
+      metadata: { title: 'B' },
+    }
+    handle('ui_block', create)
+    handle('ui_block', replace)
+    const firstId = uiBlocks()[0].id
+
+    // Replay both events again (reconnect / reload).
+    handle('ui_block', create)
+    handle('ui_block', replace)
+
+    const blocks = uiBlocks()
+    expect(blocks).toHaveLength(1)
+    expect(blocks[0].id).toBe(firstId)
+    expect(blocks[0].uiBlocks).toEqual(NEXT_NODES)
+    expect(blocks[0].title).toBe('B')
+  })
+
+  it('does not match identity across agents', () => {
+    handle('ui_block', {
+      agent: 'lead',
+      tool_call_id: 'call-1',
+      block_id: 'metrics',
+      blocks: NODES,
+    })
+    handle('ui_block', {
+      agent: 'research',
+      tool_call_id: 'call-2',
+      block_id: 'metrics',
+      blocks: NEXT_NODES,
+    })
+
+    expect(uiBlocks()).toHaveLength(1)
+    expect(uiBlocks()[0].uiBlocks).toEqual(NODES)
+    const research = (useTeamStore.getState().agentStreams.research?.currentBlocks ?? [])
+      .filter((b) => b.type === 'ui_block')
+    expect(research).toHaveLength(1)
+    expect(research[0].uiBlocks).toEqual(NEXT_NODES)
+  })
+
+  it('tool_end fallback honors replace_id from args (upsert, no duplicate)', () => {
+    handle('ui_block', {
+      agent: 'lead',
+      tool_call_id: 'call-1',
+      block_id: 'metrics',
+      blocks: NODES,
+      metadata: { title: 'Metrics' },
+    })
+    // The second call's ui_block event never arrived — only tool_start/end.
+    handle('tool_start', {
+      agent: 'lead',
+      name: 'ui_block',
+      tool_call_id: 'call-2',
+      arguments: JSON.stringify({ blocks: NEXT_NODES, replace_id: 'metrics' }),
+    })
+    handle('tool_end', {
+      agent: 'lead',
+      name: 'ui_block',
+      tool_call_id: 'call-2',
+      result: 'Rendered 2 UI block(s)',
+    })
+
+    const blocks = uiBlocks()
+    expect(blocks).toHaveLength(1)
+    expect(blocks[0].uiBlockIdentity).toBe('metrics')
+    expect(blocks[0].uiBlocks).toEqual(NEXT_NODES)
+    // Fallback args carried no title — the group's title survives.
+    expect(blocks[0].title).toBe('Metrics')
+  })
+
+  it('tool_end fallback honors block_id from args (upsert by identity)', () => {
+    handle('ui_block', {
+      agent: 'lead',
+      tool_call_id: 'call-1',
+      block_id: 'metrics',
+      blocks: NODES,
+    })
+    handle('tool_start', {
+      agent: 'lead',
+      name: 'ui_block',
+      tool_call_id: 'call-2',
+      arguments: JSON.stringify({ blocks: NEXT_NODES, block_id: 'metrics' }),
+    })
+    handle('tool_end', {
+      agent: 'lead',
+      name: 'ui_block',
+      tool_call_id: 'call-2',
+      result: 'Rendered 2 UI block(s)',
+    })
+
+    const blocks = uiBlocks()
+    expect(blocks).toHaveLength(1)
+    expect(blocks[0].uiBlockIdentity).toBe('metrics')
+    expect(blocks[0].uiBlocks).toEqual(NEXT_NODES)
+    expect(blocks[0].toolCallId).toBe('call-2')
+  })
+})

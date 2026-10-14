@@ -1425,14 +1425,16 @@ class TestUiBlockClassification:
 
     @pytest.mark.asyncio
     async def test_ui_block_envelope_is_pushed_and_replayed(self):
-        from app.agent.schemas.events import UiBlockEvent
+        from app.agent.schemas.events import UiBlockEvent, UiProgressBlock
 
         await store.init_turn("sid-ui")
         event = UiBlockEvent(
             agent="lead",
             tool_call_id="call-ui",
-            blocks=[{"type": "progress", "label": "Run", "value": 1, "max": 3}],
+            blocks=[UiProgressBlock(label="Run", value=1, max=3)],
             metadata={"title": "Metrics"},
+            block_id="metrics",
+            replace_id="old-metrics",
         )
         await store.push_event("sid-ui", StreamEnvelope.from_event(event))
 
@@ -1449,3 +1451,7 @@ class TestUiBlockClassification:
         assert data["is_final"] is True
         assert data["metadata"]["title"] == "Metrics"
         assert data["blocks"][0]["type"] == "progress"
+        # Stream 1 (§1.3): identity fields replay with the frame so reconnect
+        # dedupe keeps working after a reload.
+        assert data["block_id"] == "metrics"
+        assert data["replace_id"] == "old-metrics"
