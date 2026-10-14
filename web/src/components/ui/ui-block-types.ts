@@ -147,6 +147,31 @@ export interface UiCalculatorBlock {
   outputs: UiCalculatorOutput[]
 }
 
+/**
+ * Layout composition (spec §2): `sections` hold other block nodes, nested at
+ * most `UI_BLOCK_MAX_DEPTH` levels — the client mirror of the server-side
+ * `MAX_UI_BLOCK_DEPTH` cap in `app/agent/schemas/events.py`.
+ */
+export const UI_BLOCK_MAX_DEPTH = 3
+
+export interface UiLayoutSection {
+  title?: string | null
+  children: UiBlockNode[]
+}
+
+export interface UiLayoutBlock {
+  type: 'layout'
+  orientation: 'columns' | 'stack'
+  sections: UiLayoutSection[]
+}
+
+/** Agent-authored HTML rendered through the WidgetRenderer sandbox (spec §3). */
+export interface UiCustomBlock {
+  type: 'custom'
+  html: string
+  height?: number | null
+}
+
 export type UiBlockNode =
   | UiStatCardsBlock
   | UiChartBlock
@@ -160,6 +185,8 @@ export type UiBlockNode =
   | UiFlashcardsBlock
   | UiChecklistBlock
   | UiCalculatorBlock
+  | UiLayoutBlock
+  | UiCustomBlock
 
 /** Round-trip payload (§5.4): buttons/forms send prompts; toggle is local. */
 export type UiInteraction =

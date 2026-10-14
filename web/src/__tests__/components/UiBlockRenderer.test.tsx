@@ -241,3 +241,122 @@ describe('UiBlockRenderer (spec §5.5 / §9.4)', () => {
     expect(screen.getByText('12% of 8 cores')).toBeInTheDocument()
   })
 })
+
+describe('UiBlockRenderer layout/custom dispatch (spec §2/§3)', () => {
+  it('dispatches a layout node to UiLayout sections', () => {
+    render(
+      <UiBlockRenderer
+        blocks={[
+          {
+            type: 'layout',
+            orientation: 'columns',
+            sections: [
+              { title: 'Left', children: [{ type: 'callout', body: 'left note' }] },
+              { title: 'Right', children: [{ type: 'progress', label: 'Sync', value: 1, max: 2 }] },
+            ],
+          },
+        ]}
+      />,
+    )
+    expect(screen.getByText('Left')).toBeInTheDocument()
+    expect(screen.getByText('left note')).toBeInTheDocument()
+    expect(screen.getByText('Right')).toBeInTheDocument()
+    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '1')
+  })
+
+  it('renders nested layouts recursively through renderChild', () => {
+    render(
+      <UiBlockRenderer
+        blocks={[
+          {
+            type: 'layout',
+            orientation: 'stack',
+            sections: [
+              {
+                children: [
+                  {
+                    type: 'layout',
+                    orientation: 'columns',
+                    sections: [{ children: [{ type: 'callout', body: 'deep leaf' }] }],
+                  },
+                ],
+              },
+            ],
+          },
+        ]}
+      />,
+    )
+    expect(screen.getByText('deep leaf')).toBeInTheDocument()
+  })
+
+  it('falls back to UiCallout for a layout past the depth cap', () => {
+    // Hand-edited/legacy tool args can bypass server validation (history
+    // args are validated at creation time, not on read); the client mirror
+    // must terminate anyway (spec §2.3).
+    const deep = { type: 'callout', body: 'leaf' }
+    const block = [4, 3, 2, 1].reduce<UiBlockNode>(
+      (child) => ({
+        type: 'layout',
+        orientation: 'stack',
+        sections: [{ children: [child] }],
+      }),
+      deep as UiBlockNode,
+    )
+    render(<UiBlockRenderer blocks={[block]} />)
+    expect(screen.getByText('Layout nested too deep')).toBeInTheDocument()
+    expect(screen.queryByText('leaf')).not.toBeInTheDocument()
+  })
+
+  it('renders a layout exactly at the depth cap (3 levels)', () => {
+    const level3: UiBlockNode = {
+      type: 'layout',
+      orientation: 'stack',
+      sections: [{ children: [{ type: 'callout', body: 'cap leaf' }] }],
+    }
+    const level2: UiBlockNode = {
+      type: 'layout',
+      orientation: 'stack',
+      sections: [{ children: [level3] }],
+    }
+    const level1: UiBlockNode = {
+      type: 'layout',
+      orientation: 'stack',
+      sections: [{ children: [level2] }],
+    }
+    render(<UiBlockRenderer blocks={[level1]} />)
+    expect(screen.getByText('cap leaf')).toBeInTheDocument()
+  })
+
+  it('dispatches a custom node to the sandboxed widget iframe', () => {
+    render(
+      <UiBlockRenderer blocks={[{ type: 'custom', html: '<div id="custom-widget">w</div>' }]} />,
+    )
+    const frame = document.querySelector('iframe')
+    expect(frame).not.toBeNull()
+    const html = frame?.contentDocument?.body?.innerHTML
+      ? frame?.contentDocument?.documentElement?.outerHTML ?? ''
+      : frame?.getAttribute('srcdoc') ?? ''
+    expect(html).toContain('custom-widget')
+    expect(html).toContain('evoflux-widget-tokens')
+  })
+
+  it('renders buttons/forms nested inside layout sections with prompt wiring', async () => {
+    const onSendPrompt = vi.fn()
+    render(
+      <UiBlockRenderer
+        blocks={[
+          {
+            type: 'layout',
+            orientation: 'columns',
+            sections: [
+              { children: [{ type: 'buttons', buttons: [{ label: 'Run', prompt: 'run it' }] }] },
+            ],
+          },
+        ]}
+        onSendPrompt={onSendPrompt}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: /Run/ }))
+    expect(onSendPrompt).toHaveBeenCalledWith('run it')
+  })
+})

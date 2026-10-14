@@ -12,7 +12,10 @@ import { UiProgress } from './UiProgress'
 import { UiStatCards } from './UiStatCards'
 import { UiSteps } from './UiSteps'
 import { UiTable } from './UiTable'
+import { UiCustom } from './UiCustom'
+import { UiLayout } from './UiLayout'
 import type { UiBlockNode, UiInteractionState } from './ui-block-types'
+import { UI_BLOCK_MAX_DEPTH } from './ui-block-types'
 
 export interface UiBlockRendererProps {
   blocks: UiBlockNode[]
@@ -78,6 +81,31 @@ export function UiBlockRenderer({ blocks, title, onSendPrompt, live }: UiBlockRe
 
   const nodes = Array.isArray(blocks) ? blocks : []
 
+  // Depth-threaded dispatch for layout children (spec §2.2/§2.3): `layout`
+  // nodes render through UiLayout's renderChild while under the cap; deeper
+  // ones fall back to the existing UiCallout so malformed/hand-edited tool
+  // args that bypassed server validation still terminate.
+  const renderChildAt = (node: UiBlockNode, depth: number) => {
+    switch (node.type) {
+      case 'buttons':
+        return <UiButtons block={node} onSendPrompt={sendPrompt} />
+      case 'form':
+        return <UiForm block={node} onSendPrompt={sendPrompt} />
+      case 'layout':
+        if (depth >= UI_BLOCK_MAX_DEPTH)
+          return (
+            <UiCallout
+              block={{ type: 'callout', tone: 'warning', body: 'Layout nested too deep' }}
+            />
+          )
+        return <UiLayout block={node} depth={depth} renderChild={renderChildAt} />
+      case 'custom':
+        return <UiCustom block={node} />
+      default:
+        return renderNode(node, live)
+    }
+  }
+
   return (
     <div className="space-y-2">
       {title && <p className="text-xs font-medium text-(--color-text-muted)">{title}</p>}
@@ -89,6 +117,9 @@ export function UiBlockRenderer({ blocks, title, onSendPrompt, live }: UiBlockRe
             return <UiButtons key={i} block={node} onSendPrompt={sendPrompt} />
           case 'form':
             return <UiForm key={i} block={node} onSendPrompt={sendPrompt} />
+          case 'layout':
+          case 'custom':
+            return <div key={i}>{renderChildAt(node, 0)}</div>
           default:
             return <div key={i}>{renderNode(node, live)}</div>
         }

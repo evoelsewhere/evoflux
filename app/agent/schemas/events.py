@@ -663,6 +663,33 @@ class UiCalculatorBlock(BaseModel):
         return self
 
 
+MAX_UI_BLOCK_DEPTH = 3  # layout nesting levels (root layout = 1)
+MAX_UI_BLOCK_NODES = 50  # total nodes per ui_block event
+
+
+class UiLayoutSection(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    title: str | None = Field(default=None, max_length=80)
+    children: list[UiBlockNode] = Field(min_length=1, max_length=8)
+
+
+class UiLayoutBlock(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    type: Literal["layout"] = "layout"
+    orientation: Literal["columns", "stack"] = "columns"
+    sections: list[UiLayoutSection] = Field(min_length=1, max_length=4)
+
+
+class UiCustomBlock(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    type: Literal["custom"] = "custom"
+    html: str = Field(min_length=1, max_length=100_000)
+    height: int | None = Field(default=None, ge=64, le=2000)
+
+
 UiBlockNode = Annotated[
     Union[
         UiStatCardsBlock,
@@ -677,9 +704,15 @@ UiBlockNode = Annotated[
         UiFlashcardsBlock,
         UiChecklistBlock,
         UiCalculatorBlock,
+        UiLayoutBlock,
+        UiCustomBlock,
     ],
     Field(discriminator="type"),
 ]
+
+# ``UiLayoutSection.children`` forward-references the alias above.
+UiLayoutSection.model_rebuild()
+UiLayoutBlock.model_rebuild()
 
 
 _BLOCK_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
@@ -712,3 +745,31 @@ class UiBlockEvent(BaseModel):
         description="Optional identity of an existing group to replace in place.",
         pattern=_BLOCK_ID_RE,
     )
+
+    @model_validator(mode="after")
+    def _enforce_composition_limits(self) -> UiBlockEvent:
+        """Cap layout nesting depth and total node count (spec section 2.1)."""
+
+        def walk(node: UiBlockNode, layout_depth: int) -> int:
+            if isinstance(node, UiLayoutBlock):
+                if layout_depth > MAX_UI_BLOCK_DEPTH:
+                    raise ValueError(
+                        "layout nesting deeper than "
+                        f"{MAX_UI_BLOCK_DEPTH} levels is not supported"
+                    )
+                count = 1
+                for section in node.sections:
+                    for child in section.children:
+                        count += walk(child, layout_depth + 1)
+                return count
+            return 1
+
+        total = 0
+        for block in self.blocks:
+            total += walk(block, 1)
+        if total > MAX_UI_BLOCK_NODES:
+            raise ValueError(
+                f"ui_block event exceeds {MAX_UI_BLOCK_NODES} total UI nodes "
+                f"({total} provided)"
+            )
+        return self
