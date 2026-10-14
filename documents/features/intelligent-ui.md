@@ -48,7 +48,11 @@ Assistant replies render two fence languages natively instead of as code:
   `xKey`, `series` of at most 6, `data` of at most 500 rows, optional
   `title`, `yLabel`, `unit`, `stacked` for bars) renders through Recharts
   with the app's theme colors. The spec is structurally validated on both
-  sides of the wire; invalid specs never reach the chart renderer.
+  sides of the wire; invalid specs never reach the chart renderer. When the
+  fence is not JSON, a lenient tabular form is accepted instead: a first
+  line naming the chart type, then `label value` rows (for example
+  `bar` followed by `Mon 12`), rendered as a single `value` series with a
+  `label` axis.
 - ` ```mermaid ` — the diagram renders through the Mermaid runtime with
   `securityLevel: 'strict'`, so diagram text cannot execute scripts.
 

@@ -37,7 +37,9 @@ export default function ChartFence({ rawText, streaming, fallback }: ChartFenceP
     return (
       <>
         {fallback}
-        <p className="mt-1 text-xs text-(--color-text-muted)">Invalid chart spec</p>
+        <p className="mt-1 text-xs text-(--color-text-muted)">
+          Invalid chart spec — expected JSON like {`{"type":"bar","xKey":"label","series":[{"key":"value"}],"data":[{"label":"Mon","value":12}]}`}
+        </p>
       </>
     )
   }

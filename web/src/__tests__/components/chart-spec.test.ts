@@ -102,3 +102,51 @@ describe('parseChartSpec', () => {
     expect(parsed?.title).toBeUndefined()
   })
 })
+
+describe('parseChartSpec lenient tabular form', () => {
+  const BARS = ['bar', 'Mon 12', 'Tue 19', 'Wed 7'].join('\n')
+
+  it('accepts a type line plus label/value rows', () => {
+    const parsed = parseChartSpec(BARS)
+    expect(parsed?.type).toBe('bar')
+    expect(parsed?.xKey).toBe('label')
+    expect(parsed?.series).toEqual([{ key: 'value' }])
+    expect(parsed?.data).toEqual([
+      { label: 'Mon', value: 12 },
+      { label: 'Tue', value: 19 },
+      { label: 'Wed', value: 7 },
+    ])
+  })
+
+  it('handles quoted labels, thousands separators, decimals and a % marker', () => {
+    const parsed = parseChartSpec(
+      ['line', '"North region" 1,250', 'South 8.5%', 'West -3'].join('\n'),
+    )
+    expect(parsed?.type).toBe('line')
+    expect(parsed?.data).toEqual([
+      { label: '"North region"', value: 1250 },
+      { label: 'South', value: 8.5 },
+      { label: 'West', value: -3 },
+    ])
+  })
+
+  it('supports pie', () => {
+    expect(parseChartSpec(['pie', 'A 3', 'B 4'].join('\n'))?.type).toBe('pie')
+  })
+
+  it('still rejects ambiguous shapes', () => {
+    // Not a known type on the first line.
+    expect(parseChartSpec(['column', 'Mon 12'].join('\n'))).toBeNull()
+    // A row without a trailing number.
+    expect(parseChartSpec(['bar', 'Mon twelve'].join('\n'))).toBeNull()
+    // A bare type with no rows.
+    expect(parseChartSpec('bar')).toBeNull()
+    // JSON-looking text that fails structural validation stays invalid.
+    expect(parseChartSpec('{"type":"bar","xKey":"a","series":[]}')).toBeNull()
+  })
+
+  it('caps the lenient form at the same data-point limit', () => {
+    const rows = Array.from({ length: 501 }, (_, i) => `r${i} ${i}`)
+    expect(parseChartSpec(['bar', ...rows].join('\n'))).toBeNull()
+  })
+})
