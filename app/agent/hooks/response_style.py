@@ -3,6 +3,12 @@
 Feature A of the Intelligent UI plan — the ``Simple`` / ``Visual`` choice
 made in **Settings → Agents** is appended to the base prompt once per model
 call, next to the built-in ``inject_current_date`` hook.
+
+The visual line is deliberately tool-agnostic (app/agent/AGENTS.md): it
+must NOT name ``ui_block``, so it steers by *structure* not by tool. It no
+longer enumerates "tables" as a markdown affordance — that phrasing
+competed with the interactive layer and made small models settle for a
+static table whenever the data would have gained from a real widget.
 """
 
 from __future__ import annotations
@@ -17,10 +23,13 @@ _SIMPLE_LINE = (
     "Do not use interactive UI blocks either; plain prose only."
 )
 _VISUAL_LINE = (
-    "Response style: visual. You may use markdown headings, lists, "
-    "tables and code blocks to make answers scannable when they "
-    "gain from structure. Keep plain prose for conversation, opinions "
-    "and one-line explanations."
+    "Response style: visual. Structure answers with markdown when they "
+    "gain from it — headings, lists and code blocks. When data or a "
+    "comparison of options would be easier to use as an interactive "
+    "widget than as flat text — including opinion answers that weigh "
+    "contenders or a recommendation that could be revisited — prefer the "
+    "interactive form. Keep plain prose for conversation and one-line "
+    "explanations."
 )
 
 

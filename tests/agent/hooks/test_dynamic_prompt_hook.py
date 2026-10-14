@@ -301,7 +301,9 @@ async def test_inject_response_style_visual_keeps_the_base_prompt(
 
     assert result.startswith("You are a helpful assistant.")
     assert "Response style: visual." in result
-    assert "markdown headings, lists, tables and code blocks" in result
+    assert "headings, lists and code blocks" in result
+    assert "comparison of options" in result
+    assert "interactive form" in result
     # Tool-agnostic gotcha (app/agent/AGENTS.md): the style line must NOT
     # name ui_block — usage heuristics live in the intelligent-ui skill.
     assert "ui_block" not in result
