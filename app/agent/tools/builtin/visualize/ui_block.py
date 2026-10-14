@@ -44,7 +44,12 @@ _VALID_TYPES = (
     name="ui_block",
     tiers=("work", "coding"),
     description=(
-        "Render a declarative UI block in the conversation. "
+        "Render a declarative UI block in the conversation. Use it "
+        "proactively — without waiting to be asked — when the content would "
+        "naturally be a comparison, a schedule or timeline, a metric set, a "
+        "decision matrix, math with changing variables, step progress, or "
+        "study/review material; prefer it over a plain markdown table "
+        "whenever the user will interact with the data or revisit it. "
         "Accepts {blocks: [...]} where each block has type one of: "
         "stat_cards, chart, steps, table, key_value, callout, buttons, "
         "form, progress, flashcards, checklist, calculator, layout, "

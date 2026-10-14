@@ -302,6 +302,11 @@ async def test_inject_response_style_visual_keeps_the_base_prompt(
     assert result.startswith("You are a helpful assistant.")
     assert "Response style: visual." in result
     assert "markdown headings, lists, tables and code blocks" in result
+    # Capability-safe propensity: the directive names the tool but conditions
+    # it on availability, so the prompt stays correct when the tool is
+    # disabled for an agent.
+    assert "if you have the ui_block tool" in result
+    assert "update that group in place" in result
 
 
 @pytest.mark.asyncio
@@ -316,6 +321,7 @@ async def test_inject_response_style_simple_flips_the_wording(
     assert "Response style: simple." in result
     assert "plain prose" in result
     assert "Skip markdown headings" in result
+    assert "interactive UI blocks" in result
     assert "Response style: visual." not in result
 
 
