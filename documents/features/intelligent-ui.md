@@ -139,6 +139,31 @@ native block losslessly from `tool_calls` JSON (no database migration), and
 the live event is deduplicated by `tool_call_id` so a stream replay never
 duplicates a block.
 
+## Built-in Skill: `intelligent-ui`
+
+The response-style prompt line alone did not reliably steer smaller models
+toward interactive UI, so EvoFlux teaches the behavior through the repo's
+progressive-disclosure Skill mechanism instead of more prompt strings. The
+built-in `intelligent-ui` Skill (`app/agent/builtin_skills/intelligent-ui/`)
+keeps a trigger-rich description in the system prompt at all times; the body
+and its `reference/` files load only when a task matches. The Skill carries:
+
+- a decision table mapping requests (compare plans, schedules, metrics,
+  math with variables, study material, timers, games, dashboards …) to the
+  right block type;
+- a block catalog with the real field names and caps of all 14 types;
+- four copy-adaptable worked examples with exact `ui_block` payloads,
+  including the anti-pattern fix for pomodoro-style widgets: render the HTML
+  inline in a `custom` block — never write a `.html` file to disk;
+- an in-place update protocol for `block_id` / `replace_id` follow-ups;
+- hard rules against the three observed failure modes: static markdown
+  tables for interactive data, writing widget HTML to disk, and asking
+  clarifying questions instead of rendering a best guess.
+
+Validation: `uv run python scripts/validate_skills.py --strict-warnings`;
+discovery is the existing directory scan of `app/agent/builtin_skills/` — no
+runtime or discovery code changed.
+
 ## Source ownership
 
 Response style and fence rendering are owned by
