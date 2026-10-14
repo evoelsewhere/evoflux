@@ -44,8 +44,11 @@ arbitrary HTML** (iframe/CSS escape hatch).
 | `flashcards` | tap-to-flip review cards | 1–20 cards, front ≤400 / back ≤800 |
 | `checklist` | interactive tick list with progress | 1–40 items, label ≤200 / detail ≤300 |
 | `calculator` | live-recompute calculator | 1–12 inputs & outputs, safe arithmetic formulas |
+| `layout` | multi-section container (columns or stack) | 1–4 sections, 1–8 blocks each, nesting ≤3, section title ≤80 |
+| `custom` | sandboxed agent-authored HTML (`WidgetRenderer`) | `html` 1–100000 chars, `height` 64–2000 (default 320) |
 
-One call carries 1–6 blocks. Unknown `type` values fail validation and the
+One call carries 1–6 top-level blocks; nested `layout` children count toward
+50 total nodes per event. Unknown `type` values fail validation and the
 tool returns `success: false` with `valid_types` instead of emitting a broken
 event; the frontend additionally renders a neutral "Unsupported block" card.
 
@@ -72,6 +75,9 @@ the user always knows what the UI does and what happens on submit:
 | `flashcards` | `title` | 120 | bold title above the "Card n of m" counter; the card itself flips on tap/click (keyboard: it is a real button) |
 | `checklist` | `title` / `description` | 120 / 300 | title above, description under it; a live "N of M done" counter and thin progress bar sit above the items — tick state stays local to the viewer |
 | `calculator` | `description` | 300 | muted text under the title; number inputs have − / + steppers and outputs recompute on every keystroke |
+| `layout` section | `title` | 80 | muted heading above the section's children; sections without a title render bare |
+| `layout` | `orientation` | — | sections lay out `columns` (default, side by side) or `stack` (top to bottom) |
+| `custom` | `height` | 64–2000 | frame height for the sandboxed HTML; defaults to 320 when omitted |
 
 **Calculator safety.** Output formulas are validated server-side (Pydantic)
 and evaluated client-side by a hand-rolled arithmetic parser — numbers,
@@ -129,13 +135,26 @@ buttons that say what they do, and stat cards with hints:
 }
 ```
 
+**In-place updates (`block_id` / `replace_id`).** Without an identity every
+call appends a new group. A later call repeating the same `block_id` updates
+that group in place; `replace_id` retargets the group already carrying that
+name (either field may have created it), keeping the position of its first
+appearance with the latest write winning, and appends a new group when
+nothing matches. Both names are optional, at most 128 characters, start with
+a letter or digit, then letters, digits, `_`, `.` or `-`. The resolved
+identity (`replace_id` → `block_id` → `tool_call_id`) is part of the
+persisted tool arguments, so a replay or history reload upserts the same
+block instead of duplicating it.
+
 **Persistence.** The block payload is the tool's own arguments, so history
 reload reconstructs it losslessly from the persisted `tool_calls` JSON — no
 database migration; the live event is deduplicated by `tool_call_id`.
 
 **Interactive showcase.** One compact call using all three interactive
 blocks — flashcards for review, a checklist with progress, and a
-calculator whose outputs recompute live as the user types or steppers:
+calculator whose outputs recompute live as the user types or steppers —
+plus a two-column `layout` nesting a steps timeline beside a
+table-setting checklist:
 
 ```json
 {
@@ -171,6 +190,37 @@ calculator whose outputs recompute live as the user types or steppers:
         { "label": "Lamb", "formula": "guests * 0.45", "unit": "kg", "decimals": 2 },
         { "label": "Potatoes", "formula": "guests * 0.5", "unit": "kg", "decimals": 1 },
         { "label": "Gravy", "formula": "guests / 4", "unit": "L", "decimals": 2 }
+      ]
+    },
+    {
+      "type": "layout",
+      "orientation": "columns",
+      "sections": [
+        {
+          "title": "Roast timeline",
+          "children": [
+            {
+              "type": "steps",
+              "steps": [
+                { "title": "Preheat and sear", "status": "active", "detail": "220 °C for 20 minutes, then turn the oven down." },
+                { "title": "Rest before carving", "detail": "20 minutes, tented with foil." }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "Set the table",
+          "children": [
+            {
+              "type": "checklist",
+              "title": "Before guests arrive",
+              "items": [
+                { "label": "Plates and cutlery" },
+                { "label": "Gravy boat" }
+              ]
+            }
+          ]
+        }
       ]
     }
   ]
