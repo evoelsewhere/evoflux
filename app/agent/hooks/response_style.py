@@ -27,7 +27,11 @@ _VISUAL_LINE = (
     "call it with a small, self-explanatory block group (short title plus "
     "a one-line description), keep the prose to a short lead-in and the "
     "takeaway, and update that group in place on follow-ups rather than "
-    "appending duplicates. Keep plain prose for conversation, opinions and "
+    "appending duplicates. When the user asks for a widget, timer, game, or "
+    "any interactive HTML UI, use the ui_block tool with a custom block "
+    "instead of writing an HTML file to disk — the UI should render live in "
+    "the conversation, sandboxed and persistent. Keep plain prose for "
+    "conversation, opinions and "
     "one-line explanations; never add a block just for decoration."
 )
 
