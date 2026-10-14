@@ -1,9 +1,10 @@
 # Intelligent UI
 
 The Intelligent UI package makes chat replies easier to scan: a user-chosen
-response style, inline charts and diagrams, native UI blocks, and saved
-transcript widgets. It ships in two streams. This page documents what is
-currently implemented; the remaining pieces are marked below.
+response style, inline charts and diagrams, interactive markdown tables,
+native UI blocks, and saved transcript widgets. It ships in two streams.
+This page documents what is currently implemented; the remaining pieces are
+marked below.
 
 Plan of record: `documents/plans/2026-10-13-intelligent-ui.md`.
 
@@ -52,19 +53,55 @@ diff summaries and the wiki editor.
 Primary code: `web/src/components/markdown/` (`chart-spec`, `ChartFence`,
 `ChartBlock`, `MermaidFence`), fence dispatch in `web/src/utils/markdown.tsx`.
 
+## Interactive markdown tables
+
+Tables in assistant replies gain sort and filter controls as soon as the
+reply finishes streaming. A table becomes interactive only with a
+single-row header, at least 3 columns and at least 6 body rows; smaller
+tables, tables still streaming and multi-row raw-HTML headers stay plain.
+
+- Clicking a column header sorts by it and clicking again flips the
+  direction; the header exposes the state through `aria-sort`. A column
+  sorts numerically only when every non-empty cell parses as a number, so
+  mixed columns such as `"7"` and `"n/a"` stay in text order and the
+  comparator stays consistent.
+- From 10 body rows a **Filter rows** input appears above the table. It
+  matches case-insensitively against any cell and shows a "No matches" row
+  when nothing qualifies.
+
+Sorting and filtering are view state over the parsed table — the source
+markdown is never rewritten, so a reload re-renders the reply and the
+controls start fresh. This applies in every prose surface that uses the
+shared markdown pipeline — chat, side chat, diff summaries and the wiki
+editor.
+
+Primary code: `web/src/components/markdown/MarkdownTable.tsx`.
+
 ## Native `ui_block` tool
 
 `ui_block` renders declarative, shadcn-native blocks in the conversation as
 one complete `ui_block` SSE event: stat cards, chart, steps, table, key/value
-list, callout, buttons, form, progress, plus the interactive flashcards,
+list, callout, buttons, form, progress, the interactive flashcards,
 checklist and calculator blocks (flip-cards, tick-lists with a live done
-counter, and steppers whose outputs recompute from safe arithmetic formulas).
-One call carries 1–6 blocks; the
-server validates every block against the Pydantic `UiBlockEvent` model before
-emitting, unknown types return `success: false` with `valid_types` instead of
-a broken event, and the frontend keeps a neutral "Unsupported block" card for
-anything it does not recognise. The `chart` block reuses the same
-`ChartSpec`/`ChartBlock` contract as the ` ```chart ` fence above.
+counter, and steppers whose outputs recompute from safe arithmetic formulas),
+plus `layout` and `custom`. `layout` arranges 1–4 titled sections of 1–8
+blocks each in columns or a stack, nested up to 3 levels deep; `custom`
+embeds sandboxed agent-authored HTML (`html` of 1–100000 chars, `height` of
+64–2000 that defaults to 320). One call carries 1–6 top-level blocks (nested
+layout children count toward 50 nodes per event); the server validates every
+block against the Pydantic `UiBlockEvent` model before emitting, unknown
+types return `success: false` with `valid_types` instead of a broken event,
+and the frontend keeps a neutral "Unsupported block" card for anything it
+does not recognise. The `chart` block reuses the same `ChartSpec`/`ChartBlock`
+contract as the ` ```chart ` fence above.
+
+**In-place updates.** Repeating the same `block_id` on a later call updates
+that block group in place instead of appending a duplicate, and `replace_id`
+retargets the group already carrying that name — keeping its original
+position, latest write winning — falling back to a fresh group when nothing
+matches. The identity (`replace_id` → `block_id` → `tool_call_id`) travels in
+the persisted tool arguments, so a replayed event or a history reload updates
+the same block rather than creating a second one.
 
 **Interactivity round-trip.** Buttons dispatch their `prompt` as a normal
 user message through the store's `sendMessage` action (the same fallback
