@@ -4,9 +4,15 @@ All notable changes to EvoFlux are documented in this file.
 
 ## [Unreleased]
 
+No changes yet.
+
+## [3.0.7] - 2026-10-14
+
 ### Fixed
 
-- **Built-in Browser** keeps agent pointer actions inside the page instead of moving the desktop cursor; pages that require trusted OS gestures or browser-managed CSS `:hover` may still need another control path.
+- **Built-in Browser** keeps agent pointer actions inside the page instead of moving
+  the desktop cursor. Pages that require trusted OS gestures or browser-managed
+  CSS `:hover` may still need another control path.
 
 ## [3.0.6] - 2026-10-10
 
