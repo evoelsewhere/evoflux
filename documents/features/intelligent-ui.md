@@ -175,11 +175,15 @@ other environments, **Download source** saves a copy outside the repository.
   locally produced MP4 or WebM with fixed 30 fps timestamps. The encoder module
   loads only when the user chooses **Render video**. Progress and cancel are
   available while rendering; the finished video appears in Workbench for
-  playback and an explicit download. Artifacts created before frame-render support can
-  still use the browser's real-time canvas recorder. Export includes only the
-  marked `data-evoflux-motion-canvas`, so titles and captions must be drawn
-  inside it. Frame output is limited to 1280 × 720 and 150 MB; codec support
-  still depends on the local WebView.
+  playback and an explicit download. Choose **Balanced** (up to 1280 × 720) or
+  **High** (up to 1920 × 1080); smaller canvases are not enlarged, and output
+  dimensions preserve the canvas aspect ratio. A render records the artifact
+  revision and is cancelled if the revision changes before completion; the
+  downloaded filename and preview identify the pinned revision. Artifacts
+  created before frame-render support can still use the browser's real-time
+  canvas recorder. Export includes only the marked
+  `data-evoflux-motion-canvas`, so titles and captions must be drawn inside it.
+  Frame output remains subject to a 150 MB cap and local WebView codec support.
 - **3D scenes** are declarative and limited to 100 labeled box, sphere,
   cylinder or torus nodes. The app loads its pinned local Three.js runtime
   only for this artifact kind, caps rendering, stops when offscreen, and
@@ -187,7 +191,9 @@ other environments, **Download source** saves a copy outside the repository.
   a labeled static preview remains visible.
 - Rich HTML runs in a dedicated `sandbox="allow-scripts"` iframe with no
   same-origin or `allow` privileges, a network-denying CSP and a one-time
-  `MessageChannel` bridge. App theme tokens and reduced-motion preference are
+  `MessageChannel` bridge. The runtime API is installed before generated
+  scripts execute, so command handlers and frame renderers register on first
+  load. App theme tokens and reduced-motion preference are
   passed into the frame and updated while it is open. Frame export transfers
   only one rendered `ImageBitmap` at a time across this bridge; the encoder and
   file assembly stay in the app page. Existing `show_widget` and `ui_block.custom`
@@ -208,6 +214,9 @@ through normal Skill discovery in other styles and agents. The Skill carries:
 - a block catalog with the real field names and caps of all 14 types;
 - worked examples with exact native payloads and guidance for sourced
   dashboards, motion controls/export, and declarative scene3d;
+- an on-demand motion-authoring reference with storyboard, deterministic
+  frame/playback contract, visual quality rules, and stable scene ids for
+  focused revisions;
 - an in-place update protocol for `block_id` / `replace_id` follow-ups;
 - hard rules against the three observed failure modes: static markdown
   tables for interactive data, writing widget HTML to disk, and asking
