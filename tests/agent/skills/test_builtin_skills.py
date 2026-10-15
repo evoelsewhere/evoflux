@@ -75,3 +75,31 @@ def test_intelligent_ui_links_runtime_accurate_motion_authoring_guidance():
     ):
         assert runtime_api in guide
     assert "stable ids" in guide.lower()
+
+
+def test_motion_authoring_requires_choreography_instead_of_slide_like_scenes():
+    skill_dir = BUILTIN / "intelligent-ui"
+    guide = (skill_dir / "reference" / "motion-authoring.md").read_text(
+        encoding="utf-8"
+    ).lower()
+    guide = " ".join(guide.split())
+
+    for craft_rule in (
+        "beat-level timeline",
+        "startframe",
+        "endframe",
+        "drawat(timems)",
+        "before",
+        "after",
+        "holdframes",
+        "transitionin",
+        "soundcue",
+        "persistent visual anchor",
+        "anticipation",
+        "impact hit",
+        "settle",
+        "transition grammar",
+        "sound-design cue",
+        "no audio track",
+    ):
+        assert craft_rule in guide
