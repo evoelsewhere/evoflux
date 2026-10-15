@@ -10,16 +10,19 @@
 
 ## Choose motion for the task
 
-Use `visual_artifact` motion when time, transformation, sequence, or changing
-relationships are the point the user needs to understand. A video request is
-explicit intent to produce motion; for a simple fact or static comparison,
-explain directly or use a chart/table when that serves the goal better.
+Use `visual_artifact` motion only when the user explicitly requests video or
+animation, or when time itself carries the meaning: sequence, transformation,
+cause-and-effect, or a reveal that a static answer would obscure. Prompt length,
+detail, and topic words do not select motion. For a fact, summary, or static
+comparison, use prose or a chart/table when that serves the goal better.
 
 Infer sensible defaults from the task. Use 16:9 when no destination is given,
 and choose vertical or square framing only when the destination calls for it.
-Keep a first explainer short (about 12–20 seconds and 3–5 scenes), with one
-clear takeaway. Do not ask for details that can be safely inferred; state the
-defaults in the artifact summary so the user can redirect them.
+For a first explainer, condense the source into about 12–20 seconds and 3–5
+scenes, with one clear takeaway; the tool accepts at most 120 seconds. Preserve
+important facts and conditions without animating every detail. Do not ask for
+details that can be safely inferred; state the defaults in the artifact summary
+so the user can redirect them.
 
 ## Brief and storyboard
 

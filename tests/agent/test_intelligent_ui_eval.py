@@ -29,6 +29,26 @@ def test_visual_eval_cases_cover_native_rich_prose_and_missing_capability() -> N
     assert "visual_artifact" in missing["forbidden_choices"]
 
 
+def test_motion_eval_separates_temporal_value_from_prompt_length() -> None:
+    cases = {case["id"]: case for case in load_cases(FIXTURE)}
+
+    implicit_motion = cases["implicit_temporal_explainer"]
+    assert implicit_motion["expected_choice"] == "motion"
+    assert all(
+        word not in implicit_motion["prompt"].lower()
+        for word in ("video", "animation", "motion")
+    )
+
+    long_summary = cases["long_context_static_summary"]
+    assert long_summary["expected_choice"] == "prose"
+    assert len(long_summary["prompt"].encode("utf-8")) >= 2500
+    assert "visual_artifact" in long_summary["forbidden_choices"]
+
+    long_motion = cases["long_context_motion_explainer"]
+    assert long_motion["expected_choice"] == "motion"
+    assert len(long_motion["prompt"].encode("utf-8")) >= 1500
+
+
 def test_cases_encode_task_intent_instead_of_runtime_keyword_rules() -> None:
     source = FIXTURE.read_text(encoding="utf-8")
     assert all(case["prompt"].strip() for case in json.loads(source))
@@ -42,6 +62,7 @@ def test_live_smoke_is_opt_in_and_records_only_outcomes_and_tool_quality() -> No
         "model_id",
         "tool",
         "kind",
+        "prompt_bytes",
         "payload_bytes",
         "has_provenance",
         "status",
@@ -80,6 +101,42 @@ def test_live_smoke_can_run_one_case_without_sending_the_whole_fixture_set() -> 
     selected = select_cases(cases, ["motion_explainer"])
 
     assert [case["id"] for case in selected] == ["motion_explainer"]
+
+
+def test_live_smoke_records_prompt_size_without_recording_prompt_content(
+    monkeypatch,
+) -> None:
+    class Response:
+        def __init__(self, stream: bool = False):
+            self.stream = stream
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def read(self):
+            return b'{"session_id":"00000000-0000-4000-8000-000000000001"}'
+
+        def __iter__(self):
+            yield b"event: done\n"
+            yield b'data: {"type":"done"}\n'
+
+    monkeypatch.setattr(
+        "scripts.smoke_intelligent_ui._request",
+        lambda url, **_kwargs: Response(stream=url.endswith("/stream")),
+    )
+    prompt = "Tóm tắt các nguyên tắc cache trong 5 ý ngắn."
+
+    outcome = _run_case(
+        "http://127.0.0.1:8000/api/team",
+        "xiaomi:mimo-v2.6-flash",
+        {"id": "long-context", "prompt": prompt},
+    )
+
+    assert outcome["prompt_bytes"] == len(prompt.encode("utf-8"))
+    assert prompt not in str(outcome)
 
 
 def test_live_smoke_rejects_unknown_case_ids() -> None:

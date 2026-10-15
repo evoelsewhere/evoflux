@@ -55,6 +55,10 @@ async def test_visual_artifact_description_teaches_task_fit_and_payload_contract
         "dashboard" in description and "motion" in description and "3d" in description
     )
     assert "when" in description
+    assert all(
+        cue in description
+        for cue in ("sequence", "transformation", "cause-and-effect", "prompt length")
+    )
 
 
 @pytest.mark.asyncio

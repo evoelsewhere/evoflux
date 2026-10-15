@@ -25,7 +25,12 @@ from app.agent.tools.registry import InjectedArg
     description=(
         "Create a rich EvoFlux Workbench visual only when the user's task benefits from "
         "a custom dashboard, a controllable motion explainer, or spatial 3D "
-        "inspection. Judge the task and likely next action, not keywords. Use "
+        "inspection. Judge the task and likely next action, not keywords. Choose motion "
+        "only for an explicit video request or when sequence, transformation, "
+        "cause-and-effect, or a reveal over time carries the meaning. Prompt length "
+        "does not make a task a video: keep static facts, summaries, and comparisons "
+        "in prose, ui_block, or a dashboard as appropriate. Condense long sources "
+        "into a few factual scene beats instead of animating every detail. Use "
         "ui_block for compact native controls and prose for simple answers. "
         "Dashboard data must come from successful tool results in this run; "
         "include their tool_call_id and a short query_summary, and never claim "

@@ -152,6 +152,16 @@ explainer, or 3D scene. Each artifact has a stable `artifact_id`; later calls
 replace it in place. Tool-call arguments are the source of truth for history,
 so artifacts survive reloads without a database migration.
 
+**Motion selection follows temporal value.** The model should choose motion
+when the user explicitly requests a video or when a sequence, transformation,
+cause-and-effect relationship, or reveal over time is necessary to understand
+the subject. A long prompt, detailed source, timeline, or the word “process” is
+not sufficient by itself. For long source material, preserve the central
+claims, key numbers, order, and safety conditions while condensing the
+storyboard to a few scenes; source length affects summarization, not the choice
+between prose and video. No runtime keyword or prompt-length router selects
+the artifact.
+
 The conversation shows a compact artifact card; **Open in Workbench** opens the
 actual interactive view in EvoFlux's resizable side panel. The tab belongs to
 the current session, and the card can reopen an artifact reconstructed from
@@ -202,25 +212,15 @@ other environments, **Download source** saves a copy outside the repository.
 ## Built-in Skill: `intelligent-ui`
 
 The `intelligent-ui` Skill (`app/agent/builtin_skills/intelligent-ui/`)
-provides detailed decision guidance, block schemas, and examples. Its body is
-preloaded for an enabled Skill in Visual style only when the active agent has
-at least one declared visual capability (`ui_block` or `visual_artifact`). This gives models the operating context
-without a message-keyword router; the agent still decides whether the current
-answer benefits from an interface. Its Level 1 description remains available
-through normal Skill discovery in other styles and agents. The Skill carries:
-
-- a task-utility decision table mapping compact controls to `ui_block`,
-  custom dashboards/motion/3D to `visual_artifact`, and simple answers to prose;
-- a block catalog with the real field names and caps of all 14 types;
-- worked examples with exact native payloads and guidance for sourced
-  dashboards, motion controls/export, and declarative scene3d;
-- an on-demand motion-authoring reference with storyboard, deterministic
-  frame/playback contract, visual quality rules, and stable scene ids for
-  focused revisions;
-- an in-place update protocol for `block_id` / `replace_id` follow-ups;
-- hard rules against the three observed failure modes: static markdown
-  tables for interactive data, writing widget HTML to disk, and asking
-  clarifying questions instead of rendering a best guess.
+keeps the selection rubric in a compact body preloaded in Visual style when an
+active agent has `ui_block` or `visual_artifact`. It distinguishes temporal
+value from prompt length and directs the model to read authoring details only
+after selecting a format. The Level 1 description remains available through
+normal Skill discovery in other styles and agents. Detailed block schemas,
+examples, dashboard rules, motion rendering/export, and update protocols stay
+in on-demand references. The prompt smoke runner records UTF-8 prompt bytes
+alongside tool choice and outcome, without recording prompt content; this is a
+size measure, not a model-token count.
 
 The Skill asks the model to evaluate the user's underlying goal, whether
 interaction changes the user's next step, and whether available controls
