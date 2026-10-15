@@ -1,5 +1,8 @@
 # Research: motion graphics và video từ code cho EvoFlux
 
+Nghiên cứu bổ sung: [Animate production strategy](2026-10-15-animate-production-strategy.md)
+phân tích `cth9191/animate`, task judgment, vòng render/review và soundtrack.
+
 **Ngày kiểm tra:** 2026-10-15
 
 **Baseline nội bộ:** `feat/intelligent-ui`, commit `2fc39d7ce`

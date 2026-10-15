@@ -56,6 +56,11 @@ not a row of title cards. If the user asks for sound, read
 [reference/motion-authoring.md](reference/motion-authoring.md): current video
 exports are silent and this must be disclosed; never claim audio is embedded.
 Read that reference before writing any motion artifact.
+For complex motion, style matching, soundtrack requests, or a result that feels
+like slides, also read [reference/motion-production.md](reference/motion-production.md)
+for task assessment and the build, inspect, revise loop. Render frames with code;
+do not spend a model call on every video frame or confuse higher fps with better
+storytelling.
 
 ## Author only after selecting a visual
 
@@ -76,5 +81,7 @@ Read only the reference needed for the selected format:
   for dashboard provenance, theme, and sandbox rules.
 - [reference/motion-authoring.md](reference/motion-authoring.md) for a selected
   motion storyboard, playback, frame rendering, and export.
+- [reference/motion-production.md](reference/motion-production.md) for complex
+  compositions, style studies, iterative review, and soundtrack planning.
 - [reference/update-protocol.md](reference/update-protocol.md) when changing,
   pausing, or extending an existing chat block.

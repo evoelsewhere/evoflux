@@ -1,5 +1,10 @@
 # Motion authoring
 
+For complex scenes, reference-matched styles, soundtrack requests, or a draft
+that feels like slides, also read [motion-production.md](motion-production.md).
+It describes task assessment and iterative production; the runtime contract
+and silent-export limits below still apply.
+
 ## Contents
 
 - [Choose motion for the task](#choose-motion-for-the-task)
@@ -142,7 +147,7 @@ user supplied; do not use remote images, fonts, or scripts.
 Implement one pure `drawAt(timeMs)` function. It clears and draws the complete
 composition for that absolute time, selecting the scene from the stable scene
 data. Register that same function with
-`window.evofluxArtifact.registerFrameRenderer(timeMs)`, call it for preview
+`window.evofluxArtifact.registerFrameRenderer(drawAt)`, call it for preview
 seeking, and draw the opening frame immediately. Seeking must work in any
 order; `drawAt` must not depend on `Date.now()`, accumulated state, timers, or
 unseeded randomness. Preview playback may use `requestAnimationFrame` outside
