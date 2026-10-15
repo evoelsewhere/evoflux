@@ -18,7 +18,7 @@ vi.mock('@/components/visual-artifact/DashboardArtifact', () => ({
   DashboardArtifact: () => <div data-testid="dashboard-preview" />,
 }))
 vi.mock('@/components/visual-artifact/MotionArtifact', () => ({
-  MotionArtifact: ({ active }: { active?: boolean }) => <div data-testid="motion-preview" data-active={String(active)} />,
+  MotionArtifact: ({ active, reviewRequest }: { active?: boolean; reviewRequest?: { timestampMs: number } }) => <div data-testid="motion-preview" data-active={String(active)} data-review-time={reviewRequest?.timestampMs} />,
 }))
 vi.mock('@/components/visual-artifact/Scene3DArtifact', () => ({
   Scene3DArtifact: ({ visible }: { visible?: boolean }) => <div data-testid="scene3d-preview" data-visible={String(visible)} />,
@@ -68,6 +68,18 @@ describe('VisualArtifactWorkbench', () => {
     const artifact = { ...base, kind: 'motion' as const, durationMs: 10_000 }
     render(<VisualArtifactWorkbench artifact={artifact} mode="work" sessionId="session-1" workspace={null} active={false} />)
     expect(screen.getByTestId('motion-preview')).toHaveAttribute('data-active', 'false')
+  })
+
+  it('passes the selected chat sample time into the motion review surface', () => {
+    const artifact = { ...base, kind: 'motion' as const, durationMs: 10_000 }
+    render(<VisualArtifactWorkbench
+      artifact={artifact}
+      mode="work"
+      sessionId="session-1"
+      workspace={null}
+      reviewRequest={{ id: 1, frameIndex: 45, timestampMs: 1_500 }}
+    />)
+    expect(screen.getByTestId('motion-preview')).toHaveAttribute('data-review-time', '1500')
   })
 
   it('saves into the project only after a path inside the active repo is selected', async () => {

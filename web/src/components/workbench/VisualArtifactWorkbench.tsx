@@ -7,6 +7,7 @@ import { useMotionPreset } from '@/lib/motion'
 import { projectRelativePath } from '@/lib/project-relative-path'
 import { isTauriAvailable } from '@/api/tauri-workspace'
 import { useTeamStore } from '@/stores/useTeamStore'
+import type { MotionReviewRequest } from '@/stores/useUIStore'
 import { DashboardArtifact } from '@/components/visual-artifact/DashboardArtifact'
 import { MotionArtifact } from '@/components/visual-artifact/MotionArtifact'
 import { Scene3DArtifact } from '@/components/visual-artifact/Scene3DArtifact'
@@ -15,6 +16,7 @@ import type { WorkbenchContext } from './tools'
 interface Props extends WorkbenchContext {
   artifact: VisualArtifactPayload
   active?: boolean
+  reviewRequest?: MotionReviewRequest
 }
 
 function sourceFor(artifact: VisualArtifactPayload): { content: string; extension: string; mime: string } {
@@ -38,7 +40,7 @@ function downloadSource(artifact: VisualArtifactPayload) {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
-export function VisualArtifactWorkbench({ artifact, mode, workspace, active = true }: Props) {
+export function VisualArtifactWorkbench({ artifact, mode, workspace, active = true, reviewRequest }: Props) {
   const { preference, resolved } = useThemePreference()
   const motionPreset = useMotionPreset()
   const [reducedMotion, setReducedMotion] = useState(() =>
@@ -109,7 +111,7 @@ export function VisualArtifactWorkbench({ artifact, mode, workspace, active = tr
           <DashboardArtifact artifact={artifact} theme={preference} reducedMotion={respectReducedMotion} onSendPrompt={onSendPrompt} />
         )}
         {artifact.kind === 'motion' && (
-          <MotionArtifact artifact={artifact} theme={preference} reducedMotion={respectReducedMotion} active={active} />
+          <MotionArtifact artifact={artifact} theme={preference} reducedMotion={respectReducedMotion} active={active} reviewRequest={reviewRequest} />
         )}
         {artifact.kind === 'scene3d' && (
           <Scene3DArtifact artifact={artifact} reducedMotion={respectReducedMotion} resolvedTheme={resolved} visible={active} />

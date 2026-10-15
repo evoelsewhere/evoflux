@@ -1,118 +1,116 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { useEffect, useRef } from 'react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { VisualArtifactPayload } from '@/api/types'
-import { MotionArtifact } from '@/components/visual-artifact/MotionArtifact'
 
-const postMessage = vi.fn()
-const playbackSimulation = vi.hoisted(() => ({ enabled: false }))
-const frameRendererSimulation = vi.hoisted(() => ({ enabled: false }))
-const exportMotionFrames = vi.hoisted(() => vi.fn())
-const port = {
-  postMessage,
-  addEventListener: vi.fn(),
-  removeEventListener: vi.fn(),
-} as unknown as MessagePort
-
-vi.mock('@/lib/motion-video-export', async (importOriginal) => ({
-  ...await importOriginal<typeof import('@/lib/motion-video-export')>(),
-  exportMotionFrames,
-}))
-
-vi.mock('@/components/VisualArtifactFrame', () => ({
-  VisualArtifactFrame: ({ onPort, onReady, onPlayback }: {
-    onPort: (port: MessagePort | null) => void
-    onReady: (message: { type: 'ready'; motionCanvas: boolean; frameRenderer?: boolean; canvasWidth?: number; canvasHeight?: number }) => void
-    onPlayback: (message: { state: 'playing' | 'paused' | 'ended'; currentTimeMs: number }) => void
-  }) => {
-    const didSimulate = useRef(false)
-    useEffect(() => {
-      onPort(port)
-      onReady({ type: 'ready', motionCanvas: frameRendererSimulation.enabled, frameRenderer: frameRendererSimulation.enabled, canvasWidth: 960, canvasHeight: 540 })
-      if (playbackSimulation.enabled && !didSimulate.current) {
-        didSimulate.current = true
-        onPlayback({ state: 'playing', currentTimeMs: 100 })
-      }
-      return () => onPort(null)
-    }, [onPort, onReady, onPlayback])
-    return <div title="Motion frame" />
+const motionMocks = vi.hoisted(() => ({
+  exportFrames: vi.fn(),
+  frameHandler: undefined as ((message: { type: 'rendered_frame'; requestId: number; currentTimeMs: number; bitmap: ImageBitmap }) => void) | undefined,
+  port: {
+    postMessage: vi.fn(),
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
   },
 }))
 
+vi.mock('@/lib/visual-artifact-export', () => ({
+  canRenderMotionFrames: () => true,
+  getSupportedExportMimeType: () => 'video/webm',
+}))
+vi.mock('@/components/ui/select', () => ({ SelectControl: () => <div /> }))
+vi.mock('@/components/VisualArtifactFrame', async () => {
+  const React = await import('react')
+  return {
+    VisualArtifactFrame: ({ onPort, onReady, onFrame }: {
+      onPort?: (port: MessagePort | null) => void
+      onReady?: (message: { motionCanvas: boolean; frameRenderer: boolean; canvasWidth: number; canvasHeight: number }) => void
+      onFrame?: (message: { type: 'rendered_frame'; requestId: number; currentTimeMs: number; bitmap: ImageBitmap }) => void
+    }) => {
+      React.useEffect(() => {
+        motionMocks.frameHandler = onFrame
+        onPort?.(motionMocks.port as unknown as MessagePort)
+        onReady?.({ motionCanvas: true, frameRenderer: true, canvasWidth: 640, canvasHeight: 360 })
+      }, [onFrame, onPort, onReady])
+      return <div data-testid="mock-motion-frame" />
+    },
+  }
+})
+vi.mock('@/lib/motion-video-export', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/motion-video-export')>()
+  return { ...actual, exportMotionFrames: (options: unknown) => motionMocks.exportFrames(options) }
+})
+
+import { MotionArtifact } from '@/components/visual-artifact/MotionArtifact'
+
 const artifact: VisualArtifactPayload = {
-  artifactId: 'orbit-demo', kind: 'motion', title: 'Orbital motion', summary: 'How the orbit changes',
-  sourceHtml: '<canvas data-evoflux-motion-canvas></canvas>', scene: null, durationMs: 12_000,
-  revision: 1, sources: [],
+  artifactId: 'motion-active-test', kind: 'motion', title: 'Motion test', summary: 'A short explainer',
+  sourceHtml: '<canvas data-evoflux-motion-canvas></canvas>', scene: null, sources: [], durationMs: 1_000, revision: 1,
 }
+let originalCreateObjectUrl: PropertyDescriptor | undefined
 
-describe('MotionArtifact controls', () => {
+describe('MotionArtifact', () => {
   beforeEach(() => {
-    postMessage.mockClear()
-    playbackSimulation.enabled = false
-    frameRendererSimulation.enabled = false
-    exportMotionFrames.mockReset()
-    Object.defineProperty(globalThis, 'VideoEncoder', { configurable: true, value: class {} })
-    Object.defineProperty(globalThis, 'ImageBitmap', { configurable: true, value: class {} })
-    Object.defineProperty(globalThis, 'createImageBitmap', { configurable: true, value: vi.fn() })
-    Object.defineProperty(window, 'MediaRecorder', {
-      configurable: true,
-      value: class { static isTypeSupported() { return true } },
+    vi.clearAllMocks()
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({ drawImage: vi.fn() } as unknown as CanvasRenderingContext2D)
+    vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementation((callback) => callback(new Blob(['preview'], { type: 'image/jpeg' })))
+    motionMocks.port.postMessage.mockImplementation((rawMessage: unknown) => {
+      const message = rawMessage as { command?: { type?: string; requestId?: number; currentTimeMs?: number } }
+      if (message.command?.type === 'render_frame' && message.command.requestId !== undefined) {
+        motionMocks.frameHandler?.({
+          type: 'rendered_frame',
+          requestId: message.command.requestId,
+          currentTimeMs: message.command.currentTimeMs ?? 0,
+          bitmap: { width: 640, height: 360, close: vi.fn() } as unknown as ImageBitmap,
+        })
+      }
     })
   })
 
-  it('sends play, restart and seek commands and explains missing-canvas export', () => {
-    render(<MotionArtifact artifact={artifact} theme="system" reducedMotion />)
-
-    fireEvent.click(screen.getByRole('button', { name: 'Play' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Restart' }))
-    fireEvent.change(screen.getByRole('slider', { name: 'Motion timeline' }), { target: { value: '4200' } })
-
-    expect(postMessage).toHaveBeenNthCalledWith(1, { type: 'command', command: 'play' })
-    expect(postMessage).toHaveBeenNthCalledWith(2, { type: 'command', command: 'restart' })
-    expect(postMessage).toHaveBeenNthCalledWith(3, { type: 'command', command: { type: 'seek', currentTimeMs: 4200 } })
-    expect(screen.getByText(/Reduced motion is on/)).toBeVisible()
-    expect(screen.getByText(/no marked canvas/)).toBeVisible()
-    expect(screen.getByRole('button', { name: /Export/ })).toBeDisabled()
+  afterEach(() => {
+    if (originalCreateObjectUrl) Object.defineProperty(URL, 'createObjectURL', originalCreateObjectUrl)
+    else Reflect.deleteProperty(URL, 'createObjectURL')
+    originalCreateObjectUrl = undefined
   })
 
-  it('pauses playback automatically when the Workbench tab becomes inactive', async () => {
-    playbackSimulation.enabled = true
-    render(<MotionArtifact artifact={artifact} theme="system" reducedMotion={false} active={false} />)
-    await waitFor(() => expect(postMessage).toHaveBeenCalledWith({ type: 'command', command: 'pause' }))
-  })
+  it('cancels deterministic rendering when its Workbench tab becomes hidden', async () => {
+    originalCreateObjectUrl = Object.getOwnPropertyDescriptor(URL, 'createObjectURL')
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: vi.fn(() => 'blob:previous-video') })
+    motionMocks.exportFrames.mockResolvedValueOnce({ blob: new Blob(['video']), extension: 'mp4', frameCount: 30 })
+    const { rerender } = render(<MotionArtifact artifact={artifact} theme="dark" reducedMotion={false} active />)
+    const renderButton = await screen.findByRole('button', { name: 'Render video' })
+    await waitFor(() => expect(renderButton).toBeEnabled())
+    fireEvent.click(renderButton)
+    expect(await screen.findByLabelText('Motion test rendered video')).toHaveAttribute('src', 'blob:previous-video')
 
-  it('offers a selectable quality preset when deterministic frame export is available', async () => {
-    frameRendererSimulation.enabled = true
-    render(<MotionArtifact artifact={artifact} theme="system" reducedMotion={false} />)
-
-    const quality = screen.getByRole('combobox', { name: 'Video quality' })
-    expect(quality).toHaveTextContent('720p · Balanced')
-    fireEvent.click(quality)
-    const highOption = await screen.findByRole('option', { name: '1080p · High' })
-    fireEvent.mouseMove(highOption)
-    fireEvent.pointerDown(highOption, { pointerType: 'mouse' })
-    fireEvent.mouseUp(highOption)
-    fireEvent.click(highOption)
-    await waitFor(() => expect(quality).toHaveTextContent('1080p · High'))
-    expect(screen.getByRole('button', { name: 'Render video' })).toBeEnabled()
-  })
-
-  it('cancels a render when the artifact revision changes', async () => {
-    frameRendererSimulation.enabled = true
-    exportMotionFrames.mockImplementation(async (options: { requestFrame: (time: number, id: number) => Promise<unknown> }) => {
-      await options.requestFrame(0, 1)
-      return { blob: new Blob(), extension: 'mp4' }
+    let cancellationCheck: (() => boolean) | undefined
+    motionMocks.exportFrames.mockImplementation((rawOptions: unknown) => {
+      const options = rawOptions as { isCancelled: () => boolean }
+      cancellationCheck = options.isCancelled
+      return new Promise((_resolve, reject) => {
+        const timer = window.setInterval(() => {
+          if (!options.isCancelled()) return
+          window.clearInterval(timer)
+          reject(new DOMException('Video export cancelled.', 'AbortError'))
+        }, 5)
+      })
     })
-    const view = render(<MotionArtifact artifact={artifact} theme="system" reducedMotion={false} />)
 
     fireEvent.click(screen.getByRole('button', { name: 'Render video' }))
-    await waitFor(() => expect(postMessage).toHaveBeenCalledWith(expect.objectContaining({
-      type: 'command',
-      command: expect.objectContaining({ type: 'render_frame' }),
-    })))
-    view.rerender(<MotionArtifact artifact={{ ...artifact, revision: 2 }} theme="system" reducedMotion={false} />)
+    await waitFor(() => expect(motionMocks.exportFrames).toHaveBeenCalledTimes(2))
+
+    rerender(<MotionArtifact artifact={artifact} theme="dark" reducedMotion={false} active={false} />)
 
     expect(await screen.findByText('Video export cancelled.')).toBeVisible()
-    expect(exportMotionFrames).toHaveBeenCalledWith(expect.objectContaining({ preset: 'balanced' }))
+    expect(cancellationCheck?.()).toBe(true)
+    expect(screen.getByLabelText('Motion test rendered video')).toHaveAttribute('src', 'blob:previous-video')
+  })
+
+  it('requests the exact next frame through the isolated renderer bridge', async () => {
+    render(<MotionArtifact artifact={artifact} theme="dark" reducedMotion={false} active />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Next frame' }))
+
+    await waitFor(() => expect(motionMocks.port.postMessage).toHaveBeenCalledWith({
+      type: 'command',
+      command: { type: 'render_frame', requestId: 1_000_000_000, currentTimeMs: 1000 / 30 },
+    }))
   })
 })

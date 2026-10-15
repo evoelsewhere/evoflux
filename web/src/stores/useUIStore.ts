@@ -31,12 +31,19 @@ export type WorkbenchTool =
   | 'problems'
   | 'visual-artifact'
 
+export interface MotionReviewRequest {
+  id: number
+  frameIndex: number
+  timestampMs: number
+}
+
 export interface WorkbenchTab {
   id: string
   tool: WorkbenchTool
   title?: string
   initialUrl?: string
   artifact?: VisualArtifactPayload
+  motionReviewRequest?: MotionReviewRequest
   /**
    * The chat session this tab belongs to.
    *
@@ -54,6 +61,7 @@ export interface WorkbenchTabOptions {
   initialUrl?: string
   title?: string
   artifact?: VisualArtifactPayload
+  motionReviewRequest?: MotionReviewRequest
 }
 
 /**
@@ -155,6 +163,7 @@ function newWorkbenchTab(
     initialUrl: options.initialUrl,
     title: options.title,
     artifact: options.artifact,
+    motionReviewRequest: options.motionReviewRequest,
     sessionId: SESSION_SCOPED_TOOLS.has(tool) ? sessionId : null,
   }
 }
@@ -231,6 +240,7 @@ function addOrActivateTool(
   else if (tool === 'visual-artifact' && options.artifact) {
     existing.artifact = options.artifact
     existing.title = options.title
+    if (options.motionReviewRequest) existing.motionReviewRequest = options.motionReviewRequest
   }
   activateTab(state, tab)
   state.workbenchOpen = true
