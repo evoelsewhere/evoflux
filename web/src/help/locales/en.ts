@@ -2589,7 +2589,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Intelligent UI chooses between prose, native controls, and richer dashboards, motion explainers, or 3D views based on task utility. Rich views open in a Workbench tab; the chat keeps a compact card to reopen them. Generated source stays in session history until you download it or, in Desktop Coding mode, explicitly save it into the project to review and commit. Dashboards show verified source calls and query summaries; unverified data is labeled illustrative. Rich views inherit the light, dark, or system theme and reduced-motion setting. Motion export uses supported MP4 or WebM; 3D shows a labeled static preview when WebGL is unavailable.',
+        text: 'Intelligent UI chooses between prose, native controls, and richer dashboards, motion explainers, or 3D views based on task utility. Rich views open in a Workbench tab; the chat keeps a compact card to reopen them. Generated source stays in session history until you download it or, in Desktop Coding mode, explicitly save it into the project to review and commit. Dashboards show verified source calls and query summaries; unverified data is labeled illustrative. Rich views inherit the light, dark, or system theme and reduced-motion setting. Motion export records the marked canvas in real time from the beginning, uses a browser-supported MP4 or WebM format, and can be cancelled; deterministic frame rendering is planned. 3D shows a labeled static preview when WebGL is unavailable.',
       },
       {
         type: 'p',

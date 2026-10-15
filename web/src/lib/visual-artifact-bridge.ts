@@ -6,6 +6,7 @@ export type VisualArtifactBridgeMessage =
   | { type: 'send_prompt'; prompt: string }
   | { type: 'playback'; currentTimeMs: number; state: 'playing' | 'paused' | 'ended' }
   | { type: 'export_chunk'; mimeType: string; bytes: Uint8Array; final: boolean }
+  | { type: 'export_status'; state: 'recording' | 'complete' | 'cancelled' | 'error'; message?: string }
 
 const MAX_SOURCE_BYTES = 200_000
 const MAX_BRIDGE_CHUNK_BYTES = 64_000
@@ -94,6 +95,10 @@ export function parseVisualArtifactBridgeMessage(raw: unknown): VisualArtifactBr
   if (value.type === 'export_chunk' && typeof value.mimeType === 'string' && value.mimeType.startsWith('video/') && typeof value.final === 'boolean') {
     const bytes = value.bytes instanceof Uint8Array ? value.bytes : Array.isArray(value.bytes) && value.bytes.every((n) => Number.isInteger(n) && n >= 0 && n <= 255) ? Uint8Array.from(value.bytes) : null
     if (bytes && bytes.byteLength <= MAX_BRIDGE_CHUNK_BYTES) return { type: 'export_chunk', mimeType: value.mimeType, bytes, final: value.final }
+  }
+  if (value.type === 'export_status' && ['recording', 'complete', 'cancelled', 'error'].includes(String(value.state))) {
+    const message = string(value.message, 500) ? value.message : undefined
+    return { type: 'export_status', state: value.state as 'recording' | 'complete' | 'cancelled' | 'error', ...(message ? { message } : {}) }
   }
   return null
 }

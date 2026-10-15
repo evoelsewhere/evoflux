@@ -32,7 +32,62 @@ function themeTokens(): Record<string, string> {
 }
 
 function runtimeScript(): string {
-  return `<script>(()=>{let initialized=false,port=null,handlers=[],recorder=null,tracks=[],exportQueue=Promise.resolve(),exportBytes=0;const safeTokens=t=>{if(!t||typeof t!=='object')return;for(const [k,v] of Object.entries(t)){if(/^--(?:color-|accent-|surface-|background|foreground|radius)/.test(k)&&typeof v==='string'&&v.length<=256)document.documentElement.style.setProperty(k,v)}};const send=m=>{if(port)port.postMessage(m)};const startExport=mimeType=>{const canvas=document.querySelector('canvas[data-evoflux-motion-canvas]');if(!canvas||!window.MediaRecorder||!MediaRecorder.isTypeSupported(mimeType))return false;try{const stream=canvas.captureStream(30);tracks=stream.getTracks();recorder=new MediaRecorder(stream,{mimeType});exportBytes=0;recorder.addEventListener('dataavailable',event=>{if(!event.data?.size)return;exportQueue=exportQueue.then(async()=>{const bytes=new Uint8Array(await event.data.arrayBuffer());for(let offset=0;offset<bytes.length;offset+=64000){const chunk=bytes.slice(offset,Math.min(offset+64000,bytes.length));exportBytes+=chunk.length;if(exportBytes>150000000){if(recorder?.state==='recording')recorder.stop();return}send({type:'export_chunk',mimeType:recorder.mimeType||mimeType,bytes:chunk,final:false})}})});recorder.addEventListener('stop',()=>{exportQueue.finally(()=>{send({type:'export_chunk',mimeType:recorder?.mimeType||mimeType,bytes:new Uint8Array(),final:true});tracks.forEach(track=>track.stop());tracks=[];recorder=null})});recorder.start(400);setTimeout(()=>{if(recorder?.state==='recording')recorder.stop()},120000);return true}catch{tracks.forEach(track=>track.stop());tracks=[];recorder=null;return false}};const api={onCommand(fn){if(typeof fn==='function')handlers.push(fn)},reportPlayback(state,currentTimeMs){if(['playing','paused','ended'].includes(state)&&Number.isFinite(currentTimeMs))send({type:'playback',state,currentTimeMs})},startCanvasExport(mimeType){return startExport(mimeType)}};Object.defineProperty(window,'evofluxArtifact',{value:Object.freeze(api),writable:false});window.addEventListener('message',event=>{if(initialized||event.source!==window.parent||event.data?.type!=='evoflux-artifact-init'||!event.ports?.[0])return;initialized=true;port=event.ports[0];const config=event.data;safeTokens(config.tokens);document.documentElement.dataset.theme=config.resolvedTheme==='dark'?'dark':'light';document.documentElement.dataset.themePreference=String(config.theme||'system');document.documentElement.dataset.reducedMotion=String(Boolean(config.reducedMotion));port.onmessage=message=>{const data=message.data;if(data?.type==='theme'){safeTokens(data.tokens);document.documentElement.dataset.theme=data.resolvedTheme==='dark'?'dark':'light';document.documentElement.dataset.themePreference=String(data.theme||'system')}if(data?.type==='preferences'){document.documentElement.dataset.reducedMotion=String(Boolean(data.reducedMotion));if(data.reducedMotion)document.documentElement.style.setProperty('scroll-behavior','auto')}if(data?.type==='command')for(const fn of handlers){try{fn(data.command)}catch{}}if(data?.type==='export_request')startExport(data.mimeType)};port.start();send({type:'ready',motionCanvas:Boolean(document.querySelector('canvas[data-evoflux-motion-canvas]'))});const report=()=>send({type:'resize',height:Math.max(160,Math.min(2000,Math.ceil(document.documentElement.scrollHeight)))});new ResizeObserver(report).observe(document.documentElement);setTimeout(report,80)});})();</script>`
+  return `<script>(()=>{
+let initialized=false,port=null,handlers=[],recorder=null,tracks=[],exportQueue=Promise.resolve(),exportBytes=0,exportTimer=0,exportMime='',exportFailure='',exportStopState='complete';
+const MAX_EXPORT_BYTES=150000000,MAX_CHUNK_BYTES=64000;
+const safeTokens=t=>{if(!t||typeof t!=='object')return;for(const [k,v] of Object.entries(t)){if(/^--(?:color-|accent-|surface-|background|foreground|radius)/.test(k)&&typeof v==='string'&&v.length<=256)document.documentElement.style.setProperty(k,v)}};
+const send=m=>{if(port)port.postMessage(m)};
+const sendCommand=command=>{for(const fn of handlers){try{fn(command)}catch{}}};
+const cleanupExport=()=>{if(exportTimer)clearTimeout(exportTimer);exportTimer=0;tracks.forEach(track=>track.stop());tracks=[];recorder=null};
+const finishExport=state=>{
+  const activeRecorder=recorder;
+  if(activeRecorder?.state==='recording'){activeRecorder.stop();return}
+  exportQueue.then(()=>{
+    if(exportFailure){send({type:'export_status',state:'error',message:exportFailure});return}
+    if(state==='complete')send({type:'export_chunk',mimeType:activeRecorder?.mimeType||exportMime,bytes:new Uint8Array(),final:true});
+    send({type:'export_status',state,...(state==='error'&&exportFailure?{message:exportFailure}:{})});
+  }).catch(()=>send({type:'export_status',state:'error',message:'The video could not be finalized.'})).finally(cleanupExport);
+};
+const stopExport=(state,message)=>{exportStopState=state;if(message)exportFailure=message;if(recorder?.state==='recording'){recorder.stop();return}finishExport(state)};
+const startExport=(mimeType,durationMs)=>{
+  if(recorder){send({type:'export_status',state:'error',message:'A video export is already running.'});return false}
+  const canvas=document.querySelector('canvas[data-evoflux-motion-canvas]');
+  if(!canvas||!window.MediaRecorder||!MediaRecorder.isTypeSupported(mimeType)){send({type:'export_status',state:'error',message:'This browser cannot record the motion canvas in the selected format.'});return false}
+  try{
+    const stream=canvas.captureStream(30);tracks=stream.getTracks();exportMime=mimeType;exportBytes=0;exportFailure='';exportStopState='complete';exportQueue=Promise.resolve();
+    recorder=new MediaRecorder(stream,{mimeType});
+    recorder.addEventListener('dataavailable',event=>{
+      if(!event.data?.size)return;
+      exportQueue=exportQueue.then(async()=>{
+        const bytes=new Uint8Array(await event.data.arrayBuffer());
+        for(let offset=0;offset<bytes.length;offset+=MAX_CHUNK_BYTES){
+          const chunk=bytes.slice(offset,Math.min(offset+MAX_CHUNK_BYTES,bytes.length));exportBytes+=chunk.length;
+          if(exportBytes>MAX_EXPORT_BYTES){exportFailure='Export exceeded the 150 MB limit. Try a shorter animation.';if(recorder?.state==='recording')recorder.stop();return}
+          send({type:'export_chunk',mimeType:recorder?.mimeType||exportMime,bytes:chunk,final:false});
+        }
+      }).catch(()=>{exportFailure='The recorded video data could not be read.';if(recorder?.state==='recording')recorder.stop()});
+    });
+    recorder.addEventListener('stop',()=>{if(exportTimer)clearTimeout(exportTimer);exportTimer=0;finishExport(exportFailure?'error':exportStopState)},{once:true});
+    recorder.start(250);send({type:'export_status',state:'recording'});
+    sendCommand('restart');sendCommand('play');
+    exportTimer=setTimeout(()=>stopExport('complete'),Math.min(120000,durationMs+1500));
+    return true;
+  }catch{
+    exportFailure='The browser could not start video recording.';stopExport('error',exportFailure);return false;
+  }
+};
+const api={
+  onCommand(fn){if(typeof fn==='function')handlers.push(fn)},
+  reportPlayback(state,currentTimeMs){if(['playing','paused','ended'].includes(state)&&Number.isFinite(currentTimeMs)){send({type:'playback',state,currentTimeMs});if(state==='ended'&&recorder)stopExport('complete')}},
+  startCanvasExport(mimeType){return startExport(mimeType,120000)}
+};
+Object.defineProperty(window,'evofluxArtifact',{value:Object.freeze(api),writable:false});
+window.addEventListener('message',event=>{
+  if(initialized||event.source!==window.parent||event.data?.type!=='evoflux-artifact-init'||!event.ports?.[0])return;
+  initialized=true;port=event.ports[0];const config=event.data;safeTokens(config.tokens);document.documentElement.dataset.theme=config.resolvedTheme==='dark'?'dark':'light';document.documentElement.dataset.themePreference=String(config.theme||'system');document.documentElement.dataset.reducedMotion=String(Boolean(config.reducedMotion));
+  port.onmessage=message=>{const data=message.data;if(data?.type==='theme'){safeTokens(data.tokens);document.documentElement.dataset.theme=data.resolvedTheme==='dark'?'dark':'light';document.documentElement.dataset.themePreference=String(data.theme||'system')}if(data?.type==='preferences'){document.documentElement.dataset.reducedMotion=String(Boolean(data.reducedMotion));if(data.reducedMotion)document.documentElement.style.setProperty('scroll-behavior','auto')}if(data?.type==='command')sendCommand(data.command);if(data?.type==='export_request')startExport(data.mimeType,data.durationMs);if(data?.type==='export_cancel')stopExport('cancelled')};
+  port.start();send({type:'ready',motionCanvas:Boolean(document.querySelector('canvas[data-evoflux-motion-canvas]'))});const report=()=>send({type:'resize',height:Math.max(160,Math.min(2000,Math.ceil(document.documentElement.scrollHeight)))});new ResizeObserver(report).observe(document.documentElement);setTimeout(report,80)
+});})();</script>`
 }
 
 // Pure serialization helper kept next to its iframe owner; exporting it makes the CSP easy to test.

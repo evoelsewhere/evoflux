@@ -170,8 +170,13 @@ other environments, **Download source** saves a copy outside the repository.
 - **Motion** uses a bounded duration, play/pause/restart/seek controls, a
   timeline and an accessible summary. Export starts only after a user action
   and uses a MIME type the browser reports as supported, preferring MP4 when
-  available and otherwise naming WebM. Export requires a canvas marked
-  `data-evoflux-motion-canvas`.
+  available and otherwise naming WebM. It starts playback from the beginning,
+  captures the marked canvas in real time, stops when the artifact reports its
+  end or reaches its declared duration, and can be cancelled. Export requires
+  the complete composition, including captions, to be drawn on a canvas marked
+  `data-evoflux-motion-canvas`; DOM overlays outside that canvas are not in the
+  exported video. This browser recorder is an interim path; deterministic
+  frame rendering and a packaged FFmpeg runtime remain planned work.
 - **3D scenes** are declarative and limited to 100 labeled box, sphere,
   cylinder or torus nodes. The app loads its pinned local Three.js runtime
   only for this artifact kind, caps rendering, stops when offscreen, and
