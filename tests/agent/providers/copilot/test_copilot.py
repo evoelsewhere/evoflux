@@ -905,6 +905,7 @@ async def test_stream_responses_output_text_done():
     body = _responses_sse(
         {"type": "response.created", "response": {"id": "resp_1"}},
         {"type": "response.output_text.done"},
+        {"type": "response.completed", "response": {"id": "resp_1"}},
     )
     respx.post(_RESPONSES_URL).mock(return_value=httpx.Response(200, content=body))
 
