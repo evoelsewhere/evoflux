@@ -2526,7 +2526,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Intelligent UI tự chọn prose, control native hoặc dashboard, motion explainer và góc nhìn 3D theo độ hữu ích với tác vụ. Dashboard hiển thị tool call và query summary đã xác minh; dữ liệu không có nguồn xác minh được gắn nhãn minh họa. Refresh with agent tạo một lượt chat mới. Rich view theo theme light, dark, system và reduced motion. Motion export dùng MP4 hoặc WebM mà browser hỗ trợ; nếu WebGL không chạy, 3D hiện bản xem trước tĩnh có nhãn.',
+        text: 'Intelligent UI chọn văn bản, control native, dashboard, motion explainer hoặc góc nhìn 3D dựa trên lợi ích thực tế với tác vụ. Rich view mở trong một tab Workbench; chat chỉ giữ thẻ gọn để mở lại. Source được giữ trong lịch sử session, không tạo file trong repo khi preview; bạn có thể tải xuống hoặc, trong Desktop Coding mode, chủ động lưu vào project để review và commit. Dashboard hiển thị nguồn và query summary đã xác minh; dữ liệu chưa xác minh được gắn nhãn minh họa. Rich view theo theme light, dark, system và reduced motion. Motion export dùng MP4/WebM được hỗ trợ; nếu WebGL không chạy, 3D hiện bản xem trước tĩnh có nhãn.',
       },
       {
         type: 'p',

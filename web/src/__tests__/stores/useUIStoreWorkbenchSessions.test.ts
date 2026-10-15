@@ -75,6 +75,23 @@ describe('workbench tabs are scoped to their session', () => {
     expect(second).not.toBe(first)
   })
 
+  it('keeps an artifact payload scoped to the session that opened it', () => {
+    const artifact = {
+      artifactId: 'scene', kind: 'scene3d' as const, title: 'Scene', summary: 'A model',
+      sourceHtml: null, scene: { nodes: [] }, sources: [], durationMs: null, revision: 1,
+    }
+    store().setWorkbenchSession('session-a')
+    store().openWorkbenchTool('visual-artifact', { title: 'Scene', artifact })
+    const tabId = store().activeWorkbenchTabId
+    expect(visible()[0]?.artifact).toEqual(artifact)
+
+    store().setWorkbenchSession('session-b')
+    expect(visible()).toEqual([])
+    store().setWorkbenchSession('session-a')
+    expect(store().activeWorkbenchTabId).toBe(tabId)
+    expect(visible()[0]?.artifact).toEqual(artifact)
+  })
+
   it('remembers which tab a session was looking at', () => {
     store().setWorkbenchSession('session-a')
     store().openWorkbenchTool('terminal')

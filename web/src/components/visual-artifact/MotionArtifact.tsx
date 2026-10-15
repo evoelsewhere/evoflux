@@ -8,9 +8,10 @@ interface Props {
   artifact: VisualArtifactPayload
   theme: ThemePreference
   reducedMotion: boolean
+  active?: boolean
 }
 
-export function MotionArtifact({ artifact, theme, reducedMotion }: Props) {
+export function MotionArtifact({ artifact, theme, reducedMotion, active = true }: Props) {
   const [port, setPort] = useState<MessagePort | null>(null)
   const [state, setState] = useState<'playing' | 'paused' | 'ended'>('paused')
   const [currentTimeMs, setCurrentTimeMs] = useState(0)
@@ -53,6 +54,11 @@ export function MotionArtifact({ artifact, theme, reducedMotion }: Props) {
   }, [artifact.artifactId, exportMime, port])
 
   const command = (name: string, value?: number) => port?.postMessage({ type: 'command', command: value === undefined ? name : { type: name, currentTimeMs: value } })
+  useEffect(() => {
+    if (!active && state === 'playing') {
+      port?.postMessage({ type: 'command', command: 'pause' })
+    }
+  }, [active, state, port])
   const exportVideo = () => {
     if (!exportMime || !port || !hasMotionCanvas) return
     chunks.current = []

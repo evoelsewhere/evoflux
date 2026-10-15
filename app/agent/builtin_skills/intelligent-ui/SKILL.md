@@ -1,6 +1,6 @@
 ---
 name: intelligent-ui
-description: "Evaluates whether an in-chat interface makes an answer more useful, then chooses prose, native ui_block, or rich dashboard, motion, or 3D visual_artifact. Judge the user's goal and likely workflow, not keyword matches; use interaction only when it materially improves the next step."
+description: "Evaluates whether an interface makes an answer more useful, then chooses prose, an inline native ui_block, or a rich dashboard, motion, or 3D visual_artifact shown in EvoFlux Workbench. Judge the user's goal and likely workflow, not keyword matches; use interaction only when it materially improves the next step."
 metadata:
   runtime-preload-tools: ui_block,visual_artifact
 ---
@@ -9,10 +9,11 @@ metadata:
 
 `ui_block` renders shadcn-native UI blocks inline in the conversation. One
 tool call renders one complete frame; the block payload is the tool's own
-arguments, so renders persist across reloads. This skill decides *when*
-interactive UI is the right answer and *which* tool fits. `visual_artifact`
-is available for custom dashboards, motion explainers, and spatial 3D only
-when their richer controls materially help the task.
+arguments, so renders persist across reloads. `visual_artifact` creates a rich
+dashboard, motion explainer, or spatial 3D scene that opens in EvoFlux's
+Workbench side panel. A new artifact opens there automatically; the
+conversation keeps a compact card that can reopen it. This skill decides
+*when* interactive UI is the right answer and *which* tool fits.
 
 ## Decide from the user's goal
 
@@ -39,11 +40,13 @@ better answered directly if it asks for one simple fact.
 ## Hard rules
 
 1. **Never write an interactive artifact to disk just to display it.** Use
-   `ui_block` for compact native interactions; use `visual_artifact` for a
-   custom data dashboard, a controllable animated explainer, or a spatial 3D
-   view when those affordances materially help. Both render inline and persist
-   through tool-call history. Use `ui_block.custom` for small bespoke
-   interactions that do not need the dashboard, motion, or 3D runtime.
+   `ui_block` for compact native interactions in the conversation; use
+   `visual_artifact` for a custom data dashboard, a controllable animated
+   explainer, or a spatial 3D view when those affordances materially help. The
+   latter opens in Workbench and persists through tool-call history. The user
+   chooses explicitly if source should be downloaded or saved into a Coding
+   project. Use `ui_block.custom` for small bespoke interactions that do not
+   need the dashboard, motion, or 3D runtime.
 2. **Do not ask a multiple-choice clarifying question when the user already
    said "render" or "build".** Choose the smallest suitable tool, render a
    first useful version, then offer to adjust it in chat.
@@ -133,4 +136,5 @@ richer dashboard, motion, or scene controls improve the user's next step.
   or privileged browser capabilities. Use EvoFlux theme tokens and respect
   the reduced-motion value exposed by the frame.
 - Reuse `artifact_id` for revisions so an improved dashboard, explainer, or
-  scene replaces the prior view in place.
+  scene replaces the prior view in place. If the Workbench tab is open, the
+  preview updates there; do not paste the generated source into the response.
