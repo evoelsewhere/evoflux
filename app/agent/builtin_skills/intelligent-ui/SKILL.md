@@ -128,11 +128,17 @@ richer dashboard, motion, or scene controls improve the user's next step.
   support `window.evofluxArtifact.onCommand(...)` for play/pause/restart/seek,
   report accurate playback time and `ended`, and mark the one canvas containing
   the complete composition with `data-evoflux-motion-canvas`. Export captures
-  that canvas only; text, captions, or overlays outside it are omitted. Export
-  starts from restart, plays in real time, and stops at `ended` or the declared
-  duration. It is user initiated and the runtime reports the browser-supported
-  format. Don't suggest that every browser produces MP4 or that export is a
-  frame-perfect renderer.
+  that canvas only; text, captions, or overlays outside it are omitted.
+- Register `window.evofluxArtifact.registerFrameRenderer(renderAt)` where
+  `renderAt(timeMs)` redraws the entire composition from an absolute timestamp.
+  Use the same pure drawing function for preview seeking and frame export. Do
+  not depend on `Date.now()`, accumulated animation state, timers, unseeded
+  randomness, or an animation loop inside `renderAt`; the host supplies frames
+  in timestamp order and encodes them locally. Keep the canvas backing size
+  fixed (prefer 1280 × 720) while CSS scales it for the preview. If an older
+  composition has no frame renderer, EvoFlux may fall back to the browser's
+  real-time canvas recorder. The MP4/WebM format depends on local encoder
+  support; do not promise one format on every OS.
 - For motion, decide whether animation helps explain a change, process, or
   comparison before using the rich artifact. Then make a short storyboard with
   audience, destination/aspect ratio, duration, one point per scene, and the

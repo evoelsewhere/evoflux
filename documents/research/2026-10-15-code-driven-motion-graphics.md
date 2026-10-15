@@ -2,9 +2,9 @@
 
 **Ngày kiểm tra:** 2026-10-15
 
-**Baseline nội bộ:** `feat/intelligent-ui`, commit `df22008cb`
+**Baseline nội bộ:** `feat/intelligent-ui`, commit `2fc39d7ce`
 
-**Trạng thái:** Tài liệu tham khảo và đề xuất triển khai; chưa chọn dependency dựng frame hay FFmpeg runtime.
+**Trạng thái:** Nghiên cứu tham khảo; đã triển khai lát cắt frame export bằng Mediabunny trong nhánh feature. Desktop/WebView smoke và so sánh engine vẫn chưa hoàn tất.
 
 ## 1. Kết luận phục vụ quyết định
 
@@ -14,9 +14,9 @@ EvoFlux cần phát triển đồng thời hai phần: **khả năng thiết k�
 
 1. **Ưu tiên thử HyperFrames** cho đường HTML/SVG/CSS → preview → MP4, vì gần hợp đồng `source_html` đang có.
 2. **Dùng Remotion làm đối chứng** cho đường React/TSX → player → video. Đây là ứng viên mạnh nếu chấp nhận điều kiện phân phối, telemetry và chi phí runtime của phương án cụ thể.
-3. **Giữ Canvas + Mediabunny làm phương án gọn** cho explainer 2D do EvoFlux kiểm soát. Phương án này đòi hỏi tự xây nhiều công cụ authoring hơn.
+3. **Đã chọn Canvas + Mediabunny cho lát cắt đầu tiên** của explainer 2D do EvoFlux kiểm soát: canvas được seek trong iframe sandbox, bitmap chuyển từng frame qua bridge, Mediabunny đóng gói MP4/WebM bằng WebCodecs. HyperFrames/FFmpeg vẫn là phương án tham khảo nếu cần timeline nhiều track, composition HTML rộng hơn hoặc render backend.
 
-Đây là đánh giá kiến trúc từ tài liệu, chưa phải kết quả benchmark. Chưa cài package, chạy mã upstream, gọi model, render video hoặc xác nhận chất lượng bằng cách xem các video demo. Những tuyên bố hiệu năng từ nhà phát triển và trải nghiệm cộng đồng không được xem là kết quả trên EvoFlux.
+Đây là lựa chọn triển khai ban đầu dựa trên ranh giới runtime hiện tại, chưa phải kết luận benchmark. Gói Mediabunny đã được tích hợp nhưng chưa có desktop smoke, video fixture được xem, hoặc số đo trên Tauri WebView. Không xem các tuyên bố hiệu năng từ upstream là kết quả trên EvoFlux.
 
 ## 2. Claude công khai điều gì?
 
@@ -61,7 +61,7 @@ Repo có skill cho workflow và domain; đây là tham khảo để tổ chức 
 
 Trong pipeline HyperFrames, FFmpeg là encoder/muxer ở cuối đường render; Chromium/Chrome tạo frame sau khi timeline được seek tới từng số frame. FFmpeg không phải animation engine và không tự làm preview seekable. Một video export tốt cần cả composition có thể seek, frame capture ổn định, rồi encoder/muxer. [Determinism][S04]
 
-Điều này cũng giải thích vì sao `canvas.captureStream()` hiện tại của EvoFlux chưa tương đương: nó ghi một canvas theo đồng hồ playback của browser, không dựng từng frame đã chốt. Đợt triển khai hiện tại chỉ sửa vòng đời recorder này; việc mang Chromium/FFmpeg vào desktop package vẫn là quyết định P1 cần kiểm tra dung lượng, license của binary cụ thể, startup, CPU/RAM và tương thích Windows/macOS/Linux.
+Điều này cũng giải thích vì sao `canvas.captureStream()` chưa tương đương: nó ghi theo đồng hồ playback của browser, không dựng từng frame đã chốt. EvoFlux hiện có đường frame-based cho artifact đăng ký `registerFrameRenderer(timeMs)`. Nó dùng WebCodecs/Mediabunny tại chỗ và không cần cài FFmpeg. HyperFrames vẫn đáng thử nếu cần timeline nhiều track hoặc hỗ trợ composition HTML tổng quát; khi đó cần đo dung lượng, license binary cụ thể, startup, CPU/RAM và tương thích từng WebView trước khi đóng gói Chromium/FFmpeg.
 
 ### 3.2 Remotion: ứng viên React với hai đường export
 
@@ -89,7 +89,7 @@ Mediabunny cung cấp media sources, timestamp, encoding và muxing; `CanvasSour
 
 GSAP là công cụ animation timeline có thể seek; nó không tự cung cấp toàn bộ pipeline video. Có thể dùng nguyên tắc timeline được pause rồi seek theo frame, nhưng vẫn cần renderer và encoder. [GSAP seek][S24]
 
-Đánh giá: Canvas/Mediabunny là đường thử nghiệm nhỏ nhất cho canvas explainer hiện có; full HTML/SVG cần thêm giải pháp capture phù hợp, không thể coi việc ghi một canvas là đã ghi toàn bộ DOM.
+Đánh giá: Canvas/Mediabunny phù hợp nhất với contract canvas hiện có. EvoFlux hiện đã có frame protocol và encode path đầu tiên: HTML sandbox đăng ký hàm vẽ thuần theo thời gian tuyệt đối; app hỏi từng timestamp, nhận một `ImageBitmap` rồi ghi timestamp cố định. Full DOM/SVG và multi-track chưa được hỗ trợ; đây không phải benchmark và chưa xác nhận trên mọi desktop WebView.
 
 ## 4. Repo, license và điều kiện tích hợp
 
@@ -216,16 +216,16 @@ Các điểm này là yêu cầu tích hợp suy ra từ ranh giới hiện tạ
 | Giai đoạn | Việc cần làm | Điều kiện kết thúc có bằng chứng |
 |---|---|---|
 | **P0 — Ổn định recorder hiện tại** | Ghi trạng thái export; bắt đầu từ đầu; tự dừng theo `ended` hoặc duration; hỗ trợ cancel/error/giới hạn kích thước; nói rõ chỉ ghi canvas | Không còn export im lặng hoặc treo ở đường MediaRecorder. Smoke desktop vẫn phải xác nhận file, nội dung, thời lượng, codec và cancel |
-| **P1 — So engine** | Cùng ba composition: kinetic title 6s, chart 15s, explainer ba cảnh 30s; thử HyperFrames và Remotion, thêm Canvas/Mediabunny nếu cần đường gọn | Có source, contact sheets và video thật; đo startup, RAM, package size, thời gian render, parity và xử lý lỗi. Chọn engine sau kết quả và điều kiện phân phối |
+| **P1 — So engine** | Có prototype Canvas/Mediabunny cho canvas; còn cần chạy 3 composition so với HyperFrames và Remotion trong desktop WebView | Có source, contact sheets và video thật; đo startup, RAM, package size, thời gian render, parity và xử lý lỗi. Chốt engine rộng hơn sau kết quả và điều kiện phân phối |
 | **P2 — Agent authoring + preview** | Skill theo runtime, storyboard, asset manifest, sửa theo scene ID, preview trong Workbench | MiMo và model thứ hai đang có cấu hình dùng đúng tool, không cần user nhắc tên tool; sửa một cảnh không đổi cảnh khác |
-| **P3 — Export sản phẩm** | Render theo frame, tiến độ/cancel, quality presets, video result trong app, revision pinning và cleanup | 1080p/30 fps cho fixture đề xuất, file phát được trong EvoFlux; export đúng length dù preview đang pause hoặc đổi tab |
+| **P3 — Export sản phẩm** | Đã có render theo frame, tiến độ/cancel và video preview trong Workbench; còn quality presets, revision pinning và cleanup | 1080p/30 fps cho fixture đề xuất, file phát được trong EvoFlux; export đúng length dù preview đang pause hoặc đổi tab |
 | **P4 — Audio và chỉnh trực tiếp** | Audio track/caption, voiceover nếu có provider, inspector text/color/timing, undo | Audio và caption khớp timeline; chỉnh chi tiết không regenerate cả video; kiểm tra lại điều kiện editor integration |
 
-P1 phải có render đầu cuối trước khi mở rộng UI. 1080p/30 fps là mục tiêu thử nghiệm đề xuất, không phải giới hạn hiện đã được đo. 4K, alpha video, hosted sharing và editor nhiều track đầy đủ để sau khi nhu cầu và chi phí rõ ràng.
+Prototype hiện encode 30 fps với kích thước output tối đa 1280 × 720, 150 MB. Đây là giới hạn ban đầu để giữ chi phí bộ nhớ hợp lý, chưa phải performance target đo được. 1080p, 4K, alpha video, hosted sharing và editor nhiều track cần benchmark và yêu cầu phân phối rõ trước khi mở rộng.
 
 ### Trạng thái triển khai 2026-10-15
 
-Nhánh implementation đang cập nhật P0 cho recorder đang có: thao tác export phát lệnh restart/play, `ended` kết thúc ghi, duration là giới hạn dự phòng, Workbench hiện trạng thái và hỗ trợ hủy. Skill/tool context được sửa để model tạo một storyboard ngắn, vẽ toàn bộ nội dung lên đúng canvas và báo playback chính xác. Chưa chạy desktop smoke hoặc render thật nên chưa xác nhận P0 acceptance; chưa thêm FFmpeg/HyperFrames package, binary hay backend job.
+P0 recorder real-time giữ làm fallback cho artifact lịch sử. Prototype frame export thêm `registerFrameRenderer(timeMs)`, chuyển một bitmap/lần khỏi sandbox, encode timestamp cố định qua Mediabunny/WebCodecs, báo tiến độ, hỗ trợ cancel, hiển thị video trong Workbench và chỉ tải khi người dùng chọn. Tool/Skill context yêu cầu renderer vẽ lại toàn composition từ thời gian tuyệt đối. Chưa chạy desktop smoke hoặc xem video đầu ra nên chưa xác nhận tính đúng đắn, chất lượng, hiệu năng hay parity; chưa thêm FFmpeg/HyperFrames package, binary hoặc backend job.
 
 ### Kiểm thử để chốt plan
 

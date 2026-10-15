@@ -168,15 +168,18 @@ other environments, **Download source** saves a copy outside the repository.
   source explicitly provides one. **Refresh with agent** starts a normal chat
   turn; there is no background polling.
 - **Motion** uses a bounded duration, play/pause/restart/seek controls, a
-  timeline and an accessible summary. Export starts only after a user action
-  and uses a MIME type the browser reports as supported, preferring MP4 when
-  available and otherwise naming WebM. It starts playback from the beginning,
-  captures the marked canvas in real time, stops when the artifact reports its
-  end or reaches its declared duration, and can be cancelled. Export requires
-  the complete composition, including captions, to be drawn on a canvas marked
-  `data-evoflux-motion-canvas`; DOM overlays outside that canvas are not in the
-  exported video. This browser recorder is an interim path; deterministic
-  frame rendering and a packaged FFmpeg runtime remain planned work.
+  timeline and an accessible summary. For frame rendering, the artifact
+  registers `window.evofluxArtifact.registerFrameRenderer(timeMs)`; it redraws
+  the full canvas from that absolute timestamp. The app requests one frame at a
+  time from the sandbox, then uses WebCodecs through Mediabunny to encode a
+  locally produced MP4 or WebM with fixed 30 fps timestamps. The encoder module
+  loads only when the user chooses **Render video**. Progress and cancel are
+  available while rendering; the finished video appears in Workbench for
+  playback and an explicit download. Artifacts created before frame-render support can
+  still use the browser's real-time canvas recorder. Export includes only the
+  marked `data-evoflux-motion-canvas`, so titles and captions must be drawn
+  inside it. Frame output is limited to 1280 × 720 and 150 MB; codec support
+  still depends on the local WebView.
 - **3D scenes** are declarative and limited to 100 labeled box, sphere,
   cylinder or torus nodes. The app loads its pinned local Three.js runtime
   only for this artifact kind, caps rendering, stops when offscreen, and
@@ -185,8 +188,10 @@ other environments, **Download source** saves a copy outside the repository.
 - Rich HTML runs in a dedicated `sandbox="allow-scripts"` iframe with no
   same-origin or `allow` privileges, a network-denying CSP and a one-time
   `MessageChannel` bridge. App theme tokens and reduced-motion preference are
-  passed into the frame and updated while it is open. Existing `show_widget`
-  and `ui_block.custom` rendering keep their historic contract.
+  passed into the frame and updated while it is open. Frame export transfers
+  only one rendered `ImageBitmap` at a time across this bridge; the encoder and
+  file assembly stay in the app page. Existing `show_widget` and `ui_block.custom`
+  rendering keep their historic contract.
 
 ## Built-in Skill: `intelligent-ui`
 
@@ -245,6 +250,8 @@ Response style and fence rendering are owned by
 and `web/src/utils/messages.ts`. Rich artifacts are owned by
 `app/agent/tools/builtin/visualize/visual_artifact.py`,
 `app/agent/schemas/events.py`, `web/src/components/VisualArtifactRenderer.tsx`,
-`web/src/components/VisualArtifactFrame.tsx`, and
-`web/src/lib/visual-artifact-{bridge,three-runtime}.ts` — see the implementation
-plan for the full map.
+`web/src/components/VisualArtifactFrame.tsx`,
+`web/src/components/visual-artifact/MotionArtifact.tsx`,
+`web/src/lib/visual-artifact-{bridge,three-runtime,export}.ts`, and
+`web/src/lib/motion-video-export.ts` — see the implementation plan for the full
+map.

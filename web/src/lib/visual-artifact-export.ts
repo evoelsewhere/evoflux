@@ -10,3 +10,10 @@ export function getSupportedExportMimeType(
     'video/webm',
   ].find((mimeType) => MediaRecorderCtor.isTypeSupported(mimeType)) ?? null
 }
+
+/** Check for the browser APIs needed by the deferred frame renderer without loading its encoder bundle. */
+export function canRenderMotionFrames(): boolean {
+  return typeof VideoEncoder !== 'undefined'
+    && typeof ImageBitmap !== 'undefined'
+    && typeof createImageBitmap === 'function'
+}
