@@ -13,18 +13,29 @@ function useMotionRenderSnapshot(artifactId: string, revision: number) {
 }
 
 function motionStatus(snapshot: NonNullable<ReturnType<typeof useMotionRenderSnapshot>>): string {
+  const audio = snapshot.audioStatus === 'included'
+    ? 'Soundtrack included'
+    : snapshot.audioStatus === 'unavailable'
+      ? 'Sound not rendered'
+      : snapshot.audioStatus === 'rendering'
+        ? 'Preparing soundtrack'
+        : snapshot.audioStatus === 'pending'
+          ? 'Soundtrack planned'
+          : 'No soundtrack requested'
   if (snapshot.status === 'rendering') {
-    return snapshot.totalFrames === null
+    const video = snapshot.totalFrames === null
       ? 'Recording video · frame count unavailable'
       : `Rendering ${snapshot.completedFrames} / ${snapshot.totalFrames} frames${snapshot.fps ? ` · ${snapshot.fps} fps` : ''}`
+    return `${video} · ${audio}`
   }
   if (snapshot.status === 'complete') {
-    return snapshot.totalFrames === null
+    const video = snapshot.totalFrames === null
       ? 'Video recording complete · frame count unavailable'
       : `Video render complete · ${snapshot.completedFrames} / ${snapshot.totalFrames} frames`
+    return `${video} · ${audio}`
   }
-  if (snapshot.status === 'cancelled') return 'Video render cancelled'
-  if (snapshot.status === 'failed') return 'Video render failed'
+  if (snapshot.status === 'cancelled') return `Video render cancelled · ${audio}`
+  if (snapshot.status === 'failed') return `Video render failed · ${audio}`
   return 'Motion timeline ready'
 }
 

@@ -21,9 +21,11 @@ defaults; ask only about information that materially changes the result.
 
 Read the active tool contract before choosing a production route. EvoFlux's
 in-app motion route accepts self-contained HTML/JavaScript and a canvas with
-deterministic frame rendering. It exports at 30 fps and has no audio track.
-It does not expose an audio renderer, a Playwright/FFmpeg render job, or an
-automatic importer for externally rendered videos. Never invent those APIs.
+deterministic frame rendering at 30 fps. It can optionally synthesize and mux
+bounded sound-effect cues when the local WebView exposes a compatible audio
+encoder. It does not import music or voice, expose a Playwright/FFmpeg render
+job, or automatically import externally rendered videos. The older real-time
+canvas recorder remains silent. Never invent those APIs.
 
 When the `motion_review` tool is available, first check that the active provider
 accepts image input. After rendering a draft or a targeted revision, request a
@@ -39,9 +41,9 @@ the model reviews only a few representative samples.
 If authorized shell/browser tools and a local media workflow are available,
 check the actual Node/browser/encoder capabilities before choosing that route.
 Keep render inputs and outputs in the session workspace. External rendering
-is a separate route; do not describe it as an in-app capability. Missing audio
-support does not prevent improving the visual draft, but disclose its silent
-export when sound is requested. Keep the Workbench preview useful with the
+is a separate route; do not describe it as an in-app capability. If requested
+cues cannot be encoded, the Workbench reports sound unavailable while
+preserving the video export. Keep the Workbench preview useful with the
 existing artifact tool.
 
 ## Choose the story, stage, clock, and medium
@@ -52,7 +54,7 @@ Record four decisions, each justified by the task:
 | --- | --- |
 | Story | Process transformation, chronology, problem/solution, product proof, or visual variation. A parcel journey follows one parcel and its changing status. |
 | Stage | One continuous world with a following camera, accumulating layers on a fixed stage, shape-linked scenes, or deliberate cuts. Spatial processes often benefit from continuity. |
-| Clock | Spoken cues for a narrated explanation; verified musical events for a music-led reel; action and reading time for a silent explainer. |
+| Clock | Spoken cues for a narrated explanation; verified musical events for a music-led reel; action and reading time for a silent explainer or sparse effects. |
 | Medium | A coherent palette, type scale, line weight, texture, motion cadence, and camera language. Choose them for the subject and references. |
 
 Treat these as independent choices, not universal format laws. Calm teaching
@@ -162,18 +164,22 @@ peak. A target such as -16 to -14 LUFS is a delivery choice, not a universal
 quality metric. A dramatic dip/hit suits some stories; do not force it on
 every explanation. Reuse unchanged video frames when only the mix changes.
 
-For procedural sound, JavaScript OfflineAudioContext can produce offline PCM
-or WAV; an audio-capable exporter can encode and mux it. Python can analyze or
-mix audio and invoke FFmpeg instead. These are reference implementation paths,
-not new EvoFlux tool names. In the current in-app route keep sound cues as
-planning data and explicitly report that the exported file is silent.
+For an in-app motion artifact, use its bounded declarative `soundtrack` cues
+for a few short, deterministic synthesized effects. The current synth supports
+simple waveforms and envelopes; it is not a music, speech, stem-mixing, or
+sound-library pipeline. Keep cues sparse, tie each to a beat, and omit them
+when sound adds no value. The deterministic exporter reports `included` only
+after finalization confirms an audio track; otherwise it reports `unavailable`
+and keeps the video-only result. The older real-time recorder remains silent.
+Python/MoviePy and FFmpeg are still possible for a separate external workflow,
+but that workflow is not an EvoFlux in-app tool or importer.
 
 ## Deliver evidence and preserve revisions
 
 Inspect the encoded file as well as the composition preview. Verify picture
-and audio refer to the same revision and use the actual exported soundtrack;
-a composed preview track cannot validate a different track mixed at export.
-Report the artifact, checks performed, important fixes, and remaining limits.
+and any included audio refer to the same revision; use the Workbench's final
+audio status rather than assuming the cues were muxed. Report the artifact,
+checks performed, important fixes, and remaining limits.
 Reuse the stable artifact id for Workbench revisions. Keep generated frames,
 stems, references, and videos in session storage unless the user chooses to
 save source or output into the project for review and commit.
