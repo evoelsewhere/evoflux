@@ -2,8 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { VisualArtifactPayload } from '@/api/types'
 import type { ThemePreference } from '@/lib/theme'
 import { VisualArtifactFrame } from '@/components/VisualArtifactFrame'
+import { SelectControl } from '@/components/ui/select'
 import { canRenderMotionFrames, getSupportedExportMimeType } from '@/lib/visual-artifact-export'
 import type { VisualArtifactBridgeMessage } from '@/lib/visual-artifact-bridge'
+import type { MotionExportPreset } from '@/lib/motion-video-export'
 
 type PendingFrame = {
   requestId: number
@@ -12,7 +14,7 @@ type PendingFrame = {
   timeoutId: number
 }
 
-type RenderedVideo = { url: string; extension: 'mp4' | 'webm' }
+type RenderedVideo = { url: string; extension: 'mp4' | 'webm'; preset?: MotionExportPreset; revision?: number }
 
 interface Props {
   artifact: VisualArtifactPayload
@@ -29,6 +31,7 @@ export function MotionArtifact({ artifact, theme, reducedMotion, active = true }
   const [hasFrameRenderer, setHasFrameRenderer] = useState(false)
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 })
   const [exportProgress, setExportProgress] = useState(0)
+  const [exportPreset, setExportPreset] = useState<MotionExportPreset>('balanced')
   const [exportState, setExportState] = useState<'idle' | 'recording' | 'complete' | 'cancelled' | 'error'>('idle')
   const [exportError, setExportError] = useState<string | null>(null)
   const [renderedVideo, setRenderedVideo] = useState<RenderedVideo | null>(null)
@@ -40,6 +43,7 @@ export function MotionArtifact({ artifact, theme, reducedMotion, active = true }
   const framePending = useRef<PendingFrame | null>(null)
   const frameExportCancelled = useRef(false)
   const frameExportRunning = useRef(false)
+  const frameExportRevision = useRef<number | null>(null)
   const playbackStateRef = useRef<'playing' | 'paused' | 'ended'>('paused')
   const playbackTimeRef = useRef(0)
   const pauseWaiter = useRef<(() => void) | null>(null)
@@ -83,11 +87,11 @@ export function MotionArtifact({ artifact, theme, reducedMotion, active = true }
     renderedVideoUrl.current = null
     setRenderedVideo(null)
   }, [])
-  const presentVideo = useCallback((blob: Blob, extension: 'mp4' | 'webm') => {
+  const presentVideo = useCallback((blob: Blob, extension: 'mp4' | 'webm', preset?: MotionExportPreset, revision?: number) => {
     if (renderedVideoUrl.current) URL.revokeObjectURL(renderedVideoUrl.current)
     const url = URL.createObjectURL(blob)
     renderedVideoUrl.current = url
-    setRenderedVideo({ url, extension })
+    setRenderedVideo({ url, extension, preset, revision })
   }, [])
 
   useEffect(() => {
@@ -171,17 +175,31 @@ export function MotionArtifact({ artifact, theme, reducedMotion, active = true }
       }
     }
   }, [active, exportState, port])
+  useEffect(() => {
+    if (!frameExportRunning.current || frameExportRevision.current === artifact.revision) return
+    frameExportCancelled.current = true
+    pauseWaiter.current?.()
+    pauseWaiter.current = null
+    if (framePending.current) {
+      window.clearTimeout(framePending.current.timeoutId)
+      framePending.current.reject(new DOMException('The motion artifact changed during export.', 'AbortError'))
+      framePending.current = null
+    }
+  }, [artifact.revision])
   const downloadVideo = () => {
     if (!renderedVideo) return
     const anchor = document.createElement('a')
     anchor.href = renderedVideo.url
-    anchor.download = `${artifact.artifactId}.${renderedVideo.extension}`
+    anchor.download = `${artifact.artifactId}${renderedVideo.revision === undefined ? '' : `-r${renderedVideo.revision}`}${renderedVideo.preset ? `-${renderedVideo.preset}` : ''}.${renderedVideo.extension}`
     anchor.click()
   }
   const exportFrames = async () => {
     if (!port || !hasFrameRenderer || !canvasSize.width || !canvasSize.height || !frameExportAvailable) return
     frameExportCancelled.current = false
     frameExportRunning.current = true
+    const pinnedRevision = artifact.revision
+    const pinnedPreset = exportPreset
+    frameExportRevision.current = pinnedRevision
     setExportProgress(0)
     const resumePreview = playbackStateRef.current === 'playing'
     const restoreTimeMs = playbackTimeRef.current
@@ -204,6 +222,7 @@ export function MotionArtifact({ artifact, theme, reducedMotion, active = true }
         durationMs: duration,
         canvasWidth: canvasSize.width,
         canvasHeight: canvasSize.height,
+        preset: pinnedPreset,
         isCancelled: () => frameExportCancelled.current,
         onProgress: (framesRendered, totalFrames) => setExportProgress(Math.floor((framesRendered / totalFrames) * 100)),
         requestFrame: (currentTimeMs, requestId) => new Promise((resolve, reject) => {
@@ -218,7 +237,7 @@ export function MotionArtifact({ artifact, theme, reducedMotion, active = true }
           })
         }),
       })
-      presentVideo(result.blob, result.extension)
+      presentVideo(result.blob, result.extension, pinnedPreset, pinnedRevision)
       setExportState('complete')
       setExportError(null)
     } catch (error) {
@@ -233,6 +252,7 @@ export function MotionArtifact({ artifact, theme, reducedMotion, active = true }
         if (resumePreview) port.postMessage({ type: 'command', command: 'play' })
       }
       frameExportRunning.current = false
+      frameExportRevision.current = null
     }
   }
   const exportVideo = () => {
@@ -272,6 +292,23 @@ export function MotionArtifact({ artifact, theme, reducedMotion, active = true }
       <VisualArtifactFrame artifact={artifact} theme={theme} reducedMotion={reducedMotion} onPort={setPort} onPlayback={onPlayback} onReady={onReady} onFrame={onFrame} />
       <div className="space-y-2 border-t border-(--color-border) p-3">
         <div className="flex flex-wrap items-center gap-2">
+          {useFrameExport && (
+            <label className="flex items-center gap-2 text-xs text-(--color-text-subtle)">
+              <span>Video quality</span>
+              <SelectControl
+                ariaLabel="Video quality"
+                value={exportPreset}
+                onValueChange={(value) => setExportPreset(value as MotionExportPreset)}
+                disabled={exportState === 'recording'}
+                size="sm"
+                className="min-w-40 bg-(--bg-key) text-xs"
+                options={[
+                  { value: 'balanced', label: '720p · Balanced' },
+                  { value: 'high', label: '1080p · High' },
+                ]}
+              />
+            </label>
+          )}
           <button type="button" onClick={() => command('play')} disabled={state === 'playing' || exportState === 'recording'}>Play</button>
           <button type="button" onClick={() => command('pause')} disabled={state !== 'playing' || exportState === 'recording'}>Pause</button>
           <button type="button" onClick={() => { command('restart'); setCurrentTimeMs(0) }} disabled={exportState === 'recording'}>Restart</button>
@@ -295,7 +332,7 @@ export function MotionArtifact({ artifact, theme, reducedMotion, active = true }
           <div className="space-y-2 rounded-lg border border-(--color-border-subtle) bg-(--bg-card) p-2">
             <video src={renderedVideo.url} controls preload="metadata" className="max-h-[480px] w-full rounded-md bg-black" aria-label={`${artifact.title} rendered video`} />
             <div className="flex items-center justify-between gap-3">
-              <span className="text-xs text-(--color-text-subtle)">{renderedVideo.extension.toUpperCase()} preview ready</span>
+              <span className="text-xs text-(--color-text-subtle)">{renderedVideo.preset === 'high' ? '1080p · High' : renderedVideo.preset === 'balanced' ? '720p · Balanced' : renderedVideo.extension.toUpperCase()} preview ready{renderedVideo.revision === undefined ? '' : ` · revision ${renderedVideo.revision}`}</span>
               <button type="button" onClick={downloadVideo} className="rounded-md border border-(--color-border) px-3 py-1.5 text-xs font-medium hover:bg-(--bg-key)">Download video</button>
             </div>
           </div>

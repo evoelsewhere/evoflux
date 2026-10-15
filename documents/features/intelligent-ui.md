@@ -175,11 +175,15 @@ other environments, **Download source** saves a copy outside the repository.
   locally produced MP4 or WebM with fixed 30 fps timestamps. The encoder module
   loads only when the user chooses **Render video**. Progress and cancel are
   available while rendering; the finished video appears in Workbench for
-  playback and an explicit download. Artifacts created before frame-render support can
-  still use the browser's real-time canvas recorder. Export includes only the
-  marked `data-evoflux-motion-canvas`, so titles and captions must be drawn
-  inside it. Frame output is limited to 1280 × 720 and 150 MB; codec support
-  still depends on the local WebView.
+  playback and an explicit download. Choose **Balanced** (up to 1280 × 720) or
+  **High** (up to 1920 × 1080); smaller canvases are not enlarged, and output
+  dimensions preserve the canvas aspect ratio. A render records the artifact
+  revision and is cancelled if the revision changes before completion; the
+  downloaded filename and preview identify the pinned revision. Artifacts
+  created before frame-render support can still use the browser's real-time
+  canvas recorder. Export includes only the marked
+  `data-evoflux-motion-canvas`, so titles and captions must be drawn inside it.
+  Frame output remains subject to a 150 MB cap and local WebView codec support.
 - **3D scenes** are declarative and limited to 100 labeled box, sphere,
   cylinder or torus nodes. The app loads its pinned local Three.js runtime
   only for this artifact kind, caps rendering, stops when offscreen, and
