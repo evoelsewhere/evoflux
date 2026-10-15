@@ -3,7 +3,7 @@
 For complex scenes, reference-matched styles, soundtrack requests, or a draft
 that feels like slides, also read [motion-production.md](motion-production.md).
 It describes task assessment and iterative production; the runtime contract
-and silent-export limits below still apply.
+and audio-export limits below still apply.
 
 ## Contents
 
@@ -127,13 +127,23 @@ time/place change. Vary transitions by purpose; swapping decorative wipes on
 otherwise static cards still reads as a slideshow. Use a hold as a deliberate
 part of the rhythm, not as an accidental gap.
 
-When sound is requested, add a sound-design cue to the beat map—such as a soft
-scan tick or a restrained low impact—and align its onset with the visual
-event. This is planning metadata only: EvoFlux currently exports the canvas
-video with no audio track in either the frame-based or real-time canvas
-recording path. Tell the user the exported file will be silent; do not imply
-that a cue, voiceover, or preview sound was included. Only promise audio after
-the runtime exposes and verifies an audio playback and muxing path.
+When sound adds value, align a sparse effect with a meaningful visual event.
+The deterministic frame exporter accepts an optional `soundtrack` object with
+a short `style` label and at most 64 cues. Each cue has a stable `id`,
+`start_ms`, `duration_ms`, one of `sine`, `triangle`, `square`, `sawtooth`, or
+`noise`, `frequency_hz` from 30 to 12000, and `gain` from 0 to 0.35. Cues are
+locally synthesized with bounded envelopes; they do not accept code, remote
+URLs, or local file paths. Use a few quiet sine or triangle tones for ticks and
+impacts, leave meaningful silence, and do not approximate a full music bed,
+voiceover, or supplied soundtrack with dozens of oscillators. Omit the
+`soundtrack` field when sound has no user value.
+
+Audio is optional and depends on the WebView's `AudioBuffer` and container
+encoder support. The Workbench reports whether the finished file includes the
+soundtrack or sound was unavailable; only say it is included after that status
+confirms the mux. Older real-time canvas recordings remain silent. The
+`soundCue` in beat data remains useful for planning even when the export has no
+audio, but do not imply the planning cue was rendered.
 
 ## Build a deterministic composition
 
@@ -188,10 +198,10 @@ revise the smallest number of affected scenes and briefly say why.
 The frame renderer exports the marked canvas at fixed 30 fps, locally, to MP4
 or WebM depending on the installed WebView encoder. Balanced is capped at
 1280 × 720; High is capped at 1920 × 1080. Smaller source canvases are not
-upscaled. Keep spoken words as readable on-canvas captions. Both current
-export paths produce silent video: frame rendering writes only video frames,
-and the older real-time recorder captures a canvas-only stream. State this
-clearly whenever sound is requested.
+upscaled. Keep spoken words as readable on-canvas captions. Frame-based export
+can mux the optional synthesized cues when an audio codec is available; check
+the final Workbench audio status. The older real-time recorder captures a
+canvas-only stream and remains silent.
 
 ## Research references
 
@@ -201,8 +211,9 @@ can be edited. Remotion documents scene transitions and overlays as separate
 tools, including a sound-effect hook for transitions. Its agent skill repo
 structures specialized guidance for transitions, audio, and effects. Motion
 Canvas explains eased tweens and timing events for syncing action to a cue.
-Mediabunny documents audio sources and output tracks, which is a possible
-future export path, not one implemented by EvoFlux.
+Mediabunny documents the audio source and output-track path used for optional
+local cue muxing. The current EvoFlux implementation does not import music or
+voice tracks and does not use the external Playwright/FFmpeg workflow.
 
 - [Claude Motion announcement](https://claude.com/resources/articles/dashboards-and-motion)
 - [Remotion transitions](https://www.remotion.dev/docs/transitions/)

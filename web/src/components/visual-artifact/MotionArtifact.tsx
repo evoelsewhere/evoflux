@@ -13,6 +13,7 @@ import {
   type MotionRenderSnapshot,
   type MotionReviewSample,
   type MotionReviewSampleRole,
+  type MotionAudioStatus,
 } from '@/lib/motion-render-store'
 import type { MotionReviewRequest } from '@/stores/useUIStore'
 import type { MotionSampleReviewRequest } from '@/stores/useUIStore'
@@ -145,6 +146,7 @@ export function MotionArtifact({ artifact, theme, reducedMotion, active = true, 
   const renderId = useRef(`idle-${artifact.artifactId}-${artifact.revision}`)
   const snapshotRef = useRef<MotionRenderSnapshot | null>(null)
   const beatsRef = useRef<MotionTimelineBeat[]>([])
+  const requestedAudioStatus: MotionAudioStatus = artifact.soundtrack?.cues.length ? 'pending' : 'not_requested'
   const renderSnapshot = useSyncExternalStore(
     useCallback((notify) => subscribeMotionRender(artifact.artifactId, artifact.revision, () => notify()), [artifact.artifactId, artifact.revision]),
     useCallback(() => getMotionRenderSnapshot(artifact.artifactId, artifact.revision), [artifact.artifactId, artifact.revision]),
@@ -164,7 +166,7 @@ export function MotionArtifact({ artifact, theme, reducedMotion, active = true, 
       currentFrameUrl: null,
       beats: beatsRef.current,
       samples: [],
-      audioStatus: 'not_requested',
+      audioStatus: requestedAudioStatus,
     }
     const next: MotionRenderSnapshot = {
       ...base,
@@ -179,7 +181,7 @@ export function MotionArtifact({ artifact, theme, reducedMotion, active = true, 
       return true
     }
     return false
-  }, [artifact.artifactId, artifact.revision])
+  }, [artifact.artifactId, artifact.revision, requestedAudioStatus])
   const onPlayback = useCallback((message: { state: 'playing' | 'paused' | 'ended'; currentTimeMs: number }) => {
     playbackStateRef.current = message.state
     playbackTimeRef.current = Math.min(duration, message.currentTimeMs)
@@ -243,9 +245,9 @@ export function MotionArtifact({ artifact, theme, reducedMotion, active = true, 
     publishRender({
       status: 'idle', completedFrames: 0, totalFrames: null, fps: null,
       lastCompletedIndex: null, currentTimeMs: 0, currentFrameUrl: null,
-      samples: [], audioStatus: 'not_requested', beats: [],
+      samples: [], audioStatus: requestedAudioStatus, beats: [],
     })
-  }, [artifact.artifactId, artifact.revision, publishRender])
+  }, [artifact.artifactId, artifact.revision, publishRender, requestedAudioStatus])
   const clearRenderedVideo = useCallback(() => {
     if (renderedVideoUrl.current) URL.revokeObjectURL(renderedVideoUrl.current)
     renderedVideoUrl.current = null
@@ -342,14 +344,14 @@ export function MotionArtifact({ artifact, theme, reducedMotion, active = true, 
           chunks.current = []
           setExportState('error')
           setExportError(data.message ?? 'The video export failed.')
-          if (!frameExportRunning.current) publishRender({ status: 'failed' })
+          if (!frameExportRunning.current) publishRender({ status: 'failed', audioStatus: requestedAudioStatus === 'pending' ? 'unavailable' : requestedAudioStatus })
         } else if (data.state === 'cancelled') {
           chunks.current = []
           setExportState('cancelled')
-          if (!frameExportRunning.current) publishRender({ status: 'cancelled' })
+          if (!frameExportRunning.current) publishRender({ status: 'cancelled', audioStatus: requestedAudioStatus === 'pending' ? 'unavailable' : requestedAudioStatus })
         } else if (data.state === 'complete') {
           setExportState('complete')
-          if (!frameExportRunning.current) publishRender({ status: 'complete' })
+          if (!frameExportRunning.current) publishRender({ status: 'complete', audioStatus: requestedAudioStatus === 'pending' ? 'unavailable' : requestedAudioStatus })
         }
         return
       }
@@ -368,12 +370,12 @@ export function MotionArtifact({ artifact, theme, reducedMotion, active = true, 
     }
     port.addEventListener('message', onMessage)
     return () => port.removeEventListener('message', onMessage)
-  }, [artifact.artifactId, artifact.revision, exportMime, port, presentVideo, publishRender])
+  }, [artifact.artifactId, artifact.revision, exportMime, port, presentVideo, publishRender, requestedAudioStatus])
 
   useEffect(() => () => {
     if (exportStateRef.current === 'recording') portRef.current?.postMessage({ type: 'export_cancel' })
     frameExportCancelled.current = true
-    if (snapshotRef.current?.status === 'rendering') publishRender({ status: 'cancelled' })
+    if (snapshotRef.current?.status === 'rendering') publishRender({ status: 'cancelled', audioStatus: requestedAudioStatus === 'pending' ? 'unavailable' : requestedAudioStatus })
     pauseWaiter.current?.()
     pauseWaiter.current = null
     if (framePending.current) {
@@ -381,7 +383,7 @@ export function MotionArtifact({ artifact, theme, reducedMotion, active = true, 
       framePending.current.reject(new DOMException('Video export cancelled.', 'AbortError'))
       framePending.current = null
     }
-  }, [publishRender])
+  }, [publishRender, requestedAudioStatus])
 
   useEffect(() => () => {
     if (renderedVideoUrl.current) URL.revokeObjectURL(renderedVideoUrl.current)
@@ -447,7 +449,7 @@ export function MotionArtifact({ artifact, theme, reducedMotion, active = true, 
       status: 'rendering', completedFrames: 0, totalFrames,
       fps: totalFrames === null ? null : MOTION_FPS,
       lastCompletedIndex: null, currentTimeMs: 0, currentFrameUrl: null,
-      beats: beatsRef.current, samples: [], audioStatus: 'not_requested',
+      beats: beatsRef.current, samples: [], audioStatus: requestedAudioStatus,
     })
   }
   const exportFrames = async () => {
@@ -483,6 +485,8 @@ export function MotionArtifact({ artifact, theme, reducedMotion, active = true, 
         canvasWidth: canvasSize.width,
         canvasHeight: canvasSize.height,
         preset: pinnedPreset,
+        soundtrack: artifact.soundtrack,
+        onAudioStatus: (audioStatus) => publishRender({ audioStatus }),
         isCancelled: () => frameExportCancelled.current,
         onProgress: (framesRendered, frameTotal) => {
           setExportProgress(framesRendered)
@@ -531,16 +535,17 @@ export function MotionArtifact({ artifact, theme, reducedMotion, active = true, 
       publishRender({
         status: 'complete', completedFrames: result.frameCount, totalFrames: result.frameCount,
         fps: MOTION_FPS, lastCompletedIndex: result.frameCount - 1, currentTimeMs: duration,
+        audioStatus: result.audioStatus,
       })
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') {
         setExportState('cancelled')
-        publishRender({ status: 'cancelled' })
+        publishRender({ status: 'cancelled', audioStatus: requestedAudioStatus === 'pending' ? 'unavailable' : requestedAudioStatus })
       }
       else {
         setExportState('error')
         setExportError(error instanceof Error ? error.message : 'The frame-based video export failed.')
-        publishRender({ status: 'failed' })
+        publishRender({ status: 'failed', audioStatus: requestedAudioStatus === 'pending' ? 'unavailable' : requestedAudioStatus })
       }
     } finally {
       if (active) {
@@ -564,6 +569,7 @@ export function MotionArtifact({ artifact, theme, reducedMotion, active = true, 
     chunks.current = []
     setExportState('recording')
     setExportError(null)
+    if (requestedAudioStatus === 'pending') publishRender({ audioStatus: 'unavailable' })
     port.postMessage({ type: 'export_request', mimeType: exportMime, durationMs: duration })
   }
   const cancelExport = () => {
@@ -622,8 +628,8 @@ export function MotionArtifact({ artifact, theme, reducedMotion, active = true, 
           {!canExport && <span className="text-xs text-(--color-text-subtle)">Video export is unavailable in this browser.</span>}
           {canExport && !hasMotionCanvas && <span className="text-xs text-(--color-text-subtle)">Export is unavailable because this explainer has no marked canvas.</span>}
           {useFrameExport && exportState !== 'recording' && <span className="text-xs text-(--color-text-subtle)">Renders one exact canvas frame at a time and encodes the finished video locally.</span>}
-          {exportState === 'recording' && <span role="status" className="text-xs text-(--color-text-subtle)">{useFrameExport ? `Rendering deterministic frame ${exportProgress} / ${totalTimelineFrames}. Keep this Workbench view open until the file is ready.` : 'Recording video; frame count is unavailable. Keep this Workbench view open until export finishes.'}</span>}
-          {exportState === 'complete' && <span role="status" className="text-xs text-(--color-text-subtle)">Video is ready to preview in Workbench.</span>}
+          {exportState === 'recording' && <span role="status" className="text-xs text-(--color-text-subtle)">{renderSnapshot?.audioStatus === 'rendering' ? 'Preparing soundtrack separately from video frame progress. ' : ''}{useFrameExport ? `Rendering deterministic frame ${exportProgress} / ${totalTimelineFrames}. Keep this Workbench view open until the file is ready.` : 'Recording video; frame count is unavailable. Keep this Workbench view open until export finishes.'}</span>}
+          {exportState === 'complete' && <span role="status" className="text-xs text-(--color-text-subtle)">{renderSnapshot?.audioStatus === 'included' ? 'Video and soundtrack are ready to preview in Workbench.' : renderSnapshot?.audioStatus === 'unavailable' ? 'Video is ready; sound was not rendered.' : 'Video is ready; no soundtrack was requested.'}</span>}
           {exportState === 'cancelled' && <span role="status" className="text-xs text-(--color-text-subtle)">Video export cancelled.</span>}
           {exportError && <span role="alert" className="text-xs text-(--color-danger)">{exportError}</span>}
         </div>

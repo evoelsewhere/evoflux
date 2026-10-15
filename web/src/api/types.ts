@@ -897,6 +897,22 @@ export interface ContentBlock {
 
 export type VisualArtifactKind = 'dashboard' | 'motion' | 'scene3d'
 
+export type MotionSoundWaveform = 'sine' | 'triangle' | 'square' | 'sawtooth' | 'noise'
+
+export interface MotionSoundCue {
+  id: string
+  startMs: number
+  durationMs: number
+  waveform: MotionSoundWaveform
+  frequencyHz: number
+  gain: number
+}
+
+export interface MotionSoundtrackSpec {
+  style: string
+  cues: MotionSoundCue[]
+}
+
 export interface VisualArtifactSource {
   toolCallId: string
   querySummary: string
@@ -928,6 +944,7 @@ export interface VisualArtifactPayload {
   scene: Scene3DSpec | null
   sources: VisualArtifactSource[]
   durationMs: number | null
+  soundtrack?: MotionSoundtrackSpec | null
   revision: number
 }
 

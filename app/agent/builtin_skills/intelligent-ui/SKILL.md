@@ -52,10 +52,13 @@ and safety conditions; omit supporting detail that does not move the story.
 Start with 3–5 narrative sections across about 12–20 seconds unless the user
 specifies otherwise, then break them into timed action beats. Carry a subject
 or visual anchor across sections so the explainer reads as one moving story,
-not a row of title cards. If the user asks for sound, read
-[reference/motion-authoring.md](reference/motion-authoring.md): current video
-exports are silent and this must be disclosed; never claim audio is embedded.
-Read that reference before writing any motion artifact.
+not a row of title cards. Read
+[reference/motion-authoring.md](reference/motion-authoring.md) before writing
+any motion artifact. If sound adds value, it describes the optional bounded
+local cue format and its limits: it synthesizes short effects, not music or
+speech, and the frame exporter may report audio unavailable when the runtime
+cannot encode it. The older real-time recorder remains silent. Never claim
+audio is included unless the completed export reports it.
 For complex motion, style matching, soundtrack requests, or a result that feels
 like slides, also read [reference/motion-production.md](reference/motion-production.md)
 for task assessment and the build, inspect, revise loop. Render frames with code;

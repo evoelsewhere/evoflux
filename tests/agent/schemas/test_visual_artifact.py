@@ -85,6 +85,85 @@ def test_motion_duration_is_capped_at_120_seconds() -> None:
         )
 
 
+def valid_soundtrack() -> dict[str, object]:
+    return {
+        "style": "restrained tactile pulses",
+        "cues": [
+            {
+                "id": "intake-hit",
+                "start_ms": 250,
+                "duration_ms": 500,
+                "waveform": "triangle",
+                "frequency_hz": 440,
+                "gain": 0.12,
+            }
+        ],
+    }
+
+
+def test_motion_soundtrack_validates_cues_and_duration_bounds() -> None:
+    event = VisualArtifactEvent.model_validate(
+        {
+            **valid_event(kind="motion", duration_ms=2_000),
+            "soundtrack": valid_soundtrack(),
+        }
+    )
+    assert event.soundtrack is not None
+    assert event.soundtrack.cues[0].start_ms == 250
+
+    invalid_specs = [
+        {"start_ms": 1_900, "duration_ms": 200},
+        {"gain": 0.36},
+        {"frequency_hz": 12_001},
+        {"frequency_hz": float("nan")},
+        {"waveform": "remote-url"},
+    ]
+    for patch in invalid_specs:
+        cue = {**valid_soundtrack()["cues"][0], **patch}
+        with pytest.raises(ValidationError):
+            VisualArtifactEvent.model_validate(
+                {
+                    **valid_event(kind="motion", duration_ms=2_000),
+                    "soundtrack": {"style": "test", "cues": [cue]},
+                }
+            )
+
+
+def test_motion_soundtrack_rejects_duplicate_ids_excessive_cues_and_non_motion_use() -> (
+    None
+):
+    cue = valid_soundtrack()["cues"][0]
+    assert isinstance(cue, dict)
+    with pytest.raises(ValidationError, match="unique"):
+        VisualArtifactEvent.model_validate(
+            {
+                **valid_event(kind="motion", duration_ms=2_000),
+                "soundtrack": {"style": "test", "cues": [cue, dict(cue)]},
+            }
+        )
+    with pytest.raises(ValidationError):
+        VisualArtifactEvent.model_validate(
+            {
+                **valid_event(kind="motion", duration_ms=120_000),
+                "soundtrack": {
+                    "style": "test",
+                    "cues": [dict(cue, id=f"cue-{i}") for i in range(65)],
+                },
+            }
+        )
+    with pytest.raises(ValidationError, match="motion"):
+        VisualArtifactEvent.model_validate(
+            {**valid_event(), "soundtrack": valid_soundtrack()}
+        )
+    with pytest.raises(ValidationError, match="style"):
+        VisualArtifactEvent.model_validate(
+            {
+                **valid_event(kind="motion", duration_ms=2_000),
+                "soundtrack": {"style": "   ", "cues": [cue]},
+            }
+        )
+
+
 def valid_motion_progress(**overrides: object) -> dict[str, object]:
     return {
         "agent": "lead",

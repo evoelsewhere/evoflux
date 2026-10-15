@@ -10,6 +10,7 @@ from pydantic import Field, ValidationError
 
 from app.agent.schemas.chat import ToolMessage
 from app.agent.schemas.events import (
+    MotionSoundtrackSpec,
     Scene3DSpec,
     VisualArtifactEvent,
     VisualArtifactSourceRef,
@@ -45,6 +46,9 @@ from app.agent.tools.registry import InjectedArg
         "use 1280x720 for Balanced "
         "or 1920x1080 for High output, scaled with CSS; avoid Date.now(), "
         "requestAnimationFrame state, timers, and unseeded randomness in that renderer. "
+        "For useful requested sound, add sparse declarative soundtrack cues with ids, "
+        "timestamps, allowed waveforms, frequency, and gain; never provide code or URLs "
+        "and do not claim sound is included until the exporter confirms the mux. "
         "Export is user initiated and encodes frames locally when WebCodecs is available; "
         "older artifacts can use the browser's real-time recorder. Scene3d uses only "
         "validated box, sphere, cylinder, and torus primitives. Pass a stable "
@@ -73,6 +77,10 @@ async def visual_artifact(
         Field(max_length=12, description="Verified dashboard tool call references"),
     ] = Field(default_factory=list),
     duration_ms: Annotated[int | None, Field(ge=1, le=120_000)] = None,
+    soundtrack: Annotated[
+        MotionSoundtrackSpec | None,
+        Field(description="Optional bounded local sound cues for a motion artifact"),
+    ] = None,
     _injected: Annotated[dict[str, Any] | None, InjectedArg()] = None,
     _state: Annotated[Any | None, InjectedArg()] = None,
     agent_name: Annotated[str, InjectedArg()] = "",
@@ -136,6 +144,7 @@ async def visual_artifact(
                 "scene": scene,
                 "sources": normalized_sources,
                 "duration_ms": duration_ms,
+                "soundtrack": soundtrack,
             }
         )
     except ValidationError as exc:
@@ -161,6 +170,7 @@ async def visual_artifact(
         "artifact_id": event.artifact_id,
         "artifact_revision": event.artifact_revision,
         "kind": event.kind,
+        "sound_cues": len(event.soundtrack.cues) if event.soundtrack else 0,
         "message": f"Rendered {event.kind} artifact '{event.title}'",
         "pushed": pushed,
     }

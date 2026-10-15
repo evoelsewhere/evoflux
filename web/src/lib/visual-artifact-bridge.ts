@@ -1,4 +1,4 @@
-import type { Scene3DSpec, VisualArtifactKind, VisualArtifactPayload, VisualArtifactSource } from '@/api/types'
+import type { MotionSoundtrackSpec, Scene3DSpec, VisualArtifactKind, VisualArtifactPayload, VisualArtifactSource } from '@/api/types'
 
 export type VisualArtifactBridgeMessage =
   | { type: 'ready'; motionCanvas: boolean; frameRenderer?: boolean; canvasWidth?: number; canvasHeight?: number }
@@ -106,6 +106,48 @@ function scene(value: unknown): Scene3DSpec | null {
   return { nodes }
 }
 
+function motionSoundtrack(value: unknown, durationMs: number): MotionSoundtrackSpec | null {
+  const raw = record(value)
+  if (!raw || !string(raw.style, 80) || !raw.style.trim() || !Array.isArray(raw.cues) || raw.cues.length > 64) return null
+  const ids = new Set<string>()
+  const cues: MotionSoundtrackSpec['cues'] = []
+  for (const candidate of raw.cues) {
+    const cue = record(candidate)
+    if (
+      !cue
+      || !string(cue.id, 64)
+      || !/^[a-z0-9][a-z0-9_-]{0,63}$/.test(cue.id)
+      || ids.has(cue.id)
+      || !Number.isSafeInteger(cue.start_ms)
+      || (cue.start_ms as number) < 0
+      || (cue.start_ms as number) > 120_000
+      || !Number.isSafeInteger(cue.duration_ms)
+      || (cue.duration_ms as number) < 20
+      || (cue.duration_ms as number) > 10_000
+      || (cue.start_ms as number) + (cue.duration_ms as number) > durationMs
+      || !['sine', 'triangle', 'square', 'sawtooth', 'noise'].includes(String(cue.waveform))
+      || typeof cue.frequency_hz !== 'number'
+      || !Number.isFinite(cue.frequency_hz)
+      || cue.frequency_hz < 30
+      || cue.frequency_hz > 12_000
+      || typeof cue.gain !== 'number'
+      || !Number.isFinite(cue.gain)
+      || cue.gain < 0
+      || cue.gain > 0.35
+    ) return null
+    ids.add(cue.id)
+    cues.push({
+      id: cue.id,
+      startMs: cue.start_ms as number,
+      durationMs: cue.duration_ms as number,
+      waveform: cue.waveform as MotionSoundtrackSpec['cues'][number]['waveform'],
+      frequencyHz: cue.frequency_hz,
+      gain: cue.gain,
+    })
+  }
+  return { style: raw.style.trim(), cues }
+}
+
 export function parseVisualArtifactMessage(raw: unknown, revision = 1): VisualArtifactPayload | null {
   const value = record(raw)
   if (!value || value.type !== 'visual_artifact') return null
@@ -122,6 +164,12 @@ export function parseVisualArtifactMessage(raw: unknown, revision = 1): VisualAr
   }
   if (kind === 'motion' && (!Number.isInteger(value.duration_ms) || (value.duration_ms as number) < 1 || (value.duration_ms as number) > 120_000)) return null
   if (kind !== 'motion' && value.duration_ms !== null && value.duration_ms !== undefined) return null
+  if (kind !== 'motion' && value.soundtrack !== null && value.soundtrack !== undefined) return null
+  const durationMs = typeof value.duration_ms === 'number' ? value.duration_ms : 0
+  const soundtrack = value.soundtrack === null || value.soundtrack === undefined
+    ? null
+    : motionSoundtrack(value.soundtrack, durationMs)
+  if (value.soundtrack !== null && value.soundtrack !== undefined && !soundtrack) return null
   if (!Array.isArray(value.sources) || value.sources.length > 12) return null
   const sources: VisualArtifactSource[] = []
   for (const rawSource of value.sources) {
@@ -139,6 +187,7 @@ export function parseVisualArtifactMessage(raw: unknown, revision = 1): VisualAr
     scene: sceneSpec,
     sources,
     durationMs: typeof value.duration_ms === 'number' ? value.duration_ms : null,
+    soundtrack,
     revision: Number.isInteger(value.artifact_revision) && (value.artifact_revision as number) >= 1
       ? value.artifact_revision as number
       : revision,

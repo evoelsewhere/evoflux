@@ -59,6 +59,10 @@ async def test_visual_artifact_description_teaches_task_fit_and_payload_contract
         cue in description
         for cue in ("state changes", "enables the next", "prompt length")
     )
+    assert (
+        "soundtrack"
+        in visual_artifact.definition["function"]["parameters"]["properties"]
+    )
 
 
 @pytest.mark.asyncio

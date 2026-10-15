@@ -70,7 +70,7 @@ describe('visual artifact rendering', () => {
     expect(onSendPrompt).toHaveBeenCalledWith(expect.stringContaining('budget'))
   })
 
-  it('shows exact frame progress and opens a selected preview at its timestamp', () => {
+  it('shows exact frame progress and opens a selected preview at its timestamp', async () => {
     publishMotionRenderSnapshot({
       artifactId: 'water-motion', revision: 1, renderId: 'render-water-1', status: 'rendering',
       completedFrames: 7, totalFrames: 300, fps: 30, lastCompletedIndex: 6, currentTimeMs: 200, currentFrameUrl: null,
@@ -81,11 +81,19 @@ describe('visual artifact rendering', () => {
     render(<BlockRenderer block={motionArtifact} isStreaming={false} />)
 
     expect(screen.getByRole('status')).toHaveTextContent('7 / 300 frames')
+    expect(screen.getByRole('status')).toHaveTextContent('No soundtrack requested')
     expect(screen.getByRole('img', { name: /Collect rain.*frame 7/i })).toHaveAttribute('src', 'blob:rain-start')
     fireEvent.click(screen.getByRole('button', { name: /Review frame 7/i }))
     expect(useUIStore.getState().workbenchTabs[0]?.motionReviewRequest).toMatchObject({
       frameIndex: 6, timestampMs: 200,
     })
+
+    publishMotionRenderSnapshot({
+      artifactId: 'water-motion', revision: 1, renderId: 'render-water-1', status: 'complete',
+      completedFrames: 300, totalFrames: 300, fps: 30, lastCompletedIndex: 299, currentTimeMs: 10_000, currentFrameUrl: null,
+      beats: [], samples: [], audioStatus: 'included',
+    })
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Soundtrack included'))
   })
 
   it('renders lifecycle progress before the motion artifact is ready', () => {

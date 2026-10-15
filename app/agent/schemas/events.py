@@ -829,6 +829,37 @@ class Scene3DSpec(BaseModel):
         return self
 
 
+class MotionSoundCue(BaseModel):
+    """One bounded, locally synthesized sound in a motion timeline."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(pattern=r"^[a-z0-9][a-z0-9_-]{0,63}$")
+    start_ms: int = Field(ge=0, le=120_000)
+    duration_ms: int = Field(ge=20, le=10_000)
+    waveform: Literal["sine", "triangle", "square", "sawtooth", "noise"]
+    frequency_hz: float = Field(ge=30, le=12_000)
+    gain: float = Field(ge=0, le=0.35)
+
+
+class MotionSoundtrackSpec(BaseModel):
+    """Declarative sound cues; no executable code, files, or remote URLs."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    style: str = Field(min_length=1, max_length=80)
+    cues: list[MotionSoundCue] = Field(max_length=64)
+
+    @model_validator(mode="after")
+    def _cue_ids_are_unique(self) -> MotionSoundtrackSpec:
+        if not self.style.strip():
+            raise ValueError("soundtrack style must not be blank")
+        ids = [cue.id for cue in self.cues]
+        if len(ids) != len(set(ids)):
+            raise ValueError("sound cue ids must be unique")
+        return self
+
+
 class MotionBeatProgress(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -967,6 +998,7 @@ class VisualArtifactEvent(BaseModel):
     scene: Scene3DSpec | None = None
     sources: list[VisualArtifactSourceRef] = Field(default_factory=list, max_length=12)
     duration_ms: int | None = Field(default=None, ge=1, le=120_000)
+    soundtrack: MotionSoundtrackSpec | None = None
     is_final: Literal[True] = True
 
     @model_validator(mode="after")
@@ -979,6 +1011,15 @@ class VisualArtifactEvent(BaseModel):
             raise ValueError("scene3d requires scene and forbids source_html")
         if self.kind == "motion" and self.duration_ms is None:
             raise ValueError("motion requires duration_ms")
+        if self.soundtrack is not None:
+            if self.kind != "motion":
+                raise ValueError("soundtrack cues are only valid on motion artifacts")
+            assert self.duration_ms is not None
+            if any(
+                cue.start_ms + cue.duration_ms > self.duration_ms
+                for cue in self.soundtrack.cues
+            ):
+                raise ValueError("sound cue exceeds the motion duration")
         if self.kind != "motion" and self.duration_ms is not None:
             raise ValueError("duration_ms is only valid for motion")
         if self.kind != "dashboard" and self.sources:
