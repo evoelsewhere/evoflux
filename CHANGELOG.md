@@ -4,6 +4,11 @@ All notable changes to EvoFlux are documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- Provider streaming regression coverage now waits for the terminal response
+  event before marking a turn complete.
+
 ### Fixed
 
 - **Desktop app control** applies its per-action deadline while waiting for the
