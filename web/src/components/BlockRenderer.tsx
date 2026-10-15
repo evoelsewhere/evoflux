@@ -21,6 +21,7 @@ import { ToolCall } from './ToolCall'
 import { MCPAppResult } from './MCPAppResult'
 import { WidgetRenderer } from './WidgetRenderer'
 import { UiBlockRenderer } from './ui/UiBlockRenderer'
+import { VisualArtifactRenderer } from './VisualArtifactRenderer'
 import { InboxBubble } from './InboxBubble'
 import { HandoffCard } from './HandoffCard'
 import { CompactionDivider } from './CompactionDivider'
@@ -472,6 +473,9 @@ export const BlockRenderer = memo(function BlockRenderer({ block, isStreaming, s
           />
         </div>
       )
+    }
+    case 'visual_artifact': {
+      return <VisualArtifactRenderer block={block} />
     }
     case 'text': {
       const importedSource = block.extra?.import_source as {

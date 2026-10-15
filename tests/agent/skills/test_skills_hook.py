@@ -195,6 +195,7 @@ async def test_preloaded_skills_are_inlined_and_left_out_of_the_catalog(workspac
     ("style", "tools", "expected"),
     [
         ("visual", ["ui_block"], True),
+        ("visual", ["visual_artifact"], True),
         ("visual", [], False),
         ("simple", ["ui_block"], False),
     ],
@@ -207,7 +208,7 @@ async def test_runtime_skill_preload_uses_capability_and_style_not_prompt_words(
     skill_file = workspace / ".agents" / "skills" / "alpha" / "SKILL.md"
     skill_file.write_text(
         "---\nname: alpha\ndescription: Alpha work.\n"
-        "metadata:\n  runtime-preload-tool: ui_block\n---\n"
+        "metadata:\n  runtime-preload-tools: ui_block,visual_artifact\n---\n"
         "Judge the user's goal, not words in the prompt.\n",
         encoding="utf-8",
     )

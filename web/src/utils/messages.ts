@@ -1,4 +1,5 @@
-import type { AgentUsage, ChatMessage, ContentBlock, MessageResponse, TurnCost, TurnUsage } from '@/api/types'
+import type { AgentUsage, ChatMessage, ContentBlock, MessageResponse, TurnCost, TurnUsage, VisualArtifactSource } from '@/api/types'
+import { parseVisualArtifactMessage } from '@/lib/visual-artifact-bridge'
 
 // Me sort messages by timestamp asc, assistant before tool on ties
 
@@ -146,6 +147,41 @@ function finishImportedToolBlocks(pendingToolBlocks: Map<string, ContentBlock>):
   }
 }
 
+function buildVisualSourceCalls(
+  messages: MessageResponse[],
+): Map<string, Omit<VisualArtifactSource, 'toolCallId' | 'querySummary'>> {
+  const calls = new Map<string, Omit<VisualArtifactSource, 'toolCallId' | 'querySummary'>>()
+  for (const message of messages) {
+    if (message.role === 'assistant') {
+      for (const call of message.tool_calls ?? []) {
+        const name = call.function?.name
+        if (!name) continue
+        calls.set(call.id, {
+          verified: false,
+          toolName: name,
+          arguments: call.function?.arguments ?? undefined,
+        })
+      }
+    } else if (message.role === 'tool' && message.tool_call_id) {
+      const previous = calls.get(message.tool_call_id)
+      if (!previous) continue
+      const result = message.content ?? ''
+      let succeeded = Boolean(result.trim()) && !result.trim().toLowerCase().startsWith('error:')
+      try {
+        const parsed: unknown = JSON.parse(result)
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          const payload = parsed as Record<string, unknown>
+          succeeded = succeeded && payload.success !== false && !payload.error
+        }
+      } catch {
+        // Plain-text tool results are successful unless explicitly error-prefixed.
+      }
+      calls.set(message.tool_call_id, { ...previous, verified: succeeded, result })
+    }
+  }
+  return calls
+}
+
 // Me extract ContentBlock[] from one assistant MessageResponse.
 // `uiBlockGroups` mirrors `pendingToolBlocks`: threaded through the whole
 // parse so a later call with the same identity (or a replace_id) can find
@@ -154,6 +190,8 @@ function assistantBlocks(
   msg: MessageResponse,
   pendingToolBlocks: Map<string, ContentBlock>,
   uiBlockGroups: Map<string, ContentBlock>,
+  visualArtifactGroups: Map<string, ContentBlock>,
+  sourceCalls: Map<string, Omit<VisualArtifactSource, 'toolCallId' | 'querySummary'>>,
   timestamp?: Date,
 ): ContentBlock[] {
   const blocks: ContentBlock[] = []
@@ -299,6 +337,50 @@ function assistantBlocks(
       continue
     }
 
+    if (name === 'visual_artifact') {
+      const parsed = parseVisualArtifactMessage({
+        ...parsedArgs,
+        type: 'visual_artifact',
+        artifact_id: parsedArgs?.artifact_id,
+        source_html: parsedArgs?.source_html,
+        scene: parsedArgs?.scene ?? null,
+        sources: parsedArgs?.sources ?? [],
+        duration_ms: parsedArgs?.duration_ms ?? null,
+        is_final: true,
+      })
+      if (parsed) {
+        parsed.sources = parsed.sources.map((source) => ({
+          ...source,
+          ...(sourceCalls.get(source.toolCallId) ?? {}),
+        }))
+        const target = visualArtifactGroups.get(parsed.artifactId)
+        if (target?.visualArtifact) {
+          parsed.revision = target.visualArtifact.revision + 1
+          target.visualArtifact = parsed
+          target.title = parsed.title
+          if (tool.id) {
+            target.toolCallId = tool.id
+            pendingToolBlocks.set(tool.id, target)
+          }
+        } else {
+          const block: ContentBlock = {
+            id: `${msg.id}:visual_artifact:${parsed.artifactId}`,
+            type: 'visual_artifact',
+            content: '',
+            title: parsed.title,
+            visualArtifact: parsed,
+            toolCallId: tool.id,
+            isStreaming: false,
+            timestamp,
+          }
+          visualArtifactGroups.set(parsed.artifactId, block)
+          blocks.push(block)
+          if (tool.id) pendingToolBlocks.set(tool.id, block)
+        }
+        continue
+      }
+    }
+
     const block: ContentBlock = {
       id: `${msg.id}:tool:${tool.id || toolIndex}`,
       type: 'tool',
@@ -341,6 +423,8 @@ export function parseApiMessages(msgs: MessageResponse[]): ChatMessage[] {
   const result: ChatMessage[] = []
   const pendingToolBlocks: Map<string, ContentBlock> = new Map()
   const uiBlockGroups: Map<string, ContentBlock> = new Map()
+  const visualArtifactGroups: Map<string, ContentBlock> = new Map()
+  const sourceCalls = buildVisualSourceCalls(msgs)
 
   for (const msg of sortMessages(msgs)) {
     // Summaries surface as an inline "Session compacted" divider rather
@@ -391,7 +475,7 @@ export function parseApiMessages(msgs: MessageResponse[]): ChatMessage[] {
 
     if (msg.role === 'assistant') {
       const timestamp = msg.created_at ? new Date(msg.created_at) : new Date()
-      const blocks = assistantBlocks(msg, pendingToolBlocks, uiBlockGroups, timestamp)
+      const blocks = assistantBlocks(msg, pendingToolBlocks, uiBlockGroups, visualArtifactGroups, sourceCalls, timestamp)
       const extra = msg.extra as {
         usage?: { input?: number; output?: number; cache?: number }
         turn_usage?: {
@@ -497,6 +581,8 @@ export function parseTeamBlocks(msgs: MessageResponse[]): ContentBlock[] {
   const result: ContentBlock[] = []
   const pendingToolBlocks: Map<string, ContentBlock> = new Map()
   const uiBlockGroups: Map<string, ContentBlock> = new Map()
+  const visualArtifactGroups: Map<string, ContentBlock> = new Map()
+  const sourceCalls = buildVisualSourceCalls(msgs)
 
   for (const msg of sortMessages(msgs)) {
     if (msg.extra?.queue_status === 'queued') continue
@@ -547,7 +633,7 @@ export function parseTeamBlocks(msgs: MessageResponse[]): ContentBlock[] {
 
     if (msg.role === 'assistant') {
       const timestamp = msg.created_at ? new Date(msg.created_at) : new Date()
-      for (const block of assistantBlocks(msg, pendingToolBlocks, uiBlockGroups, timestamp)) {
+      for (const block of assistantBlocks(msg, pendingToolBlocks, uiBlockGroups, visualArtifactGroups, sourceCalls, timestamp)) {
         const lastBlock = result[result.length - 1]
         if (msg.extra?.is_continuation && block.type === 'text' && lastBlock?.type === 'text') {
           lastBlock.content += continuationSeparator(lastBlock.content, block.content) + block.content

@@ -773,3 +773,92 @@ class UiBlockEvent(BaseModel):
                 f"({total} provided)"
             )
         return self
+
+
+MAX_VISUAL_ARTIFACT_SOURCE_BYTES = 200_000
+
+
+def validate_visual_artifact_source(source_html: str) -> str:
+    """Reject oversized HTML before it is persisted or sent over SSE."""
+    if len(source_html.encode("utf-8")) > MAX_VISUAL_ARTIFACT_SOURCE_BYTES:
+        raise ValueError("source_html exceeds 200000 UTF-8 bytes")
+    return source_html
+
+
+class VisualArtifactSourceRef(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    tool_call_id: str = Field(min_length=1, max_length=120)
+    query_summary: str = Field(min_length=1, max_length=500)
+
+
+class Scene3DNode(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(pattern=r"^[a-zA-Z0-9_-]{1,80}$")
+    geometry: Literal["box", "sphere", "cylinder", "torus"]
+    position: tuple[float, float, float]
+    rotation: tuple[float, float, float]
+    scale: tuple[float, float, float]
+    color: Literal[
+        "accent", "foreground", "muted", "success", "warning", "danger", "info"
+    ]
+    label: str | None = Field(default=None, max_length=120)
+
+    @model_validator(mode="after")
+    def _validate_transform_bounds(self) -> Scene3DNode:
+        if any(value < -100 or value > 100 for value in self.position):
+            raise ValueError("3D position values must be in [-100, 100]")
+        if any(value < -6.2832 or value > 6.2832 for value in self.rotation):
+            raise ValueError("3D rotation values must be in [-6.2832, 6.2832]")
+        if any(value < 0.01 or value > 100 for value in self.scale):
+            raise ValueError("3D scale values must be in [0.01, 100]")
+        return self
+
+
+class Scene3DSpec(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    nodes: list[Scene3DNode] = Field(min_length=1, max_length=100)
+
+    @model_validator(mode="after")
+    def _validate_unique_node_ids(self) -> Scene3DSpec:
+        ids = [node.id for node in self.nodes]
+        if len(ids) != len(set(ids)):
+            raise ValueError("3D scene node ids must be unique")
+        return self
+
+
+class VisualArtifactEvent(BaseModel):
+    """Validated complete payload for a rich dashboard, motion, or 3D artifact."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["visual_artifact"] = "visual_artifact"
+    agent: str
+    tool_call_id: str
+    artifact_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_-]{0,79}$")
+    kind: Literal["dashboard", "motion", "scene3d"]
+    title: str = Field(min_length=1, max_length=120)
+    summary: str = Field(max_length=500)
+    source_html: str | None = Field(default=None, min_length=1)
+    scene: Scene3DSpec | None = None
+    sources: list[VisualArtifactSourceRef] = Field(default_factory=list, max_length=12)
+    duration_ms: int | None = Field(default=None, ge=1, le=120_000)
+    is_final: Literal[True] = True
+
+    @model_validator(mode="after")
+    def _validate_payload_for_kind(self) -> VisualArtifactEvent:
+        if self.kind in {"dashboard", "motion"}:
+            if self.source_html is None or self.scene is not None:
+                raise ValueError("dashboard and motion require source_html only")
+            validate_visual_artifact_source(self.source_html)
+        elif self.scene is None or self.source_html is not None:
+            raise ValueError("scene3d requires scene and forbids source_html")
+        if self.kind == "motion" and self.duration_ms is None:
+            raise ValueError("motion requires duration_ms")
+        if self.kind != "motion" and self.duration_ms is not None:
+            raise ValueError("duration_ms is only valid for motion")
+        if self.kind != "dashboard" and self.sources:
+            raise ValueError("sources are only valid for dashboard artifacts")
+        return self

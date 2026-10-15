@@ -1423,6 +1423,10 @@ class TestUiBlockClassification:
         assert "widget_delta" in _AGENT_CONTENT_EVENT_TYPES
         assert "widget_delta" not in _NON_REPLAYABLE_EVENT_TYPES
 
+    def test_visual_artifact_is_agent_content_and_replayable(self):
+        assert "visual_artifact" in _AGENT_CONTENT_EVENT_TYPES
+        assert "visual_artifact" not in _NON_REPLAYABLE_EVENT_TYPES
+
     @pytest.mark.asyncio
     async def test_ui_block_envelope_is_pushed_and_replayed(self):
         from app.agent.schemas.events import UiBlockEvent, UiProgressBlock
@@ -1455,3 +1459,34 @@ class TestUiBlockClassification:
         # dedupe keeps working after a reload.
         assert data["block_id"] == "metrics"
         assert data["replace_id"] == "old-metrics"
+
+    @pytest.mark.asyncio
+    async def test_visual_artifact_envelope_is_pushed_and_replayed(self):
+        from app.agent.schemas.events import VisualArtifactEvent
+
+        await store.init_turn("sid-visual-artifact")
+        event = VisualArtifactEvent(
+            agent="lead",
+            tool_call_id="call-artifact",
+            artifact_id="sales-dashboard",
+            kind="dashboard",
+            title="Sales dashboard",
+            summary="Current pipeline",
+            source_html="<main>Pipeline</main>",
+            sources=[],
+            is_final=True,
+        )
+        await store.push_event("sid-visual-artifact", StreamEnvelope.from_event(event))
+
+        frames = []
+        async for frame in store.attach("sid-visual-artifact"):
+            frames.append(frame)
+            break
+
+        assert frames, "visual artifact frame must be journaled for replay"
+        assert frames[0]["event"] == "visual_artifact"
+        data = json.loads(frames[0]["data"])
+        assert data["type"] == "visual_artifact"
+        assert data["tool_call_id"] == "call-artifact"
+        assert data["artifact_id"] == "sales-dashboard"
+        assert data["is_final"] is True
