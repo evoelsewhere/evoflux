@@ -49,10 +49,13 @@ motion from prompt length, detail, or topic words alone.
 The amount of source material controls how much you condense, not which format
 you choose. For long material, preserve the central claim, key numbers, order,
 and safety conditions; omit supporting detail that does not move the story.
-Start with 3–5 scenes and about 12–20 seconds unless the user specifies a
-different duration. Do not turn every paragraph into a scene. If motion is
-selected, read [reference/motion-authoring.md](reference/motion-authoring.md)
-before writing it.
+Start with 3–5 narrative sections across about 12–20 seconds unless the user
+specifies otherwise, then break them into timed action beats. Carry a subject
+or visual anchor across sections so the explainer reads as one moving story,
+not a row of title cards. If the user asks for sound, read
+[reference/motion-authoring.md](reference/motion-authoring.md): current video
+exports are silent and this must be disclosed; never claim audio is embedded.
+Read that reference before writing any motion artifact.
 
 ## Author only after selecting a visual
 

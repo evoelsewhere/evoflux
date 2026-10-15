@@ -303,3 +303,56 @@ Mọi link dưới đây được mở trong lượt nghiên cứu ngày 2026-10
 [C03]: https://www.reddit.com/r/opencode/comments/1x2zutp/my_short_experience_in_composing_videos_with/
 [C04]: https://news.ycombinator.com/item?id=40646741
 [C05]: https://www.reddit.com/r/ClaudeCode/comments/1wswg22/i_built_an_opensource_skill_that_directs_motion/
+
+## Addendum: make generated explainers feel choreographed
+
+The reported parcel video exposed a gap in the original authoring guidance:
+it prescribed a few stable scenes and a visual change per scene, but an agent
+could satisfy that with one icon-and-caption card per shipping stage. A
+read-only pressure test using a 15-second parcel journey prompt reached the
+same diagnosis. The skill now requires a second, beat-level timeline inside
+those narrative sections, a persistent subject/route across them, an explicit
+motion cause and destination per beat, and a review of the action and settle
+frames. Beat data has stable ids and frame ranges, before/after state, motion,
+transition, hit, and sound-cue fields; `drawAt(timeMs)` must consume this data
+so the authored plan maps to rendered time. The intended test is visual
+continuity and readable causal change, not the count of effects or transitions.
+
+This approach is grounded in different parts of the toolchain rather than one
+magic effect: Claude describes code-authored motion with editable words and
+timing; Remotion separates scene sequencing, transitions, and overlays, and
+its agent repository keeps transition/audio guidance modular; Motion Canvas
+uses easing to make constant-speed motion feel less mechanical and exposes
+timing events for synchronizing an animation to a cue. These concepts map to
+EvoFlux as persistent objects, meaningful easing, action-linked accents, and
+transitions selected by cause. They do not imply that EvoFlux embeds Remotion
+or Motion Canvas.
+
+Sound remains a product gap. The current frame export adds only a video track,
+and the legacy recorder captures `canvas.captureStream(30)` without an audio
+source. Mediabunny provides audio-buffer and audio-sample sources for output
+tracks, so muxing audio is technically possible in a future change; EvoFlux
+does not yet request, receive, preview, or mux an artifact audio track. The
+updated skill therefore asks the author to plan sound cues when requested,
+while telling the user that the rendered file is silent until that runtime
+path is implemented and verified.
+
+Community posts about motion generated from prompts report generic slide-like
+output, robot pacing, weak easing, and detached floating text. These reports
+are anecdotal, but they match the failure signs now added to the review gate;
+they are not quality measurements or evidence about EvoFlux's specific model.
+
+Sources checked on 2026-10-15: [Claude Motion][S01], [Remotion transitions][S33],
+[Remotion transition series and overlays][S34], [Remotion transition skill][S35],
+[Motion Canvas tweening][S36], [Motion Canvas time events][S37], and
+[Mediabunny audio sources][S38]. The community reports are [a prompt-to-video
+builder discussion][C06] and [motion-design feedback][C07].
+
+[S33]: https://www.remotion.dev/docs/transitions/
+[S34]: https://www.remotion.dev/docs/transitions/transitionseries
+[S35]: https://github.com/remotion-dev/skills/blob/main/skills/remotion-markup/transitions.md
+[S36]: https://motioncanvas.io/docs/tweening/
+[S37]: https://motioncanvas.io/docs/time-events/
+[S38]: https://mediabunny.dev/guide/media-sources
+[C06]: https://www.reddit.com/r/SaasDevelopers/comments/1u2whml/my_project_humbled_me_completely_i_spent_14_days/
+[C07]: https://www.reddit.com/r/VideoEditors/comments/1vlggl3/i_am_so_sick_of_everyone_shoving_ai_video_editing/
