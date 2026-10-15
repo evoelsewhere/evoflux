@@ -7,6 +7,7 @@ import {
   MessageCirclePlus,
   Blocks,
   CircleAlert,
+  Box,
   Terminal,
   type LucideIcon,
 } from 'lucide-react'
@@ -76,6 +77,11 @@ export const WORKBENCH_TOOLS: Record<
     description: 'Review LSP, build, test, AI, security, and plugin findings',
     icon: CircleAlert,
   },
+  'visual-artifact': {
+    label: 'Artifact',
+    description: 'Preview an AI-generated dashboard, animation, or 3D scene',
+    icon: Box,
+  },
 }
 
 export const WORKBENCH_TOOL_ORDER = Object.keys(WORKBENCH_TOOLS) as WorkbenchTool[]
@@ -84,6 +90,7 @@ export function isWorkbenchToolEnabled(
   tool: WorkbenchTool,
   context: WorkbenchContext,
 ): boolean {
+  if (tool === 'visual-artifact') return false
   if (tool === 'problems') {
     return context.mode === 'coding' && Boolean(context.workspace)
   }

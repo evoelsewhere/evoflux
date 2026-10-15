@@ -14,6 +14,7 @@ vi.mock('@/api/client', () => apiMocks)
 
 import { queryClient } from '@/lib/query-client'
 import { useTeamStore } from '@/stores/useTeamStore'
+import { useUIStore } from '@/stores/useUIStore'
 import type { ContentBlock } from '@/api/types'
 
 beforeEach(() => {
@@ -95,6 +96,52 @@ describe('sse-reducer ui_block case (spec §5.4)', () => {
   it('ignores events without a blocks array', () => {
     handle('ui_block', { agent: 'lead', tool_call_id: 'call-1', blocks: 'nope' })
     expect(uiBlocks()).toHaveLength(0)
+  })
+})
+
+describe('sse-reducer visual_artifact case', () => {
+  it('opens new rich output in the Workbench and updates the same tab on revisions', () => {
+    useUIStore.setState((state) => {
+      state.workbenchTabs = []
+      state.workbenchSessionId = 'session-1'
+      state.activeWorkbenchTabId = null
+      state.activeWorkbenchTool = null
+      state.workbenchOpen = false
+    })
+    useTeamStore.setState({ sessionId: 'session-1' })
+    const payload = {
+      type: 'visual_artifact', agent: 'lead', tool_call_id: 'artifact-call-1', artifact_id: 'trip-dashboard',
+      kind: 'dashboard', title: 'Trip dashboard', summary: 'Spend by day',
+      source_html: '<main>chart</main>', sources: [], duration_ms: null,
+    }
+
+    handle('visual_artifact', payload)
+    expect(useUIStore.getState().activeWorkbenchTool).toBe('visual-artifact')
+    expect(useUIStore.getState().workbenchTabs[0]?.artifact?.revision).toBe(1)
+
+    handle('visual_artifact', { ...payload, tool_call_id: 'artifact-call-2', title: 'Updated trip dashboard' })
+    expect(useUIStore.getState().workbenchTabs).toHaveLength(1)
+    expect(useUIStore.getState().workbenchTabs[0]?.artifact).toMatchObject({
+      artifactId: 'trip-dashboard', revision: 2, title: 'Updated trip dashboard',
+    })
+  })
+
+  it('does not take over the Workbench for an event from a non-active session', () => {
+    useUIStore.setState((state) => {
+      state.workbenchTabs = []
+      state.workbenchSessionId = 'session-visible'
+      state.activeWorkbenchTabId = null
+      state.activeWorkbenchTool = null
+      state.workbenchOpen = false
+    })
+    useTeamStore.setState({ sessionId: 'session-background' })
+    handle('visual_artifact', {
+      type: 'visual_artifact', agent: 'lead', tool_call_id: 'call-bg', artifact_id: 'background',
+      kind: 'dashboard', title: 'Background', summary: 'Background work', source_html: '<main />',
+      sources: [], duration_ms: null,
+    })
+    expect(useUIStore.getState().activeWorkbenchTool).toBeNull()
+    expect(useUIStore.getState().workbenchTabs).toEqual([])
   })
 })
 

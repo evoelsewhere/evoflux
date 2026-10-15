@@ -2,15 +2,15 @@ import { useEffect, useRef, useState } from 'react'
 import type { VisualArtifactPayload } from '@/api/types'
 import { createSceneRuntime, type SceneRuntime } from '@/lib/visual-artifact-three-runtime'
 
-interface Props { artifact: VisualArtifactPayload; reducedMotion: boolean; resolvedTheme: 'light' | 'dark' }
+interface Props { artifact: VisualArtifactPayload; reducedMotion: boolean; resolvedTheme: 'light' | 'dark'; visible?: boolean }
 
-export function Scene3DArtifact({ artifact, reducedMotion, resolvedTheme }: Props) {
+export function Scene3DArtifact({ artifact, reducedMotion, resolvedTheme, visible = true }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const runtimeRef = useRef<SceneRuntime | null>(null)
-  const [visible, setVisible] = useState(true)
+  const [intersecting, setIntersecting] = useState(true)
   const [fallback, setFallback] = useState(false)
-  const runtimeOptionsRef = useRef({ reducedMotion, visible })
-  runtimeOptionsRef.current = { reducedMotion, visible }
+  const runtimeOptionsRef = useRef({ reducedMotion, visible: visible && intersecting })
+  runtimeOptionsRef.current = { reducedMotion, visible: visible && intersecting }
   const nodes = artifact.scene?.nodes ?? []
 
   useEffect(() => {
@@ -32,12 +32,12 @@ export function Scene3DArtifact({ artifact, reducedMotion, resolvedTheme }: Prop
     }
   }, [artifact.artifactId, artifact.scene, resolvedTheme])
 
-  useEffect(() => { runtimeRef.current?.setVisible(visible) }, [visible])
+  useEffect(() => { runtimeRef.current?.setVisible(visible && intersecting) }, [visible, intersecting])
   useEffect(() => { runtimeRef.current?.setReducedMotion(reducedMotion) }, [reducedMotion])
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas || typeof IntersectionObserver === 'undefined') return
-    const observer = new IntersectionObserver(([entry]) => setVisible(entry.isIntersecting), { threshold: 0.05 })
+    const observer = new IntersectionObserver(([entry]) => setIntersecting(entry.isIntersecting), { threshold: 0.05 })
     observer.observe(canvas)
     return () => observer.disconnect()
   }, [])
