@@ -374,6 +374,7 @@ def _default_tool_registry() -> dict[str, Tool]:
         visualize_read_me,
         show_widget,
         ui_block,
+        visual_artifact,
     )
     from app.agent.tools.builtin.preview import preview_tool
     from app.agent.tools.builtin.document_preview import document_preview
@@ -433,6 +434,7 @@ def _default_tool_registry() -> dict[str, Tool]:
         "visualize_read_me": visualize_read_me,
         "show_widget": show_widget,
         "ui_block": ui_block,
+        "visual_artifact": visual_artifact,
     }
     # Merge MCP tools from healthy servers. Names follow ``mcp_<server>_<tool>``
     # so they cannot collide with the builtins above.

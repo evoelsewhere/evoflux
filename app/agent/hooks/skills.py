@@ -15,7 +15,7 @@ See ``documents/architecture/agent-skills.md``. Per run this hook:
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Sequence
+from typing import TYPE_CHECKING, Mapping, Sequence
 
 from loguru import logger
 
@@ -119,7 +119,7 @@ class SkillsHook(BaseAgentHook):
                 skill.name
                 for skill in catalog.active()
                 if skill.model_visible
-                and skill.metadata.get("runtime-preload-tool") in state.tool_names
+                and _runtime_preload_available(skill.metadata, state.tool_names)
                 and skill.name not in preload_names
             )
 
@@ -208,6 +208,24 @@ class SkillsHook(BaseAgentHook):
                 _grant_plugin_tools(state, skill)
                 _record_activation(skill)
         return result
+
+
+def _runtime_preload_available(
+    metadata: Mapping[str, object], tool_names: Sequence[str]
+) -> bool:
+    """Support plural capability declarations and the historic singular key."""
+    declared = metadata.get("runtime-preload-tools")
+    names = (
+        {name.strip() for name in declared.split(",") if name.strip()}
+        if isinstance(declared, str)
+        else set(declared)
+        if isinstance(declared, (list, tuple, set))
+        else set()
+    )
+    legacy = metadata.get("runtime-preload-tool")
+    if isinstance(legacy, str) and legacy:
+        names.add(legacy)
+    return bool(names & set(tool_names))
 
 
 class SkillsPromptFinalizerHook(BaseAgentHook):

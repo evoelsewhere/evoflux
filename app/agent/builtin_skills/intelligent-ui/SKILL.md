@@ -1,8 +1,8 @@
 ---
 name: intelligent-ui
-description: "Evaluates whether an interactive in-chat interface would make an answer more useful, then chooses and composes an appropriate ui_block. Judge the user's goal and likely answer, not keyword matches: use controls when they help someone explore, compare, calculate, track, learn, or act; use prose when interaction adds no value. Covers native tables, plans, checklists, metrics, calculators, study cards, timers, games, and sandboxed custom HTML. An in-chat dashboard is a stat_cards block, never an HTML file or a designed web page; frontend-design is for real sites. Mermaid diagrams stay in a fenced code block."
+description: "Evaluates whether an in-chat interface makes an answer more useful, then chooses prose, native ui_block, or rich dashboard, motion, or 3D visual_artifact. Judge the user's goal and likely workflow, not keyword matches; use interaction only when it materially improves the next step."
 metadata:
-  runtime-preload-tool: ui_block
+  runtime-preload-tools: ui_block,visual_artifact
 ---
 
 # Intelligent UI
@@ -10,7 +10,9 @@ metadata:
 `ui_block` renders shadcn-native UI blocks inline in the conversation. One
 tool call renders one complete frame; the block payload is the tool's own
 arguments, so renders persist across reloads. This skill decides *when*
-interactive UI is the right answer and *which* block type fits.
+interactive UI is the right answer and *which* tool fits. `visual_artifact`
+is available for custom dashboards, motion explainers, and spatial 3D only
+when their richer controls materially help the task.
 
 ## Decide from the user's goal
 
@@ -36,18 +38,17 @@ better answered directly if it asks for one simple fact.
 
 ## Hard rules
 
-1. **Never write interactive HTML to disk.** Timers, pomodoro widgets,
-   countdowns, games, dashboards, and bespoke widgets must render live in the
-   chat through a `custom` block that carries the full HTML inline. The block
-   runs sandboxed (CSP plus a storage shim) and survives reloads; a `.html`
-   file on disk never appears in the conversation and forces the user to open
-   it themselves.
+1. **Never write an interactive artifact to disk just to display it.** Use
+   `ui_block` for compact native interactions; use `visual_artifact` for a
+   custom data dashboard, a controllable animated explainer, or a spatial 3D
+   view when those affordances materially help. Both render inline and persist
+   through tool-call history. Use `ui_block.custom` for small bespoke
+   interactions that do not need the dashboard, motion, or 3D runtime.
 2. **Do not ask a multiple-choice clarifying question when the user already
-   said "render" or "build".** Render the best guess in one `ui_block` call
-   and offer to adjust afterwards. A rendered frame is easier to correct than
-   an exchanged round of questions.
-3. Prefer `ui_block` over static markdown when interaction materially helps
-   the user compare, sort, track, recompute, inspect, or act. Judge the
+   said "render" or "build".** Choose the smallest suitable tool, render a
+   first useful version, then offer to adjust it in chat.
+3. Prefer an available visual tool over static markdown when interaction
+   materially helps the user compare, sort, track, recompute, inspect, or act. Judge the
    underlying need and the usefulness of the resulting controls. A
    comparison or plan does not automatically need UI; render it when
    interaction gives the user a meaningful advantage. Static markdown is
@@ -71,6 +72,8 @@ user phrased the question:
 | Math with variables that may change — splits, budgets, pricing | `calculator` |
 | Study or review material — terms, verbs, concepts | `flashcards` |
 | A timer, pomodoro, countdown, game, or bespoke widget | `custom` with the full HTML inline |
+| A data-backed dashboard with useful source details or refresh | `visual_artifact` dashboard after reading the data |
+| A pauseable, seekable explainer or a model the user must rotate | `visual_artifact` motion or scene3d |
 | A Mermaid diagram | the `mermaid` fence in markdown, never a block |
 | A warning, tip, or success/error note | `callout` |
 | Structured facts as labels and values | `key_value` |
@@ -104,6 +107,30 @@ ui_block(blocks=[...], title="launch_plan", block_id="launch_plan")
   the user asks to change, pause, add to, or revise blocks that are already
   rendered.
 
-Fences cover only charts and Mermaid: a single trend or category chart may be
-a `chart` fence carrying the same ChartSpec JSON (or the simple
-`type` / `label - value` rows form); everything else goes through `ui_block`.
+Fences cover only charts and Mermaid: a single trend or category chart may
+be a `chart` fence carrying the same ChartSpec JSON (or the simple
+`type` / `label - value` rows form). Use `visual_artifact` only when its
+richer dashboard, motion, or scene controls improve the user's next step.
+
+## Rich artifact rules
+
+- A dashboard is data-backed only after reading or querying its inputs. Cite
+  successful source tool calls in `sources` with a short query summary; runtime
+  verifies these IDs against the active history. If no source is available,
+  label the visualization illustrative in the artifact itself.
+- Do not invent retrieval timestamps. Use a timestamp only when the source
+  result provides one. “Refresh with agent” is a new turn; never imply
+  background refresh.
+- Motion HTML must be self-contained, include a visible caption or summary,
+  support `window.evofluxArtifact.onCommand(...)` for play/pause/restart/seek,
+  and mark its recording canvas with `data-evoflux-motion-canvas`. Export is
+  user initiated and the runtime reports the browser-supported format.
+- Use `scene3d` only when spatial structure benefits inspection. Describe
+  geometry with supported declarative primitives; do not include scripts,
+  URLs, shaders, or remote assets. Keep labels meaningful so the static
+  fallback remains understandable.
+- Rich HTML runs in an isolated frame without same-origin, network, storage,
+  or privileged browser capabilities. Use EvoFlux theme tokens and respect
+  the reduced-motion value exposed by the frame.
+- Reuse `artifact_id` for revisions so an improved dashboard, explainer, or
+  scene replaces the prior view in place.

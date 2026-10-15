@@ -1,12 +1,12 @@
 # Intelligent UI
 
-The Intelligent UI package makes chat replies easier to scan: a user-chosen
-response style, inline charts and diagrams, interactive markdown tables,
-native UI blocks, and saved transcript widgets. It ships in two streams.
-This page documents what is currently implemented; the remaining pieces are
-marked below.
+The Intelligent UI package lets the model choose prose, native interactive
+blocks, or a richer dashboard, motion explainer, or 3D scene when that format
+improves the user's next step. It also includes inline charts and diagrams,
+interactive markdown tables, theme-aware rendering, and transcript replay.
+This page documents the shipped behavior and its current boundaries.
 
-Plan of record: `documents/plans/2026-10-13-intelligent-ui.md`.
+Implementation plan: `documents/plans/2026-10-15-rich-intelligent-ui-implementation.md`.
 
 ## Response style (Simple / Visual)
 
@@ -20,9 +20,9 @@ Plan of record: `documents/plans/2026-10-13-intelligent-ui.md`.
   It asks the model to consider whether controls improve what the user can
   understand, decide, calculate, track, learn, or do, and to prefer prose
   when they add no practical value. When `ui_block` is available, the prompt
-  identifies the tool and gives this decision rubric. The built-in
-  **intelligent-ui** Skill supplies the detailed block catalog and examples
-  to Visual-mode agents that have the tool. Simple style still suppresses
+  identifies only visual tools available to this run and gives this decision
+  rubric. The built-in **intelligent-ui** Skill supplies detailed selection
+  guidance to Visual-mode agents that have a declared tool. Simple style still suppresses
   interactive blocks unless requested.
 
 The choice is stored in `settings.yaml` under `response_style.style` and
@@ -120,10 +120,12 @@ user message through the store's `sendMessage` action (the same fallback
 `- label: value` line per filled field, so the agent reads the answer as an
 ordinary follow-up message. Submission state renders in an ARIA live region.
 
-**Guidance split.** The model is told to use `ui_block` when its controls
-materially help the user's task, and to use prose when that is clearer. It
-chooses a block based on the intended interaction, then uses `show_widget`
-for arbitrary HTML that the native catalog cannot express.
+**Guidance split.** The model is told to judge task utility instead of
+matching words. Use `ui_block` for compact native controls and
+`visual_artifact` only for a dashboard, motion explainer, or spatial view
+whose richer controls matter. The dynamic base context names only tools in
+the active run; the detailed Skill preloads from a comma-separated capability
+declaration. No runtime keyword router chooses the artifact.
 
 Full contract, block limits and event registration:
 [`ui_block` — native structured UI](tools-skills-mcp-and-plugins.md#ui_block--native-structured-ui).
@@ -143,23 +145,51 @@ native block losslessly from `tool_calls` JSON (no database migration), and
 the live event is deduplicated by `tool_call_id` so a stream replay never
 duplicates a block.
 
+## Rich visual artifacts
+
+`visual_artifact` emits one validated complete event for a dashboard, motion
+explainer, or 3D scene. Each artifact has a stable `artifact_id`; later calls
+replace it in place. Tool-call arguments are the source of truth for history,
+so artifacts survive reloads without a database migration.
+
+- **Dashboards** use self-contained `source_html`. A source counts as verified
+  only when its `tool_call_id` matches a successful tool result in the active
+  history. The transcript links to the actual tool name, saved arguments and
+  result, and displays the model's query summary. With no verified source,
+  the dashboard is labeled illustrative. Retrieval time appears only when a
+  source explicitly provides one. **Refresh with agent** starts a normal chat
+  turn; there is no background polling.
+- **Motion** uses a bounded duration, play/pause/restart/seek controls, a
+  timeline and an accessible summary. Export starts only after a user action
+  and uses a MIME type the browser reports as supported, preferring MP4 when
+  available and otherwise naming WebM. Export requires a canvas marked
+  `data-evoflux-motion-canvas`.
+- **3D scenes** are declarative and limited to 100 labeled box, sphere,
+  cylinder or torus nodes. The app loads its pinned local Three.js runtime
+  only for this artifact kind, caps rendering, stops when offscreen, and
+  provides keyboard/pointer rotation plus reset. If WebGL cannot initialize,
+  a labeled static preview remains visible.
+- Rich HTML runs in a dedicated `sandbox="allow-scripts"` iframe with no
+  same-origin or `allow` privileges, a network-denying CSP and a one-time
+  `MessageChannel` bridge. App theme tokens and reduced-motion preference are
+  passed into the frame and updated while it is open. Existing `show_widget`
+  and `ui_block.custom` rendering keep their historic contract.
+
 ## Built-in Skill: `intelligent-ui`
 
 The `intelligent-ui` Skill (`app/agent/builtin_skills/intelligent-ui/`)
 provides detailed decision guidance, block schemas, and examples. Its body is
 preloaded for an enabled Skill in Visual style only when the active agent has
-the declared `ui_block` capability. This gives models the operating context
+at least one declared visual capability (`ui_block` or `visual_artifact`). This gives models the operating context
 without a message-keyword router; the agent still decides whether the current
 answer benefits from an interface. Its Level 1 description remains available
 through normal Skill discovery in other styles and agents. The Skill carries:
 
-- a decision table mapping requests (compare plans, schedules, metrics,
-  math with variables, study material, timers, games, dashboards …) to the
-  right block type;
+- a task-utility decision table mapping compact controls to `ui_block`,
+  custom dashboards/motion/3D to `visual_artifact`, and simple answers to prose;
 - a block catalog with the real field names and caps of all 14 types;
-- four copy-adaptable worked examples with exact `ui_block` payloads,
-  including the anti-pattern fix for pomodoro-style widgets: render the HTML
-  inline in a `custom` block — never write a `.html` file to disk;
+- worked examples with exact native payloads and guidance for sourced
+  dashboards, motion controls/export, and declarative scene3d;
 - an in-place update protocol for `block_id` / `replace_id` follow-ups;
 - hard rules against the three observed failure modes: static markdown
   tables for interactive data, writing widget HTML to disk, and asking
@@ -185,7 +215,7 @@ Persistent post-interaction state remains future work.
 
 Validation: `uv run python scripts/validate_skills.py --strict-warnings`;
 discovery is the existing directory scan of `app/agent/builtin_skills/` — no
-runtime or discovery code changed.
+new Skill discovery subsystem was added.
 
 ## Source ownership
 
@@ -199,4 +229,9 @@ Response style and fence rendering are owned by
 `app/services/{stream_envelope,memory_stream_store}.py`,
 `app/api/routes/team/webbridge.py`, `web/src/components/ui/`,
 `web/src/components/BlockRenderer.tsx`, `web/src/stores/useTeamStore/sse-reducer.ts`
-and `web/src/utils/messages.ts` — see the plan of record for the full map.
+and `web/src/utils/messages.ts`. Rich artifacts are owned by
+`app/agent/tools/builtin/visualize/visual_artifact.py`,
+`app/agent/schemas/events.py`, `web/src/components/VisualArtifactRenderer.tsx`,
+`web/src/components/VisualArtifactFrame.tsx`, and
+`web/src/lib/visual-artifact-{bridge,three-runtime}.ts` — see the implementation
+plan for the full map.

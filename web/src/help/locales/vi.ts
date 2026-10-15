@@ -2526,6 +2526,10 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       },
       {
         type: 'p',
+        text: 'Intelligent UI tự chọn prose, control native hoặc dashboard, motion explainer và góc nhìn 3D theo độ hữu ích với tác vụ. Dashboard hiển thị tool call và query summary đã xác minh; dữ liệu không có nguồn xác minh được gắn nhãn minh họa. Refresh with agent tạo một lượt chat mới. Rich view theo theme light, dark, system và reduced motion. Motion export dùng MP4 hoặc WebM mà browser hỗ trợ; nếu WebGL không chạy, 3D hiện bản xem trước tĩnh có nhãn.',
+      },
+      {
+        type: 'p',
         text: 'Biết trang nào sở hữu concern nào tránh lục: models vs agents vs sandbox vs browser policy tách cố ý để toggle rủi ro vẫn chủ đích. Đổi theme không nên nằm cạnh force-with-lease trong mental model của bạn.',
       },
       {

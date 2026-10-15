@@ -7,4 +7,4 @@ proposals and not evidence that an unimplemented Spec has shipped.
 | Feature | Page |
 |---|---|
 | Import conversations and agent resources from other AI tools | [Multi-source import](multi-source-import.md) |
-| Response style (Simple/Visual) and native chart/Mermaid fences in chat | [Intelligent UI](intelligent-ui.md) |
+| Task-aware prose, native UI blocks, sourced dashboards, motion explainers, 3D scenes, and chart/Mermaid/table rendering | [Intelligent UI](intelligent-ui.md) |

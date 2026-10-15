@@ -189,6 +189,7 @@ def test_default_tool_registry_keys():
         "todo_manage",
         "memory_search",
         "ui_block",
+        "visual_artifact",
     }
     assert expected.issubset(registry.keys())
     assert "skill" not in registry
@@ -244,10 +245,13 @@ def test_tier_tools_lead_only_and_tier_filters():
         assert name not in lead_coding
         assert name in member_normal
 
-    # ui_block is the structured (non-HTML) variant: Work + Coding, member too.
+    # ui_block and visual_artifact are native streamed deliverables in both modes.
     assert "ui_block" in lead_normal
     assert "ui_block" in lead_coding
     assert "ui_block" in member_normal
+    assert "visual_artifact" in lead_normal
+    assert "visual_artifact" in lead_coding
+    assert "visual_artifact" in member_normal
 
 
 def test_member_frontmatter_cannot_add_lead_only_tools(tmp_path):
