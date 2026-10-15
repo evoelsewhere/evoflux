@@ -24,8 +24,8 @@ def make_team_worktree_tool(team) -> Tool:
             str | None,
             Field(
                 description=(
-                    "Delegation UUID for review, merge, or discard. Omit only for "
-                    "finalize."
+                    "Delegation UUID for review, merge, or discard. Ignored for "
+                    "finalize; target_repos controls its repository scope."
                 )
             ),
         ] = None,
@@ -46,8 +46,6 @@ def make_team_worktree_tool(team) -> Tool:
         ] = False,
     ) -> str:
         if action == "finalize":
-            if task_id is not None:
-                return "Error: task_id must be omitted for finalize."
             try:
                 result = await team.finalize_delegation_worktrees(
                     list(target_repos) or None

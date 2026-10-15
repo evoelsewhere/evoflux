@@ -190,6 +190,7 @@ async def stream_and_assemble(
     reasoning_items: list[EncryptedReasoningItem] = []
     tool_calls_buffer: dict[int, dict] = {}
     last_usage: Usage | None = None
+    finish_reason: str | None = None
 
     affinity_key = cache_affinity_key(ctx.session_id)
 
@@ -271,6 +272,7 @@ async def stream_and_assemble(
             full_content = ""
             reasoning = ""
             tool_calls_buffer = {}
+            finish_reason = None
             continue
 
         for hook in hooks:
@@ -283,6 +285,8 @@ async def stream_and_assemble(
             continue
 
         delta = chunk.choices[0].delta
+        if chunk.choices[0].finish_reason:
+            finish_reason = chunk.choices[0].finish_reason
 
         if delta.reasoning_content:
             reasoning += delta.reasoning_content
@@ -439,6 +443,8 @@ async def stream_and_assemble(
     if last_usage is not None:
         model_id = state.metadata.get("effective_model") or primary_label
         extra = {"usage": usage_to_dict(last_usage, model_id)}
+    if finish_reason:
+        extra = {**(extra or {}), "finish_reason": finish_reason}
     if reasoning_items:
         # Into ``extra`` because that column is persisted and the field is
         # not: history is reloaded from the database at the start of every
