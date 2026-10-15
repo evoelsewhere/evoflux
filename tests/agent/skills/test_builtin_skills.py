@@ -69,7 +69,7 @@ def test_intelligent_ui_links_runtime_accurate_motion_authoring_guidance():
         encoding="utf-8"
     )
     for runtime_api in (
-        "registerFrameRenderer(timeMs)",
+        "registerFrameRenderer(drawAt)",
         "onCommand(handler)",
         "reportPlayback(state, currentTimeMs)",
     ):
@@ -79,9 +79,11 @@ def test_intelligent_ui_links_runtime_accurate_motion_authoring_guidance():
 
 def test_motion_authoring_requires_choreography_instead_of_slide_like_scenes():
     skill_dir = BUILTIN / "intelligent-ui"
-    guide = (skill_dir / "reference" / "motion-authoring.md").read_text(
-        encoding="utf-8"
-    ).lower()
+    guide = (
+        (skill_dir / "reference" / "motion-authoring.md")
+        .read_text(encoding="utf-8")
+        .lower()
+    )
     guide = " ".join(guide.split())
 
     for craft_rule in (
