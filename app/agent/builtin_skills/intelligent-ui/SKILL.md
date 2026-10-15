@@ -1,6 +1,6 @@
 ---
 name: intelligent-ui
-description: "Helps agents choose prose, native controls, dashboards, motion, or 3D from the user's goal. Use when a user asks to explain, teach, compare, or present information visually, asks you to choose a format, or an interactive artifact may improve understanding or action. Motion is especially useful when understanding depends on seeing states change or causes lead to effects."
+description: "Helps agents choose prose, native controls, dashboards, motion, or 3D from the user's goal. Use when a user asks to explain, teach, compare, or present information visually, asks you to choose a format, requests a video or code-authored animation as the deliverable, or an interactive artifact may improve understanding or action. Motion is especially useful when understanding depends on seeing states change or causes lead to effects."
 metadata:
   runtime-preload-tools: ui_block,visual_artifact
 ---
@@ -45,6 +45,13 @@ even when a static flowchart could list the same steps. Use a static diagram,
 checklist, or document when the steps are mainly for lookup, comparison, or
 printing, or when their order does not carry the explanation. Do not infer
 motion from prompt length, detail, or topic words alone.
+
+An explicit request to create a video or code-authored animation makes motion
+the requested deliverable. Use `visual_artifact(kind="motion")` when available;
+it opens in the EvoFlux Workbench. If the user asks to view the result in
+EvoFlux, keep it in the Workbench. Do not silently substitute a PDF or prose
+for a requested video. If generation capability is unavailable, state that
+and offer the closest supported route.
 
 The amount of source material controls how much you condense, not which format
 you choose. For long material, preserve the central claim, key numbers, order,

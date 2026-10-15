@@ -84,6 +84,37 @@ frame ranges, asset provenance, review findings, and revisions. Preserve it
 across model-context compaction; read the ledger and latest findings instead
 of regenerating from the prompt. Use the beat schema in motion-authoring.
 
+## Quality gate for authored motion
+
+Choose a specific visual medium that suits the subject and intended feeling:
+for example, editorial illustration, dimensional product animation, cut-paper
+layers, or a crisp technical diagram. Set a clear hierarchy for the hero
+subject, captions, and supporting detail. For code-only canvas work, build a
+coherent stage with deliberate silhouettes, palette, typography, and depth
+layers; do not default to unrelated centered icons on flat cards for every
+scene unless that is the requested style.
+
+Every major beat must show an action the viewer can follow: identify its
+source and destination, anticipation, the transformation or contact, the
+reaction, and the settle. A camera move can support this action, but camera
+motion alone—such as a slow zoom across an otherwise unchanged drawing—does
+not count as choreography. Make secondary movement respond to the main event;
+do not use particles, glow, or shake to imitate missing action.
+
+Transitions should preserve or intentionally change the relationship between
+subjects. Carry a shape, object, path, or direction across adjacent beats when
+the story is continuous. Use a cut when the story really changes place or time,
+then establish the new context. Repeated title-and-caption cards with a generic
+wipe or fade are a slideshow even when each card moves.
+
+Before full rendering, review the style frames at the intended viewing size
+and ask whether the subject, action, and visual hierarchy are immediately
+clear. During motion review, inspect before/action/after samples for a major
+beat and the frames surrounding each transition at the intended viewing size.
+If the result still reads like a slideshow, revise the visual action, scene
+composition, or transition relationship; adding fps, camera drift, or more
+decorative effects will not repair it.
+
 ## Render frames with code
 
 Distinguish style frames (design samples), keyframes (poses/important states),
