@@ -45,6 +45,7 @@ export interface MotionVideoExportOptions {
   requestFrame: (currentTimeMs: number, requestId: number) => Promise<RenderedMotionFrame>
   isCancelled: () => boolean
   onProgress: (framesRendered: number, totalFrames: number) => void
+  onRenderedFrame?: (frame: { frameIndex: number; totalFrames: number; currentTimeMs: number; bitmap: ImageBitmap }) => void | Promise<void>
 }
 
 export interface MotionVideoExportResult {
@@ -88,7 +89,6 @@ export async function exportMotionFrames(options: MotionVideoExportOptions): Pro
 
   const totalFrames = Math.ceil((durationMs / 1000) * FPS)
   let finalized = false
-  let lastProgress = -1
 
   try {
     await output.start()
@@ -105,16 +105,17 @@ export async function exportMotionFrames(options: MotionVideoExportOptions): Pro
       try {
         context.clearRect(0, 0, width, height)
         context.drawImage(frame.bitmap, 0, 0, width, height)
+        await source.add(frameIndex / FPS, 1 / FPS)
+        await options.onRenderedFrame?.({
+          frameIndex,
+          totalFrames,
+          currentTimeMs,
+          bitmap: frame.bitmap,
+        })
       } finally {
         frame.bitmap.close()
       }
-
-      await source.add(frameIndex / FPS, 1 / FPS)
-      const percent = Math.floor(((frameIndex + 1) / totalFrames) * 20)
-      if (percent !== lastProgress) {
-        lastProgress = percent
-        options.onProgress(frameIndex + 1, totalFrames)
-      }
+      options.onProgress(frameIndex + 1, totalFrames)
     }
 
     await output.finalize()
@@ -124,7 +125,6 @@ export async function exportMotionFrames(options: MotionVideoExportOptions): Pro
     if (buffer.byteLength > MAX_OUTPUT_BYTES) {
       throw new Error('The video exceeded the 150 MB export limit. Try a shorter animation.')
     }
-    options.onProgress(totalFrames, totalFrames)
     const extension = codec === 'avc' ? 'mp4' : 'webm'
     return {
       blob: new Blob([buffer], { type: format.mimeType }),

@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { BlockRenderer } from '@/components/BlockRenderer'
 import type { ContentBlock } from '@/api/types'
 import { DashboardArtifact } from '@/components/visual-artifact/DashboardArtifact'
+import { publishMotionRenderSnapshot } from '@/lib/motion-render-store'
 import { useUIStore } from '@/stores/useUIStore'
 
 const artifact: ContentBlock = {
@@ -10,6 +11,13 @@ const artifact: ContentBlock = {
   visualArtifact: {
     artifactId: 'budget', kind: 'dashboard', title: 'Budget dashboard', summary: 'Trip spend',
     sourceHtml: '<main>chart</main>', scene: null, durationMs: null, revision: 1, sources: [],
+  },
+}
+const motionArtifact: ContentBlock = {
+  id: 'water-motion', type: 'visual_artifact', content: '', title: 'Water journey',
+  visualArtifact: {
+    artifactId: 'water-motion', kind: 'motion', title: 'Water journey', summary: 'From rain to clean water',
+    sourceHtml: '<main>motion</main>', scene: null, durationMs: 10_000, revision: 1, sources: [],
   },
 }
 
@@ -60,5 +68,23 @@ describe('visual artifact rendering', () => {
     expect(screen.getByText(/open opportunities/)).toBeVisible()
     fireEvent.click(screen.getByRole('button', { name: /Refresh with agent/i }))
     expect(onSendPrompt).toHaveBeenCalledWith(expect.stringContaining('budget'))
+  })
+
+  it('shows exact frame progress and opens a selected preview at its timestamp', () => {
+    publishMotionRenderSnapshot({
+      artifactId: 'water-motion', revision: 1, renderId: 'render-water-1', status: 'rendering',
+      completedFrames: 7, totalFrames: 300, fps: 30, lastCompletedIndex: 6, currentTimeMs: 200, currentFrameUrl: null,
+      beats: [{ id: 'collection', title: 'Collect rain', startFrame: 0, endFrame: 99, markers: [] }],
+      samples: [{ sampleId: 'rain-start', beatId: 'collection', frameIndex: 6, timestampMs: 200, role: 'style', objectUrl: 'blob:rain-start' }],
+      audioStatus: 'not_requested',
+    })
+    render(<BlockRenderer block={motionArtifact} isStreaming={false} />)
+
+    expect(screen.getByRole('status')).toHaveTextContent('7 / 300 frames')
+    expect(screen.getByRole('img', { name: /Collect rain.*frame 7/i })).toHaveAttribute('src', 'blob:rain-start')
+    fireEvent.click(screen.getByRole('button', { name: /Review frame 7/i }))
+    expect(useUIStore.getState().workbenchTabs[0]?.motionReviewRequest).toMatchObject({
+      frameIndex: 6, timestampMs: 200,
+    })
   })
 })
