@@ -1,5 +1,15 @@
-import { act, render, screen } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { act, fireEvent, render, screen } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+const storeMock = vi.hoisted(() => ({
+  sendMessage: vi.fn(async (_prompt: string) => true),
+}))
+
+vi.mock('@/stores/useTeamStore', () => ({
+  useTeamStore: (
+    selector: (state: { sendMessage: (prompt: string) => Promise<boolean> }) => unknown,
+  ) => selector({ sendMessage: storeMock.sendMessage }),
+}))
 
 import { UiCustom } from '@/components/ui/UiCustom'
 
@@ -40,6 +50,20 @@ describe('UiCustom', () => {
     const html = frameHtml(getFrame())
     expect(html).toContain('Content-Security-Policy')
     expect(html).toContain('window.sendPrompt')
+  })
+
+  it('forwards a widget sendPrompt action to the active chat', () => {
+    render(<UiCustom block={{ type: 'custom', html: '<button>Continue</button>' }} />)
+    const frame = getFrame()
+    fireEvent(
+      window,
+      new MessageEvent('message', {
+        data: { type: 'widget_send_prompt', prompt: 'continue the plan' },
+        source: frame.contentWindow,
+      }),
+    )
+
+    expect(storeMock.sendMessage).toHaveBeenCalledWith('continue the plan')
   })
 
   it('prepends the design-token style built from app tokens', () => {

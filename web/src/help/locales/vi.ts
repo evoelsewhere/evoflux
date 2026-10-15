@@ -2562,7 +2562,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
           'Mỗi bài Guidelines lớn deep-link qua openAction tới đúng trang khi có.',
           'Locale chỉ đổi phần giao diện dùng chung — nội dung chat giữ như bạn viết.',
           'Telemetry trống thường nghĩa extras tắt, không phải chat outage.',
-          'Response style trong Settings → Agents quyết định cách diễn đạt câu trả lời mới: Simple dùng văn bản thuần, Visual cho phép tiêu đề, danh sách, bảng và code block. Chỉ áp dụng từ tin nhắn kế tiếp, không viết lại câu trả lời cũ.'
+          'Response style trong Settings → Agents quyết định cách trình bày câu trả lời mới: Simple ưu tiên văn bản thuần; Visual để model chọn văn bản, markdown có cấu trúc hoặc UI tương tác theo mục tiêu của người dùng và ích lợi thực tế của các điều khiển. Khi ui_block khả dụng, hướng dẫn đánh giá và dùng UI được đưa vào context của agent. Chỉ áp dụng từ tin nhắn kế tiếp, không viết lại câu trả lời cũ.'
 ],
       }
 ],

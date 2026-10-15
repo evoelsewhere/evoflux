@@ -1,6 +1,8 @@
 ---
 name: intelligent-ui
-description: "Decides when to render interactive UI in the chat with the ui_block tool instead of static markdown or writing HTML files to disk, and how to compose the 14 declarative block types — comparison tables, plans and timelines, checklists, metrics dashboards, math with changing variables, study flashcards, timers, pomodoro widgets, games, and custom sandboxed HTML. Use when the user asks to compare plans or options, schedule or timeline a project, track a checklist, render or visualize UI, build a widget, timer, pomodoro or game, show metrics or a dashboard in the chat, or do math with variables that may change — splits, tips, budgets, pricing — and whenever your own answer would lay out contenders, options, tradeoffs, a plan, or metrics, render it as UI even if the user never said render or compare. An in-chat dashboard is a stat_cards block, never an HTML file or a designed web page; frontend-design is for designing real sites, not chat answers. Not for Mermaid diagrams, which stay a fenced code block."
+description: "Evaluates whether an interactive in-chat interface would make an answer more useful, then chooses and composes an appropriate ui_block. Judge the user's goal and likely answer, not keyword matches: use controls when they help someone explore, compare, calculate, track, learn, or act; use prose when interaction adds no value. Covers native tables, plans, checklists, metrics, calculators, study cards, timers, games, and sandboxed custom HTML. An in-chat dashboard is a stat_cards block, never an HTML file or a designed web page; frontend-design is for real sites. Mermaid diagrams stay in a fenced code block."
+metadata:
+  runtime-preload-tool: ui_block
 ---
 
 # Intelligent UI
@@ -9,6 +11,28 @@ description: "Decides when to render interactive UI in the chat with the ui_bloc
 tool call renders one complete frame; the block payload is the tool's own
 arguments, so renders persist across reloads. This skill decides *when*
 interactive UI is the right answer and *which* block type fits.
+
+## Decide from the user's goal
+
+Do not select UI because the request contains a word such as "plan",
+"compare", "chart", or "calculate". Infer what the user is trying to get
+done and what response would best help them finish that task. Ask yourself:
+
+1. Would a visual structure make the information easier to understand or
+   compare?
+2. Would the user benefit from changing an input, exploring a part, tracking
+   progress, or taking an action in this conversation?
+3. Can an available native block provide that benefit with clear labels,
+   meaningful outputs, and honest assumptions?
+
+Render only when the interaction improves the user's next step. Use the
+smallest useful UI, combine it with concise explanation, and ensure each
+control has a clear effect. If no control helps the user understand, decide,
+calculate, track, learn, or act, answer with prose or ordinary markdown.
+When choosing a format, evaluate the shape of the answer you intend to give,
+not just the user's phrasing. An opinion may merit a comparison if the user
+needs to choose among options; a request mentioning a chart may still be
+better answered directly if it asks for one simple fact.
 
 ## Hard rules
 
@@ -22,14 +46,12 @@ interactive UI is the right answer and *which* block type fits.
    said "render" or "build".** Render the best guess in one `ui_block` call
    and offer to adjust afterwards. A rendered frame is easier to correct than
    an exchanged round of questions.
-3. **Prefer `ui_block` over a static markdown table** whenever the user will
-   interact with or revisit the data — comparing, sorting, ticking off,
-   recomputing. **Judge by the shape of your answer, not the verb the user
-   used.** If your reply to a plain-prose question would be a comparison, a
-   plan, a checklist, a set of metrics, or a recomputable split, render it
-   instead of listing it. "What do you think I should use?", "help me pick",
-   and "is it worth it" all land here. Static markdown is for short answers,
-   code, and one-shot excerpts.
+3. Prefer `ui_block` over static markdown when interaction materially helps
+   the user compare, sort, track, recompute, inspect, or act. Judge the
+   underlying need and the usefulness of the resulting controls. A
+   comparison or plan does not automatically need UI; render it when
+   interaction gives the user a meaningful advantage. Static markdown is
+   appropriate when it communicates the answer more directly.
 4. **One call, one frame.** Pass up to 6 top-level blocks in a single
    `ui_block` call (at most 50 nodes total, `layout` nesting at most 3
    levels) instead of several sequential calls.

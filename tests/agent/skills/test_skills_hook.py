@@ -191,6 +191,38 @@ async def test_preloaded_skills_are_inlined_and_left_out_of_the_catalog(workspac
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("style", "tools", "expected"),
+    [
+        ("visual", ["ui_block"], True),
+        ("visual", [], False),
+        ("simple", ["ui_block"], False),
+    ],
+)
+async def test_runtime_skill_preload_uses_capability_and_style_not_prompt_words(
+    workspace, monkeypatch, style, tools, expected
+):
+    from app.agent.hooks import skills as skills_module
+
+    skill_file = workspace / ".agents" / "skills" / "alpha" / "SKILL.md"
+    skill_file.write_text(
+        "---\nname: alpha\ndescription: Alpha work.\n"
+        "metadata:\n  runtime-preload-tool: ui_block\n---\n"
+        "Judge the user's goal, not words in the prompt.\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(skills_module, "response_style_default", lambda: style)
+    hook = SkillsHook()
+    state = _state("hello")
+    state.tool_names = tools
+
+    await hook.before_agent(_ctx(), state)
+    prompt = await _prompt(hook, state)
+
+    assert ('<skill_content name="alpha"' in prompt) is expected
+
+
+@pytest.mark.asyncio
 async def test_frozen_prefix_and_finalizer_leave_prompt_to_the_right_owner(workspace):
     hook = SkillsHook()
     finalizer = SkillsPromptFinalizerHook()

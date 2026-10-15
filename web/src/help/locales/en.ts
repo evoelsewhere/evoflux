@@ -2580,7 +2580,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'Intelligence vs System vs Application groupings keep risky toggles from mixing with theme picks.',
       'Notifications include a test ping — use it before trusting unfocused alerts. Unread alerts count on the app icon and request taskbar or Dock attention; returning to EvoFlux clears them. Windows question alerts support quick choices and a reply field.',
       'Open the command palette if you forget which settings page owns a toggle.',
-      'Response style on Settings → Agents controls how new replies are worded: Simple asks for plain prose, Visual lets the model use headings, lists, tables and code blocks. It applies from the next message onward and never rewrites earlier replies.'
+      'Response style on Settings → Agents controls how new replies are presented: Simple favors plain prose; Visual lets the model choose prose, structured markdown, or interactive UI based on the user’s goal and whether controls add practical value. When ui_block is available, its decision guidance is included for the agent. Changes apply from the next message onward and never rewrite earlier replies.'
 ],
     blocks: [
       {

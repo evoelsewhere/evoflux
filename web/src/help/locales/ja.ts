@@ -2574,7 +2574,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           '横断: 主要な Guidelines 記事は利用可能なとき openAction で正しいページへディープリンク。',
           '横断: ロケール変更は UI クロムのみ — チャット本文は書いたまま。',
           '横断: 空の telemetry はしばしば extras 無効を意味し、チャット障害ではない。',
-          'Settings → Agents の Response style は新しい返信の書き方を決めます: Simple はプレーンテキスト優先、Visual は見出し・リスト・テーブル・コードブロックを許可。次のメッセージから適用され、過去の返信は書き換えません。'
+          'Settings → Agents の Response style は新しい返信の提示方法を決めます: Simple はプレーンテキストを優先し、Visual はユーザーの目的と操作の実用性に基づいて文章、構造化 Markdown、対話型 UI を選びます。ui_block が利用可能な場合、判断と利用のガイダンスがエージェントの context に含まれます。次のメッセージから適用され、過去の返信は書き換えません。'
 ],
       }
 ],
