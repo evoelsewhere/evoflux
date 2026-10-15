@@ -1590,7 +1590,7 @@ class TeamMemberBase(abc.ABC):
                     "response_style": response_style_default(),
                     # Bump when response-style decision guidance changes so
                     # sessions do not keep a stale Intelligent UI rubric.
-                    "response_style_context_version": 2,
+                    "response_style_context_version": 3,
                     "team_blueprints": team_blueprints,
                 },
             )

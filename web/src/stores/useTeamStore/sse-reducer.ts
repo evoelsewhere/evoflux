@@ -23,6 +23,7 @@ import { isBackgroundCompletion, sendDesktopNotification } from '@/lib/desktop-n
 import { createNotificationActivation } from '@/lib/notification-activation'
 import type { ContentBlock, GoalResponse, SuggestedTask, TurnCost, TurnUsage, TurnUsageBreakdown } from '@/api/types'
 import type { UiBlockNode } from '@/components/ui/ui-block-types'
+import { parseVisualArtifactMessage } from '@/lib/visual-artifact-bridge'
 import { parseTurnChanges } from '@/utils/turn-changes'
 import type { ActivityItem, CacheInvalidation, TeamStore } from './types'
 
@@ -236,6 +237,35 @@ function applyUiBlock(scope: UiBlockScope, ctx: UiBlockApplyCtx): ContentBlock {
   return group
 }
 
+function applyVisualArtifact(
+  scope: UiBlockScope,
+  artifact: NonNullable<ContentBlock['visualArtifact']>,
+  toolCallId: string,
+): ContentBlock {
+  const target = [...scope.blocks, ...scope.currentBlocks].find(
+    (block) => block.type === 'visual_artifact' && block.visualArtifact?.artifactId === artifact.artifactId,
+  )
+  const revision = target?.visualArtifact?.revision ? target.visualArtifact.revision + 1 : 1
+  artifact.revision = revision
+  if (target) {
+    target.visualArtifact = artifact
+    target.title = artifact.title
+    target.toolCallId = toolCallId
+    return target
+  }
+  const block: ContentBlock = {
+    id: artifact.artifactId,
+    type: 'visual_artifact',
+    content: '',
+    title: artifact.title,
+    toolCallId,
+    visualArtifact: artifact,
+    isStreaming: false,
+  }
+  scope.currentBlocks.push(block)
+  return block
+}
+
 export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
   return (type: string, data: unknown) => {
     const d = data as Record<string, unknown>
@@ -377,6 +407,41 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
         break
       }
 
+      case 'visual_artifact': {
+        const agent = typeof d.agent === 'string' ? d.agent : ''
+        const toolCallId = typeof d.tool_call_id === 'string' ? d.tool_call_id : ''
+        const parsed = parseVisualArtifactMessage(d)
+        if (!agent || !toolCallId || !parsed) break
+        set((draft) => {
+          ensureAgent(draft, agent)
+          const stream = draft.agentStreams[agent]
+          const history = [...stream.blocks, ...stream.currentBlocks]
+          parsed.sources = parsed.sources.map((source) => {
+            const call = history.find((block) => block.type === 'tool' && block.toolCallId === source.toolCallId)
+            if (!call?.toolDone || !call.toolResult || call.toolResult.trim().toLowerCase().startsWith('error:')) return source
+            let verified = true
+            try {
+              const result: unknown = JSON.parse(call.toolResult)
+              if (result && typeof result === 'object' && !Array.isArray(result)) {
+                const data = result as Record<string, unknown>
+                verified = data.success !== false && !data.error
+              }
+            } catch {
+              // Plain-text successful tool results remain verifiable.
+            }
+            return verified ? {
+              ...source,
+              verified: true,
+              toolName: call.toolName,
+              arguments: call.toolArgs,
+              result: call.toolResult,
+            } : source
+          })
+          applyVisualArtifact(stream, parsed, toolCallId)
+        })
+        break
+      }
+
       case 'tool_end': {
         const agent = d.agent as string
         const toolName = d.name as string
@@ -484,6 +549,33 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
                         : undefined,
                     defaultTitle: 'UI Block',
                   })
+                }
+              }
+            }
+
+            if (toolName === 'visual_artifact' && toolCallId) {
+              const stream = draft.agentStreams[agent]
+              const exists = [...stream.blocks, ...stream.currentBlocks].some(
+                (block) => block.type === 'visual_artifact' && block.toolCallId === toolCallId,
+              )
+              if (!exists) {
+                const toolBlock = stream.currentBlocks.find(
+                  (block) => block.type === 'tool' && block.toolCallId === toolCallId,
+                )
+                try {
+                  const rawArgs = typeof toolBlock?.toolArgs === 'string'
+                    ? JSON.parse(toolBlock.toolArgs)
+                    : toolBlock?.toolArgs
+                  const parsed = parseVisualArtifactMessage({
+                    ...(rawArgs as Record<string, unknown>),
+                    type: 'visual_artifact',
+                    agent,
+                    tool_call_id: toolCallId,
+                    is_final: true,
+                  })
+                  if (parsed) applyVisualArtifact(stream, parsed, toolCallId)
+                } catch {
+                  // Invalid or partial tool args are not rendered as artifacts.
                 }
               }
             }

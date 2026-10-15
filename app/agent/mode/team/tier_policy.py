@@ -128,6 +128,7 @@ SIDE_CHAT_ALWAYS_EXCLUDED_TOOLS: frozenset[str] = frozenset(
         "sleep",
         "show_widget",
         "ui_block",
+        "visual_artifact",
         "visualize_read_me",
     }
 )

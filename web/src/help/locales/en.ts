@@ -2589,6 +2589,10 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       },
       {
         type: 'p',
+        text: 'Intelligent UI chooses between prose, native controls, and richer dashboards, motion explainers, or 3D views based on task utility. Dashboards show verified source tool calls and query summaries; data without a verified source is labeled illustrative. Refresh with agent starts a chat turn. Rich views inherit the light, dark, or system theme and reduced-motion setting. Motion export uses a browser-supported MP4 or WebM format; 3D shows a labeled static preview when WebGL is unavailable.',
+      },
+      {
+        type: 'p',
         text: 'Knowing which page owns which concern avoids hunting: models vs agents vs sandbox vs browser policy are intentionally separate so risky toggles stay deliberate. Theme changes should never sit next to force-with-lease in your mental model.',
       },
       {

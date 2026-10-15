@@ -48,6 +48,7 @@ from app.agent.schemas.events import (
     ToolStartEvent,
     TurnChangesEvent,
     UiBlockEvent,
+    VisualArtifactEvent,
     UsageEvent,
     WidgetDeltaEvent,
 )
@@ -70,6 +71,7 @@ AnyStreamEvent = Union[
     DoneEvent,
     TurnChangesEvent,
     UiBlockEvent,
+    VisualArtifactEvent,
     RateLimitEvent,
     ProviderStatusEvent,
     ErrorEvent,

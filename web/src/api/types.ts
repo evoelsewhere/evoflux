@@ -831,6 +831,7 @@ export type SSEEventType =
   | 'summarization_end'
   | 'browser_session'
   | 'ui_block'
+  | 'visual_artifact'
 
 export interface SSEEvent {
   type: SSEEventType
@@ -840,7 +841,7 @@ export interface SSEEvent {
 // Content Block Types
 export interface ContentBlock {
   id: string
-  type: 'thinking' | 'tool' | 'text' | 'user' | 'compaction' | 'provider_status' | 'widget' | 'ui_block'
+  type: 'thinking' | 'tool' | 'text' | 'user' | 'compaction' | 'provider_status' | 'widget' | 'ui_block' | 'visual_artifact'
   content: string
   toolName?: string
   toolArgs?: string
@@ -861,6 +862,7 @@ export interface ContentBlock {
   /** ui_block-specific fields (Feature B) */
   uiBlocks?: UiBlockNode[] // validated declarative UI block nodes
   uiBlockIdentity?: string // group identity (block_id ?? replace_id ?? tool_call_id)
+  visualArtifact?: VisualArtifactPayload
   /** Variant-specific metadata. ``user`` inbox blocks carry ``from_agent``;
    *  ``compaction`` blocks are content-free status markers carrying
    *  ``state: 'compacting' | 'compacted'`` and optional ``error: true``.
@@ -871,6 +873,42 @@ export interface ContentBlock {
   timestamp?: Date
   /** File attachments (images, documents, etc.) — for user blocks */
   attachments?: MessageAttachment[]
+}
+
+export type VisualArtifactKind = 'dashboard' | 'motion' | 'scene3d'
+
+export interface VisualArtifactSource {
+  toolCallId: string
+  querySummary: string
+  verified: boolean
+  toolName?: string
+  arguments?: string
+  result?: string
+  retrievedAt?: string
+}
+
+export interface Scene3DNode {
+  id: string
+  geometry: 'box' | 'sphere' | 'cylinder' | 'torus'
+  position: [number, number, number]
+  rotation: [number, number, number]
+  scale: [number, number, number]
+  color: 'accent' | 'foreground' | 'muted' | 'success' | 'warning' | 'danger' | 'info'
+  label?: string | null
+}
+
+export interface Scene3DSpec { nodes: Scene3DNode[] }
+
+export interface VisualArtifactPayload {
+  artifactId: string
+  kind: VisualArtifactKind
+  title: string
+  summary: string
+  sourceHtml: string | null
+  scene: Scene3DSpec | null
+  sources: VisualArtifactSource[]
+  durationMs: number | null
+  revision: number
 }
 
 // Chat Message Type

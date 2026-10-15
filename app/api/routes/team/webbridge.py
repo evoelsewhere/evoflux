@@ -1932,6 +1932,7 @@ _BROWSER_PANEL_STREAM_EVENT_TYPES = frozenset(
         "tool_output_delta",
         "widget_delta",
         "ui_block",
+        "visual_artifact",
         "tool_end",
         "rate_limit",
         "provider_status",
@@ -2084,6 +2085,28 @@ def _browser_panel_stream_event(event: dict[str, Any]) -> dict[str, str] | None:
         blocks = data.get("blocks")
         if isinstance(blocks, list):
             projected["blocks"] = blocks
+    elif event_type == "visual_artifact":
+        # Rich artifact HTML is schema-validated; the frontend hosts it in a
+        # dedicated opaque-origin sandbox with a narrow MessageChannel bridge.
+        copy_strings(
+            "agent",
+            "tool_call_id",
+            "artifact_id",
+            "kind",
+            "title",
+            "summary",
+            "source_html",
+        )
+        copy_bools("is_final")
+        scene = data.get("scene")
+        if isinstance(scene, dict):
+            projected["scene"] = scene
+        sources = data.get("sources")
+        if isinstance(sources, list):
+            projected["sources"] = sources
+        duration_ms = data.get("duration_ms")
+        if isinstance(duration_ms, int) and not isinstance(duration_ms, bool):
+            projected["duration_ms"] = duration_ms
     elif event_type == "rate_limit":
         copy_numbers("retry_after", "attempt", "max_attempts")
     elif event_type == "provider_status":
