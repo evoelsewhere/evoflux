@@ -126,8 +126,21 @@ richer dashboard, motion, or scene controls improve the user's next step.
   background refresh.
 - Motion HTML must be self-contained, include a visible caption or summary,
   support `window.evofluxArtifact.onCommand(...)` for play/pause/restart/seek,
-  and mark its recording canvas with `data-evoflux-motion-canvas`. Export is
-  user initiated and the runtime reports the browser-supported format.
+  report accurate playback time and `ended`, and mark the one canvas containing
+  the complete composition with `data-evoflux-motion-canvas`. Export captures
+  that canvas only; text, captions, or overlays outside it are omitted. Export
+  starts from restart, plays in real time, and stops at `ended` or the declared
+  duration. It is user initiated and the runtime reports the browser-supported
+  format. Don't suggest that every browser produces MP4 or that export is a
+  frame-perfect renderer.
+- For motion, decide whether animation helps explain a change, process, or
+  comparison before using the rich artifact. Then make a short storyboard with
+  audience, destination/aspect ratio, duration, one point per scene, and the
+  visual change that carries each point. Keep source claims tied to supplied
+  material, make type readable at the target size, and use motion to reveal or
+  connect information rather than animate every element. Prefer a few scenes
+  with clear pacing to a sequence of unrelated moving cards. Explain the
+  takeaway in the artifact's visible caption.
 - Use `scene3d` only when spatial structure benefits inspection. Describe
   geometry with supported declarative primitives; do not include scripts,
   URLs, shaders, or remote assets. Keep labels meaningful so the static
