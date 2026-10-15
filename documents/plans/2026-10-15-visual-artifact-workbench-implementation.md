@@ -72,8 +72,11 @@ review/commit it with normal Git tools.
 The Workbench integration above does not complete advanced motion authoring.
 The deterministic canvas-to-video path now has Balanced (up to 720p) and High
 (up to 1080p) presets, and cancels an export if its artifact revision changes;
-the preview and downloaded filename identify the revision rendered. It applies
-to artifacts that implement `registerFrameRenderer(timeMs)`; see the dated
+the preview and downloaded filename identify the revision rendered. The iframe
+installs its runtime bridge before generated scripts run, and the built-in Skill
+has an on-demand motion-authoring reference with stable scene ids and frame
+requirements. These apply to artifacts that implement
+`registerFrameRenderer(timeMs)`; see the dated
 [code-driven motion graphics research](../research/2026-10-15-code-driven-motion-graphics.md)
 for the engine comparison, current runtime limits, and outstanding desktop
 acceptance checks. Actual Tauri/WebView output and performance are still
