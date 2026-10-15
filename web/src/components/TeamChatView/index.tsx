@@ -89,6 +89,7 @@ import {
 } from '@/components/ComputerAppViewer/computerAppBridge'
 import { WorkbenchBar } from '@/components/workbench/WorkbenchBar'
 import { WorkbenchDock, WorkbenchSurface } from '@/components/workbench/WorkbenchDock'
+import { VisualArtifactWorkbench } from '@/components/workbench/VisualArtifactWorkbench'
 import { useSideChat } from '../SideChatPanel/useSideChat'
 import type {
   AgentCapabilities as AgentCapabilitiesType,
@@ -1545,6 +1546,11 @@ export function TeamChatView({ sessionId, importedSource, mode = 'work', workspa
         onOpenSidebar={sidebarOverlay ? () => setMobileSidebarOpen(true) : undefined}
       >
       <Suspense fallback={<PanelLoadingFallback />}>
+        <WorkbenchSurface tool="visual-artifact">
+          {(tab, active) => tab.artifact
+            ? <VisualArtifactWorkbench artifact={tab.artifact} mode={mode} sessionId={tab.sessionId} workspace={workspace} active={active} />
+            : <p className="p-4 text-sm text-(--color-text-muted)">This artifact is no longer available in the current conversation.</p>}
+        </WorkbenchSurface>
         {mode === 'coding' && workspace && (
           <>
             <WorkbenchSurface tool="files">

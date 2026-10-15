@@ -54,6 +54,8 @@ describe('help catalog', () => {
       expect(text).toMatch(/WebM|MP4/i)
       expect(text).toMatch(/3D/i)
       expect(text).toMatch(/theme|theme|テーマ/i)
+      expect(text).toMatch(/Workbench/i)
+      expect(text).toMatch(/commit|コミット/i)
     }
   })
 })

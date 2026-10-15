@@ -21,6 +21,7 @@ import {
 } from './helpers'
 import { isBackgroundCompletion, sendDesktopNotification } from '@/lib/desktop-notifications'
 import { createNotificationActivation } from '@/lib/notification-activation'
+import { useUIStore } from '@/stores/useUIStore'
 import type { ContentBlock, GoalResponse, SuggestedTask, TurnCost, TurnUsage, TurnUsageBreakdown } from '@/api/types'
 import type { UiBlockNode } from '@/components/ui/ui-block-types'
 import { parseVisualArtifactMessage } from '@/lib/visual-artifact-bridge'
@@ -439,6 +440,11 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
           })
           applyVisualArtifact(stream, parsed, toolCallId)
         })
+        const ui = useUIStore.getState()
+        const activeSessionId = get().sessionId
+        if (activeSessionId && ui.workbenchSessionId === activeSessionId) {
+          ui.openWorkbenchTool('visual-artifact', { title: parsed.title, artifact: parsed })
+        }
         break
       }
 

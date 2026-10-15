@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { BlockRenderer } from '@/components/BlockRenderer'
 import type { ContentBlock } from '@/api/types'
 import { DashboardArtifact } from '@/components/visual-artifact/DashboardArtifact'
+import { useUIStore } from '@/stores/useUIStore'
 
 const artifact: ContentBlock = {
   id: 'budget', type: 'visual_artifact', content: '', title: 'Budget dashboard',
@@ -14,6 +15,13 @@ const artifact: ContentBlock = {
 
 describe('visual artifact rendering', () => {
   beforeEach(() => {
+    useUIStore.setState((state) => {
+      state.workbenchTabs = []
+      state.workbenchSessionId = 'session-1'
+      state.activeWorkbenchTabId = null
+      state.activeWorkbenchTool = null
+      state.workbenchOpen = false
+    })
     Object.defineProperty(window, 'matchMedia', {
       configurable: true,
       value: vi.fn().mockImplementation((query: string) => ({
@@ -23,13 +31,17 @@ describe('visual artifact rendering', () => {
     })
   })
 
-  it('renders dashboard HTML in a script-only opaque iframe and discloses missing provenance', () => {
+  it('keeps rich content out of the chat and opens the artifact in the Workbench', () => {
     render(<BlockRenderer block={artifact} isStreaming={false} />)
-    const frame = screen.getByTitle('Budget dashboard')
-    expect(frame).toHaveAttribute('sandbox', 'allow-scripts')
-    expect(frame).not.toHaveAttribute('allow')
-    expect(frame).toHaveAttribute('srcdoc', expect.stringContaining("default-src 'none'"))
-    expect(screen.getByText(/Illustrative example/)).toBeVisible()
+    expect(screen.getByText('Budget dashboard')).toBeVisible()
+    expect(screen.queryByTitle('Budget dashboard')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Open in Workbench/i }))
+    expect(useUIStore.getState().activeWorkbenchTool).toBe('visual-artifact')
+    expect(useUIStore.getState().workbenchOpen).toBe(true)
+    expect(useUIStore.getState().workbenchTabs[0]).toMatchObject({
+      tool: 'visual-artifact',
+      artifact: artifact.visualArtifact,
+    })
   })
 
   it('shows the verified source call and refreshes by sending a normal chat prompt', () => {
