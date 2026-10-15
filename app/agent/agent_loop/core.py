@@ -75,6 +75,12 @@ EMPTY_AFTER_TOOL_RECOVERY_PROMPT = (
     "If the requested work is complete, briefly summarize the outcome; otherwise, "
     "make the next required tool call. Do not return an empty response."
 )
+UNSTRUCTURED_TOOL_CALL_RECOVERY_PROMPT = (
+    "Your previous response contained tool-call markup as plain text; no tool was "
+    "executed. If a tool is needed, issue it using a valid structured tool call "
+    "from the available tools. Otherwise reply normally. Do not emit tool-call "
+    "markup as text."
+)
 TRUNCATED_RESPONSE_RECOVERY_PROMPT = (
     "Your previous response was cut off because the output limit was reached. "
     "Continue the same task from where it stopped. Do not repeat completed work. "
@@ -130,6 +136,20 @@ def _observation_checkpoint_prompt(state: AgentState) -> str | None:
         "evidence plus focused regression or runtime evidence, answer now. Reuse "
         "covered ranges and batch independent reads in one model turn. This is not "
         "a hard limit; continue when a named evidence gap remains."
+    )
+
+
+def _looks_like_unstructured_tool_call(content: str | None) -> bool:
+    """Identify common XML-like tool-call dumps that arrived as plain text.
+
+    These are never parsed or executed. Detection only prevents the agent from
+    treating a serialized pseudo-call as a successful final response.
+    """
+    normalized = (content or "").casefold()
+    return (
+        "<tool_call" in normalized
+        and "<function" in normalized
+        and "</tool_call>" in normalized
     )
 
 
@@ -693,6 +713,7 @@ class Agent(Generic[TContext]):
         empty_after_tool_continuations = 0
         max_empty_after_tool_continuations = 3
         truncated_response_continuations = 0
+        unstructured_tool_call_recoveries = 0
         provider_resume_attempts = 0
         # Set while the next model call is the one retry after a context
         # overflow; a second overflow before any call succeeds is surfaced.
@@ -795,6 +816,16 @@ class Agent(Generic[TContext]):
                         *model_request.messages,
                         HumanMessage(
                             content=TRUNCATED_RESPONSE_RECOVERY_PROMPT,
+                            extra={"system_generated": True},
+                        ),
+                    )
+                )
+            if unstructured_tool_call_recoveries:
+                model_request = model_request.override(
+                    messages=(
+                        *model_request.messages,
+                        HumanMessage(
+                            content=UNSTRUCTURED_TOOL_CALL_RECOVERY_PROMPT,
                             extra={"system_generated": True},
                         ),
                     )
@@ -1027,6 +1058,28 @@ class Agent(Generic[TContext]):
             await self._sync(checkpointer, ctx, state)
 
             if not tc_list:
+                if _looks_like_unstructured_tool_call(assistant_msg.content):
+                    if unstructured_tool_call_recoveries:
+                        from app.agent.errors import AgentLoopError
+
+                        self.stats.status = "failed"
+                        logger.error(
+                            "agent_unstructured_tool_call_repeated agent={} iteration={}",
+                            self.name,
+                            iteration,
+                        )
+                        raise AgentLoopError(
+                            "The model repeated tool-call markup as plain text after "
+                            "one recovery attempt. No tool was executed; retry the "
+                            "task or choose another model."
+                        )
+                    unstructured_tool_call_recoveries = 1
+                    logger.warning(
+                        "agent_unstructured_tool_call_recover agent={} iteration={}",
+                        self.name,
+                        iteration,
+                    )
+                    continue
                 if output_limit_reached:
                     truncated_response_continuations += 1
                     if (
