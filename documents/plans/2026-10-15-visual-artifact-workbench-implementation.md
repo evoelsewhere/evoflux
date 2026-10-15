@@ -1,7 +1,7 @@
 # Visual artifacts in the EvoFlux Workbench
 
-**Date:** 2026-10-15  
-**Status:** Implemented; desktop UI smoke pending  
+**Date:** 2026-10-15
+**Status:** Implemented; desktop UI smoke pending
 **Branch:** `feat/intelligent-ui-runtime`
 
 ## Goal
