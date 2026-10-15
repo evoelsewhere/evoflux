@@ -661,10 +661,12 @@ class TestResponsesHandlerHTTP:
             async for chunk in handler.stream(messages, tools=None, merged={}):
                 chunks.append(chunk)
 
-        # Should have 3 chunks: 1 text + 1 done + 1 usage
+        # The text-item boundary is non-terminal; the final event carries both
+        # finish reason and usage.
         assert len(chunks) == 3
         assert chunks[0].choices[0].delta.content == "Hello"
-        assert chunks[1].choices[0].finish_reason == "stop"
+        assert chunks[1].choices[0].finish_reason is None
+        assert chunks[2].choices[0].finish_reason == "stop"
         assert chunks[2].usage is not None
 
     async def test_stream_error_response(self, handler):
@@ -787,9 +789,7 @@ class TestReasoningReplay:
         )
         assert msg.reasoning_items is None
 
-    def test_request_asks_for_the_encrypted_payload_when_reasoning_is_on(
-        self, handler
-    ):
+    def test_request_asks_for_the_encrypted_payload_when_reasoning_is_on(self, handler):
         body = handler.build_request(
             [HumanMessage(content="hi")], None, False, {"thinking_level": "high"}
         )

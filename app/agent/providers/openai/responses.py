@@ -736,6 +736,12 @@ class ResponsesHandler:
                     finish_reason = str(
                         incomplete_details.get("reason") or "incomplete"
                     )
+                usage_data = response_data.get("usage", {})
+                usage = (
+                    self._usage_from_data(usage_data, probe_scope=probe_scope)
+                    if usage_data
+                    else None
+                )
                 yield ChatCompletionChunk(
                     id=response_id,
                     created=int(time.time()),
@@ -747,19 +753,25 @@ class ResponsesHandler:
                             finish_reason=finish_reason,
                         )
                     ],
+                    usage=usage,
                 )
 
-                usage_data = response_data.get("usage", {})
-                if usage_data:
-                    yield ChatCompletionChunk(
-                        id=response_id,
-                        created=int(time.time()),
-                        model=self.model,
-                        choices=[],
-                        usage=self._usage_from_data(
-                            usage_data, probe_scope=probe_scope
-                        ),
-                    )
+            elif etype == "response.output_text.done":
+                # This marks the end of one text item, not the whole response.
+                # The response.completed/incomplete event carries the actual
+                # terminal reason, so keep this as a non-terminal boundary.
+                yield ChatCompletionChunk(
+                    id=response_id,
+                    created=int(time.time()),
+                    model=self.model,
+                    choices=[
+                        ChatCompletionChunkChoice(
+                            index=0,
+                            delta=ChatCompletionDelta(),
+                            finish_reason=None,
+                        )
+                    ],
+                )
 
     def _raise_response_failed(self, event: dict[str, Any], response: Any) -> None:
         error = (event.get("response") or {}).get("error") or event.get("error") or {}
