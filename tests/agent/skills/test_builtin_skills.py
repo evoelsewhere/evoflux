@@ -59,3 +59,19 @@ def test_skill_md_has_no_time_sensitive_statements(skill_dir):
     text = (skill_dir / "SKILL.md").read_text(encoding="utf-8")
 
     assert _TIME_SENSITIVE.search(text) is None
+
+
+def test_intelligent_ui_links_runtime_accurate_motion_authoring_guidance():
+    skill_dir = BUILTIN / "intelligent-ui"
+    skill_text = (skill_dir / "SKILL.md").read_text(encoding="utf-8")
+    assert "reference/motion-authoring.md" in skill_text
+    guide = (skill_dir / "reference" / "motion-authoring.md").read_text(
+        encoding="utf-8"
+    )
+    for runtime_api in (
+        "registerFrameRenderer(timeMs)",
+        "onCommand(handler)",
+        "reportPlayback(state, currentTimeMs)",
+    ):
+        assert runtime_api in guide
+    assert "stable ids" in guide.lower()

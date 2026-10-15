@@ -191,7 +191,9 @@ other environments, **Download source** saves a copy outside the repository.
   a labeled static preview remains visible.
 - Rich HTML runs in a dedicated `sandbox="allow-scripts"` iframe with no
   same-origin or `allow` privileges, a network-denying CSP and a one-time
-  `MessageChannel` bridge. App theme tokens and reduced-motion preference are
+  `MessageChannel` bridge. The runtime API is installed before generated
+  scripts execute, so command handlers and frame renderers register on first
+  load. App theme tokens and reduced-motion preference are
   passed into the frame and updated while it is open. Frame export transfers
   only one rendered `ImageBitmap` at a time across this bridge; the encoder and
   file assembly stay in the app page. Existing `show_widget` and `ui_block.custom`
@@ -212,6 +214,9 @@ through normal Skill discovery in other styles and agents. The Skill carries:
 - a block catalog with the real field names and caps of all 14 types;
 - worked examples with exact native payloads and guidance for sourced
   dashboards, motion controls/export, and declarative scene3d;
+- an on-demand motion-authoring reference with storyboard, deterministic
+  frame/playback contract, visual quality rules, and stable scene ids for
+  focused revisions;
 - an in-place update protocol for `block_id` / `replace_id` follow-ups;
 - hard rules against the three observed failure modes: static markdown
   tables for interactive data, writing widget HTML to disk, and asking

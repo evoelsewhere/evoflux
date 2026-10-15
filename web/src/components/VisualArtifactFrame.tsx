@@ -97,7 +97,7 @@ window.addEventListener('message',event=>{
 // eslint-disable-next-line react-refresh/only-export-components
 export function buildVisualArtifactSrcDoc(sourceHtml: string): string {
   const csp = FRAME_CSP.replaceAll('"', '&quot;')
-  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp}"><meta name="viewport" content="width=device-width, initial-scale=1"><style>html,body{margin:0;min-height:100%;font-family:Inter,system-ui,sans-serif;color:var(--color-text-primary,inherit);background:var(--color-surface,transparent)}*{box-sizing:border-box}@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;scroll-behavior:auto!important}}</style></head><body>${sourceHtml}${runtimeScript()}</body></html>`
+  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp}"><meta name="viewport" content="width=device-width, initial-scale=1"><style>html,body{margin:0;min-height:100%;font-family:Inter,system-ui,sans-serif;color:var(--color-text-primary,inherit);background:var(--color-surface,transparent)}*{box-sizing:border-box}@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;scroll-behavior:auto!important}}</style></head><body>${runtimeScript()}${sourceHtml}</body></html>`
 }
 
 export function VisualArtifactFrame({ artifact, theme, reducedMotion, onSendPrompt, onPlayback, onReady, onFrame, onPort }: Props) {

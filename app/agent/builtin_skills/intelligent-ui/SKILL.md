@@ -1,6 +1,6 @@
 ---
 name: intelligent-ui
-description: "Evaluates whether an interface makes an answer more useful, then chooses prose, an inline native ui_block, or a rich dashboard, motion, or 3D visual_artifact shown in EvoFlux Workbench. Judge the user's goal and likely workflow, not keyword matches; use interaction only when it materially improves the next step."
+description: "Helps choose useful interactive visuals from the user's goal instead of matching keywords. Use when an answer may benefit from native ui_block or a rich dashboard, motion, or 3D visual_artifact in EvoFlux Workbench."
 metadata:
   runtime-preload-tools: ui_block,visual_artifact
 ---
@@ -106,6 +106,9 @@ ui_block(blocks=[...], title="launch_plan", block_id="launch_plan")
 - [reference/worked-examples.md](reference/worked-examples.md) — read when
   you need a copy-adaptable template: hosting-plan comparison, multi-step
   plan with checklist, live calculator, pomodoro widget rendered inline.
+- [reference/motion-authoring.md](reference/motion-authoring.md) — read when
+  authoring or revising an animated explainer/video; it covers the storyboard,
+  deterministic canvas/runtime contract, and stable scene ids.
 - [reference/update-protocol.md](reference/update-protocol.md) — read when
   the user asks to change, pause, add to, or revise blocks that are already
   rendered.
@@ -135,7 +138,8 @@ richer dashboard, motion, or scene controls improve the user's next step.
   not depend on `Date.now()`, accumulated animation state, timers, unseeded
   randomness, or an animation loop inside `renderAt`; the host supplies frames
   in timestamp order and encodes them locally. Keep the canvas backing size
-  fixed (prefer 1280 × 720) while CSS scales it for the preview. If an older
+  fixed at 1280 × 720 for Balanced or 1920 × 1080 for High while CSS scales it
+  for the preview. If an older
   composition has no frame renderer, EvoFlux may fall back to the browser's
   real-time canvas recorder. The MP4/WebM format depends on local encoder
   support; do not promise one format on every OS.
