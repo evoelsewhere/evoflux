@@ -829,6 +829,127 @@ class Scene3DSpec(BaseModel):
         return self
 
 
+class MotionBeatProgress(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(pattern=r"^[a-z0-9][a-z0-9_-]{0,63}$")
+    index: int = Field(ge=0)
+    total: int = Field(ge=1, le=64)
+    title: str = Field(min_length=1, max_length=120)
+
+    @model_validator(mode="after")
+    def _index_is_in_range(self) -> MotionBeatProgress:
+        if self.index >= self.total:
+            raise ValueError("beat index must be less than total")
+        return self
+
+
+class MotionFrameProgress(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    scope: Literal["review_samples", "final_output"]
+    completed: int = Field(ge=0)
+    total: int | None = Field(default=None, ge=1, le=10_000_000)
+    fps: float | None = Field(default=None, ge=1, le=240)
+    last_completed_index: int | None = Field(default=None, ge=0)
+
+    @model_validator(mode="after")
+    def _counts_are_consistent(self) -> MotionFrameProgress:
+        if self.total is not None and self.completed > self.total:
+            raise ValueError("completed frames cannot exceed total")
+        if (
+            self.total is not None
+            and self.last_completed_index is not None
+            and self.last_completed_index >= self.total
+        ):
+            raise ValueError("last_completed_index must be less than total")
+        if self.completed == 0 and self.last_completed_index is not None:
+            raise ValueError(
+                "last_completed_index must be empty before a frame completes"
+            )
+        if self.completed > 0 and self.last_completed_index is None:
+            raise ValueError("last_completed_index is required after a frame completes")
+        return self
+
+
+class MotionIterationProgress(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    current: int = Field(ge=1)
+    budget: int = Field(ge=1, le=20)
+
+    @model_validator(mode="after")
+    def _current_is_in_range(self) -> MotionIterationProgress:
+        if self.current > self.budget:
+            raise ValueError("current iteration cannot exceed budget")
+        return self
+
+
+class MotionReviewSampleDescriptor(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    sample_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_-]{0,63}$")
+    beat_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_-]{0,63}$")
+    frame_index: int = Field(ge=0, le=10_000_000)
+    timestamp_ms: int = Field(ge=0, le=120_000)
+    role: Literal[
+        "style", "key_state", "before_transition", "after_transition", "impact"
+    ]
+
+
+class MotionProgressEvent(BaseModel):
+    """Bounded lifecycle metadata for one session-turn motion artifact."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["motion_progress"] = "motion_progress"
+    agent: str = Field(min_length=1, max_length=120)
+    job_id: str = Field(pattern=r"^motion-[a-f0-9]{32}$")
+    sequence: int = Field(ge=1)
+    artifact_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_-]{0,79}$")
+    artifact_revision: int = Field(ge=1)
+    status: Literal["running", "complete", "cancelled", "failed", "interrupted"]
+    phase: Literal[
+        "planning",
+        "storyboard",
+        "style_samples",
+        "composing",
+        "rendering_samples",
+        "reviewing",
+        "revising",
+        "final_render",
+        "encoding",
+        "audio",
+    ]
+    beat: MotionBeatProgress | None = None
+    frames: MotionFrameProgress | None = None
+    iteration: MotionIterationProgress | None = None
+    sample_request_id: str | None = Field(default=None, min_length=1, max_length=120)
+    selected_samples: list[MotionReviewSampleDescriptor] = Field(
+        default_factory=list, max_length=12
+    )
+    audio_status: Literal[
+        "not_requested", "unavailable", "pending", "rendering", "included"
+    ] = "not_requested"
+
+    @model_validator(mode="after")
+    def _validate_lifecycle_contract(self) -> MotionProgressEvent:
+        if self.status == "complete" and self.phase not in {
+            "final_render",
+            "encoding",
+            "audio",
+        }:
+            raise ValueError(
+                "complete status requires a final render, encoding, or audio phase"
+            )
+        sample_ids = [sample.sample_id for sample in self.selected_samples]
+        if len(sample_ids) != len(set(sample_ids)):
+            raise ValueError("motion sample ids must be unique")
+        if self.sample_request_id is not None and not self.selected_samples:
+            raise ValueError("sample request requires at least one selected sample")
+        return self
+
+
 class VisualArtifactEvent(BaseModel):
     """Validated complete payload for a rich dashboard, motion, or 3D artifact."""
 
@@ -838,6 +959,7 @@ class VisualArtifactEvent(BaseModel):
     agent: str
     tool_call_id: str
     artifact_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_-]{0,79}$")
+    artifact_revision: int | None = Field(default=None, ge=1)
     kind: Literal["dashboard", "motion", "scene3d"]
     title: str = Field(min_length=1, max_length=120)
     summary: str = Field(max_length=500)

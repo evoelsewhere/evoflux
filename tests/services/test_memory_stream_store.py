@@ -1428,6 +1428,57 @@ class TestUiBlockClassification:
         assert "visual_artifact" not in _NON_REPLAYABLE_EVENT_TYPES
 
     @pytest.mark.asyncio
+    async def test_motion_progress_replay_coalesces_by_job_but_live_fanout_keeps_order(
+        self,
+    ):
+        from app.agent.schemas.events import MotionProgressEvent
+
+        await store.init_turn("sid-motion-progress")
+        state = _turns["sid-motion-progress"]
+        live = asyncio.Queue()
+        state.subscribers.append(live)
+
+        async def push(job_id: str, sequence: int, phase: str = "storyboard") -> None:
+            event = MotionProgressEvent(
+                agent="lead",
+                job_id=job_id,
+                sequence=sequence,
+                artifact_id="rainfall-story",
+                artifact_revision=1,
+                status="running",
+                phase=phase,
+            )
+            await store.push_event(
+                "sid-motion-progress", StreamEnvelope.from_event(event)
+            )
+
+        await push("motion-" + "a" * 32, 1)
+        await push("motion-" + "a" * 32, 2, "composing")
+        await push("motion-" + "b" * 32, 1)
+        await push("motion-" + "a" * 32, 3, "rendering_samples")
+
+        live_frames = [live.get_nowait() for _ in range(4)]
+        assert [json.loads(frame["data"])["sequence"] for frame in live_frames] == [
+            1,
+            2,
+            1,
+            3,
+        ]
+        assert len(state.replay_events) == 2
+        assert [
+            json.loads(frame.data)["sequence"] for frame in state.replay_events
+        ] == [3, 1]
+
+        replay = store.attach("sid-motion-progress")
+        first = await anext(replay)
+        second = await anext(replay)
+        await replay.aclose()
+        assert [
+            json.loads(first["data"])["sequence"],
+            json.loads(second["data"])["sequence"],
+        ] == [3, 1]
+
+    @pytest.mark.asyncio
     async def test_ui_block_envelope_is_pushed_and_replayed(self):
         from app.agent.schemas.events import UiBlockEvent, UiProgressBlock
 

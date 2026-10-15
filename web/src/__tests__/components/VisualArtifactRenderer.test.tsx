@@ -87,4 +87,22 @@ describe('visual artifact rendering', () => {
       frameIndex: 6, timestampMs: 200,
     })
   })
+
+  it('renders lifecycle progress before the motion artifact is ready', () => {
+    const progress: ContentBlock = {
+      id: 'motion-job-progress', type: 'motion_progress', content: '', title: 'Collect rain',
+      motionProgress: {
+        jobId: `motion-${'a'.repeat(32)}`, sequence: 2, artifactId: 'water-progress', artifactRevision: 1,
+        status: 'running', phase: 'reviewing',
+        beat: { id: 'collection', index: 0, total: 4, title: 'Collect rain' },
+        iteration: { current: 1, budget: 3 }, selectedSamples: [], audioStatus: 'pending',
+      },
+    }
+    render(<BlockRenderer block={progress} isStreaming />)
+
+    expect(screen.getByText('Collect rain')).toBeVisible()
+    expect(screen.getByRole('status')).toHaveTextContent('Reviewing selected frames')
+    expect(screen.getByRole('status')).toHaveTextContent('Beat 1/4: Collect rain')
+    expect(screen.queryByRole('button', { name: /Open in Workbench/i })).not.toBeInTheDocument()
+  })
 })

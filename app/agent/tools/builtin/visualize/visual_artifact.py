@@ -128,6 +128,7 @@ async def visual_artifact(
                 "agent": agent_name,
                 "tool_call_id": tool_call_id,
                 "artifact_id": artifact_id,
+                "artifact_revision": _active_artifact_revision(state, artifact_id),
                 "kind": kind,
                 "title": title,
                 "summary": summary,
@@ -158,6 +159,7 @@ async def visual_artifact(
     return {
         "success": True,
         "artifact_id": event.artifact_id,
+        "artifact_revision": event.artifact_revision,
         "kind": event.kind,
         "message": f"Rendered {event.kind} artifact '{event.title}'",
         "pushed": pushed,
@@ -175,3 +177,13 @@ def _tool_result_succeeded(content: str) -> bool:
     if isinstance(value, dict):
         return value.get("success") is not False and not value.get("error")
     return True
+
+
+def _active_artifact_revision(state: Any, artifact_id: str) -> int | None:
+    metadata = getattr(state, "metadata", None)
+    if not isinstance(metadata, dict):
+        return None
+    jobs = metadata.get("_motion_progress_jobs")
+    current = jobs.get(artifact_id) if isinstance(jobs, dict) else None
+    revision = current.get("artifact_revision") if isinstance(current, dict) else None
+    return revision if isinstance(revision, int) and revision >= 1 else None

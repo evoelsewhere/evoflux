@@ -14,3 +14,10 @@ def test_simple_style_does_not_recommend_visual_tools() -> None:
     assert "visual_artifact" not in response_style_directive(
         "simple", {"visual_artifact"}
     )
+
+
+def test_visual_motion_guidance_uses_stage_updates_not_per_frame_events() -> None:
+    prompt = response_style_directive("visual", {"visual_artifact", "motion_progress"})
+    assert "motion_progress" in prompt
+    assert "not emit one update per frame" in prompt
+    assert "renderer owns exact frame counts" in prompt

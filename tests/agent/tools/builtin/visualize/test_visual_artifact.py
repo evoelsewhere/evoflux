@@ -98,3 +98,21 @@ async def test_tool_executor_injects_active_history_without_exposing_internal_fi
     )
     assert result["success"] is False
     assert "source tool call" in result["error"]
+
+
+@pytest.mark.asyncio
+async def test_motion_artifact_carries_the_active_lifecycle_revision() -> None:
+    state = AgentState(messages=[], system_prompt="")
+    state.metadata["_motion_progress_jobs"] = {
+        "rainfall-story": {"artifact_revision": 3, "sequence": 4}
+    }
+
+    result = await visual_artifact(
+        **valid_dashboard_args(
+            artifact_id="rainfall-story", kind="motion", duration_ms=9000
+        ),
+        _state=state,
+    )
+
+    assert result["success"] is True
+    assert result["artifact_revision"] == 3
