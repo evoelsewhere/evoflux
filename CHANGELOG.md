@@ -12,6 +12,10 @@ All notable changes to EvoFlux are documented in this file.
 - **Shell process polling** no longer waits indefinitely for stdout EOF after a
   child exits; it returns after a short drain grace period and marks output as
   potentially incomplete when a descendant keeps the pipe open.
+- **Malformed model tool calls** are no longer accepted as completed answers when
+  the model prints XML-like tool-call markup. The agent retries once for a valid
+  structured call or normal response, then fails clearly if the malformed output
+  repeats.
 - **Team Worktree finalize** tolerates an extra `task_id` from the model and
   continues to scope finalization through `target_repos`.
 - **Truncated model responses** preserve provider finish reasons and continue

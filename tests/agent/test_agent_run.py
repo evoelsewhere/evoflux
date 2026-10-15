@@ -539,8 +539,66 @@ async def test_agent_run_invalid_json_args():
     assert last.tool_calls is None
 
 
+async def test_agent_run_recovers_once_from_text_that_looks_like_a_tool_call():
+    calls: list[str] = []
+
+    def ask_user(question: str) -> str:
+        calls.append(question)
+        return "answer recorded"
+
+    provider = MockProvider(
+        [
+            [make_text_chunk("<tool_call><function=ask_user/><parameter></function></tool_call>")],
+            [make_tool_chunk("ask_user", "call_valid", '{"question":"What is your name?"}')],
+            [make_text_chunk("The question was asked.")],
+        ]
+    )
+    requests: list[list[ChatMessage]] = []
+    original_stream = provider.stream
+
+    def capture_stream(messages, tools=None, **kwargs):
+        requests.append(messages)
+        return original_stream(messages, tools, **kwargs)
+
+    provider.stream = capture_stream  # type: ignore[method-assign]
+    agent = Agent(name="bot", llm_provider=provider, tools=[Tool(ask_user)])
+
+    messages = await agent.run([HumanMessage(content="Ask me a question")])
+
+    assert len(requests) == 3
+    assert isinstance(requests[1][-1], HumanMessage)
+    assert "valid structured tool call" in requests[1][-1].content
+    assert calls == ["What is your name?"]
+    assert agent.stats.status == "completed"
+    assert last_assistant(messages).content == "The question was asked."
+
+
+async def test_agent_run_fails_after_repeated_text_tool_call_instead_of_completing():
+    from app.agent.errors import AgentLoopError
+
+    malformed = "<tool_call><function=ask_user/><parameter></function></tool_call>"
+    provider = MockProvider([[make_text_chunk(malformed)], [make_text_chunk(malformed)]])
+    requests = 0
+    original_stream = provider.stream
+
+    def count_stream(messages, tools=None, **kwargs):
+        nonlocal requests
+        requests += 1
+        return original_stream(messages, tools, **kwargs)
+
+    provider.stream = count_stream  # type: ignore[method-assign]
+    agent = Agent(name="bot", llm_provider=provider)
+
+    with pytest.raises(AgentLoopError, match="tool-call markup as plain text"):
+        await agent.run([HumanMessage(content="Ask me a question")])
+
+    assert requests == 2
+    assert agent.stats.status == "failed"
+
+
 async def test_agent_run_max_iterations():
-    """Agent stops after max_iterations even when tool calls keep coming."""
+    """Agent fails clearly after max_iterations instead of returning success."""
+    from app.agent.errors import AgentLoopError
 
     def noop(x: int) -> str:
         """Does nothing."""
@@ -552,13 +610,11 @@ async def test_agent_run_max_iterations():
         name="bot", llm_provider=provider, tools=[Tool(noop)], max_iterations=2
     )
 
-    msgs = await agent.run([HumanMessage(content="loop")])
+    with pytest.raises(AgentLoopError, match="iteration limit"):
+        await agent.run([HumanMessage(content="loop")])
 
     assert agent.stats.messages_count == 2
-    last = last_assistant(msgs)
-    assert last is not None
-    # Last response has tool_calls (loop was cut short)
-    assert last.tool_calls is not None
+    assert agent.stats.status == "failed"
 
 
 async def test_agent_run_stops_after_terminal_tool_result():
