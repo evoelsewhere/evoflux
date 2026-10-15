@@ -4,10 +4,9 @@ All notable changes to EvoFlux are documented in this file.
 
 ## [Unreleased]
 
-### Changed
+No changes yet.
 
-- Provider streaming regression coverage now waits for the terminal response
-  event before marking a turn complete.
+## [3.0.8] - 2026-10-15
 
 ### Fixed
 
@@ -25,7 +24,8 @@ All notable changes to EvoFlux are documented in this file.
   continues to scope finalization through `target_repos`.
 - **Truncated model responses** preserve provider finish reasons and continue
   output cut off by token limits; repeated truncation and agent loop exhaustion
-  now surface an incomplete-task error instead of a successful end state.
+  now surface an incomplete-task error instead of a successful end state. Text
+  item completion alone no longer marks the whole response as complete.
 
 ## [3.0.7] - 2026-10-14
 
