@@ -181,6 +181,7 @@ _SAFE_TOOLS: frozenset[str] = frozenset(
         "show_widget",
         "visualize_read_me",
         "ui_block",
+        "visual_artifact",
         "todo_manage",
         "schedule_task",
         # parks a suggestion for the user; starting it is the user's click

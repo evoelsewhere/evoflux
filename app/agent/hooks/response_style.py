@@ -46,6 +46,32 @@ _VISUAL_UI_LINE = (
 )
 
 
+def response_style_directive(style: str, tool_names: set[str]) -> str:
+    """Build concise task-utility guidance using only this run's tools."""
+    if style == "simple":
+        return _SIMPLE_LINE
+    available = [name for name in ("ui_block", "visual_artifact") if name in tool_names]
+    line = _VISUAL_LINE
+    if not available:
+        return line
+    if "ui_block" in available and "visual_artifact" not in available:
+        return _VISUAL_UI_LINE
+    if "visual_artifact" in available and "ui_block" in available:
+        return (
+            f"{line} The ui_block and visual_artifact tools are available in this run. "
+            "Use ui_block for compact declarative controls and visual_artifact only "
+            "when a custom dashboard, motion explainer, or spatial 3D view materially "
+            "improves the task. For dashboards, inspect data first and cite successful "
+            "tool calls; do not claim live freshness without source evidence."
+        )
+    return (
+        f"{line} The visual_artifact tool is available in this run for custom "
+        "dashboards, motion explainers, or spatial 3D views when those controls "
+        "materially improve the task. For dashboards, inspect data first and cite "
+        "successful tool calls; do not claim live freshness without source evidence."
+    )
+
+
 @dynamic_prompt
 def inject_response_style(request: PromptRequest) -> str:
     """Append the configured response-style directive to the base prompt.
@@ -54,10 +80,7 @@ def inject_response_style(request: PromptRequest) -> str:
     **Settings → Agents** applies to the next message without a restart,
     and degrades to ``visual`` if the settings file is corrupt.
     """
-    if response_style_default() == "simple":
-        line = _SIMPLE_LINE
-    elif "ui_block" in request.state.tool_names:
-        line = _VISUAL_UI_LINE
-    else:
-        line = _VISUAL_LINE
+    line = response_style_directive(
+        response_style_default(), set(request.state.tool_names)
+    )
     return f"{request.base_prompt}\n\n{line}"

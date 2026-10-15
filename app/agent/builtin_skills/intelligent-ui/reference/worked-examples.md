@@ -6,6 +6,7 @@
 - Example 2 — a multi-step plan with a checklist
 - Example 3 — math with changing variables
 - Example 4 — a pomodoro widget rendered inline
+- Example 5 — choose sourced dashboard, motion, or 3D only when useful
 
 Each example is a complete `ui_block` tool call. The tool arguments are
 `blocks` (the array below), plus optional `title` (≤80 chars, snake_case)
@@ -179,3 +180,36 @@ same shape serves countdowns, stopwatches, habit trackers, and small
 games; only the HTML changes. A `pomodoro` needs no clarifying question —
 render this best guess first, then offer tweaks (durations, break length,
 session counter).
+
+## Example 5 — choose a rich artifact from the task
+
+Use `visual_artifact` when a bespoke dashboard, a controllable explanation,
+or spatial inspection materially improves what the user can do next. It is
+not a more decorative default for every answer.
+
+For a data-backed dashboard, first run the relevant file or connector tool.
+Then pass each successful result's actual `tool_call_id` and a query summary:
+
+```json
+{
+  "artifact_id": "monthly-signups",
+  "kind": "dashboard",
+  "title": "Monthly signups",
+  "summary": "Signups and churn from the attached report.",
+  "source_html": "<main><h1>Monthly signups</h1><p>Show a responsive trend from verified source data. Use EvoFlux theme variables.</p><canvas aria-label=\"Signups trend\"></canvas></main>",
+  "sources": [{ "tool_call_id": "actual-successful-tool-call-id", "query_summary": "signup and churn by month" }]
+}
+```
+
+For a requested explainer that the user wants to play, pause, seek, or
+export, use `kind: "motion"`, a bounded `duration_ms`, a self-contained
+timeline, and a canvas marked `data-evoflux-motion-canvas`. Register an
+`onCommand` handler for play/pause/restart/seek and report playback state.
+The host detects the supported export MIME and disables export if there is
+no marked canvas.
+
+For a spatial task, use `kind: "scene3d"` with `scene.nodes` built only from
+box, sphere, cylinder, or torus primitives. Each node needs a unique id,
+bounded position/rotation/scale, semantic theme color, and optional useful
+label. Choose 3D when rotation or spatial relationships help inspect the
+subject; when WebGL is unavailable the app shows a labeled static preview.

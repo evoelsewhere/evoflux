@@ -1,0 +1,15 @@
+# SDD ledger — plan: documents/plans/2026-10-15-rich-intelligent-ui-implementation.md
+
+Pre-flight: Task 1 produces the validated VisualArtifactEvent/tool and active-tool prompt metadata consumed by Tasks 2–6; Task 2 produces transcript payload/source-call mapping and bridge consumed by Tasks 3–5; Task 3 consumes verified source-call mapping; Task 4 consumes bridge port; Task 5 consumes Scene3DSpec; Task 6 consumes tool registration and schema; Task 7 documents shipped contracts. No conflicting interface was found against the spec.
+
+Task 1: complete — validated schema/tool, active tool visibility and truthful response-style context; focused agent/schema/loader/skill tests, skill strict validation, and targeted `ty` passed.
+Task 1: Ruling: runtime-preload-tools uses a comma-separated metadata string instead of YAML list — the repository Skill parser and metadata contract accept string values only, and skill schema compatibility is higher priority than a list-shaped plan example — cost if wrong: list syntax will not work until the Skills frontmatter contract is intentionally broadened.
+Task 2: complete — SSE contract, replay/history replacement, source-call verification, and bounded opaque-frame bridge passed focused backend and frontend tests.
+Task 3: complete — dashboard provenance disclosure and normal-chat refresh behavior passed component tests.
+Task 4: complete — motion playback/seek/export controls, missing-canvas behavior, MIME fallback selection, and bounded child-frame recorder chunks passed focused tests.
+Task 4: Ruling: canvas recording runs inside the opaque child frame and streams bounded chunks over the initialized MessagePort — the parent cannot access the canvas without widening the sandbox — cost if wrong: recording ownership and frame cleanup require a bridge redesign.
+Task 5: complete — local lazy Three.js loading, static WebGL fallback, visibility/reduced-motion controls, scene bounds and camera-framing math passed focused tests; production build keeps Three.js in a separate chunk.
+Task 6: complete — seven intent fixtures and offline eval passed; live-model smoke was not run because port 8000 belongs to the existing base-checkout EvoFlux process, not this feature worktree, and using it would not exercise this code.
+Task 7: complete — feature docs, Help locales, and changelog updated; focused backend/frontend verification, strict Skill validation, targeted lint/type checks, and production build passed.
+
+Verification boundary: implementation-scoped Ruff and formatter checks pass. Targeted `ty` passes for the changed contracts/hooks/tool/registry/stream modules; including `webbridge.py` reports four diagnostics in untouched code at lines 1107 and 1735. The all-repository `ty check app/` run reports 160 baseline diagnostics, and repository-wide Ruff also has pre-existing unrelated findings. Visual inspection and live MiMo output-quality evaluation remain unverified, so this branch is implementation-tested but not a live-model release candidate.
