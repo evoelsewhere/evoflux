@@ -25,6 +25,17 @@ deterministic frame rendering. It exports at 30 fps and has no audio track.
 It does not expose an audio renderer, a Playwright/FFmpeg render job, or an
 automatic importer for externally rendered videos. Never invent those APIs.
 
+When the `motion_review` tool is available, first check that the active provider
+accepts image input. After rendering a draft or a targeted revision, request a
+small set of representative beat/key-state and before/after transition frames.
+The browser captures only those requested timestamps inside the sandbox and
+returns bounded thumbnails to vision-capable models. Use returned pixels as
+evidence for a concrete revision. If the tool reports `samples_unavailable`,
+the provider is text-only, or a frame failed to render, continue from available
+metadata without saying that the animation was visually inspected. Do not ask
+the model to review every output frame; the renderer creates encoded frames and
+the model reviews only a few representative samples.
+
 If authorized shell/browser tools and a local media workflow are available,
 check the actual Node/browser/encoder capabilities before choosing that route.
 Keep render inputs and outputs in the session workspace. External rendering
@@ -114,6 +125,10 @@ samples, and check neighboring transitions. Use two refinement passes as a
 starting budget; extend for material improvement or a blocking defect. Stop
 repeating an unchanged attempt and preserve unresolved findings explicitly.
 Do not stop early while a known, fixable correctness defect remains.
+If the in-app `motion_review` tool is available, submit only the selected sample
+descriptors (sample id, beat id, frame index, timestamp, and review role); never
+place image bytes in tool arguments or lifecycle events. Interpret its returned
+images together with the beat labels and timestamps.
 
 Separate runtime checks from aesthetic judgment. Check frame count, dimensions,
 fps, duration, decode errors, repeated-time determinism, and missing assets.

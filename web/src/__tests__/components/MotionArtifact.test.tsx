@@ -4,6 +4,7 @@ import type { VisualArtifactPayload } from '@/api/types'
 
 const motionMocks = vi.hoisted(() => ({
   exportFrames: vi.fn(),
+  postMotionReviewSamples: vi.fn(),
   frameHandler: undefined as ((message: { type: 'rendered_frame'; requestId: number; currentTimeMs: number; bitmap: ImageBitmap }) => void) | undefined,
   port: {
     postMessage: vi.fn(),
@@ -17,6 +18,7 @@ vi.mock('@/lib/visual-artifact-export', () => ({
   getSupportedExportMimeType: () => 'video/webm',
 }))
 vi.mock('@/components/ui/select', () => ({ SelectControl: () => <div /> }))
+vi.mock('@/api/client/team', () => ({ postMotionReviewSamples: motionMocks.postMotionReviewSamples }))
 vi.mock('@/components/VisualArtifactFrame', async () => {
   const React = await import('react')
   return {
@@ -111,6 +113,39 @@ describe('MotionArtifact', () => {
     await waitFor(() => expect(motionMocks.port.postMessage).toHaveBeenCalledWith({
       type: 'command',
       command: { type: 'render_frame', requestId: 1_000_000_000, currentTimeMs: 1000 / 30 },
+    }))
+  })
+
+  it('renders and posts only the requested bounded frame sample', async () => {
+    originalCreateObjectUrl = Object.getOwnPropertyDescriptor(URL, 'createObjectURL')
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: vi.fn(() => 'blob:review-frame') })
+    motionMocks.postMotionReviewSamples.mockResolvedValue(undefined)
+    const reviewArtifact = { ...artifact, artifactId: 'motion-agent-review-test' }
+    const reviewRequest = {
+      id: 'motion-job:request-1',
+      jobId: `motion-${'a'.repeat(32)}`,
+      sampleRequestId: 'request-1',
+      samples: [{ sampleId: 'impact', beatId: 'intake', frameIndex: 10, timestampMs: 333, role: 'impact' as const }],
+    }
+    render(<MotionArtifact
+      artifact={reviewArtifact}
+      theme="dark"
+      reducedMotion={false}
+      active
+      sessionId="session-review"
+      motionSampleReviewRequest={reviewRequest}
+    />)
+
+    await waitFor(() => expect(motionMocks.postMotionReviewSamples).toHaveBeenCalledTimes(1))
+    expect(motionMocks.port.postMessage).toHaveBeenCalledWith({
+      type: 'command',
+      command: { type: 'render_frame', requestId: 1_000_000_000, currentTimeMs: 333 },
+    })
+    expect(motionMocks.postMotionReviewSamples).toHaveBeenCalledWith('session-review', reviewRequest.jobId, expect.objectContaining({
+      sampleRequestId: 'request-1',
+      artifactId: 'motion-agent-review-test',
+      artifactRevision: 1,
+      samples: [expect.objectContaining({ sampleId: 'impact', frameIndex: 10, timestampMs: 333, mimeType: 'image/jpeg' })],
     }))
   })
 })

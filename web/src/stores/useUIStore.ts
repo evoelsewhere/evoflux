@@ -37,6 +37,19 @@ export interface MotionReviewRequest {
   timestampMs: number
 }
 
+export interface MotionSampleReviewRequest {
+  id: string
+  jobId: string
+  sampleRequestId: string
+  samples: Array<{
+    sampleId: string
+    beatId: string
+    frameIndex: number
+    timestampMs: number
+    role: 'style' | 'key_state' | 'before_transition' | 'after_transition' | 'impact'
+  }>
+}
+
 export interface WorkbenchTab {
   id: string
   tool: WorkbenchTool
@@ -44,6 +57,7 @@ export interface WorkbenchTab {
   initialUrl?: string
   artifact?: VisualArtifactPayload
   motionReviewRequest?: MotionReviewRequest
+  motionSampleReviewRequest?: MotionSampleReviewRequest
   /**
    * The chat session this tab belongs to.
    *
@@ -62,6 +76,7 @@ export interface WorkbenchTabOptions {
   title?: string
   artifact?: VisualArtifactPayload
   motionReviewRequest?: MotionReviewRequest
+  motionSampleReviewRequest?: MotionSampleReviewRequest
 }
 
 /**
@@ -164,6 +179,7 @@ function newWorkbenchTab(
     title: options.title,
     artifact: options.artifact,
     motionReviewRequest: options.motionReviewRequest,
+    motionSampleReviewRequest: options.motionSampleReviewRequest,
     sessionId: SESSION_SCOPED_TOOLS.has(tool) ? sessionId : null,
   }
 }
@@ -241,6 +257,7 @@ function addOrActivateTool(
     existing.artifact = options.artifact
     existing.title = options.title
     if (options.motionReviewRequest) existing.motionReviewRequest = options.motionReviewRequest
+    if (options.motionSampleReviewRequest) existing.motionSampleReviewRequest = options.motionSampleReviewRequest
   }
   activateTab(state, tab)
   state.workbenchOpen = true
