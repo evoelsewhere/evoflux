@@ -7,7 +7,7 @@ import { useMotionPreset } from '@/lib/motion'
 import { projectRelativePath } from '@/lib/project-relative-path'
 import { isTauriAvailable } from '@/api/tauri-workspace'
 import { useTeamStore } from '@/stores/useTeamStore'
-import type { MotionReviewRequest } from '@/stores/useUIStore'
+import type { MotionReviewRequest, MotionSampleReviewRequest } from '@/stores/useUIStore'
 import { DashboardArtifact } from '@/components/visual-artifact/DashboardArtifact'
 import { MotionArtifact } from '@/components/visual-artifact/MotionArtifact'
 import { Scene3DArtifact } from '@/components/visual-artifact/Scene3DArtifact'
@@ -17,6 +17,7 @@ interface Props extends WorkbenchContext {
   artifact: VisualArtifactPayload
   active?: boolean
   reviewRequest?: MotionReviewRequest
+  motionSampleReviewRequest?: MotionSampleReviewRequest
 }
 
 function sourceFor(artifact: VisualArtifactPayload): { content: string; extension: string; mime: string } {
@@ -40,7 +41,7 @@ function downloadSource(artifact: VisualArtifactPayload) {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
-export function VisualArtifactWorkbench({ artifact, mode, workspace, active = true, reviewRequest }: Props) {
+export function VisualArtifactWorkbench({ artifact, mode, sessionId, workspace, active = true, reviewRequest, motionSampleReviewRequest }: Props) {
   const { preference, resolved } = useThemePreference()
   const motionPreset = useMotionPreset()
   const [reducedMotion, setReducedMotion] = useState(() =>
@@ -111,7 +112,7 @@ export function VisualArtifactWorkbench({ artifact, mode, workspace, active = tr
           <DashboardArtifact artifact={artifact} theme={preference} reducedMotion={respectReducedMotion} onSendPrompt={onSendPrompt} />
         )}
         {artifact.kind === 'motion' && (
-          <MotionArtifact artifact={artifact} theme={preference} reducedMotion={respectReducedMotion} active={active} reviewRequest={reviewRequest} />
+          <MotionArtifact artifact={artifact} theme={preference} reducedMotion={respectReducedMotion} active={active} reviewRequest={reviewRequest} motionSampleReviewRequest={motionSampleReviewRequest} sessionId={sessionId} />
         )}
         {artifact.kind === 'scene3d' && (
           <Scene3DArtifact artifact={artifact} reducedMotion={respectReducedMotion} resolvedTheme={resolved} visible={active} />

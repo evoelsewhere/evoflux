@@ -15,6 +15,8 @@ import {
   type MotionReviewSampleRole,
 } from '@/lib/motion-render-store'
 import type { MotionReviewRequest } from '@/stores/useUIStore'
+import type { MotionSampleReviewRequest } from '@/stores/useUIStore'
+import { postMotionReviewSamples } from '@/api/client/team'
 
 type PendingFrame = {
   requestId: number
@@ -72,6 +74,33 @@ async function bitmapToPreviewUrl(bitmap: ImageBitmap): Promise<string | null> {
   return URL.createObjectURL(blob)
 }
 
+async function bitmapToReviewBlob(bitmap: ImageBitmap): Promise<Blob | null> {
+  let scale = Math.min(1, 640 / bitmap.width, 360 / bitmap.height)
+  for (let resize = 0; resize < 4; resize += 1) {
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale))
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale))
+    const context = canvas.getContext('2d')
+    if (!context) return null
+    context.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
+    for (const quality of [0.82, 0.7, 0.58, 0.46]) {
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', quality))
+      if (blob && blob.size <= 200 * 1024) return blob
+    }
+    scale *= 0.82
+  }
+  return null
+}
+
+async function blobToBase64(blob: Blob): Promise<string> {
+  const bytes = new Uint8Array(await blob.arrayBuffer())
+  let binary = ''
+  for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(offset, Math.min(offset + 0x8000, bytes.length)))
+  }
+  return btoa(binary)
+}
+
 type RenderedVideo = { url: string; extension: 'mp4' | 'webm'; preset?: MotionExportPreset; revision?: number }
 
 interface Props {
@@ -80,9 +109,11 @@ interface Props {
   reducedMotion: boolean
   active?: boolean
   reviewRequest?: MotionReviewRequest
+  motionSampleReviewRequest?: MotionSampleReviewRequest
+  sessionId?: string | null
 }
 
-export function MotionArtifact({ artifact, theme, reducedMotion, active = true, reviewRequest }: Props) {
+export function MotionArtifact({ artifact, theme, reducedMotion, active = true, reviewRequest, motionSampleReviewRequest, sessionId }: Props) {
   const [port, setPort] = useState<MessagePort | null>(null)
   const [state, setState] = useState<'playing' | 'paused' | 'ended'>('paused')
   const [currentTimeMs, setCurrentTimeMs] = useState(0)
@@ -110,6 +141,7 @@ export function MotionArtifact({ artifact, theme, reducedMotion, active = true, 
   const renderedVideoUrl = useRef<string | null>(null)
   const previewRequestId = useRef(1_000_000_000)
   const lastReviewRequestId = useRef<number | null>(null)
+  const lastSampleReviewRequestId = useRef<string | null>(null)
   const renderId = useRef(`idle-${artifact.artifactId}-${artifact.revision}`)
   const snapshotRef = useRef<MotionRenderSnapshot | null>(null)
   const beatsRef = useRef<MotionTimelineBeat[]>([])
@@ -256,6 +288,47 @@ export function MotionArtifact({ artifact, theme, reducedMotion, active = true, 
     lastReviewRequestId.current = reviewRequest.id
     void inspectFrame(reviewRequest.frameIndex)
   }, [active, hasFrameRenderer, inspectFrame, reviewRequest])
+
+  useEffect(() => {
+    if (!active || !hasFrameRenderer || !port || !sessionId || !motionSampleReviewRequest
+      || lastSampleReviewRequestId.current === motionSampleReviewRequest.id) return
+    lastSampleReviewRequestId.current = motionSampleReviewRequest.id
+    void (async () => {
+      const previews: MotionReviewSample[] = []
+      const uploads: Array<{ sampleId: string; frameIndex: number; timestampMs: number; mimeType: 'image/jpeg'; imageBase64: string }> = []
+      let previewsPublished = false
+      try {
+        for (const sample of motionSampleReviewRequest.samples.slice(0, MAX_REVIEW_SAMPLES)) {
+          const frame = await requestFrameAt(sample.timestampMs, previewRequestId.current++)
+          let blob: Blob | null = null
+          try {
+            blob = await bitmapToReviewBlob(frame.bitmap)
+          } finally {
+            frame.bitmap.close()
+          }
+          if (!blob) throw new Error(`Could not encode review sample ${sample.sampleId}.`)
+          const imageBase64 = await blobToBase64(blob)
+          uploads.push({ sampleId: sample.sampleId, frameIndex: sample.frameIndex, timestampMs: sample.timestampMs, mimeType: 'image/jpeg', imageBase64 })
+          previews.push({ ...sample, objectUrl: URL.createObjectURL(blob) })
+        }
+        if (!previews.length) return
+        if (!publishRender({ samples: previews })) {
+          previews.forEach((sample) => URL.revokeObjectURL(sample.objectUrl))
+          return
+        }
+        previewsPublished = true
+        await postMotionReviewSamples(sessionId, motionSampleReviewRequest.jobId, {
+          sampleRequestId: motionSampleReviewRequest.sampleRequestId,
+          artifactId: artifact.artifactId,
+          artifactRevision: artifact.revision,
+          samples: uploads,
+        })
+      } catch {
+        if (!previewsPublished) previews.forEach((sample) => URL.revokeObjectURL(sample.objectUrl))
+        // The agent's rendezvous expires with an explicit unavailable result.
+      }
+    })()
+  }, [active, artifact.artifactId, artifact.revision, hasFrameRenderer, motionSampleReviewRequest, port, publishRender, requestFrameAt, sessionId])
 
   useEffect(() => {
     if (!port) return

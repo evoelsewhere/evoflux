@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { BlockRenderer } from '@/components/BlockRenderer'
 import type { ContentBlock } from '@/api/types'
@@ -104,5 +104,29 @@ describe('visual artifact rendering', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Reviewing selected frames')
     expect(screen.getByRole('status')).toHaveTextContent('Beat 1/4: Collect rain')
     expect(screen.queryByRole('button', { name: /Open in Workbench/i })).not.toBeInTheDocument()
+  })
+
+  it('opens the matching Workbench motion artifact to satisfy a frame sample request', async () => {
+    const progress: ContentBlock = {
+      id: 'motion-review-progress', type: 'motion_progress', content: '', title: 'Water journey',
+      visualArtifact: motionArtifact.visualArtifact,
+      motionProgress: {
+        jobId: `motion-${'b'.repeat(32)}`, sequence: 3, artifactId: 'water-motion', artifactRevision: 1,
+        status: 'running', phase: 'reviewing', sampleRequestId: 'review-abc',
+        selectedSamples: [{ sampleId: 'intake-hit', beatId: 'collection', frameIndex: 42, timestampMs: 1400, role: 'impact' }],
+        audioStatus: 'pending',
+      },
+    }
+    render(<BlockRenderer block={progress} isStreaming />)
+
+    await waitFor(() => expect(useUIStore.getState().workbenchOpen).toBe(true))
+    expect(useUIStore.getState().workbenchTabs[0]).toMatchObject({
+      artifact: motionArtifact.visualArtifact,
+      motionSampleReviewRequest: {
+        jobId: `motion-${'b'.repeat(32)}`,
+        sampleRequestId: 'review-abc',
+        samples: [{ sampleId: 'intake-hit', frameIndex: 42, timestampMs: 1400 }],
+      },
+    })
   })
 })

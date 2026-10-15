@@ -10,7 +10,7 @@ const { saveDialog, writeWorkspaceFile, isTauri } = vi.hoisted(() => ({
 }))
 
 vi.mock('@tauri-apps/plugin-dialog', () => ({ save: saveDialog }))
-vi.mock('@/api/client/team', () => ({ writeCodingWorkspaceFile: writeWorkspaceFile }))
+vi.mock('@/api/client/team', () => ({ writeCodingWorkspaceFile: writeWorkspaceFile, postMotionReviewSamples: vi.fn() }))
 vi.mock('@/api/tauri-workspace', () => ({ isTauriAvailable: isTauri }))
 vi.mock('@/hooks/useThemePreference', () => ({ useThemePreference: () => ({ preference: 'dark', resolved: 'dark' }) }))
 vi.mock('@/lib/motion', () => ({ useMotionPreset: () => ({ intensity: 'full' }) }))
@@ -18,7 +18,7 @@ vi.mock('@/components/visual-artifact/DashboardArtifact', () => ({
   DashboardArtifact: () => <div data-testid="dashboard-preview" />,
 }))
 vi.mock('@/components/visual-artifact/MotionArtifact', () => ({
-  MotionArtifact: ({ active, reviewRequest }: { active?: boolean; reviewRequest?: { timestampMs: number } }) => <div data-testid="motion-preview" data-active={String(active)} data-review-time={reviewRequest?.timestampMs} />,
+  MotionArtifact: ({ active, reviewRequest, motionSampleReviewRequest }: { active?: boolean; reviewRequest?: { timestampMs: number }; motionSampleReviewRequest?: { sampleRequestId: string } }) => <div data-testid="motion-preview" data-active={String(active)} data-review-time={reviewRequest?.timestampMs} data-sample-request={motionSampleReviewRequest?.sampleRequestId} />,
 }))
 vi.mock('@/components/visual-artifact/Scene3DArtifact', () => ({
   Scene3DArtifact: ({ visible }: { visible?: boolean }) => <div data-testid="scene3d-preview" data-visible={String(visible)} />,
@@ -80,6 +80,21 @@ describe('VisualArtifactWorkbench', () => {
       reviewRequest={{ id: 1, frameIndex: 45, timestampMs: 1_500 }}
     />)
     expect(screen.getByTestId('motion-preview')).toHaveAttribute('data-review-time', '1500')
+  })
+
+  it('passes an agent frame review request and session to the isolated renderer', () => {
+    const artifact = { ...base, kind: 'motion' as const, durationMs: 10_000 }
+    render(<VisualArtifactWorkbench
+      artifact={artifact}
+      mode="work"
+      sessionId="session-1"
+      workspace={null}
+      motionSampleReviewRequest={{
+        id: 'job:request', jobId: `motion-${'c'.repeat(32)}`, sampleRequestId: 'review-1',
+        samples: [{ sampleId: 'hit', beatId: 'arrival', frameIndex: 60, timestampMs: 2000, role: 'impact' }],
+      }}
+    />)
+    expect(screen.getByTestId('motion-preview')).toHaveAttribute('data-sample-request', 'review-1')
   })
 
   it('saves into the project only after a path inside the active repo is selected', async () => {

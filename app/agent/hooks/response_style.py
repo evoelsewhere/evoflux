@@ -60,10 +60,18 @@ def response_style_directive(style: str, tool_names: set[str]) -> str:
         if "motion_progress" in tool_names
         else ""
     )
+    motion_review_line = (
+        " When motion_review is available and the provider accepts images, request a "
+        "small representative set after rendering a draft or targeted revision. Use the "
+        "returned frames as evidence; if the tool reports samples_unavailable, do not "
+        "claim visual inspection."
+        if "motion_review" in tool_names
+        else ""
+    )
     if not available:
-        return line + motion_progress_line
+        return line + motion_progress_line + motion_review_line
     if "ui_block" in available and "visual_artifact" not in available:
-        return _VISUAL_UI_LINE + motion_progress_line
+        return _VISUAL_UI_LINE + motion_progress_line + motion_review_line
     if "visual_artifact" in available and "ui_block" in available:
         return (
             f"{line} The ui_block and visual_artifact tools are available in this run. "
@@ -71,14 +79,14 @@ def response_style_directive(style: str, tool_names: set[str]) -> str:
             "when a custom dashboard, motion explainer, or spatial 3D view materially "
             "improves the task. For dashboards, inspect data first and cite successful "
             "tool calls; do not claim live freshness without source evidence."
-            f"{motion_progress_line}"
+            f"{motion_progress_line}{motion_review_line}"
         )
     return (
         f"{line} The visual_artifact tool is available in this run for custom "
         "dashboards, motion explainers, or spatial 3D views when those controls "
         "materially improve the task. For dashboards, inspect data first and cite "
         "successful tool calls; do not claim live freshness without source evidence."
-        f"{motion_progress_line}"
+        f"{motion_progress_line}{motion_review_line}"
     )
 
 

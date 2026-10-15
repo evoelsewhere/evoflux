@@ -1548,7 +1548,7 @@ export function TeamChatView({ sessionId, importedSource, mode = 'work', workspa
       <Suspense fallback={<PanelLoadingFallback />}>
         <WorkbenchSurface tool="visual-artifact">
           {(tab, active) => tab.artifact
-            ? <VisualArtifactWorkbench artifact={tab.artifact} mode={mode} sessionId={tab.sessionId} workspace={workspace} active={active} reviewRequest={tab.motionReviewRequest} />
+            ? <VisualArtifactWorkbench artifact={tab.artifact} mode={mode} sessionId={tab.sessionId} workspace={workspace} active={active} reviewRequest={tab.motionReviewRequest} motionSampleReviewRequest={tab.motionSampleReviewRequest} />
             : <p className="p-4 text-sm text-(--color-text-muted)">This artifact is no longer available in the current conversation.</p>}
         </WorkbenchSurface>
         {mode === 'coding' && workspace && (

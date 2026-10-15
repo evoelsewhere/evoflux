@@ -63,6 +63,7 @@ export function VisualArtifactRenderer({ block }: { block: ContentBlock }) {
   const openWorkbenchTool = useUIStore((state) => state.openWorkbenchTool)
   const updateWorkbenchTab = useUIStore((state) => state.updateWorkbenchTab)
   const reviewRequestSequence = useRef(0)
+  const handledSampleRequestId = useRef<string | null>(null)
   const motionSnapshot = useMotionRenderSnapshot(
     artifact?.artifactId ?? lifecycle?.artifactId ?? '',
     artifact?.revision ?? lifecycle?.artifactRevision ?? 0,
@@ -98,6 +99,28 @@ export function VisualArtifactRenderer({ block }: { block: ContentBlock }) {
       }
     }
   }, [artifact, sessionId, tabs, updateWorkbenchTab])
+
+  useEffect(() => {
+    if (
+      !artifact
+      || artifact.kind !== 'motion'
+      || !sessionId
+      || !lifecycle?.sampleRequestId
+      || lifecycle.artifactRevision !== artifact.revision
+      || handledSampleRequestId.current === lifecycle.sampleRequestId
+    ) return
+    handledSampleRequestId.current = lifecycle.sampleRequestId
+    openWorkbenchTool('visual-artifact', {
+      title: artifact.title,
+      artifact,
+      motionSampleReviewRequest: {
+        id: `${lifecycle.jobId}:${lifecycle.sampleRequestId}`,
+        jobId: lifecycle.jobId,
+        sampleRequestId: lifecycle.sampleRequestId,
+        samples: lifecycle.selectedSamples,
+      },
+    })
+  }, [artifact, lifecycle, openWorkbenchTool, sessionId])
 
   if (!artifact && !lifecycle) return null
   const title = artifact?.title ?? block.title ?? lifecycle?.beat?.title ?? 'Motion explainer'
