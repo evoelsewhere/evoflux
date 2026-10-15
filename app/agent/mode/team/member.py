@@ -105,6 +105,7 @@ from app.services.chat_service import get_messages_for_llm, save_message
 
 MAX_OPEN_TASK_NUDGES = 3
 MAX_LEAD_WAIT_NUDGES = 3
+MAX_WORKTREE_OBLIGATION_NUDGES = 3
 _MAX_RATE_LIMIT_RETRIES = 3
 _RATE_LIMIT_BASE_DELAY = 5  # seconds
 
@@ -339,6 +340,60 @@ def _lead_wait_nudge_content(
     )
 
 
+def _worktree_obligation_line(task: DelegationTask) -> str:
+    allocation = task.spec.get("worktree_allocation") or {}
+    return (
+        f"- task {task.id} (repo {allocation.get('source') or 'unknown'}, "
+        f"delegation status {task.status}, "
+        f"worktree state {allocation.get('state') or 'unknown'})"
+    )
+
+
+def worktree_obligation_text(
+    unresolved: list[DelegationTask],
+    merged: list[DelegationTask],
+) -> str:
+    """Build the hidden prompt for a lead that still owes isolated worktree work.
+
+    Used both by the post-stop nudge (``_maybe_inject_worktree_obligation_nudge``)
+    and by the ``sleep`` guard, so the lead is told the same thing whether it is
+    about to yield or has just yielded.
+    """
+    lines = [
+        "[system]: isolated delegation worktrees you own are still unresolved.",
+        "",
+    ]
+    if unresolved:
+        lines.append("Waiting on your decision:")
+        lines.extend(_worktree_obligation_line(task) for task in unresolved)
+        lines.extend(
+            [
+                "",
+                "Review and merge each one with `team_worktree`, or discard it "
+                "with `team_reject(task_id=...)`.",
+            ]
+        )
+    if merged:
+        lines.append("Already merged, waiting to be finalized:")
+        lines.extend(_worktree_obligation_line(task) for task in merged)
+        lines.extend(
+            [
+                "",
+                "Call `team_worktree(action='finalize')` once every merged "
+                "worktree is ready to fast-forward its source repository.",
+            ]
+        )
+    lines.extend(
+        [
+            "",
+            "Do this work before you sleep or answer again. Stopping now leaves "
+            "the member's isolated work unmerged, the source repository "
+            "untouched, and the user with no result.",
+        ]
+    )
+    return "\n".join(lines)
+
+
 # =============================================================================
 # TeamMemberBase — shared worker infrastructure
 # =============================================================================
@@ -403,6 +458,7 @@ class TeamMemberBase(abc.ABC):
         self._rate_limit_retry_task: asyncio.Task | None = None
         self._open_task_nudge_counts: dict[str, int] = {}
         self._lead_wait_nudge_counts: dict[str, int] = {}
+        self._worktree_obligation_nudge_counts: dict[str, int] = {}
         # id of the last SessionMessage row a nudge was already sent for —
         # guards against re-nudging the same stopping point on every idle
         # check; a fresh nudge requires the member to have taken a new turn.
@@ -1756,6 +1812,7 @@ class TeamMemberBase(abc.ABC):
 
             await self._maybe_inject_open_task_nudge()
             await self._maybe_inject_delegation_wait_nudge()
+            await self._maybe_inject_worktree_obligation_nudge()
         finally:
             end_turn_usage(usage_token)
             reset_role(role_token)
@@ -1935,6 +1992,92 @@ class TeamMemberBase(abc.ABC):
                 from_agent="system",
                 to_agent=self.name,
                 content=content,
+            ),
+        )
+
+    async def _maybe_inject_worktree_obligation_nudge(self) -> None:
+        """Wake the lead when it stops with unresolved isolated worktrees.
+
+        ``team_worktree``, ``team_reject`` and ``finalize`` are the only paths
+        that settle an isolated delegation's worktree, and prompt rules alone
+        cannot guarantee the lead takes them before yielding — the same gap
+        ``_maybe_inject_delegation_wait_nudge`` closes for pending handoffs.
+        The ledger is therefore read on every lead stop, so a lead that yields
+        with member work still unmerged is re-queued with the exact tasks it
+        owes.  No-op for regular members: only the lead owns worktree review.
+        """
+        if self._role_label != "lead" or self.db_factory is None:
+            return
+        assert self._mailbox is not None
+
+        from app.agent.mode.team import delegation_ledger
+
+        try:
+            async with resolve_db_factory(self.db_factory)() as db:
+                rows = (
+                    await db.exec(
+                        select(SessionMessage)
+                        .where(
+                            col(SessionMessage.session_id) == uuid.UUID(self.session_id)
+                        )
+                        .order_by(col(SessionMessage.created_at).desc())
+                        .limit(1)
+                    )
+                ).all()
+                unresolved, merged = await delegation_ledger.worktree_obligations(
+                    db, lead_session_id=uuid.UUID(self.session_id)
+                )
+        except Exception as exc:
+            logger.warning(
+                "team_lead_worktree_obligation_lookup_failed name={} error={}",
+                self.name,
+                exc,
+            )
+            return
+        if not unresolved and not merged:
+            return
+
+        if not rows:
+            return
+        last = rows[0]
+        # A lead can stop in two ways: by answering (an assistant message with
+        # no tool calls) or by yielding with ``sleep`` (whose persisted tool
+        # result is the last row).  Both leave the worktree obligation unpaid,
+        # so both are caught here — unlike the delegation-wait nudge above,
+        # where sleeping is the correct behaviour and only an answer is wrong.
+        answered = last.role == "assistant" and not last.tool_calls
+        slept = last.role == "tool" and last.name == "sleep"
+        if not answered and not slept:
+            return
+
+        owed_ids = sorted(str(task.id) for task in (*unresolved, *merged))
+        nudge_key = f"{self.session_id}:{'|'.join(owed_ids)}"
+        if (
+            self._worktree_obligation_nudge_counts.get(nudge_key, 0)
+            >= MAX_WORKTREE_OBLIGATION_NUDGES
+        ):
+            logger.info(
+                "team_lead_worktree_obligation_nudge_suppressed name={} tasks={}",
+                self.name,
+                owed_ids,
+            )
+            return
+        self._worktree_obligation_nudge_counts[nudge_key] = (
+            self._worktree_obligation_nudge_counts.get(nudge_key, 0) + 1
+        )
+
+        logger.warning(
+            "team_lead_yielded_with_open_worktrees name={} unresolved={} merged={}",
+            self.name,
+            [str(task.id) for task in unresolved],
+            [str(task.id) for task in merged],
+        )
+        await self._mailbox.send(
+            to=self.name,
+            message=Message(
+                from_agent="system",
+                to_agent=self.name,
+                content=worktree_obligation_text(unresolved, merged),
             ),
         )
 

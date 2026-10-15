@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.agent.mode.team.sleep import make_sleep_tool
+from app.agent.mode.team.sleep import _MAX_GUARD_REFUSALS, make_sleep_tool
 from app.agent.permission import _SAFE_TOOLS
 from app.agent.mode.team.tier_policy import SIDE_CHAT_ALWAYS_EXCLUDED_TOOLS
 
@@ -46,6 +46,81 @@ class TestSleepTool:
     def test_is_not_deferred(self):
         """A waiting agent must be able to call it without a load_tool round."""
         assert make_sleep_tool().deferred is False
+
+
+class TestSleepGuard:
+    """The optional team-owned guard that refuses an early yield.
+
+    ``AgentTeam`` injects this for the lead so it cannot stop while an isolated
+    delegation's worktree is unresolved; members get no guard.
+    """
+
+    @pytest.mark.asyncio
+    async def test_refusal_is_returned_and_the_turn_continues(self):
+        state = _state()
+
+        async def guard():
+            return "task t-1 is still unmerged"
+
+        result = await make_sleep_tool(guard=guard).arun(_injected={"_state": state})
+
+        assert result == "task t-1 is still unmerged"
+        assert "stop_after_tool_call" not in state.metadata
+
+    @pytest.mark.asyncio
+    async def test_allowing_the_yield_stops_the_turn(self):
+        state = _state()
+
+        async def guard():
+            return None
+
+        result = await make_sleep_tool(guard=guard).arun(_injected={"_state": state})
+
+        assert state.metadata["stop_after_tool_call"] == "sleep"
+        assert result == "Sleeping until the next message."
+
+    @pytest.mark.asyncio
+    async def test_refusals_are_bounded_per_run(self):
+        state = _state()
+
+        async def guard():
+            return "task t-1 is still unmerged"
+
+        tool = make_sleep_tool(guard=guard)
+        for _ in range(_MAX_GUARD_REFUSALS):
+            assert (
+                await tool.arun(_injected={"_state": state})
+                == "task t-1 is still unmerged"
+            )
+            assert "stop_after_tool_call" not in state.metadata
+
+        assert (
+            await tool.arun(_injected={"_state": state})
+            == "Sleeping until the next message."
+        )
+        assert state.metadata["stop_after_tool_call"] == "sleep"
+
+    @pytest.mark.asyncio
+    async def test_broken_guard_does_not_trap_the_agent(self):
+        state = _state()
+
+        async def guard():
+            raise RuntimeError("ledger unavailable")
+
+        result = await make_sleep_tool(guard=guard).arun(_injected={"_state": state})
+
+        assert result == "Sleeping until the next message."
+        assert state.metadata["stop_after_tool_call"] == "sleep"
+
+    @pytest.mark.asyncio
+    async def test_refusal_without_run_state_still_yields(self):
+        async def guard():
+            return "task t-1 is still unmerged"
+
+        assert (
+            await make_sleep_tool(guard=guard).arun()
+            == "Sleeping until the next message."
+        )
 
 
 class TestSleepPolicy:

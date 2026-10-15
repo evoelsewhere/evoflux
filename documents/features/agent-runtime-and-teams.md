@@ -109,6 +109,14 @@ wakes on its next mailbox message. Waiting is a tool call, never text: a
 note between a `team_delegate` and its `sleep` is folded into the delegation
 card.
 
+The lead's `sleep` is guarded by the delegation ledger. While an isolated
+delegation's worktree is still unresolved — not reviewed, merged or rejected, or
+merged but not yet finalized — the guard returns the outstanding tasks to the
+model instead of ending the turn, so it can review, merge or reject them there
+and then. A lead that stops anyway is woken with the same list as a system
+message. Members sleep unconditionally, and a lead that is only waiting on a
+member still running is not treated as owing anything.
+
 Tool arguments are forgiving only where the intent is unambiguous: a recipient
 list (`to`, and the other string-list arguments of `team_delegate`) given as one
 string or a double-encoded array is read as the array it stands for, while the

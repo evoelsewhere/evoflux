@@ -10,9 +10,10 @@ No changes yet.
 
 ### Fixed
 
-- **Built-in Browser** keeps agent pointer actions inside the page instead of moving
-  the desktop cursor. Pages that require trusted OS gestures or browser-managed
-  CSS `:hover` may still need another control path.
+- `grep` and `glob` now distinguish a file supplied as the search root, a missing directory, and a file blocking a path component, with guidance to correct the search path instead of retrying the same invalid call.
+- The Coding and Work sidebars render correctly again after restoring the missing `framer-motion` import; session panels that use plain `div` elements no longer receive unsupported animation props.
+- A lead can no longer end its turn with a delegated worktree left unresolved: `sleep` reports the outstanding tasks back instead of stopping, and a lead that stops anyway is woken with the same list, so a Coding session no longer goes idle with isolated member work unmerged.
+- **Built-in Browser** keeps agent pointer actions inside the page instead of moving the desktop cursor; pages that require trusted OS gestures or browser-managed CSS `:hover` may still need another control path.
 
 ## [3.0.6] - 2026-10-10
 
