@@ -1,8 +1,8 @@
 # Visual artifacts in the EvoFlux Workbench
 
 **Date:** 2026-10-15
-**Status:** Implemented; desktop UI smoke pending
-**Branch:** `feat/intelligent-ui-runtime`
+**Status:** Implemented on `feat/intelligent-ui`; desktop UI and motion-export smoke pending
+**Branch:** `feat/intelligent-ui`
 
 ## Goal
 
@@ -65,3 +65,13 @@ review/commit it with normal Git tools.
   download.
 - Existing ui_block, show_widget, artifact revision replay, and Workbench tabs
   continue to work.
+
+
+## Follow-up research: motion graphics and video authoring
+
+The Workbench integration above does not complete advanced motion authoring or
+frame-based video rendering. The dated
+[code-driven motion graphics research](../research/2026-10-15-code-driven-motion-graphics.md)
+compares official Claude Motion behavior, rendering frameworks and community
+experience, records current exporter gaps, and proposes experiments and acceptance
+checks for a separate implementation plan. Its runtime choices remain proposals.
