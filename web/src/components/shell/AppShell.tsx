@@ -29,7 +29,7 @@ import { motion } from 'framer-motion'
 import { PanelLeft } from 'lucide-react'
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
 import { usePlatform } from '@/hooks/use-platform'
-import { DURATIONS, useMotionPreset } from '@/lib/motion'
+import { useMotionPreset } from '@/lib/motion'
 import { useUIStore } from '@/stores/useUIStore'
 import { formatShortcutLabel } from '@/lib/keyboard-shortcuts'
 import { SHELL_SIDEBAR_TOGGLE_EVENT } from '@/lib/shell-events'
@@ -92,7 +92,7 @@ export function AppShell({
   const titleBarOwnsSidebarToggle = isMacOverlay || isWindowsTitleBar
   const sidebarWidth = useUIStore((state) => state.sidebarWidth)
   const sidebarToggleLeft = sidebarCollapsed ? 4 : sidebarWidth + 4
-  const sidebarTransitionDuration = DURATIONS.base * motionPreset.scale
+
 
   // Ctrl+B — the single shell-level sidebar toggle. See the file header for
   // why registration is gated on this shell having a sidebar.
@@ -128,15 +128,11 @@ export function AppShell({
           className="pointer-events-none absolute top-2 z-(--z-header) flex flex-col items-center"
           style={{
             left: sidebarToggleLeft,
-            transition: `left ${sidebarTransitionDuration}ms var(--ease-out)`,
           }}
         >
-          <motion.button
+          <button
             type="button"
             onClick={toggleSidebarCollapsed}
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.9 }}
-            transition={motionPreset.spring}
             aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
             aria-expanded={!sidebarCollapsed}
             title={`Toggle sidebar (${formatShortcutLabel('Ctrl+B')})`}
@@ -144,7 +140,7 @@ export function AppShell({
             data-no-drag
           >
             <PanelLeft size={15} aria-hidden="true" />
-          </motion.button>
+          </button>
         </div>
       )}
 

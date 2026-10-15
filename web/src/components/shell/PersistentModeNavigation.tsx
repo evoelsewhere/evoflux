@@ -15,14 +15,12 @@
 import { useLocation } from '@tanstack/react-router'
 import { ModeSwitchTabs, type AppMode } from '@/components/ModeSwitchTabs'
 import { usePlatform } from '@/hooks/use-platform'
-import { DURATIONS, useMotionPreset } from '@/lib/motion'
 import { appModeForPath } from '@/lib/mode-route'
 import { useUIStore } from '@/stores/useUIStore'
 
 export function PersistentModeNavigation() {
   const location = useLocation()
   const { isMacOverlay } = usePlatform()
-  const motionPreset = useMotionPreset()
   const collapsed = useUIStore((state) => state.sidebarCollapsed)
   const sidebarOverlay = useUIStore((state) => state.sidebarOverlay)
   const sidebarWidth = useUIStore((state) => state.sidebarWidth)
@@ -31,7 +29,6 @@ export function PersistentModeNavigation() {
 
   if (!active || settingsOpen || sidebarOverlay || collapsed) return null
 
-  const transitionDuration = DURATIONS.base * motionPreset.scale
 
   // The strip is anchored to the sidebar card's own top edge (the shell's
   // 2px inset) and inset by the same 6px column the sidebar rows use, so it
@@ -45,7 +42,6 @@ export function PersistentModeNavigation() {
       data-sidebar-width-follower
       style={{
         width: Math.max(0, sidebarWidth - 8),
-        transition: `width ${transitionDuration}ms var(--ease-out)`,
       }}
       className="pointer-events-none fixed left-1 top-[calc(var(--app-titlebar-height,0px)+--spacing(0.5))] z-(--z-header) hidden md:block"
     >

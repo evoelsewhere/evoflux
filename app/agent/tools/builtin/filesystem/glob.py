@@ -16,6 +16,7 @@ from app.agent.tools.builtin.filesystem._ignore import (
     is_gitignored,
     load_gitignore_rules,
 )
+from app.agent.tools.builtin.filesystem._search_root import validate_search_root
 from app.agent.tools.registry import Tool
 
 
@@ -80,9 +81,7 @@ async def _glob_files(
 ) -> str:
     """Find files by glob pattern. match='path' matches the full relative path (supports **); match='name' matches filename only."""
     sandbox = get_sandbox()
-    resolved = sandbox.validate_path(directory)
-    if not resolved.is_dir():
-        raise NotADirectoryError(f"Not a directory: {sandbox.display_path(resolved)}")
+    resolved = validate_search_root(sandbox, directory, tool_name="glob")
     gitignore_rules = load_gitignore_rules(resolved)
 
     def _mtime(p: Path) -> float:

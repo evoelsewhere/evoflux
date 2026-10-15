@@ -5,11 +5,11 @@ import {
   useRef,
   type TouchEvent,
 } from "react";
+import { motion } from "framer-motion";
 import { useNavigate } from "@tanstack/react-router";
-import { motion, AnimatePresence } from "framer-motion";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useModalFocus } from "@/hooks/useModalFocus";
-import { useMotionPreset, useListEnterIndex } from "@/lib/motion";
+import { useMotionPreset } from "@/lib/motion";
 
 import {
   Blocks,
@@ -201,10 +201,7 @@ export function Sidebar({
         session !== undefined && !session.folder_id,
     );
   const unpinnedSessions = unfiledSessions.filter((s) => !pinnedIdSet.has(s.id));
-  const sessionEnterIndex = useListEnterIndex([
-    ...normalSessions.map((s) => s.id),
-    ...folderSessions.map((s) => s.id),
-  ]);
+
 
   // Collapse state is shared by all three mode sidebars and owned by
   // useUIStore (persisted); AppShell owns the toggle button + Ctrl+B.
@@ -446,7 +443,6 @@ export function Sidebar({
       session={session}
       isActive={session.id === currentSessionId}
       density={isDrawer ? 'comfortable' : 'dense'}
-      enterIndex={sessionEnterIndex(session.id)}
       onSelect={(s) => handleSelect(s.id)}
       onOpenSideChat={(s) => handleSideChat(s.id)}
       onDelete={handleDelete}
@@ -714,17 +710,9 @@ export function Sidebar({
         </div>
 
         {/* ─── Sessions section ─── */}
-        <AnimatePresence>
-          <motion.div
-            key="sessions-panel"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="flex min-h-0 flex-1 flex-col overflow-hidden"
-          >
-            {sessionSections}
-          </motion.div>
-        </AnimatePresence>
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          {sessionSections}
+        </div>
 
         <SidebarShellDivider />
 
@@ -801,17 +789,9 @@ export function Sidebar({
       </SidebarNavGroup>
 
       {/* Sessions */}
-      <AnimatePresence>
-        <motion.div
-          key="mobile-sessions"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="flex min-h-0 flex-1 flex-col overflow-hidden"
-        >
-          {sessionSections}
-        </motion.div>
-      </AnimatePresence>
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        {sessionSections}
+      </div>
 
       {/* Footer */}
       <SidebarFooter
@@ -823,15 +803,13 @@ export function Sidebar({
 
   return (
     <>
-      <AnimatePresence>
-        {isDrawer && mobileOpen && (
-          <MobileDrawerBackdrop
-            onClose={() => onMobileClose?.()}
-            closeLabel="Close session navigation"
-            desktopVisible={drawerMode}
-          />
-        )}
-      </AnimatePresence>
+      {isDrawer && mobileOpen && (
+        <MobileDrawerBackdrop
+          onClose={() => onMobileClose?.()}
+          closeLabel="Close session navigation"
+          desktopVisible={drawerMode}
+        />
+      )}
 
       {isDrawer ? mobileDrawer : desktopShell}
 
