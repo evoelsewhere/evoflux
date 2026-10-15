@@ -728,7 +728,14 @@ class ResponsesHandler:
                     ],
                 )
 
-            elif etype == "response.output_text.done":
+            elif etype in {"response.completed", "response.incomplete"}:
+                response_data = event.get("response", {})
+                finish_reason = "stop"
+                if etype == "response.incomplete":
+                    incomplete_details = response_data.get("incomplete_details") or {}
+                    finish_reason = str(
+                        incomplete_details.get("reason") or "incomplete"
+                    )
                 yield ChatCompletionChunk(
                     id=response_id,
                     created=int(time.time()),
@@ -737,13 +744,12 @@ class ResponsesHandler:
                         ChatCompletionChunkChoice(
                             index=0,
                             delta=ChatCompletionDelta(),
-                            finish_reason="stop",
+                            finish_reason=finish_reason,
                         )
                     ],
                 )
 
-            elif etype == "response.completed":
-                usage_data = event.get("response", {}).get("usage", {})
+                usage_data = response_data.get("usage", {})
                 if usage_data:
                     yield ChatCompletionChunk(
                         id=response_id,

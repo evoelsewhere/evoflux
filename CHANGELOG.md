@@ -4,7 +4,19 @@ All notable changes to EvoFlux are documented in this file.
 
 ## [Unreleased]
 
-No changes yet.
+### Fixed
+
+- **Desktop app control** applies its per-action deadline while waiting for the
+  command queue and websocket send, so an unresponsive earlier action cannot
+  leave later commands waiting for the agent loop timeout.
+- **Shell process polling** no longer waits indefinitely for stdout EOF after a
+  child exits; it returns after a short drain grace period and marks output as
+  potentially incomplete when a descendant keeps the pipe open.
+- **Team Worktree finalize** tolerates an extra `task_id` from the model and
+  continues to scope finalization through `target_repos`.
+- **Truncated model responses** preserve provider finish reasons and continue
+  output cut off by token limits; repeated truncation and agent loop exhaustion
+  now surface an incomplete-task error instead of a successful end state.
 
 ## [3.0.7] - 2026-10-14
 
