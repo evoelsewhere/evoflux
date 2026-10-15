@@ -23,7 +23,7 @@ from app.agent.tools.registry import InjectedArg
     tiers=("work", "coding"),
     concurrency_safe=False,
     description=(
-        "Create a rich in-chat visual only when the user's task benefits from "
+        "Create a rich EvoFlux Workbench visual only when the user's task benefits from "
         "a custom dashboard, a controllable motion explainer, or spatial 3D "
         "inspection. Judge the task and likely next action, not keywords. Use "
         "ui_block for compact native controls and prose for simple answers. "

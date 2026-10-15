@@ -152,10 +152,18 @@ explainer, or 3D scene. Each artifact has a stable `artifact_id`; later calls
 replace it in place. Tool-call arguments are the source of truth for history,
 so artifacts survive reloads without a database migration.
 
+The conversation shows a compact artifact card; **Open in Workbench** opens the
+actual interactive view in EvoFlux's resizable side panel. The tab belongs to
+the current session, and the card can reopen an artifact reconstructed from
+history. Generating or previewing an artifact does not create files in the
+project. In Desktop Coding mode, **Save to project** asks for a path inside the
+active repository and writes the source there for review in Source Control. In
+other environments, **Download source** saves a copy outside the repository.
+
 - **Dashboards** use self-contained `source_html`. A source counts as verified
   only when its `tool_call_id` matches a successful tool result in the active
-  history. The transcript links to the actual tool name, saved arguments and
-  result, and displays the model's query summary. With no verified source,
+  history. The Workbench view links to the actual tool name, saved arguments
+  and result, and displays the model's query summary. With no verified source,
   the dashboard is labeled illustrative. Retrieval time appears only when a
   source explicitly provides one. **Refresh with agent** starts a normal chat
   turn; there is no background polling.
