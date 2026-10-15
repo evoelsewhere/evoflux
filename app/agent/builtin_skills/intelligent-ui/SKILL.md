@@ -1,6 +1,6 @@
 ---
 name: intelligent-ui
-description: "Helps agents choose prose, native controls, dashboards, motion, or 3D from the user's goal. Use when interaction may improve understanding or action; choose motion only for an explicit video request or when temporal change, sequence, cause-and-effect, or reveal carries the meaning, regardless of prompt length."
+description: "Helps agents choose prose, native controls, dashboards, motion, or 3D from the user's goal. Use when a user asks to explain, teach, compare, or present information visually, asks you to choose a format, or an interactive artifact may improve understanding or action. Motion is especially useful when understanding depends on seeing states change or causes lead to effects."
 metadata:
   runtime-preload-tools: ui_block,visual_artifact
 ---
@@ -20,6 +20,11 @@ tool by themselves. Prefer prose when it communicates the answer more directly.
 Use the smallest useful interaction, with controls that change an input, reveal
 a relationship, support inspection, or let the user act.
 
+When a user asks to explain something visually or choose a useful format, apply
+this Skill even if they do not name a UI type. Do not treat “visual” as a request
+for a PDF: use PDF when the user asks for a printable or portable document, or
+when that format clearly serves the task.
+
 - Use `ui_block` for compact calculations, structured inputs, checklists,
   comparisons, and progress the user can update in chat.
 - Use a `chart` or `mermaid` Markdown fence for a standalone chart or diagram.
@@ -31,12 +36,15 @@ a relationship, support inspection, or let the user act.
 
 ## Motion gate and context size
 
-Choose `visual_artifact` with `kind="motion"` only when the user explicitly
-requests video or animation, or when change over time is necessary to
-understand the subject: a sequence, transformation, cause-and-effect
-relationship, or reveal. Ask whether the same point would be just as clear in a
-static answer; if so, do not animate it. Do not infer motion from prompt length,
-detail, or topic words.
+Choose `visual_artifact` with `kind="motion"` when the user explicitly asks
+for video or animation, or when understanding depends on seeing how one state
+changes into another or why one stage enables the next. For a process, ask
+whether the learner needs to understand what changes at each stage and why the
+next stage depends on the previous one. If yes, motion can be the right choice
+even when a static flowchart could list the same steps. Use a static diagram,
+checklist, or document when the steps are mainly for lookup, comparison, or
+printing, or when their order does not carry the explanation. Do not infer
+motion from prompt length, detail, or topic words alone.
 
 The amount of source material controls how much you condense, not which format
 you choose. For long material, preserve the central claim, key numbers, order,

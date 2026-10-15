@@ -23,6 +23,9 @@ from urllib.request import Request, urlopen
 LIVE_SMOKE_FIELDS = {
     "case_id",
     "model_id",
+    "expected_choice",
+    "observed_choice",
+    "selection_match",
     "tool",
     "kind",
     "prompt_bytes",
@@ -32,6 +35,7 @@ LIVE_SMOKE_FIELDS = {
     "error_category",
 }
 EXPECTED_CHOICES = {"prose", "ui_block", "dashboard", "motion", "scene3d"}
+ARTIFACT_CHOICES = {"ui_block", "dashboard", "motion", "scene3d"}
 DEFAULT_CASES = (
     Path(__file__).parents[1]
     / "tests"
@@ -156,6 +160,9 @@ def _run_case(
     outcome: dict[str, Any] = {
         "case_id": case["id"],
         "model_id": model_id,
+        "expected_choice": case.get("expected_choice"),
+        "observed_choice": None,
+        "selection_match": None,
         "tool": None,
         "kind": None,
         "prompt_bytes": len(case["prompt"].encode("utf-8")),
@@ -195,6 +202,9 @@ def _run_case(
                 outcome["tool"] = payload["name"]
             elif event_type in {"ui_block", "visual_artifact"}:
                 outcome["tool"] = event_type
+                outcome["observed_choice"] = (
+                    event_type if event_type == "ui_block" else payload.get("kind")
+                )
             if event_type == "visual_artifact":
                 outcome["kind"] = payload.get("kind")
                 source_html = payload.get("source_html")
@@ -211,6 +221,10 @@ def _run_case(
                 outcome["has_provenance"] = isinstance(sources, list) and bool(sources)
             if event_type == "done":
                 outcome["status"] = "complete"
+                if outcome["expected_choice"] in ARTIFACT_CHOICES:
+                    outcome["selection_match"] = (
+                        outcome["observed_choice"] == outcome["expected_choice"]
+                    )
                 break
             elif event_type == "error":
                 outcome["status"] = "error"
