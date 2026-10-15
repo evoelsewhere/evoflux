@@ -18,7 +18,17 @@ _SIMPLE_LINE = (
     "Response style: simple. Default to plain prose paragraphs. "
     "Skip markdown headings, tables, bullet lists and emojis unless "
     "the user explicitly asks for them. "
-    "Do not use interactive UI blocks either; plain prose only."
+    "Do not add interactive UI blocks unless the user explicitly asks for "
+    "one; plain prose is the default."
+)
+_VIDEO_ARTIFACT_LINE = (
+    " Use motion when the user requests video or needs to understand a causal "
+    "state change; prompt length and topic words alone are not signals. For an "
+    "explicit video request, treat it as the deliverable and use "
+    "visual_artifact(kind='motion') when available. It opens in the EvoFlux "
+    "Workbench; keep it there when asked to view the result in EvoFlux. Do not silently "
+    "substitute a PDF or prose for a requested video; if generation capability "
+    "is unavailable, state that and offer the closest supported route."
 )
 _VISUAL_LINE = (
     "Response style: visual. First understand what the user is trying to "
@@ -49,9 +59,15 @@ _VISUAL_UI_LINE = (
 def response_style_directive(style: str, tool_names: set[str]) -> str:
     """Build concise task-utility guidance using only this run's tools."""
     if style == "simple":
-        return _SIMPLE_LINE
+        line = _SIMPLE_LINE
+        if "visual_artifact" in tool_names:
+            line += _VIDEO_ARTIFACT_LINE
+        return line
     available = [name for name in ("ui_block", "visual_artifact") if name in tool_names]
     line = _VISUAL_LINE
+    artifact_line = (
+        _VIDEO_ARTIFACT_LINE if "visual_artifact" in tool_names else ""
+    )
     motion_progress_line = (
         " For a genuinely multi-stage motion explainer, use motion_progress at "
         "storyboard, sample review/revision, and final-render milestones so the "
@@ -75,18 +91,18 @@ def response_style_directive(style: str, tool_names: set[str]) -> str:
     if "visual_artifact" in available and "ui_block" in available:
         return (
             f"{line} The ui_block and visual_artifact tools are available in this run. "
-            "Use ui_block for compact declarative controls and visual_artifact only "
-            "when a custom dashboard, motion explainer, or spatial 3D view materially "
-            "improves the task. For dashboards, inspect data first and cite successful "
+            "Use ui_block for compact declarative controls; use visual_artifact for "
+            "an explicitly requested custom artifact or when a dashboard, motion "
+            "explainer, or spatial 3D view materially improves the task. For dashboards, inspect data first and cite successful "
             "tool calls; do not claim live freshness without source evidence."
-            f"{motion_progress_line}{motion_review_line}"
+            f"{artifact_line}{motion_progress_line}{motion_review_line}"
         )
     return (
         f"{line} The visual_artifact tool is available in this run for custom "
-        "dashboards, motion explainers, or spatial 3D views when those controls "
-        "materially improve the task. For dashboards, inspect data first and cite "
+        "dashboards, motion explainers, or spatial 3D views when requested or when "
+        "they materially improve the task. For dashboards, inspect data first and cite "
         "successful tool calls; do not claim live freshness without source evidence."
-        f"{motion_progress_line}{motion_review_line}"
+        f"{artifact_line}{motion_progress_line}{motion_review_line}"
     )
 
 

@@ -108,6 +108,10 @@ them to the subject; avoid unrelated floating text. Secondary motion should
 react to the main event, such as a ring expanding from a scan or a route
 lighting up behind a moving parcel.
 
+Treat a sound-design cue as a timed part of the beat plan, even if this export
+cannot render it. A cue should reinforce the same cause and impact as the
+visible action, not decorate every transition.
+
 ## Hits, transitions, and sound cues
 
 Use a visual **impact hit** only at a meaningful event: a scan succeeds, a

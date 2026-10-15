@@ -77,6 +77,36 @@ def test_intelligent_ui_links_runtime_accurate_motion_authoring_guidance():
     assert "stable ids" in guide.lower()
 
 
+def test_intelligent_ui_skill_covers_video_as_a_deliverable_and_in_app_view():
+    skill_text = (BUILTIN / "intelligent-ui" / "SKILL.md").read_text(
+        encoding="utf-8"
+    ).lower()
+
+    assert "video or code-authored animation" in skill_text
+    assert "requested deliverable" in skill_text
+    assert "opens in the evoflux workbench" in skill_text
+
+
+def test_motion_production_requires_intentional_visual_craft_and_visible_action():
+    guide = (
+        (BUILTIN / "intelligent-ui" / "reference" / "motion-production.md")
+        .read_text(encoding="utf-8")
+        .lower()
+    )
+    guide = " ".join(guide.split())
+
+    for craft_rule in (
+        "quality gate for authored motion",
+        "choose a specific visual medium",
+        "source and destination",
+        "reaction, and the settle",
+        "camera motion alone",
+        "at the intended viewing size",
+        "slideshow",
+    ):
+        assert craft_rule in guide
+
+
 def test_motion_authoring_requires_choreography_instead_of_slide_like_scenes():
     skill_dir = BUILTIN / "intelligent-ui"
     guide = (
@@ -102,6 +132,6 @@ def test_motion_authoring_requires_choreography_instead_of_slide_like_scenes():
         "settle",
         "transition grammar",
         "sound-design cue",
-        "no audio track",
+        "older real-time canvas recordings remain silent",
     ):
         assert craft_rule in guide

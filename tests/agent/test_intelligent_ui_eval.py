@@ -66,6 +66,16 @@ def test_water_treatment_visual_explanation_is_a_motion_eval_case() -> None:
     )
 
 
+def test_explicit_video_deliverable_and_evoflux_view_are_an_eval_case() -> None:
+    cases = {case["id"]: case for case in load_cases(FIXTURE)}
+    espresso = cases["explicit_video_in_workbench"]
+
+    assert espresso["expected_choice"] == "motion"
+    assert "open the playable result in EvoFlux" in espresso["prompt"]
+    assert "Workbench preview" in espresso["required_evidence"]
+    assert "PDF substitution" in espresso["forbidden_choices"]
+
+
 def test_cases_encode_task_intent_instead_of_runtime_keyword_rules() -> None:
     source = FIXTURE.read_text(encoding="utf-8")
     assert all(case["prompt"].strip() for case in json.loads(source))

@@ -249,6 +249,15 @@ Playwright/FFmpeg job or importer. The source study is in
 [Animate production strategy](../research/2026-10-15-animate-production-strategy.md);
 the implementation steps are in the [motion progress plan](../plans/2026-10-15-motion-chat-progress-implementation.md).
 
+The Skill also treats an explicitly requested video or code-authored animation
+as the deliverable, and routes it to `visual_artifact(kind="motion")` when the
+tool is available. That opens the artifact in the EvoFlux Workbench; the model
+must explain a capability limit instead of silently substituting a PDF or
+prose. The production reference now includes a craft gate for visual medium,
+visible source-to-destination action, reaction/settle, purposeful continuity,
+and review at the intended viewing size. These instructions improve routing
+and review but do not guarantee a particular model's visual quality.
+
 The Skill asks the model to evaluate the user's underlying goal, whether
 interaction changes the user's next step, and whether available controls
 have clear effects, labels, outputs, and assumptions. A recommendation may
