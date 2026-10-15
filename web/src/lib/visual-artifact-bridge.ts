@@ -2,6 +2,7 @@ import type { Scene3DSpec, VisualArtifactKind, VisualArtifactPayload, VisualArti
 
 export type VisualArtifactBridgeMessage =
   | { type: 'ready'; motionCanvas: boolean; frameRenderer?: boolean; canvasWidth?: number; canvasHeight?: number }
+  | { type: 'timeline'; beats: MotionTimelineBeat[] }
   | { type: 'resize'; height: number }
   | { type: 'send_prompt'; prompt: string }
   | { type: 'playback'; currentTimeMs: number; state: 'playing' | 'paused' | 'ended' }
@@ -10,8 +11,19 @@ export type VisualArtifactBridgeMessage =
   | { type: 'export_chunk'; mimeType: string; bytes: Uint8Array; final: boolean }
   | { type: 'export_status'; state: 'recording' | 'complete' | 'cancelled' | 'error'; message?: string }
 
+export interface MotionTimelineBeat {
+  id: string
+  title: string
+  startFrame: number
+  endFrame: number
+  markers: Array<{ frame: number; kind: 'hit' | 'cut' | 'transition' }>
+}
+
 const MAX_SOURCE_BYTES = 200_000
 const MAX_BRIDGE_CHUNK_BYTES = 64_000
+const MAX_MOTION_TIMELINE_BEATS = 64
+const MAX_MOTION_BEAT_MARKERS = 32
+const MAX_MOTION_FRAME_INDEX = 3_600
 
 function record(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' && !Array.isArray(value)
@@ -21,6 +33,56 @@ function record(value: unknown): Record<string, unknown> | null {
 
 function string(value: unknown, max: number): value is string {
   return typeof value === 'string' && value.length <= max
+}
+
+function motionTimeline(value: unknown): MotionTimelineBeat[] | null {
+  if (!Array.isArray(value) || value.length < 1 || value.length > MAX_MOTION_TIMELINE_BEATS) return null
+  const ids = new Set<string>()
+  const beats: MotionTimelineBeat[] = []
+
+  for (const candidate of value) {
+    const beat = record(candidate)
+    if (
+      !beat
+      || !string(beat.id, 64)
+      || !/^[a-z0-9][a-z0-9_-]{0,63}$/.test(beat.id)
+      || ids.has(beat.id)
+      || !string(beat.title, 120)
+      || !beat.title.trim()
+      || !Number.isSafeInteger(beat.startFrame)
+      || (beat.startFrame as number) < 0
+      || (beat.startFrame as number) > MAX_MOTION_FRAME_INDEX
+      || !Number.isSafeInteger(beat.endFrame)
+      || (beat.endFrame as number) < (beat.startFrame as number)
+      || (beat.endFrame as number) > MAX_MOTION_FRAME_INDEX
+      || !Array.isArray(beat.markers)
+      || beat.markers.length > MAX_MOTION_BEAT_MARKERS
+    ) return null
+
+    const markers: MotionTimelineBeat['markers'] = []
+    for (const candidateMarker of beat.markers) {
+      const marker = record(candidateMarker)
+      if (
+        !marker
+        || !Number.isSafeInteger(marker.frame)
+        || (marker.frame as number) < (beat.startFrame as number)
+        || (marker.frame as number) > (beat.endFrame as number)
+        || !['hit', 'cut', 'transition'].includes(String(marker.kind))
+      ) return null
+      markers.push({ frame: marker.frame as number, kind: marker.kind as MotionTimelineBeat['markers'][number]['kind'] })
+    }
+
+    ids.add(beat.id)
+    beats.push({
+      id: beat.id,
+      title: beat.title.trim(),
+      startFrame: beat.startFrame as number,
+      endFrame: beat.endFrame as number,
+      markers,
+    })
+  }
+
+  return beats
 }
 
 function scene(value: unknown): Scene3DSpec | null {
@@ -84,6 +146,10 @@ export function parseVisualArtifactMessage(raw: unknown, revision = 1): VisualAr
 export function parseVisualArtifactBridgeMessage(raw: unknown): VisualArtifactBridgeMessage | null {
   const value = record(raw)
   if (!value || typeof value.type !== 'string') return null
+  if (value.type === 'timeline') {
+    const beats = motionTimeline(value.beats)
+    return beats ? { type: 'timeline', beats } : null
+  }
   if (value.type === 'ready' && typeof value.motionCanvas === 'boolean') {
     const canvasWidth = Number.isInteger(value.canvasWidth) && (value.canvasWidth as number) > 0 && (value.canvasWidth as number) <= 4096
       ? value.canvasWidth as number

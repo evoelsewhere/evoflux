@@ -23,4 +23,30 @@ describe('visual artifact payload validation', () => {
     expect(parseVisualArtifactBridgeMessage({ type: 'send_prompt', prompt: 'x'.repeat(10_001) })).toBeNull()
     expect(parseVisualArtifactBridgeMessage({ type: 'resize', height: 1_000_000 })).toBeNull()
   })
+
+  it('accepts a bounded motion timeline and strips untrusted extra fields', () => {
+    expect(parseVisualArtifactBridgeMessage({
+      type: 'timeline',
+      beats: [{
+        id: 'opening', title: 'Collect rainwater', startFrame: 0, endFrame: 89,
+        markers: [{ frame: 40, kind: 'hit' }], untrusted: 'ignored',
+      }],
+    })).toEqual({
+      type: 'timeline',
+      beats: [{ id: 'opening', title: 'Collect rainwater', startFrame: 0, endFrame: 89, markers: [{ frame: 40, kind: 'hit' }] }],
+    })
+  })
+
+  it('rejects malformed or oversized motion timelines', () => {
+    const beat = { id: 'opening', title: 'Opening', startFrame: 0, endFrame: 89, markers: [] }
+    const parse = (beats: unknown) => parseVisualArtifactBridgeMessage({ type: 'timeline', beats })
+
+    expect(parse([{ ...beat }, { ...beat }])).toBeNull()
+    expect(parse(Array.from({ length: 65 }, (_, index) => ({ ...beat, id: `beat-${index}` })))).toBeNull()
+    expect(parse([{ ...beat, startFrame: -1 }])).toBeNull()
+    expect(parse([{ ...beat, startFrame: 90, endFrame: 89 }])).toBeNull()
+    expect(parse([{ ...beat, markers: [{ frame: 90, kind: 'cut' }] }])).toBeNull()
+    expect(parse([{ ...beat, title: 'x'.repeat(121) }])).toBeNull()
+    expect(parse([{ ...beat, id: 'opening', markers: Array.from({ length: 33 }, () => ({ frame: 1, kind: 'hit' })) }])).toBeNull()
+  })
 })
