@@ -59,14 +59,37 @@ class TestResponsesStreaming:
         async for chunk in handler._parse_stream(response):
             chunks.append(chunk)
 
-        # Should have 4 chunks: 2 text deltas + 1 done + 1 usage
+        # The text-item boundary is non-terminal; final reason and usage arrive
+        # together with response.completed.
         assert len(chunks) == 4
         assert chunks[0].choices[0].delta.content == "Hello"
         assert chunks[1].choices[0].delta.content == " world"
-        assert chunks[2].choices[0].finish_reason == "stop"
+        assert chunks[2].choices[0].finish_reason is None
+        assert chunks[3].choices[0].finish_reason == "stop"
         assert chunks[3].usage is not None
         assert chunks[3].usage.prompt_tokens == 10
         assert chunks[3].usage.completion_tokens == 5
+
+    async def test_parse_stream_incomplete_preserves_output_limit_reason(self, handler):
+        lines = [
+            'data: {"type":"response.created","response":{"id":"resp_123"}}',
+            'data: {"type":"response.output_text.delta","delta":"Partial answer"}',
+            'data: {"type":"response.output_text.done"}',
+            'data: {"type":"response.incomplete","response":{"id":"resp_123","incomplete_details":{"reason":"max_output_tokens"},"usage":{"input_tokens":10,"output_tokens":20,"total_tokens":30}}}',
+        ]
+
+        async def async_iter_lines():
+            for line in lines:
+                yield line
+
+        response = MagicMock()
+        response.aiter_lines = lambda: async_iter_lines()
+
+        chunks = [chunk async for chunk in handler._parse_stream(response)]
+
+        assert chunks[-2].choices[0].finish_reason is None
+        assert chunks[-1].choices[0].finish_reason == "max_output_tokens"
+        assert chunks[-1].usage is not None
 
     async def test_parse_stream_response_failed_overload_is_retryable(self, handler):
         """Codex/OpenAI overload stream errors should enter retry handling."""
