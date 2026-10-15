@@ -159,29 +159,94 @@ class DirectComputerBridge:
                 f"This EvoFlux Desktop does not support '{action}'. Update EvoFlux Desktop."
             )
 
-        async with connection.command_lock:
-            request_id = uuid4().hex
-            future = asyncio.get_running_loop().create_future()
-            connection.pending[request_id] = future
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + max(0.0, timeout)
+        stage = "queue"
+        acquired = False
+        request_id: str | None = None
+        dispatched = False
+
+        def remaining() -> float:
+            return max(0.0, deadline - loop.time())
+
+        async def cancel_desktop_command() -> None:
+            """Best-effort cancellation that cannot extend the command deadline."""
             try:
-                async with connection.send_lock:
-                    await connection.websocket.send_json(
-                        {"id": request_id, "action": action, "params": params}
-                    )
-                return await asyncio.wait_for(future, timeout=timeout)
-            except TimeoutError as exc:
-                # The desktop would otherwise finish the action unobserved,
-                # and a retry would do it twice. Ask it to stop there.
-                with suppress(Exception):
-                    async with connection.send_lock:
-                        await connection.websocket.send_json({"type": "cancel"})
-                raise TimeoutError(
-                    f"App control command timed out after {timeout:g}s: {action}. "
-                    "The desktop was told to stop it, so the rest of it did not "
-                    "happen; take a screenshot to see what did before retrying."
-                ) from exc
+                await asyncio.wait_for(connection.send_lock.acquire(), timeout=0.25)
+            except (asyncio.TimeoutError, asyncio.CancelledError):
+                return
+            try:
+                await asyncio.wait_for(
+                    connection.websocket.send_json({"type": "cancel"}), timeout=0.25
+                )
+            except Exception:
+                pass
             finally:
+                connection.send_lock.release()
+
+        try:
+            # Include queueing behind an earlier desktop command in the same
+            # deadline. Previously this lock wait was unbounded, so a lost
+            # desktop response could leave later commands stuck until the
+            # agent loop's unrelated five-minute timeout.
+            await asyncio.wait_for(connection.command_lock.acquire(), timeout=remaining())
+            acquired = True
+
+            request_id = uuid4().hex
+            future = loop.create_future()
+            connection.pending[request_id] = future
+            stage = "send"
+            await asyncio.wait_for(connection.send_lock.acquire(), timeout=remaining())
+            try:
+                # Once send_json starts, assume the desktop may have received
+                # the command even if the websocket write itself times out.
+                dispatched = True
+                await asyncio.wait_for(
+                    connection.websocket.send_json(
+                        {"id": request_id, "action": action, "params": params}
+                    ),
+                    timeout=remaining(),
+                )
+            finally:
+                connection.send_lock.release()
+
+            stage = "response"
+            return await asyncio.wait_for(future, timeout=remaining())
+        except TimeoutError as exc:
+            if dispatched:
+                await cancel_desktop_command()
+            logger.warning(
+                "direct_computer_request_timeout session_id={} action={} stage={} timeout={}s",
+                session_id,
+                action,
+                stage,
+                timeout,
+            )
+            if stage == "queue":
+                message = (
+                    f"App control command timed out after {timeout:g}s waiting for "
+                    f"the previous desktop action: {action}. No new command was sent."
+                )
+            elif stage == "send":
+                message = (
+                    f"App control command timed out after {timeout:g}s while sending: "
+                    f"{action}. Check desktop status before retrying."
+                )
+            else:
+                message = (
+                    f"App control command timed out after {timeout:g}s: {action}. "
+                    "The desktop was told to stop it; check the app before retrying."
+                )
+            raise TimeoutError(message) from exc
+        except asyncio.CancelledError:
+            if dispatched:
+                await cancel_desktop_command()
+            raise
+        finally:
+            if request_id is not None:
                 connection.pending.pop(request_id, None)
+            if acquired:
+                connection.command_lock.release()
 
     def connection_info(self, session_id: str) -> tuple[int, dict[str, Any]]:
         connection = self._connections.get(session_id)

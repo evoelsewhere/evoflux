@@ -31,6 +31,8 @@ _MODEL_SUCCESS_MAX_BYTES = 6_000
 _MODEL_FAILURE_MAX_BYTES = 12_000
 _PROCESS_REGISTRY_CAP = 100
 _MAX_WAIT_SECONDS = 60
+_FINAL_READER_DRAIN_TIMEOUT_SECONDS = 2.0
+_READER_CANCEL_GRACE_SECONDS = 0.25
 _FORCE_KILL = getattr(signal, "SIGKILL", signal.SIGTERM)
 
 
@@ -128,6 +130,7 @@ def _result_metadata(
         "output_bytes": tracked.output_bytes,
         "shown_bytes": shown_bytes,
         "omitted_bytes": omitted_bytes,
+        "output_complete": not tracked.output_incomplete,
     }
 
 
@@ -165,6 +168,7 @@ class TrackedProcess:
         self.timeout_seconds = timeout_seconds
         self.scope = scope
         self.timed_out = False
+        self.output_incomplete = False
         self.output_path = shell_output_dir() / f"{self.process_id}.txt"
         self.output_path.parent.mkdir(parents=True, exist_ok=True)
         self.output_path.write_bytes(b"")
@@ -279,9 +283,52 @@ class TrackedProcess:
                 await asyncio.wait_for(self.proc.wait(), timeout=timeout_seconds)
         except asyncio.TimeoutError:
             return False
-        await self._reader_task
+        await self._finish_reader()
         await self._cancel_timeout_task()
         return True
+
+    async def _finish_reader(self) -> None:
+        """Drain stdout after process exit without waiting forever for EOF.
+
+        A descendant can keep the inherited stdout handle open after the
+        tracked process exits. Give buffered output a short grace period, then
+        close the pipe and cancel its reader so process polling can return.
+        """
+        if self.output_incomplete:
+            return
+
+        task = self._reader_task
+        if task.done():
+            await task
+            return
+
+        done, _ = await asyncio.wait(
+            {task}, timeout=_FINAL_READER_DRAIN_TIMEOUT_SECONDS
+        )
+        if task in done:
+            await task
+            return
+
+        self.output_incomplete = True
+        logger.warning(
+            "command_process_stdout_drain_timeout process_id={} pid={} timeout={}s",
+            self.process_id,
+            self.pid,
+            _FINAL_READER_DRAIN_TIMEOUT_SECONDS,
+        )
+        process_transport = getattr(self.proc, "_transport", None)
+        get_pipe_transport = getattr(process_transport, "get_pipe_transport", None)
+        if callable(get_pipe_transport):
+            pipe_transport = get_pipe_transport(1)
+            if pipe_transport is not None:
+                pipe_transport.close()
+        task.cancel()
+        done, _ = await asyncio.wait({task}, timeout=_READER_CANCEL_GRACE_SECONDS)
+        if task in done:
+            try:
+                await task
+            except (asyncio.CancelledError, Exception):
+                pass
 
     async def _cancel_timeout_task(self) -> None:
         task = self._timeout_task
@@ -320,7 +367,7 @@ class TrackedProcess:
             except asyncio.TimeoutError:
                 _kill_process_group(self.proc, _FORCE_KILL)
                 await self.proc.wait()
-        await self._reader_task
+        await self._finish_reader()
         await self._cancel_timeout_task()
 
     def read_output(self, *, last_n: int | None = None) -> str:
@@ -405,6 +452,14 @@ def format_completed_process(tracked: TrackedProcess, *, output_limit: int) -> s
         running=False,
     )
     lines = [f"[{label}]", f"duration: {tracked.elapsed_seconds:.2f}s"]
+    if tracked.output_incomplete:
+        lines.extend(
+            [
+                "",
+                "Warning: stdout stayed open after process exit; "
+                "output may be incomplete.",
+            ]
+        )
     if output:
         lines.extend(["", output])
     else:
@@ -480,6 +535,14 @@ def _format_delta(
         f"process_id: {tracked.process_id}",
         f"duration: {tracked.elapsed_seconds:.2f}s",
     ]
+    if tracked.output_incomplete:
+        lines.extend(
+            [
+                "",
+                "Warning: stdout stayed open after process exit; "
+                "output may be incomplete.",
+            ]
+        )
     if output:
         lines.extend(["", "New output:", output])
     else:
