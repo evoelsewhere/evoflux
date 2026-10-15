@@ -294,19 +294,33 @@ def _set_style(monkeypatch: pytest.MonkeyPatch, style: str) -> None:
 async def test_inject_response_style_visual_keeps_the_base_prompt(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Default (visual) appends the freedom line and keeps the base prompt."""
+    """Visual asks the model to judge goal and utility, not prompt keywords."""
     _set_style(monkeypatch, "visual")
 
     result = await _call_wrap(inject_response_style, "You are a helpful assistant.")
 
     assert result.startswith("You are a helpful assistant.")
     assert "Response style: visual." in result
-    assert "headings, lists and code blocks" in result
-    assert "comparison of options" in result
-    assert "interactive form" in result
-    # Tool-agnostic gotcha (app/agent/AGENTS.md): the style line must NOT
-    # name ui_block — usage heuristics live in the intelligent-ui skill.
+    assert "prose, structured" in result
+    assert "user is trying to accomplish" in result
+    assert "not words that happen to appear" in result
+    assert "controls add no practical value" in result
     assert "ui_block" not in result
+
+
+@pytest.mark.asyncio
+async def test_visual_names_ui_tool_only_when_the_agent_has_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _set_style(monkeypatch, "visual")
+    state = make_state()
+    state.tool_names = ["ui_block"]
+
+    result = await _call_wrap(inject_response_style, "Base.", state)
+
+    assert "The ui_block tool is available" in result
+    assert "do not add UI for decoration" in result
+    assert "Inspect the tool schema" in result
 
 
 @pytest.mark.asyncio

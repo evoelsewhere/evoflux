@@ -15,19 +15,15 @@ Plan of record: `documents/plans/2026-10-13-intelligent-ui.md`.
 - **Simple** asks the assistant to default to plain prose paragraphs and to
   skip markdown headings, tables, bullet lists, emojis and interactive UI
   blocks unless the user explicitly asks for them.
-- **Visual** (default) lets the assistant use headings, lists, tables and
-  code blocks when they make an answer scannable, and asks for the
-  interactive form whenever a **comparison of options** would be easier to
-  use as a widget than as flat text. The line is deliberately
-  style-only: the when-to-render heuristics for `ui_block` (comparisons,
-  schedules, metrics, math with variables, widgets, never write widget
-  files to disk) live in the built-in **intelligent-ui** Skill, so the
-  system prompt stays tool-agnostic and the guidance loads on demand
-  instead of costing tokens on every call. The `ui_block` tool description
-  carries a one-line trigger that points at the same skill, and the
-  Skill's decision table is framed around the shape of the answer
-  ("when your answer would be…") rather than the user's verb, so a
-  plain-prose "which should I pick" still reaches a block.
+- **Visual** (default) asks the agent to infer the user's goal and choose the
+  clearest useful format: prose, structured markdown, or an interactive UI.
+  It asks the model to consider whether controls improve what the user can
+  understand, decide, calculate, track, learn, or do, and to prefer prose
+  when they add no practical value. When `ui_block` is available, the prompt
+  identifies the tool and gives this decision rubric. The built-in
+  **intelligent-ui** Skill supplies the detailed block catalog and examples
+  to Visual-mode agents that have the tool. Simple style still suppresses
+  interactive blocks unless requested.
 
 The choice is stored in `settings.yaml` under `response_style.style` and
 served by `GET/PUT /api/settings/response-style`. A `@dynamic_prompt` hook
@@ -124,13 +120,20 @@ user message through the store's `sendMessage` action (the same fallback
 `- label: value` line per filled field, so the agent reads the answer as an
 ordinary follow-up message. Submission state renders in an ARIA live region.
 
-**Guidance split.** The model is told to prefer `ui_block` for structured,
-scannable answers and to reserve `show_widget` for arbitrary HTML that the
-native catalog cannot express — so common cases match the application theme
-and the iframe escape hatch keeps full expressive power.
+**Guidance split.** The model is told to use `ui_block` when its controls
+materially help the user's task, and to use prose when that is clearer. It
+chooses a block based on the intended interaction, then uses `show_widget`
+for arbitrary HTML that the native catalog cannot express.
 
 Full contract, block limits and event registration:
 [`ui_block` — native structured UI](tools-skills-mcp-and-plugins.md#ui_block--native-structured-ui).
+
+**Native table interaction.** Native `table` blocks sort by any column and
+show a case-insensitive filter for 10 or more rows.
+
+**Custom widget actions.** The sandboxed `custom` block forwards its
+`sendPrompt` bridge to the active chat, allowing an inline action to continue
+the task through a normal agent message.
 
 ## Saved transcript widgets
 
@@ -142,12 +145,13 @@ duplicates a block.
 
 ## Built-in Skill: `intelligent-ui`
 
-The response-style prompt line alone did not reliably steer smaller models
-toward interactive UI, so EvoFlux teaches the behavior through the repo's
-progressive-disclosure Skill mechanism instead of more prompt strings. The
-built-in `intelligent-ui` Skill (`app/agent/builtin_skills/intelligent-ui/`)
-keeps a trigger-rich description in the system prompt at all times; the body
-and its `reference/` files load only when a task matches. The Skill carries:
+The `intelligent-ui` Skill (`app/agent/builtin_skills/intelligent-ui/`)
+provides detailed decision guidance, block schemas, and examples. Its body is
+preloaded for an enabled Skill in Visual style only when the active agent has
+the declared `ui_block` capability. This gives models the operating context
+without a message-keyword router; the agent still decides whether the current
+answer benefits from an interface. Its Level 1 description remains available
+through normal Skill discovery in other styles and agents. The Skill carries:
 
 - a decision table mapping requests (compare plans, schedules, metrics,
   math with variables, study material, timers, games, dashboards …) to the
@@ -161,29 +165,23 @@ and its `reference/` files load only when a task matches. The Skill carries:
   tables for interactive data, writing widget HTML to disk, and asking
   clarifying questions instead of rendering a best guess.
 
-The trigger judges the shape of the answer as well as the request: an
-opinion or recommendation that lays out contenders with tradeoffs renders
-as a `table` plus `callout`, even when the user never said "render" or
-"compare". Small tool-use models often skip the read step, so the lead
-agent (`seed/agents/evoflux.md` and the local agent copy) preloads the
-Skill body through the `skills:` frontmatter field — the decision rules
-sit in the system prompt for every lead turn, while other agents still
-discover the Skill from the catalog on demand.
+The Skill asks the model to evaluate the user's underlying goal, whether
+interaction changes the user's next step, and whether available controls
+have clear effects, labels, outputs, and assumptions. A recommendation may
+benefit from a comparison UI when the user needs to choose, but a plan or
+chart mention alone does not force a widget. UI is composed with concise
+explanation and the smallest useful set of blocks.
 
-Known boundary: on small tool-use models, subjective prompts that never
-name a comparison ("which database should I use?", "is it worth it") are
-the hardest to reach — with the Skill body preloaded they usually answer
-in plain prose, and only sometimes read the Skill and render, verified
-live on `xiaomi:mimo-v2.6-flash`. The three tuning passes (the **Visual**
-line's "comparison of options" clause, the answer-shape trigger in the
-`ui_block` description, and the answer-framed decision table) raise the
-hit rate but do not make it deterministic — the same prompt can land one
-run and miss the next. This is accepted for now: requests with a lexical
-or explicit trigger render reliably, and markdown tables stay interactive
-through sortable headers and the ten-row quick filter, so the floor is
-still usable. A deterministic `ui` fence — markdown in, rendered block
-out, no tool-call decision — is held in reserve if the boundary starts to
-matter in practice.
+Research note: OpenAI describes GPT‑6 Intelligent UI as model training for
+composing text, visuals, and interactions, paired with a native streamable
+component library and compiler, and evaluation for clarity, usefulness, and
+completeness ([OpenAI, October 7, 2026](https://openai.com/index/gpt-6-for-everyone/)).
+EvoFlux can improve tool awareness and runtime context, but this prompt and
+Skill guidance cannot reproduce trained design judgment by themselves. The
+model still chooses and can vary, especially for ambiguous tasks. The lead
+agent's cached prompt profile includes response style and a rubric version
+so a style or guidance change uses a fresh prefix on the next activation.
+Persistent post-interaction state remains future work.
 
 Validation: `uv run python scripts/validate_skills.py --strict-warnings`;
 discovery is the existing directory scan of `app/agent/builtin_skills/` — no

@@ -103,6 +103,7 @@ from app.agent.providers.model_metadata import (
 from app.agent.providers.thinking import honoured_levels_for
 from app.agent.providers.model_discovery import ensure_runtime_model_metadata
 from app.services.chat_service import get_messages_for_llm, save_message
+from app.core.runtime_settings import response_style_default
 
 MAX_OPEN_TASK_NUDGES = 3
 MAX_LEAD_WAIT_NUDGES = 3
@@ -1583,6 +1584,13 @@ class TeamMemberBase(abc.ABC):
                     else task_workspace.workspace,
                     "goal": goal_profile,
                     "system_prompt": self.agent.system_prompt,
+                    # Response style changes the model-visible prompt. Include
+                    # it in the snapshot identity so an existing session picks
+                    # up the new Visual/Simple guidance on its next activation.
+                    "response_style": response_style_default(),
+                    # Bump when response-style decision guidance changes so
+                    # sessions do not keep a stale Intelligent UI rubric.
+                    "response_style_context_version": 2,
                     "team_blueprints": team_blueprints,
                 },
             )

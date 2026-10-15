@@ -9,7 +9,7 @@ See ``documents/architecture/agent-skills.md``. Per run this hook:
   the matching ``SKILL.md``;
 * grants a plugin's MCP tools once one of its Skills has been read;
 * appends the ``## Skills`` system-prompt section (Level 1 catalog plus any
-  Skills preloaded by the agent's ``skills:`` field).
+  Skills preloaded by agent configuration or runtime tool capability).
 """
 
 from __future__ import annotations
@@ -35,6 +35,7 @@ from app.agent.skills.registry import (
     discover_skills,
     sandbox_workspace_roots,
 )
+from app.core.runtime_settings import response_style_default
 
 if TYPE_CHECKING:
     from app.agent.schemas.chat import AssistantMessage, ToolCall
@@ -112,8 +113,18 @@ class SkillsHook(BaseAgentHook):
         for skill in activated_skills(state.messages, catalog).values():
             _grant_plugin_tools(state, skill)
 
+        preload_names = list(self._preloaded)
+        if response_style_default() == "visual":
+            preload_names.extend(
+                skill.name
+                for skill in catalog.active()
+                if skill.model_visible
+                and skill.metadata.get("runtime-preload-tool") in state.tool_names
+                and skill.name not in preload_names
+            )
+
         preloaded: list[tuple[Skill, str]] = []
-        for name in self._preloaded:
+        for name in preload_names:
             skill = catalog.get(name)
             if skill is None or not skill.valid or not skill.enabled:
                 logger.warning(

@@ -44,14 +44,15 @@ _VALID_TYPES = (
     name="ui_block",
     tiers=("work", "coding"),
     description=(
-        "Render a declarative UI block in the conversation. Call it "
-        "whenever your answer would lay out a comparison, a plan or "
-        "schedule, a checklist, metrics, or math with variables that may "
-        "change — even if the user asked in plain prose and never said "
-        "\"render\". A rendered widget beats a static table whenever the "
-        "data will be sorted, filtered, ticked off or recomputed. The "
-        "intelligent-ui skill holds the when-to-render decision table and "
-        "worked examples. "
+        "Render native UI blocks in the conversation when interaction "
+        "materially helps fulfill the user's goal — for example, when they "
+        "can explore, compare, change inputs and see results, track progress, "
+        "or take an action. Decide from the task and practical value of the "
+        "controls, not from keywords or the fact that content could be laid "
+        "out as a table or plan. Use prose or markdown when that communicates "
+        "the answer more directly. Choose the smallest useful block, with "
+        "clear labels and outcomes, and pair it with concise explanation. "
+        "Read the intelligent-ui skill for the decision rubric and examples. "
         "Accepts {blocks: [...]} where each block has type one of: "
         "stat_cards, chart, steps, table, key_value, callout, buttons, "
         "form, progress, flashcards, checklist, calculator, layout, "

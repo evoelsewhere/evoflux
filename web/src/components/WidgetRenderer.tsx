@@ -199,6 +199,10 @@ export function WidgetRenderer({
   // Handle messages from iframe (sendPrompt, resize)
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
+      // Widgets communicate only through their own iframe. Without this
+      // check any page in the renderer could spoof a widget action and send a
+      // prompt into the active chat.
+      if (event.source !== iframeRef.current?.contentWindow) return
       if (event.data?.type === 'widget_send_prompt' && event.data?.prompt) {
         const prompt = event.data.prompt as string
         if (onSendPrompt) {

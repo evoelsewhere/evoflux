@@ -4,11 +4,9 @@ Feature A of the Intelligent UI plan — the ``Simple`` / ``Visual`` choice
 made in **Settings → Agents** is appended to the base prompt once per model
 call, next to the built-in ``inject_current_date`` hook.
 
-The visual line is deliberately tool-agnostic (app/agent/AGENTS.md): it
-must NOT name ``ui_block``, so it steers by *structure* not by tool. It no
-longer enumerates "tables" as a markdown affordance — that phrasing
-competed with the interactive layer and made small models settle for a
-static table whenever the data would have gained from a real widget.
+When the renderer is available, the Visual line names the concrete tool and
+gives the model a compact selection guide. Keeping this capability check at
+request time avoids telling an agent to call a tool that its tier cannot use.
 """
 
 from __future__ import annotations
@@ -23,13 +21,28 @@ _SIMPLE_LINE = (
     "Do not use interactive UI blocks either; plain prose only."
 )
 _VISUAL_LINE = (
-    "Response style: visual. Structure answers with markdown when they "
-    "gain from it — headings, lists and code blocks. When data or a "
-    "comparison of options would be easier to use as an interactive "
-    "widget than as flat text — including opinion answers that weigh "
-    "contenders or a recommendation that could be revisited — prefer the "
-    "interactive form. Keep plain prose for conversation and one-line "
-    "explanations."
+    "Response style: visual. First understand what the user is trying to "
+    "accomplish, then choose the clearest useful response: prose, structured "
+    "markdown, or an interactive UI. Consider UI when the answer helps the "
+    "user explore parts or alternatives, change inputs and see results, track "
+    "progress, or take an in-chat action. Judge the likely answer and user "
+    "workflow, not words that happen to appear in the prompt. Prefer the "
+    "smallest UI that makes the task easier; explain it in concise prose and "
+    "make controls, labels, outcomes, and assumptions clear. Use prose when "
+    "the answer is a simple fact, explanation, or conversation and controls "
+    "add no practical value."
+)
+_VISUAL_UI_LINE = (
+    f"{_VISUAL_LINE} The ui_block tool is available for native interactive "
+    "content in this chat. Before using it, check that a control changes "
+    "what the user can understand, decide, calculate, track, or do; do not "
+    "add UI for decoration or because the prompt contains a matching term. "
+    "Choose the block from the job: compare options in a table, explore a "
+    "changing value with a calculator, track a plan with steps/checklist, or "
+    "let the user inspect a system with a focused custom interaction. Pair "
+    "the UI with a concise explanation, useful labels, and any needed "
+    "assumptions. Inspect the tool schema and render in chat, never as a "
+    "widget file."
 )
 
 
@@ -41,5 +54,10 @@ def inject_response_style(request: PromptRequest) -> str:
     **Settings → Agents** applies to the next message without a restart,
     and degrades to ``visual`` if the settings file is corrupt.
     """
-    line = _SIMPLE_LINE if response_style_default() == "simple" else _VISUAL_LINE
+    if response_style_default() == "simple":
+        line = _SIMPLE_LINE
+    elif "ui_block" in request.state.tool_names:
+        line = _VISUAL_UI_LINE
+    else:
+        line = _VISUAL_LINE
     return f"{request.base_prompt}\n\n{line}"

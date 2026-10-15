@@ -719,3 +719,11 @@ class TestUiBlock:
 
         assert "block_id" in description
         assert "replace_id" in description
+
+    def test_description_selects_ui_by_practical_value_not_answer_keywords(self):
+        description = ui_block.description
+
+        assert "practical value" in description
+        assert "not from keywords" in description
+        assert "Use prose or markdown when that communicates" in description
+        assert "Call it whenever your answer" not in description

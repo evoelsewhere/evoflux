@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { WidgetRenderer } from '@/components/WidgetRenderer'
+import { useTeamStore } from '@/stores/useTeamStore'
 import type { UiCustomBlock } from './ui-block-types'
 
 /**
@@ -57,7 +58,14 @@ function collectWidgetTokens(): string {
   return `<style id="evoflux-widget-tokens">:root{ ${decls.join(' ')} }</style>`
 }
 
-export function UiCustom({ block }: { block: UiCustomBlock }) {
+export function UiCustom({
+  block,
+  onSendPrompt,
+}: {
+  block: UiCustomBlock
+  onSendPrompt?: (prompt: string) => void
+}) {
+  const storeSendMessage = useTeamStore((state) => state.sendMessage)
   const [tokens, setTokens] = useState(collectWidgetTokens)
 
   // Re-apply on theme flip (ChartBlock.tsx:76 pattern): morphdom diffs the
@@ -76,7 +84,12 @@ export function UiCustom({ block }: { block: UiCustomBlock }) {
 
   return (
     <div style={{ height }}>
-      <WidgetRenderer html={html} height={height} isStreaming={false} />
+      <WidgetRenderer
+        html={html}
+        height={height}
+        isStreaming={false}
+        onSendPrompt={onSendPrompt ?? storeSendMessage}
+      />
     </div>
   )
 }

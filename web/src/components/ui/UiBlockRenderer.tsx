@@ -100,7 +100,7 @@ export function UiBlockRenderer({ blocks, title, onSendPrompt, live }: UiBlockRe
           )
         return <UiLayout block={node} depth={depth} renderChild={renderChildAt} />
       case 'custom':
-        return <UiCustom block={node} />
+        return <UiCustom block={node} onSendPrompt={sendPrompt} />
       default:
         return renderNode(node, live)
     }
