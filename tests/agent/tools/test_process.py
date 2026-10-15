@@ -11,6 +11,8 @@ import pytest
 from app.agent.sandbox import SandboxConfig, _sandbox_ctx, set_sandbox
 from app.agent.state import AgentState
 from app.agent.tools.builtin.process import (
+    TrackedProcess,
+    _FINAL_READER_DRAIN_TIMEOUT_SECONDS,
     _processes,
     process_tool,
     stop_all_processes,
@@ -102,6 +104,41 @@ async def test_process_wait_finishes_and_removes_registry_entry(process_sandbox)
     assert "Succeeded" in waited
     assert "done" in waited
     assert process_id not in _processes
+
+
+@pytest.mark.asyncio
+async def test_process_wait_bounds_stdout_drain_when_descendant_keeps_pipe_open(
+    process_sandbox,
+):
+    class OpenPipe:
+        async def read(self, _size: int) -> bytes:
+            await asyncio.Future()
+
+    class ExitedProcess:
+        pid = 123
+        returncode = 0
+        stdout = OpenPipe()
+        _transport = None
+
+        async def wait(self) -> int:
+            return 0
+
+    tracked = TrackedProcess(
+        ExitedProcess(),  # type: ignore[arg-type]
+        command="parent exited; descendant retains stdout",
+        cwd=process_sandbox,
+        timeout_seconds=None,
+        scope="test",
+    )
+
+    started = asyncio.get_running_loop().time()
+    assert await tracked.wait()
+
+    assert asyncio.get_running_loop().time() - started < (
+        _FINAL_READER_DRAIN_TIMEOUT_SECONDS + 1
+    )
+    assert tracked.output_incomplete is True
+    assert tracked.running is False
 
 
 @pytest.mark.asyncio
