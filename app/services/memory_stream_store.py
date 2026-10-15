@@ -67,6 +67,7 @@ _AGENT_CONTENT_EVENT_TYPES = frozenset(
         "widget_delta",
         "ui_block",
         "visual_artifact",
+        "motion_progress",
         "provider_status",
     }
 )
@@ -79,6 +80,7 @@ class _ReplayEvent:
     event: str
     data: str
     agent: str = ""
+    coalesce_key: str = ""
 
     @classmethod
     def from_envelope(
@@ -92,6 +94,11 @@ class _ReplayEvent:
             event=encoded["event"],
             data=encoded["data"],
             agent=envelope.agent,
+            coalesce_key=(
+                str(envelope.data.get("job_id") or "")
+                if envelope.event == "motion_progress"
+                else ""
+            ),
         )
 
     def to_wire(self) -> dict[str, str]:
@@ -351,6 +358,20 @@ def _record_replay_event_locked(
         state.replay_events = [
             entry for entry in state.replay_events if entry.event != event_type
         ]
+
+    if event_type == "motion_progress":
+        job_id = envelope.data.get("job_id")
+        if isinstance(job_id, str) and job_id:
+            latest = _ReplayEvent.from_envelope(envelope, wire=wire)
+            for index, entry in enumerate(state.replay_events):
+                if entry.event == "motion_progress" and entry.coalesce_key == job_id:
+                    # Keep the job's original place in the journal, replacing
+                    # only its reconnect snapshot. Live subscribers still saw
+                    # every event in producer order below.
+                    state.replay_events[index] = latest
+                    return
+            state.replay_events.append(latest)
+            return
 
     replay_envelope = envelope
     if event_type == "summarization_start":

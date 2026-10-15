@@ -22,7 +22,7 @@ import {
 import { isBackgroundCompletion, sendDesktopNotification } from '@/lib/desktop-notifications'
 import { createNotificationActivation } from '@/lib/notification-activation'
 import { useUIStore } from '@/stores/useUIStore'
-import type { ContentBlock, GoalResponse, SuggestedTask, TurnCost, TurnUsage, TurnUsageBreakdown } from '@/api/types'
+import type { ContentBlock, GoalResponse, MotionProgressPayload, SuggestedTask, TurnCost, TurnUsage, TurnUsageBreakdown } from '@/api/types'
 import type { UiBlockNode } from '@/components/ui/ui-block-types'
 import { parseVisualArtifactMessage } from '@/lib/visual-artifact-bridge'
 import { parseTurnChanges } from '@/utils/turn-changes'
@@ -238,17 +238,166 @@ function applyUiBlock(scope: UiBlockScope, ctx: UiBlockApplyCtx): ContentBlock {
   return group
 }
 
+const MOTION_PHASES = ['planning', 'storyboard', 'style_samples', 'composing', 'rendering_samples', 'reviewing', 'revising', 'final_render', 'encoding', 'audio'] as const
+const MOTION_STATUSES = ['running', 'complete', 'cancelled', 'failed', 'interrupted'] as const
+const MOTION_SAMPLE_ROLES = ['style', 'key_state', 'before_transition', 'after_transition', 'impact'] as const
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value))
+}
+
+function isBoundedId(value: unknown, max: number): value is string {
+  return typeof value === 'string' && value.length <= max && /^[a-z0-9][a-z0-9_-]*$/.test(value)
+}
+
+function parseMotionProgress(raw: unknown): MotionProgressPayload | null {
+  if (!isRecord(raw)) return null
+  const value = raw
+  if (
+    typeof value.job_id !== 'string' || !/^motion-[a-f0-9]{32}$/.test(value.job_id)
+    || !Number.isSafeInteger(value.sequence) || (value.sequence as number) < 1
+    || !isBoundedId(value.artifact_id, 80)
+    || !Number.isSafeInteger(value.artifact_revision) || (value.artifact_revision as number) < 1
+    || !MOTION_STATUSES.includes(value.status as typeof MOTION_STATUSES[number])
+    || !MOTION_PHASES.includes(value.phase as typeof MOTION_PHASES[number])
+  ) return null
+
+  let beat: MotionProgressPayload['beat']
+  if (value.beat !== undefined && value.beat !== null) {
+    if (!isRecord(value.beat)) return null
+    const candidate = value.beat
+    if (
+      !isBoundedId(candidate.id, 64)
+      || !Number.isSafeInteger(candidate.index) || (candidate.index as number) < 0
+      || !Number.isSafeInteger(candidate.total) || (candidate.total as number) < 1 || (candidate.total as number) > 64
+      || (candidate.index as number) >= (candidate.total as number)
+      || typeof candidate.title !== 'string' || candidate.title.length < 1 || candidate.title.length > 120
+    ) return null
+    beat = { id: candidate.id, index: candidate.index as number, total: candidate.total as number, title: candidate.title }
+  }
+
+  let frames: MotionProgressPayload['frames']
+  if (value.frames !== undefined && value.frames !== null) {
+    if (!isRecord(value.frames)) return null
+    const candidate = value.frames
+    if (
+      !['review_samples', 'final_output'].includes(String(candidate.scope))
+      || !Number.isSafeInteger(candidate.completed) || (candidate.completed as number) < 0
+      || !(candidate.total === null || candidate.total === undefined || (Number.isSafeInteger(candidate.total) && (candidate.total as number) >= 1))
+      || (typeof candidate.total === 'number' && (candidate.completed as number) > candidate.total)
+      || !(candidate.fps === null || candidate.fps === undefined || (typeof candidate.fps === 'number' && Number.isFinite(candidate.fps) && candidate.fps >= 1 && candidate.fps <= 240))
+      || !(candidate.last_completed_index === null || candidate.last_completed_index === undefined || (Number.isSafeInteger(candidate.last_completed_index) && (candidate.last_completed_index as number) >= 0))
+      || (typeof candidate.total === 'number' && typeof candidate.last_completed_index === 'number' && candidate.last_completed_index >= candidate.total)
+      || ((candidate.completed as number) === 0 && typeof candidate.last_completed_index === 'number')
+      || ((candidate.completed as number) > 0 && !Number.isSafeInteger(candidate.last_completed_index))
+    ) return null
+    frames = {
+      scope: candidate.scope as 'review_samples' | 'final_output',
+      completed: candidate.completed as number,
+      total: typeof candidate.total === 'number' ? candidate.total : null,
+      fps: typeof candidate.fps === 'number' ? candidate.fps : null,
+      lastCompletedIndex: typeof candidate.last_completed_index === 'number' ? candidate.last_completed_index : null,
+    }
+  }
+
+  let iteration: MotionProgressPayload['iteration']
+  if (value.iteration !== undefined && value.iteration !== null) {
+    if (!isRecord(value.iteration)) return null
+    const current = value.iteration.current
+    const budget = value.iteration.budget
+    if (!Number.isSafeInteger(current) || (current as number) < 1 || !Number.isSafeInteger(budget) || (budget as number) < 1 || (budget as number) > 20 || (current as number) > (budget as number)) return null
+    iteration = { current: current as number, budget: budget as number }
+  }
+
+  const rawSamples = value.selected_samples ?? []
+  if (!Array.isArray(rawSamples) || rawSamples.length > 12) return null
+  const selectedSamples: MotionProgressPayload['selectedSamples'] = []
+  for (const rawSample of rawSamples) {
+    if (!isRecord(rawSample)) return null
+    if (
+      !isBoundedId(rawSample.sample_id, 64) || !isBoundedId(rawSample.beat_id, 64)
+      || !Number.isSafeInteger(rawSample.frame_index) || (rawSample.frame_index as number) < 0
+      || !Number.isSafeInteger(rawSample.timestamp_ms) || (rawSample.timestamp_ms as number) < 0 || (rawSample.timestamp_ms as number) > 120_000
+      || !MOTION_SAMPLE_ROLES.includes(rawSample.role as typeof MOTION_SAMPLE_ROLES[number])
+    ) return null
+    selectedSamples.push({
+      sampleId: rawSample.sample_id,
+      beatId: rawSample.beat_id,
+      frameIndex: rawSample.frame_index as number,
+      timestampMs: rawSample.timestamp_ms as number,
+      role: rawSample.role as MotionProgressPayload['selectedSamples'][number]['role'],
+    })
+  }
+
+  const audioStatus = value.audio_status ?? 'not_requested'
+  if (!['not_requested', 'unavailable', 'pending', 'rendering', 'included'].includes(String(audioStatus))) return null
+  const sampleRequestId = value.sample_request_id
+  if (sampleRequestId !== undefined && (typeof sampleRequestId !== 'string' || sampleRequestId.length < 1 || sampleRequestId.length > 120 || selectedSamples.length === 0)) return null
+  if (value.status === 'complete' && !['final_render', 'encoding', 'audio'].includes(String(value.phase))) return null
+
+  return {
+    jobId: value.job_id,
+    sequence: value.sequence as number,
+    artifactId: value.artifact_id,
+    artifactRevision: value.artifact_revision as number,
+    status: value.status as MotionProgressPayload['status'],
+    phase: value.phase as MotionProgressPayload['phase'],
+    ...(beat ? { beat } : {}),
+    ...(frames ? { frames } : {}),
+    ...(iteration ? { iteration } : {}),
+    ...(typeof sampleRequestId === 'string' ? { sampleRequestId } : {}),
+    selectedSamples,
+    audioStatus: audioStatus as MotionProgressPayload['audioStatus'],
+  }
+}
+
+function applyMotionProgress(scope: UiBlockScope, progress: MotionProgressPayload, toolCallId?: string): ContentBlock | undefined {
+  const all = [...scope.blocks, ...scope.currentBlocks]
+  const target = all.find((block) => block.motionProgress?.jobId === progress.jobId)
+  const existing = target?.motionProgress
+  if (existing && (progress.artifactRevision < existing.artifactRevision || progress.sequence <= existing.sequence)) return target
+  if (target?.visualArtifact && progress.artifactRevision < target.visualArtifact.revision) return target
+  if (target) {
+    target.motionProgress = progress
+    target.toolCallId = toolCallId ?? target.toolCallId
+    target.title = target.visualArtifact?.title ?? progress.beat?.title ?? target.title ?? 'Motion explainer'
+    target.isStreaming = progress.status === 'running'
+    return target
+  }
+  const block: ContentBlock = {
+    id: progress.jobId,
+    type: 'motion_progress',
+    content: '',
+    title: progress.beat?.title ?? 'Motion explainer',
+    ...(toolCallId ? { toolCallId } : {}),
+    motionProgress: progress,
+    isStreaming: progress.status === 'running',
+  }
+  scope.currentBlocks.push(block)
+  return block
+}
+
 function applyVisualArtifact(
   scope: UiBlockScope,
   artifact: NonNullable<ContentBlock['visualArtifact']>,
   toolCallId: string,
+  explicitRevision?: number,
 ): ContentBlock {
-  const target = [...scope.blocks, ...scope.currentBlocks].find(
-    (block) => block.type === 'visual_artifact' && block.visualArtifact?.artifactId === artifact.artifactId,
+  const target = [...scope.currentBlocks].reverse().find(
+    (block) => block.motionProgress?.artifactId === artifact.artifactId,
+  ) ?? [...scope.blocks].reverse().find(
+    (block) => block.motionProgress?.artifactId === artifact.artifactId,
+  ) ?? [...scope.blocks, ...scope.currentBlocks].find(
+    (block) => block.visualArtifact?.artifactId === artifact.artifactId,
   )
-  const revision = target?.visualArtifact?.revision ? target.visualArtifact.revision + 1 : 1
+  if (target?.motionProgress && explicitRevision !== undefined && explicitRevision < target.motionProgress.artifactRevision) return target
+  const revision = explicitRevision
+    ?? target?.motionProgress?.artifactRevision
+    ?? (target?.visualArtifact?.revision ? target.visualArtifact.revision + 1 : 1)
+  if (target?.motionProgress && revision < target.motionProgress.artifactRevision) return target
   artifact.revision = revision
   if (target) {
+    target.type = 'visual_artifact'
     target.visualArtifact = artifact
     target.title = artifact.title
     target.toolCallId = toolCallId
@@ -413,6 +562,7 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
         const toolCallId = typeof d.tool_call_id === 'string' ? d.tool_call_id : ''
         const parsed = parseVisualArtifactMessage(d)
         if (!agent || !toolCallId || !parsed) break
+        let acceptedArtifact: NonNullable<ContentBlock['visualArtifact']> | undefined
         set((draft) => {
           ensureAgent(draft, agent)
           const stream = draft.agentStreams[agent]
@@ -438,13 +588,29 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
               result: call.toolResult,
             } : source
           })
-          applyVisualArtifact(stream, parsed, toolCallId)
+          const explicitRevision = Number.isInteger(d.artifact_revision) && (d.artifact_revision as number) >= 1
+            ? d.artifact_revision as number
+            : undefined
+          const merged = applyVisualArtifact(stream, parsed, toolCallId, explicitRevision)
+          if (merged.visualArtifact === parsed) acceptedArtifact = parsed
         })
+        if (!acceptedArtifact) break
         const ui = useUIStore.getState()
         const activeSessionId = get().sessionId
         if (activeSessionId && ui.workbenchSessionId === activeSessionId) {
-          ui.openWorkbenchTool('visual-artifact', { title: parsed.title, artifact: parsed })
+          ui.openWorkbenchTool('visual-artifact', { title: acceptedArtifact.title, artifact: acceptedArtifact })
         }
+        break
+      }
+
+      case 'motion_progress': {
+        const agent = typeof d.agent === 'string' ? d.agent : ''
+        const parsed = parseMotionProgress(d)
+        if (!agent || !parsed) break
+        set((draft) => {
+          ensureAgent(draft, agent)
+          applyMotionProgress(draft.agentStreams[agent], parsed)
+        })
         break
       }
 
@@ -579,7 +745,14 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
                     tool_call_id: toolCallId,
                     is_final: true,
                   })
-                  if (parsed) applyVisualArtifact(stream, parsed, toolCallId)
+                  if (parsed) {
+                    const explicitRevision = isRecord(rawArgs)
+                      && Number.isInteger(rawArgs.artifact_revision)
+                      && (rawArgs.artifact_revision as number) >= 1
+                      ? rawArgs.artifact_revision as number
+                      : undefined
+                    applyVisualArtifact(stream, parsed, toolCallId, explicitRevision)
+                  }
                 } catch {
                   // Invalid or partial tool args are not rendered as artifacts.
                 }

@@ -477,6 +477,9 @@ export const BlockRenderer = memo(function BlockRenderer({ block, isStreaming, s
     case 'visual_artifact': {
       return <VisualArtifactRenderer block={block} />
     }
+    case 'motion_progress': {
+      return <VisualArtifactRenderer block={block} />
+    }
     case 'text': {
       const importedSource = block.extra?.import_source as {
         provider?: unknown

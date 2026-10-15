@@ -139,7 +139,9 @@ export function parseVisualArtifactMessage(raw: unknown, revision = 1): VisualAr
     scene: sceneSpec,
     sources,
     durationMs: typeof value.duration_ms === 'number' ? value.duration_ms : null,
-    revision,
+    revision: Number.isInteger(value.artifact_revision) && (value.artifact_revision as number) >= 1
+      ? value.artifact_revision as number
+      : revision,
   }
 }
 

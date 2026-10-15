@@ -52,10 +52,18 @@ def response_style_directive(style: str, tool_names: set[str]) -> str:
         return _SIMPLE_LINE
     available = [name for name in ("ui_block", "visual_artifact") if name in tool_names]
     line = _VISUAL_LINE
+    motion_progress_line = (
+        " For a genuinely multi-stage motion explainer, use motion_progress at "
+        "storyboard, sample review/revision, and final-render milestones so the "
+        "chat can show truthful lifecycle state; do not emit one update per frame. "
+        "The renderer owns exact frame counts and verified soundtrack status."
+        if "motion_progress" in tool_names
+        else ""
+    )
     if not available:
-        return line
+        return line + motion_progress_line
     if "ui_block" in available and "visual_artifact" not in available:
-        return _VISUAL_UI_LINE
+        return _VISUAL_UI_LINE + motion_progress_line
     if "visual_artifact" in available and "ui_block" in available:
         return (
             f"{line} The ui_block and visual_artifact tools are available in this run. "
@@ -63,12 +71,14 @@ def response_style_directive(style: str, tool_names: set[str]) -> str:
             "when a custom dashboard, motion explainer, or spatial 3D view materially "
             "improves the task. For dashboards, inspect data first and cite successful "
             "tool calls; do not claim live freshness without source evidence."
+            f"{motion_progress_line}"
         )
     return (
         f"{line} The visual_artifact tool is available in this run for custom "
         "dashboards, motion explainers, or spatial 3D views when those controls "
         "materially improve the task. For dashboards, inspect data first and cite "
         "successful tool calls; do not claim live freshness without source evidence."
+        f"{motion_progress_line}"
     )
 
 

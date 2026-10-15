@@ -832,6 +832,7 @@ export type SSEEventType =
   | 'browser_session'
   | 'ui_block'
   | 'visual_artifact'
+  | 'motion_progress'
 
 export interface SSEEvent {
   type: SSEEventType
@@ -839,9 +840,27 @@ export interface SSEEvent {
 }
 
 // Content Block Types
+export type MotionProgressStatus = 'running' | 'complete' | 'cancelled' | 'failed' | 'interrupted'
+export type MotionProgressPhase = 'planning' | 'storyboard' | 'style_samples' | 'composing' | 'rendering_samples' | 'reviewing' | 'revising' | 'final_render' | 'encoding' | 'audio'
+
+export interface MotionProgressPayload {
+  jobId: string
+  sequence: number
+  artifactId: string
+  artifactRevision: number
+  status: MotionProgressStatus
+  phase: MotionProgressPhase
+  beat?: { id: string; index: number; total: number; title: string }
+  frames?: { scope: 'review_samples' | 'final_output'; completed: number; total: number | null; fps: number | null; lastCompletedIndex: number | null }
+  iteration?: { current: number; budget: number }
+  sampleRequestId?: string
+  selectedSamples: Array<{ sampleId: string; beatId: string; frameIndex: number; timestampMs: number; role: 'style' | 'key_state' | 'before_transition' | 'after_transition' | 'impact' }>
+  audioStatus: 'not_requested' | 'unavailable' | 'pending' | 'rendering' | 'included'
+}
+
 export interface ContentBlock {
   id: string
-  type: 'thinking' | 'tool' | 'text' | 'user' | 'compaction' | 'provider_status' | 'widget' | 'ui_block' | 'visual_artifact'
+  type: 'thinking' | 'tool' | 'text' | 'user' | 'compaction' | 'provider_status' | 'widget' | 'ui_block' | 'visual_artifact' | 'motion_progress'
   content: string
   toolName?: string
   toolArgs?: string
@@ -863,6 +882,7 @@ export interface ContentBlock {
   uiBlocks?: UiBlockNode[] // validated declarative UI block nodes
   uiBlockIdentity?: string // group identity (block_id ?? replace_id ?? tool_call_id)
   visualArtifact?: VisualArtifactPayload
+  motionProgress?: MotionProgressPayload
   /** Variant-specific metadata. ``user`` inbox blocks carry ``from_agent``;
    *  ``compaction`` blocks are content-free status markers carrying
    *  ``state: 'compacting' | 'compacted'`` and optional ``error: true``.
