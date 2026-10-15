@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from scripts.smoke_intelligent_ui import (
     LIVE_SMOKE_FIELDS,
     _request,
@@ -49,6 +51,21 @@ def test_motion_eval_separates_temporal_value_from_prompt_length() -> None:
     assert len(long_motion["prompt"].encode("utf-8")) >= 1500
 
 
+def test_water_treatment_visual_explanation_is_a_motion_eval_case() -> None:
+    cases = {case["id"]: case for case in load_cases(FIXTURE)}
+    water_treatment = cases["implicit_water_treatment"]
+
+    assert water_treatment["expected_choice"] == "motion"
+    assert all(
+        word not in water_treatment["prompt"].lower()
+        for word in ("video", "animation", "motion")
+    )
+    assert (
+        "why the next step needs the previous one"
+        in water_treatment["required_evidence"]
+    )
+
+
 def test_cases_encode_task_intent_instead_of_runtime_keyword_rules() -> None:
     source = FIXTURE.read_text(encoding="utf-8")
     assert all(case["prompt"].strip() for case in json.loads(source))
@@ -60,6 +77,9 @@ def test_live_smoke_is_opt_in_and_records_only_outcomes_and_tool_quality() -> No
     assert LIVE_SMOKE_FIELDS == {
         "case_id",
         "model_id",
+        "expected_choice",
+        "observed_choice",
+        "selection_match",
         "tool",
         "kind",
         "prompt_bytes",
@@ -68,6 +88,61 @@ def test_live_smoke_is_opt_in_and_records_only_outcomes_and_tool_quality() -> No
         "status",
         "error_category",
     }
+
+
+@pytest.mark.parametrize(
+    ("expected_choice", "observed_choice", "matches"),
+    [
+        ("motion", "motion", True),
+        ("motion", "dashboard", False),
+        ("motion", None, False),
+    ],
+)
+def test_live_smoke_reports_expected_and_observed_visual_choice(
+    monkeypatch, expected_choice, observed_choice, matches
+) -> None:
+    class Response:
+        def __init__(self, stream: bool = False):
+            self.stream = stream
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def read(self):
+            return b'{"session_id":"00000000-0000-4000-8000-000000000001"}'
+
+        def __iter__(self):
+            if self.stream:
+                if observed_choice is not None:
+                    yield b"event: visual_artifact\n"
+                    yield (
+                        f'data: {{"type":"visual_artifact","kind":"{observed_choice}",'
+                        '"source_html":"<html></html>"}\n'
+                    ).encode()
+                yield b"event: done\n"
+                yield b'data: {"type":"done"}\n'
+
+    monkeypatch.setattr(
+        "scripts.smoke_intelligent_ui._request",
+        lambda url, **_kwargs: Response(stream=url.endswith("/stream")),
+    )
+
+    outcome = _run_case(
+        "http://127.0.0.1:8000/api/team",
+        "xiaomi:mimo-v2.6-flash",
+        {
+            "id": "water-treatment",
+            "prompt": "Explain how each stage changes the water.",
+            "expected_choice": expected_choice,
+        },
+    )
+
+    assert outcome["expected_choice"] == expected_choice
+    assert outcome["observed_choice"] == observed_choice
+    assert outcome["selection_match"] is matches
 
 
 def test_live_smoke_request_stays_open_until_the_caller_finishes_reading(

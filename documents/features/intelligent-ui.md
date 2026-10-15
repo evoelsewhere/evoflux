@@ -22,8 +22,9 @@ Implementation plan: `documents/plans/2026-10-15-rich-intelligent-ui-implementat
   when they add no practical value. When `ui_block` is available, the prompt
   identifies only visual tools available to this run and gives this decision
   rubric. The built-in **intelligent-ui** Skill supplies detailed selection
-  guidance to Visual-mode agents that have a declared tool. Simple style still suppresses
-  interactive blocks unless requested.
+  guidance whenever an active agent has a declared visual tool, regardless of
+  response style. Simple still prefers prose, while a specific visual request
+  can select the appropriate artifact.
 
 The choice is stored in `settings.yaml` under `response_style.style` and
 served by `GET/PUT /api/settings/response-style`. A `@dynamic_prompt` hook
@@ -212,15 +213,16 @@ other environments, **Download source** saves a copy outside the repository.
 ## Built-in Skill: `intelligent-ui`
 
 The `intelligent-ui` Skill (`app/agent/builtin_skills/intelligent-ui/`)
-keeps the selection rubric in a compact body preloaded in Visual style when an
-active agent has `ui_block` or `visual_artifact`. It distinguishes temporal
-value from prompt length and directs the model to read authoring details only
-after selecting a format. The Level 1 description remains available through
-normal Skill discovery in other styles and agents. Detailed block schemas,
-examples, dashboard rules, motion rendering/export, and update protocols stay
-in on-demand references. The prompt smoke runner records UTF-8 prompt bytes
-alongside tool choice and outcome, without recording prompt content; this is a
-size measure, not a model-token count.
+keeps the selection rubric in a compact body preloaded whenever an active
+agent has `ui_block` or `visual_artifact`, regardless of response style. It
+distinguishes causal state changes from static reference needs and prompt
+length, and directs the model to read authoring details only after selecting a
+format. Agents without those tools receive only the Level 1 description.
+Detailed block schemas, examples, dashboard rules, motion rendering/export,
+and update protocols stay in on-demand references. The prompt smoke runner
+records expected and observed rich-tool choices, whether they match, and
+outcome metadata without recording prompt content. It also records UTF-8 prompt
+bytes as a size measure, not a model-token count.
 
 The Skill asks the model to evaluate the user's underlying goal, whether
 interaction changes the user's next step, and whether available controls

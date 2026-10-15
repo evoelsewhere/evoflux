@@ -57,7 +57,7 @@ async def test_visual_artifact_description_teaches_task_fit_and_payload_contract
     assert "when" in description
     assert all(
         cue in description
-        for cue in ("sequence", "transformation", "cause-and-effect", "prompt length")
+        for cue in ("state changes", "enables the next", "prompt length")
     )
 
 

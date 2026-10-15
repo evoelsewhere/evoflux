@@ -10,11 +10,14 @@
 
 ## Choose motion for the task
 
-Use `visual_artifact` motion only when the user explicitly requests video or
-animation, or when time itself carries the meaning: sequence, transformation,
-cause-and-effect, or a reveal that a static answer would obscure. Prompt length,
-detail, and topic words do not select motion. For a fact, summary, or static
-comparison, use prose or a chart/table when that serves the goal better.
+Use `visual_artifact` motion when the user explicitly requests video or
+animation, or when understanding depends on seeing how one state changes into
+another or why one stage enables the next. For a process, choose motion when
+the learner needs to understand what changes at each stage and why the next
+stage depends on the previous one, even if a static flowchart could list those
+stages. Use a static diagram, checklist, or document when the stages are mainly
+for lookup, comparison, or printing, or their order does not carry the
+explanation. Prompt length, detail, and topic words do not select motion.
 
 Infer sensible defaults from the task. Use 16:9 when no destination is given,
 and choose vertical or square framing only when the destination calls for it.

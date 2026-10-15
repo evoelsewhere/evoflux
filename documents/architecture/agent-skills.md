@@ -38,7 +38,7 @@ pdf/
 | `description` | yes | 1–1,024 characters, third person, states what the Skill does and when to use it. No XML tags. |
 | `license` | no | Displayed in Settings. |
 | `compatibility` | no | ≤500 characters of environment requirements. Displayed in Settings and visible to the model when it reads `SKILL.md`. |
-| `metadata` | no | String-to-string map. Displayed in Settings. EvoFlux recognizes `runtime-preload-tool` and `runtime-preload-tools`: in Visual style, the Skill body is included when the active agent has a declared tool; other metadata remains uninterpreted. |
+| `metadata` | no | String-to-string map. Displayed in Settings. EvoFlux recognizes `runtime-preload-tool` and `runtime-preload-tools`: the Skill body is included when the active agent has a declared tool, regardless of response style; other metadata remains uninterpreted. |
 | `allowed-tools` | no | Displayed in Settings. EvoFlux permissions are not changed by it. |
 | `disable-model-invocation` | no | `true` hides the Skill from the model catalog. Users can still invoke it with `$name`. |
 | `user-invocable` | no | `false` removes the Skill from the `$` picker and ignores `$name` for it. |
@@ -135,11 +135,11 @@ table of contents.
   omitted from its `<available_skills>` catalog.
 - **Capability-preloaded.** An enabled Skill may opt in with
   `metadata.runtime-preload-tool: <tool-name>` or the plural
-  `metadata.runtime-preload-tools: <tool-a>,<tool-b>`. In Visual response
-  style, EvoFlux includes its body only when at least one declared tool is in
-  the active agent's tool set. This supplies focused instructions to agents
-  that can act on them, without matching user-message phrases or forcing the
-  model to use a tool. Keep preloaded bodies concise; move detailed authoring
+  `metadata.runtime-preload-tools: <tool-a>,<tool-b>`. EvoFlux includes its
+  body when at least one declared tool is in the active agent's tool set,
+  regardless of response style. This supplies focused instructions only to
+  agents that can act on them, without matching user-message phrases or forcing
+  the model to use a tool. Keep preloaded bodies concise; move detailed authoring
   rules and examples into references the model reads after selecting that
   capability. Disabled Skills are excluded. Explicit `$name` and model-driven
   reads continue to work independently of this preload path.

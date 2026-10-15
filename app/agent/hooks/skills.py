@@ -35,7 +35,6 @@ from app.agent.skills.registry import (
     discover_skills,
     sandbox_workspace_roots,
 )
-from app.core.runtime_settings import response_style_default
 
 if TYPE_CHECKING:
     from app.agent.schemas.chat import AssistantMessage, ToolCall
@@ -114,14 +113,13 @@ class SkillsHook(BaseAgentHook):
             _grant_plugin_tools(state, skill)
 
         preload_names = list(self._preloaded)
-        if response_style_default() == "visual":
-            preload_names.extend(
-                skill.name
-                for skill in catalog.active()
-                if skill.model_visible
-                and _runtime_preload_available(skill.metadata, state.tool_names)
-                and skill.name not in preload_names
-            )
+        preload_names.extend(
+            skill.name
+            for skill in catalog.active()
+            if skill.model_visible
+            and _runtime_preload_available(skill.metadata, state.tool_names)
+            and skill.name not in preload_names
+        )
 
         preloaded: list[tuple[Skill, str]] = []
         for name in preload_names:
