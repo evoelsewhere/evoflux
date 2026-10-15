@@ -54,6 +54,14 @@ describe('VisualArtifactFrame bootstrap', () => {
 
       expect(outgoing).toContainEqual(expect.objectContaining({ type: 'ready', frameRenderer: true }))
       expect((frameWindow as unknown as { __lastCommand?: string }).__lastCommand).toBe('restart')
+
+      const beats = [{ id: 'beat-1', title: 'First beat', startFrame: 0, endFrame: 29, markers: [{ frame: 12, kind: 'hit' }] }]
+      const artifactApi = (frameWindow as unknown as {
+        evofluxArtifact: { registerTimeline: (value: unknown) => boolean }
+      }).evofluxArtifact
+      expect(artifactApi.registerTimeline(beats)).toBe(true)
+      expect(artifactApi.registerTimeline([{ ...beats[0], id: 'bad id' }])).toBe(false)
+      expect(outgoing).toContainEqual({ type: 'timeline', beats })
     } finally {
       frame.remove()
     }
