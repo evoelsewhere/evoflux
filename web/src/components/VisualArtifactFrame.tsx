@@ -10,6 +10,7 @@ interface Props {
   onSendPrompt?: (prompt: string) => void
   onPlayback?: (message: Extract<VisualArtifactBridgeMessage, { type: 'playback' }>) => void
   onReady?: (message: Extract<VisualArtifactBridgeMessage, { type: 'ready' }>) => void
+  onFrame?: (message: Extract<VisualArtifactBridgeMessage, { type: 'rendered_frame' | 'frame_error' }>) => void
   onPort?: (port: MessagePort | null) => void
 }
 
@@ -33,11 +34,12 @@ function themeTokens(): Record<string, string> {
 
 function runtimeScript(): string {
   return `<script>(()=>{
-let initialized=false,port=null,handlers=[],recorder=null,tracks=[],exportQueue=Promise.resolve(),exportBytes=0,exportTimer=0,exportMime='',exportFailure='',exportStopState='complete';
+let initialized=false,port=null,handlers=[],frameRenderer=null,recorder=null,tracks=[],exportQueue=Promise.resolve(),exportBytes=0,exportTimer=0,exportMime='',exportFailure='',exportStopState='complete';
 const MAX_EXPORT_BYTES=150000000,MAX_CHUNK_BYTES=64000;
 const safeTokens=t=>{if(!t||typeof t!=='object')return;for(const [k,v] of Object.entries(t)){if(/^--(?:color-|accent-|surface-|background|foreground|radius)/.test(k)&&typeof v==='string'&&v.length<=256)document.documentElement.style.setProperty(k,v)}};
 const send=m=>{if(port)port.postMessage(m)};
 const sendCommand=command=>{for(const fn of handlers){try{fn(command)}catch{}}};
+const renderFrame=async command=>{const requestId=command.requestId,currentTimeMs=command.currentTimeMs;try{if(!frameRenderer)throw new Error('This explainer does not support frame rendering.');const canvas=document.querySelector('canvas[data-evoflux-motion-canvas]');if(!canvas)throw new Error('The marked motion canvas is missing.');await frameRenderer(currentTimeMs);await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));const bitmap=await createImageBitmap(canvas);port.postMessage({type:'rendered_frame',requestId,currentTimeMs,bitmap},[bitmap])}catch(error){send({type:'frame_error',requestId,message:error instanceof Error?error.message:'The motion frame could not be rendered.'})}};
 const cleanupExport=()=>{if(exportTimer)clearTimeout(exportTimer);exportTimer=0;tracks.forEach(track=>track.stop());tracks=[];recorder=null};
 const finishExport=state=>{
   const activeRecorder=recorder;
@@ -78,6 +80,7 @@ const startExport=(mimeType,durationMs)=>{
 };
 const api={
   onCommand(fn){if(typeof fn==='function')handlers.push(fn)},
+  registerFrameRenderer(fn){if(typeof fn!=='function')throw new TypeError('Frame renderer must be a function.');frameRenderer=fn;return()=>{if(frameRenderer===fn)frameRenderer=null}},
   reportPlayback(state,currentTimeMs){if(['playing','paused','ended'].includes(state)&&Number.isFinite(currentTimeMs)){send({type:'playback',state,currentTimeMs});if(state==='ended'&&recorder)stopExport('complete')}},
   startCanvasExport(mimeType){return startExport(mimeType,120000)}
 };
@@ -85,8 +88,8 @@ Object.defineProperty(window,'evofluxArtifact',{value:Object.freeze(api),writabl
 window.addEventListener('message',event=>{
   if(initialized||event.source!==window.parent||event.data?.type!=='evoflux-artifact-init'||!event.ports?.[0])return;
   initialized=true;port=event.ports[0];const config=event.data;safeTokens(config.tokens);document.documentElement.dataset.theme=config.resolvedTheme==='dark'?'dark':'light';document.documentElement.dataset.themePreference=String(config.theme||'system');document.documentElement.dataset.reducedMotion=String(Boolean(config.reducedMotion));
-  port.onmessage=message=>{const data=message.data;if(data?.type==='theme'){safeTokens(data.tokens);document.documentElement.dataset.theme=data.resolvedTheme==='dark'?'dark':'light';document.documentElement.dataset.themePreference=String(data.theme||'system')}if(data?.type==='preferences'){document.documentElement.dataset.reducedMotion=String(Boolean(data.reducedMotion));if(data.reducedMotion)document.documentElement.style.setProperty('scroll-behavior','auto')}if(data?.type==='command')sendCommand(data.command);if(data?.type==='export_request')startExport(data.mimeType,data.durationMs);if(data?.type==='export_cancel')stopExport('cancelled')};
-  port.start();send({type:'ready',motionCanvas:Boolean(document.querySelector('canvas[data-evoflux-motion-canvas]'))});const report=()=>send({type:'resize',height:Math.max(160,Math.min(2000,Math.ceil(document.documentElement.scrollHeight)))});new ResizeObserver(report).observe(document.documentElement);setTimeout(report,80)
+  port.onmessage=message=>{const data=message.data;if(data?.type==='theme'){safeTokens(data.tokens);document.documentElement.dataset.theme=data.resolvedTheme==='dark'?'dark':'light';document.documentElement.dataset.themePreference=String(data.theme||'system')}if(data?.type==='preferences'){document.documentElement.dataset.reducedMotion=String(Boolean(data.reducedMotion));if(data.reducedMotion)document.documentElement.style.setProperty('scroll-behavior','auto')}if(data?.type==='command'){if(data.command?.type==='render_frame')void renderFrame(data.command);else sendCommand(data.command)}if(data?.type==='export_request')startExport(data.mimeType,data.durationMs);if(data?.type==='export_cancel')stopExport('cancelled')};
+  port.start();const canvas=document.querySelector('canvas[data-evoflux-motion-canvas]');send({type:'ready',motionCanvas:Boolean(canvas),frameRenderer:typeof frameRenderer==='function',canvasWidth:canvas?.width,canvasHeight:canvas?.height});const report=()=>send({type:'resize',height:Math.max(160,Math.min(2000,Math.ceil(document.documentElement.scrollHeight)))});new ResizeObserver(report).observe(document.documentElement);setTimeout(report,80)
 });})();</script>`
 }
 
@@ -97,7 +100,7 @@ export function buildVisualArtifactSrcDoc(sourceHtml: string): string {
   return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp}"><meta name="viewport" content="width=device-width, initial-scale=1"><style>html,body{margin:0;min-height:100%;font-family:Inter,system-ui,sans-serif;color:var(--color-text-primary,inherit);background:var(--color-surface,transparent)}*{box-sizing:border-box}@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;scroll-behavior:auto!important}}</style></head><body>${sourceHtml}${runtimeScript()}</body></html>`
 }
 
-export function VisualArtifactFrame({ artifact, theme, reducedMotion, onSendPrompt, onPlayback, onReady, onPort }: Props) {
+export function VisualArtifactFrame({ artifact, theme, reducedMotion, onSendPrompt, onPlayback, onReady, onFrame, onPort }: Props) {
   const frameRef = useRef<HTMLIFrameElement>(null)
   const portRef = useRef<MessagePort | null>(null)
   const [height, setHeight] = useState(420)
@@ -115,6 +118,7 @@ export function VisualArtifactFrame({ artifact, theme, reducedMotion, onSendProm
       if (message.type === 'send_prompt') onSendPrompt?.(message.prompt)
       if (message.type === 'playback') onPlayback?.(message)
       if (message.type === 'ready') onReady?.(message)
+      if (message.type === 'rendered_frame' || message.type === 'frame_error') onFrame?.(message)
     }
     channel.port1.start()
     portRef.current = channel.port1
@@ -123,7 +127,7 @@ export function VisualArtifactFrame({ artifact, theme, reducedMotion, onSendProm
       type: 'evoflux-artifact-init', theme, resolvedTheme: document.documentElement.classList.contains('dark') ? 'dark' : 'light',
       reducedMotion, tokens: themeTokens(),
     }, '*', [channel.port2])
-  }, [onPlayback, onPort, onReady, onSendPrompt, reducedMotion, theme])
+  }, [onFrame, onPlayback, onPort, onReady, onSendPrompt, reducedMotion, theme])
 
   useEffect(() => {
     const port = portRef.current

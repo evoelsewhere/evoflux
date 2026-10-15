@@ -69,9 +69,10 @@ review/commit it with normal Git tools.
 
 ## Follow-up research: motion graphics and video authoring
 
-The Workbench integration above does not complete advanced motion authoring or
-frame-based video rendering. The dated
+The Workbench integration above does not complete advanced motion authoring.
+An initial deterministic canvas-to-video path now exists for artifacts that
+implement `registerFrameRenderer(timeMs)`; see the dated
 [code-driven motion graphics research](../research/2026-10-15-code-driven-motion-graphics.md)
-compares official Claude Motion behavior, rendering frameworks and community
-experience, records current exporter gaps, and proposes experiments and acceptance
-checks for a separate implementation plan. Its runtime choices remain proposals.
+for the engine comparison, current runtime limits, and outstanding desktop
+acceptance checks. HyperFrames/FFmpeg remains a reference option for a broader
+HTML timeline renderer, not a shipped EvoFlux dependency.

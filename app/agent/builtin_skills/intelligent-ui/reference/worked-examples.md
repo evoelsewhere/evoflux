@@ -205,8 +205,32 @@ For a requested explainer that the user wants to play, pause, seek, or
 export, use `kind: "motion"`, a bounded `duration_ms`, a self-contained
 timeline, and a canvas marked `data-evoflux-motion-canvas`. Register an
 `onCommand` handler for play/pause/restart/seek and report playback state.
-The host detects the supported export MIME and disables export if there is
-no marked canvas.
+Register `registerFrameRenderer(drawAt)` too: `drawAt(timeMs)` must redraw the
+whole canvas from that absolute time so export can request frames independently
+of preview playback. Keep the canvas backing size fixed and scale it with CSS.
+The host detects local WebCodecs support, shows render progress, and falls back
+to real-time recording for older artifacts. Example drawing core:
+
+```js
+const canvas = document.querySelector('[data-evoflux-motion-canvas]')
+const ctx = canvas.getContext('2d')
+const drawAt = (timeMs) => {
+  const progress = Math.max(0, Math.min(1, timeMs / 12000))
+  ctx.clearRect(0, 0, canvas.width, canvas.height)
+  ctx.fillStyle = '#101827'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+  ctx.fillStyle = '#ffffff'
+  ctx.font = '700 56px system-ui'
+  ctx.fillText('One clear point per scene', 80, 150)
+  ctx.fillStyle = '#78a9ff'
+  ctx.fillRect(80, 260, (canvas.width - 160) * progress, 18)
+}
+window.evofluxArtifact.registerFrameRenderer(drawAt)
+drawAt(0)
+```
+
+The complete composition, including titles and captions, must stay inside this
+canvas because it is the only surface included in exported video.
 
 For a spatial task, use `kind: "scene3d"` with `scene.nodes` built only from
 box, sphere, cylinder, or torus primitives. Each node needs a unique id,

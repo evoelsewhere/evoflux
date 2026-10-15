@@ -2526,7 +2526,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Intelligent UI chọn văn bản, control native, dashboard, motion explainer hoặc góc nhìn 3D dựa trên lợi ích thực tế với tác vụ. Rich view mở trong một tab Workbench; chat chỉ giữ thẻ gọn để mở lại. Source được giữ trong lịch sử session, không tạo file trong repo khi preview; bạn có thể tải xuống hoặc, trong Desktop Coding mode, chủ động lưu vào project để review và commit. Dashboard hiển thị nguồn và query summary đã xác minh; dữ liệu chưa xác minh được gắn nhãn minh họa. Rich view theo theme light, dark, system và reduced motion. Motion export ghi canvas theo thời gian thực từ đầu, dùng MP4/WebM mà browser hỗ trợ và có thể hủy; dựng frame xác định vẫn là phần dự kiến. Nếu WebGL không chạy, 3D hiện bản xem trước tĩnh có nhãn.',
+        text: 'Intelligent UI chọn văn bản, control native, dashboard, motion explainer hoặc góc nhìn 3D dựa trên lợi ích thực tế với tác vụ. Rich view mở trong một tab Workbench; chat chỉ giữ thẻ gọn để mở lại. Source được giữ trong lịch sử session, không tạo file trong repo khi preview; bạn có thể tải xuống hoặc, trong Desktop Coding mode, chủ động lưu vào project để review và commit. Dashboard hiển thị nguồn và query summary đã xác minh; dữ liệu chưa xác minh được gắn nhãn minh họa. Rich view theo theme light, dark, system và reduced motion. Motion mới có thể dựng từng frame của canvas thành MP4/WebM ngay trên máy, kèm tiến độ và nút hủy; video hoàn tất được xem lại trong Workbench trước khi tải xuống. Artifact cũ vẫn dùng chế độ ghi thời gian thực của browser. Tiêu đề và caption phải được vẽ bên trong canvas. Nếu WebGL không chạy, 3D hiện bản xem trước tĩnh có nhãn.',
       },
       {
         type: 'p',

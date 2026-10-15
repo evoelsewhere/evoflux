@@ -1,10 +1,12 @@
 import type { Scene3DSpec, VisualArtifactKind, VisualArtifactPayload, VisualArtifactSource } from '@/api/types'
 
 export type VisualArtifactBridgeMessage =
-  | { type: 'ready'; motionCanvas: boolean }
+  | { type: 'ready'; motionCanvas: boolean; frameRenderer?: boolean; canvasWidth?: number; canvasHeight?: number }
   | { type: 'resize'; height: number }
   | { type: 'send_prompt'; prompt: string }
   | { type: 'playback'; currentTimeMs: number; state: 'playing' | 'paused' | 'ended' }
+  | { type: 'rendered_frame'; requestId: number; currentTimeMs: number; bitmap: ImageBitmap }
+  | { type: 'frame_error'; requestId: number; message: string }
   | { type: 'export_chunk'; mimeType: string; bytes: Uint8Array; final: boolean }
   | { type: 'export_status'; state: 'recording' | 'complete' | 'cancelled' | 'error'; message?: string }
 
@@ -82,7 +84,47 @@ export function parseVisualArtifactMessage(raw: unknown, revision = 1): VisualAr
 export function parseVisualArtifactBridgeMessage(raw: unknown): VisualArtifactBridgeMessage | null {
   const value = record(raw)
   if (!value || typeof value.type !== 'string') return null
-  if (value.type === 'ready' && typeof value.motionCanvas === 'boolean') return { type: 'ready', motionCanvas: value.motionCanvas }
+  if (value.type === 'ready' && typeof value.motionCanvas === 'boolean') {
+    const canvasWidth = Number.isInteger(value.canvasWidth) && (value.canvasWidth as number) > 0 && (value.canvasWidth as number) <= 4096
+      ? value.canvasWidth as number
+      : undefined
+    const canvasHeight = Number.isInteger(value.canvasHeight) && (value.canvasHeight as number) > 0 && (value.canvasHeight as number) <= 4096
+      ? value.canvasHeight as number
+      : undefined
+    const frameRenderer = value.frameRenderer === true
+      && canvasWidth !== undefined
+      && canvasHeight !== undefined
+      && canvasWidth * canvasHeight <= 8_294_400
+    return {
+      type: 'ready',
+      motionCanvas: value.motionCanvas,
+      ...(typeof value.frameRenderer === 'boolean' ? { frameRenderer } : {}),
+      ...(canvasWidth !== undefined ? { canvasWidth } : {}),
+      ...(canvasHeight !== undefined ? { canvasHeight } : {}),
+    }
+  }
+  if (
+    value.type === 'rendered_frame'
+    && Number.isSafeInteger(value.requestId)
+    && (value.requestId as number) >= 0
+    && Number.isFinite(value.currentTimeMs)
+    && typeof value.currentTimeMs === 'number'
+    && value.currentTimeMs >= 0
+    && typeof ImageBitmap !== 'undefined'
+    && value.bitmap instanceof ImageBitmap
+    && value.bitmap.width > 0
+    && value.bitmap.height > 0
+    && value.bitmap.width <= 4096
+    && value.bitmap.height <= 4096
+  ) {
+    return { type: 'rendered_frame', requestId: value.requestId as number, currentTimeMs: value.currentTimeMs, bitmap: value.bitmap }
+  }
+  if (
+    value.type === 'frame_error'
+    && Number.isSafeInteger(value.requestId)
+    && (value.requestId as number) >= 0
+    && string(value.message, 500)
+  ) return { type: 'frame_error', requestId: value.requestId as number, message: value.message }
   if (value.type === 'resize' && typeof value.height === 'number' && Number.isFinite(value.height) && value.height >= 160 && value.height <= 2000) {
     return { type: 'resize', height: value.height }
   }
