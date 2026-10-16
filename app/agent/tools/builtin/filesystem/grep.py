@@ -803,7 +803,8 @@ grep_files = Tool(
         "paths, newest first — start there to locate code; 'count' returns "
         "matching lines per file plus a total. Filter with include (filename "
         "glob) or type (e.g. 'py'). A partial page ends with a notice giving "
-        "the offset for the next page."
+        "the offset for the next page. Preferred over shell grep or rg for "
+        "searching file contents."
     ),
     concurrency_safe=True,
     read_only=True,

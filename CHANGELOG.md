@@ -4,7 +4,9 @@ All notable changes to EvoFlux are documented in this file.
 
 ## [Unreleased]
 
-No changes yet.
+### Changed
+
+- Coding agents read, search, list, and edit files with the built-in file tools (`read`, `grep`, `glob`, `ls`, `edit`, `write`, `patch`) and keep the **shell** for repository commands such as tests, linters, builds, and git. The built-in prompts and tool descriptions now say so, and the truncation notice on large files points to `grep` instead of shell text utilities.
 
 ## [3.0.7] - 2026-10-14
 

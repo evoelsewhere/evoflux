@@ -401,7 +401,10 @@ _SHELL_DESCRIPTION = (
     "Run a non-interactive shell command in the session workspace. The tool "
     "returns a process_id when work outlives yield_time_ms; continue it with "
     "process. Full output is archived while the model receives a bounded view. "
-    "Prefer file tools for file operations and always use non-interactive flags."
+    "Use it for repository commands (tests, linters, builds, git, package "
+    "managers). To read, search, list, or edit files, use the read, grep, glob, "
+    "ls, edit, write, and patch tools instead of cat, sed, head, grep, rg, or "
+    "find. Always use non-interactive flags."
 )
 
 

@@ -154,7 +154,8 @@ glob_files = Tool(
         "Find files by glob pattern. Use match='path' (default) for full-path patterns "
         "like 'src/**/*.ts', or match='name' for filename-only like '*.py'. "
         "Results are sorted by modification time, newest first; a partial page "
-        "ends with a notice giving the offset for the next page."
+        "ends with a notice giving the offset for the next page. Preferred over "
+        "shell find or ls for locating files by name."
     ),
     concurrency_safe=True,
     read_only=True,

@@ -877,3 +877,11 @@ def test_shell_description_names_os_and_shell(
     assert expected in description
     if absent:
         assert absent not in description
+
+
+def test_shell_description_routes_file_reads_to_file_tools():
+    description = shell_tool.definition["function"]["description"]
+    assert "repository commands" in description
+    for file_tool in ("read", "grep", "glob", "ls"):
+        assert file_tool in description
+    assert "instead of cat, sed, head, grep, rg, or find" in description

@@ -40,7 +40,10 @@ async def _list_directory(
 list_directory = Tool(
     _list_directory,
     name="ls",
-    description="List immediate children of a directory with type and size.",
+    description=(
+        "List immediate children of a directory with type and size. Preferred "
+        "over shell ls or dir."
+    ),
     concurrency_safe=True,
     read_only=True,
     observation_kind="discovery",

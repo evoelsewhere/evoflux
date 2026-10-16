@@ -59,7 +59,7 @@ def _cap_text_for_context(text: str, rel: object) -> str:
         f"{preview}\n\n"
         f"[read output truncated for LLM context: {rel} is {len(text):,} characters; "
         f"shown first {_MAX_CONTEXT_CHARS:,}. Use offset and limit to read a smaller "
-        f"line range, or shell tools such as grep/sed/head/tail for targeted inspection.]"
+        f"line range, or the grep tool for targeted inspection.]"
     )
 
 
@@ -224,7 +224,8 @@ read_file = Tool(
         "Relative paths use the primary workspace; authorized sibling repositories "
         "require their displayed absolute path. Text lines are prefixed with "
         "'NNNNN| ' line numbers — display-only metadata: NEVER include the "
-        "prefix in edit old_string/new_string or write content."
+        "prefix in edit old_string/new_string or write content. Preferred over "
+        "shell cat, sed, head, or tail for reading files."
     ),
     concurrency_safe=True,
     read_only=True,

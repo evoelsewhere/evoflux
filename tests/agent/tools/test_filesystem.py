@@ -1090,3 +1090,19 @@ async def test_glob_newest_file_survives_the_page_cut(sandbox, match):
 
     result = await _search_files(pattern="*.py", match=match, max_results=2)
     assert result.split("\n")[0] == "z_newest.py"
+
+
+@pytest.mark.asyncio
+async def test_read_truncation_notice_points_to_grep_not_shell(
+    sandbox_workspace, monkeypatch
+):
+    read_file_module = importlib.import_module(
+        "app.agent.tools.builtin.filesystem.read"
+    )
+    monkeypatch.setattr(read_file_module, "_MAX_CONTEXT_CHARS", 10)
+    (sandbox_workspace / "big.txt").write_text("A" * 50)
+
+    result = await read_file.arun(path="big.txt")
+
+    assert "the grep tool" in result
+    assert "shell" not in result.lower()
