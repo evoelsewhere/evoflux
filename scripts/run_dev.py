@@ -67,7 +67,6 @@ def require_executable(name: str, install_hint: str) -> str:
 
 
 def preflight(desktop: bool) -> tuple[str, str | None]:
-    require_executable("lsof", "install lsof and ensure it is on PATH")
     bun = require_executable("bun", "install from https://bun.sh")
     if not desktop:
         return bun, None
@@ -89,6 +88,29 @@ def preflight(desktop: bool) -> tuple[str, str | None]:
 
 
 def listening_pids(port: int) -> list[int]:
+    if sys.platform == "win32":
+        result = subprocess.run(
+            ["netstat", "-ano", "-p", "TCP"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            detail = result.stderr.strip() or f"exit status {result.returncode}"
+            raise RuntimeError(f"could not inspect port {port}: {detail}")
+        pids: set[int] = set()
+        for line in result.stdout.splitlines():
+            parts = line.split()
+            if len(parts) < 5 or ":" not in parts[1]:
+                continue
+            local_port = parts[1].rsplit(":", 1)[1]
+            if parts[3].upper() != "LISTENING" or local_port != str(port):
+                continue
+            try:
+                pids.add(int(parts[4]))
+            except ValueError:
+                continue
+        return sorted(pids)
     result = subprocess.run(
         ["lsof", f"-tiTCP:{port}", "-sTCP:LISTEN"],
         capture_output=True,
@@ -123,10 +145,21 @@ def stop_dev_ports(ports: list[int]) -> None:
                 f"{' '.join(map(str, remaining))}"
             )
             for pid in remaining:
-                try:
-                    os.kill(pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
+                _force_kill(pid)
+
+
+def _force_kill(pid: int) -> None:
+    if sys.platform == "win32":
+        subprocess.run(
+            ["taskkill", "/F", "/PID", str(pid)],
+            capture_output=True,
+            check=False,
+        )
+        return
+    try:
+        os.kill(pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
 
 
 def build_services(
@@ -187,6 +220,12 @@ def stream_output(name: str, output: BinaryIO, lock: threading.Lock) -> None:
 def signal_process_group(process: subprocess.Popen[bytes], sig: signal.Signals) -> None:
     if process.poll() is not None:
         return
+    if sys.platform == "win32":
+        if sig == getattr(signal, "SIGKILL", signal.SIGTERM):
+            _force_kill(process.pid)
+        else:
+            process.terminate()
+        return
     try:
         os.killpg(process.pid, sig)
     except ProcessLookupError:
@@ -237,7 +276,8 @@ def supervise(services: list[Service]) -> int:
         received_signal = signal.Signals(signum)
 
     previous_handlers = {
-        sig: signal.signal(sig, handle_signal) for sig in (signal.SIGINT, signal.SIGTERM)
+        sig: signal.signal(sig, handle_signal)
+        for sig in (signal.SIGINT, signal.SIGTERM)
     }
     try:
         for service in services:
@@ -262,7 +302,10 @@ def supervise(services: list[Service]) -> int:
                     thread.join(timeout=1.0)
                 exit_code = returncode if returncode >= 0 else 128 - returncode
                 if exit_code != 0:
-                    print(f"{service.name} exited with status {exit_code}", file=sys.stderr)
+                    print(
+                        f"{service.name} exited with status {exit_code}",
+                        file=sys.stderr,
+                    )
                 return exit_code
             time.sleep(0.1)
 
