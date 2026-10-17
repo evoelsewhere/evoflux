@@ -625,9 +625,6 @@ class Agent(Generic[TContext]):
             _refresh_deferred_tool_catalog
         )
         state.metadata["_grant_plugin_mcp_tools"] = _grant_plugin_mcp_tools
-        state.metadata["_tool_capabilities"] = {
-            name: tuple(sorted(tool.capabilities)) for name, tool in run_tools.items()
-        }
 
         # Me seed last_prompt_tokens from checkpointer so SummarizationHook
         # fires on session resume without call-site workaround
