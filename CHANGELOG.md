@@ -6,6 +6,7 @@ All notable changes to EvoFlux are documented in this file.
 
 ### Changed
 
+- Bump EvoFlux package and desktop application versions to 3.0.9.
 - Coding agents read, search, list, and edit files with the built-in file tools (`read`, `grep`, `glob`, `ls`, `edit`, `write`, `patch`) and keep the **shell** for repository commands such as tests, linters, builds, and git. The built-in prompts and tool descriptions now say so, and the truncation notice on large files points to `grep` instead of shell text utilities.
 - The agent runtime no longer writes an internal tool-capability map into session state that nothing read; sessions run slightly leaner with no behavior change.
 - The desktop boot splash shows a real error instead of hanging forever when no backend is available; the dev tooling no longer requires `lsof` on Windows.
