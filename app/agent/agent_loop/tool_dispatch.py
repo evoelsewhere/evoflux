@@ -24,6 +24,40 @@ from loguru import logger
 if TYPE_CHECKING:
     from app.agent.schemas.chat import ToolCall
 
+# Network tools talk to the open internet, where a stalled upstream can hang a
+# request forever (observed: DDGS with no client timeout froze the sidecar for
+# minutes).  Bound them well below the 300s batch default so one dead
+# connection can never pin a tool wave.  ``web_search`` allows four 15s
+# backend attempts plus the 30s Exa fallback; ``image_search`` is one bounded
+# call; ``web_fetch`` needs headroom above its own 120s fetch-timeout clamp.
+NETWORK_TOOL_TIMEOUTS: dict[str, float] = {
+    "web_search": 90.0,
+    "image_search": 30.0,
+    "web_fetch": 150.0,
+}
+
+
+async def _run_bounded(coro, tc: ToolCall, agent_name: str):
+    """Run one tool coroutine under its per-tool deadline, if it has one.
+
+    Tools outside :data:`NETWORK_TOOL_TIMEOUTS` run unchanged.  A timed-out
+    tool reports ``(tc, message)`` — the same result shape as a batch-level
+    timeout — instead of hanging the whole dispatch.
+    """
+    timeout = NETWORK_TOOL_TIMEOUTS.get(tc.function.name)
+    if timeout is None:
+        return await coro
+    try:
+        return await asyncio.wait_for(coro, timeout=timeout)
+    except asyncio.TimeoutError:
+        logger.warning(
+            "tool_timeout agent={} tool={} timeout={}s",
+            agent_name,
+            tc.function.name,
+            timeout,
+        )
+        return (tc, f"Tool timed out after {timeout:.0f}s and was cancelled.")
+
 
 async def gather_or_cancel(
     coros: list,
@@ -45,7 +79,10 @@ async def gather_or_cancel(
     if not coros:
         return []
 
-    tasks = [asyncio.ensure_future(c) for c in coros]
+    tasks = [
+        asyncio.ensure_future(_run_bounded(c, tc, agent_name))
+        for c, tc in zip(coros, tc_list)
+    ]
 
     if interrupt_event is None:
         # No interrupt possible — plain gather behaviour with timeout
@@ -74,8 +111,8 @@ async def gather_or_cancel(
                         tc.function.name,
                         timeout,
                     )
-                elif task.exception() is not None:
-                    results.append(task.exception())  # type: ignore[arg-type]
+                elif (exception := task.exception()) is not None:
+                    results.append(exception)
                 else:
                     results.append(task.result())
             return results
@@ -160,8 +197,8 @@ async def gather_or_cancel(
                     agent_name,
                     tc.function.name,
                 )
-        elif task.exception() is not None:
-            results.append(task.exception())  # type: ignore[arg-type]
+        elif (exception := task.exception()) is not None:
+            results.append(exception)
         else:
             results.append(task.result())
     return results
@@ -202,7 +239,7 @@ async def run_serially(
             results.append((tc, "Cancelled by user."))
             continue
 
-        task: asyncio.Task = asyncio.ensure_future(coro)
+        task: asyncio.Task = asyncio.ensure_future(_run_bounded(coro, tc, agent_name))
 
         # Fast-path: no interrupt monitoring needed
         if interrupt_event is None and timeout is None:
