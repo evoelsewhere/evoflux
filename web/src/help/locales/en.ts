@@ -307,7 +307,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Context budget — the bar near the workbench header reflects token usage against the active model’s context window. When usage approaches the summary trigger, run /compact or start a fresh chat rather than waiting for a hard failure. Budget pressure often looks like “the agent forgot earlier files” before it looks like an error.',
+        text: 'Context budget — the bar near the workbench header reflects token usage against the active model’s context window. The popover separates the live prompt from the turn’s billed model calls — which re-send the prompt each call — and names background calls (title, memory, summaries) that are billed to the turn but are not part of the conversation. When usage approaches the summary trigger, run /compact or start a fresh chat rather than waiting for a hard failure. Budget pressure often looks like “the agent forgot earlier files” before it looks like an error.',
       },
       {
         type: 'tips',

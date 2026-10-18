@@ -238,6 +238,34 @@ async def test_after_agent_emits_turn_total_after_multiple_usage_events():
     }
 
 
+async def test_repeated_identical_usage_blocks_emit_one_usage_event():
+    """A repeated identical usage block on later chunks is not re-emitted.
+
+    The turn total already counts such a call once; the event stream must
+    too, so no consumer can see — and sum — N copies of the same numbers.
+    A new call's first snapshot still emits, even when identical.
+    """
+    hook = _make_hook(agent_name="lead")
+    pushed = []
+
+    with patch(
+        "app.services.memory_stream_store.push_event",
+        new_callable=AsyncMock,
+        side_effect=lambda sid, ev: pushed.append(ev),
+    ):
+        state = _make_state()
+        for _ in range(4):
+            await hook.on_model_delta(MagicMock(), state, _make_chunk_with_usage())
+        await hook.before_model(MagicMock(), state, MagicMock())
+        await hook.on_model_delta(MagicMock(), state, _make_chunk_with_usage())
+
+    usage_events = [event for event in pushed if event.event == "usage"]
+    assert len(usage_events) == 2
+    assert usage_events[0].data["prompt_tokens"] == 100
+    assert usage_events[0].data["completion_tokens"] == 40
+    assert usage_events[1].data["prompt_tokens"] == 100
+
+
 async def test_a_call_that_reports_usage_on_every_chunk_is_counted_once():
     """One model call is one entry in the turn total, however it reports.
 

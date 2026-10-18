@@ -142,6 +142,11 @@ class StreamPublisherHook(BaseAgentHook):
         # recorded once when the call ends. See ``_fold_call_usage``.
         self._pending_usage: Usage | None = None
         self._pending_usage_model: str | None = None
+        # Usage snapshot already forwarded as a UsageEvent. A provider may
+        # repeat the call's totals on every chunk; forwarding each distinct
+        # snapshot once keeps downstream consumers from seeing (and summing)
+        # N copies of the same numbers.
+        self._last_usage_event_key: tuple | None = None
 
     async def _push(self, event: AnyStreamEvent) -> None:
         """Fire-and-forget push to stream store. Never raises."""
@@ -191,6 +196,7 @@ class StreamPublisherHook(BaseAgentHook):
         self._model_started = time.monotonic()
         self._pending_usage = None
         self._pending_usage_model = None
+        self._last_usage_event_key = None
 
     async def _flush_call_usage(self) -> None:
         """Record the finished model call's usage, once.
@@ -205,6 +211,7 @@ class StreamPublisherHook(BaseAgentHook):
         self._pending_usage = None
         model_id = self._pending_usage_model
         self._pending_usage_model = None
+        self._last_usage_event_key = None
 
         snapshot = await record_turn_usage(usage, phase="main", model_id=model_id)
         # Standalone hook tests and third-party integrations may invoke this
@@ -259,18 +266,27 @@ class StreamPublisherHook(BaseAgentHook):
                 self._current_model = chunk.model
                 self._used_models.add(chunk.model)
                 metadata["model"] = chunk.model
-            await self._push(
-                UsageEvent(
-                    prompt_tokens=pt,
-                    completion_tokens=ct,
-                    total_tokens=u.total_tokens or (pt + ct),
-                    cached_tokens=getattr(u, "cached_tokens", None),
-                    cache_write_tokens=getattr(u, "cache_write_tokens", None),
-                    thoughts_tokens=getattr(u, "thoughts_tokens", None),
-                    tool_use_tokens=getattr(u, "tool_use_tokens", None),
-                    metadata=metadata,
-                )
+            usage_event_key = (
+                pt,
+                ct,
+                u.total_tokens,
+                getattr(u, "cached_tokens", None),
+                getattr(u, "cache_write_tokens", None),
             )
+            if usage_event_key != self._last_usage_event_key:
+                self._last_usage_event_key = usage_event_key
+                await self._push(
+                    UsageEvent(
+                        prompt_tokens=pt,
+                        completion_tokens=ct,
+                        total_tokens=u.total_tokens or (pt + ct),
+                        cached_tokens=getattr(u, "cached_tokens", None),
+                        cache_write_tokens=getattr(u, "cache_write_tokens", None),
+                        thoughts_tokens=getattr(u, "thoughts_tokens", None),
+                        tool_use_tokens=getattr(u, "tool_use_tokens", None),
+                        metadata=metadata,
+                    )
+                )
             # Held, not recorded: the turn total adds one *completed call*,
             # and a provider may state that call's totals on every chunk it
             # sends. StepFun does, so recording here counted a 200K prompt
@@ -603,3 +619,4 @@ class StreamPublisherHook(BaseAgentHook):
         self._current_model = None
         self._pending_usage = None
         self._pending_usage_model = None
+        self._last_usage_event_key = None

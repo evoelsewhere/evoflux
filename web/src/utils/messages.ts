@@ -373,12 +373,16 @@ export function parseApiMessages(msgs: MessageResponse[]): ChatMessage[] {
 
 /**
  * Aggregate token usage across all assistant messages in a list.
- * Rules: input = last turn, output = sum all turns, cache = last turn.
+ * Rules: input/cache = the latest model call (the live context size),
+ * output = sum of every call's output, totalTokens = the latest call's
+ * input + output (the conversation's size as the model sees it) — never
+ * live context mixed with output generated in earlier turns.
  * Reads from message.extra.usage persisted by DatabaseHook.
  */
 export function sumUsageFromMessages(msgs: MessageResponse[]): AgentUsage {
   const acc: AgentUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0, cachedTokens: 0 }
   let lastInput = 0
+  let lastOutput = 0
   let lastCache = 0
   let lastCacheWrite = 0
   let lastTurn: {
@@ -401,6 +405,7 @@ export function sumUsageFromMessages(msgs: MessageResponse[]): AgentUsage {
     const o = extra.usage.output ?? 0
     acc.completionTokens += o
     lastInput = i
+    lastOutput = o
     lastCache = extra.usage.cache ?? 0
     lastCacheWrite = extra.usage.cache_write ?? 0
     if (extra.turn_usage) lastTurn = extra.turn_usage
@@ -408,7 +413,10 @@ export function sumUsageFromMessages(msgs: MessageResponse[]): AgentUsage {
   acc.promptTokens = lastInput
   acc.cachedTokens = lastCache
   acc.cacheWriteTokens = lastCacheWrite
-  acc.totalTokens  = lastInput + acc.completionTokens
+  // Conversation size as the model sees it: the latest call's prompt plus
+  // its output. `acc.completionTokens` spans every turn, so summing it in
+  // here inflated this number as the session grew.
+  acc.totalTokens = lastInput + lastOutput
   if (lastTurn) {
     acc.turnPromptTokens = lastTurn.input ?? 0
     acc.turnCompletionTokens = lastTurn.output ?? 0

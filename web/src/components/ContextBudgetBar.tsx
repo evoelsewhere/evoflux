@@ -62,6 +62,9 @@ export interface ContextBudgetBarProps {
   turnCacheWrite?: number
   /** Number of model calls included in the current turn total. */
   turnCalls?: number
+  /** Per-phase turn usage. Non-main phases are background calls (title,
+   * memory, summaries) billed to the turn but not part of the conversation. */
+  turnPhases?: Record<string, { input?: number; output?: number }>
   /** What this turn cost, by component, priced from the models.dev catalog. */
   cost?: TurnCost
   /** Auto-summary input threshold, already clamped to the model's window. */
@@ -152,6 +155,23 @@ function cacheHitPercent(
   if (input <= 0) return null
   if (cached <= 0 && cacheWrite <= 0) return null
   return Math.min(100, Math.round((Math.max(cached, 0) / input) * 100))
+}
+
+/**
+ * Name the background model calls (title, memory, summaries) that are billed
+ * to the turn but are not part of the conversation, so the turn total is not
+ * read as "the chat used this much".
+ */
+function backgroundPhaseNote(
+  phases: Record<string, { input?: number; output?: number }> | undefined,
+): string {
+  const background = Object.entries(phases ?? {}).filter(
+    ([name, phase]) => name !== 'main' && (phase.input ?? 0) + (phase.output ?? 0) > 0,
+  )
+  if (background.length === 0) return ''
+  const tokens = background.reduce((sum, [, phase]) => sum + (phase.input ?? 0) + (phase.output ?? 0), 0)
+  const names = background.map(([name]) => name).join(', ')
+  return `${formatTokensShort(tokens)} from background calls (${names})`
 }
 
 /**
@@ -316,6 +336,7 @@ export function ContextBudgetBar({
   turnCached,
   turnCacheWrite,
   turnCalls,
+  turnPhases,
   cost,
   trigger,
   onCompact,
@@ -558,11 +579,14 @@ export function ContextBudgetBar({
             divided
             id="this-turn"
             title="This turn"
-            meta={
+            meta={[
               turnCalls
                 ? `${turnCalls} model ${turnCalls === 1 ? 'call' : 'calls'}`
-                : 'all model calls'
-            }
+                : 'all model calls',
+              backgroundPhaseNote(turnPhases),
+            ]
+              .filter(Boolean)
+              .join(' · ')}
             cacheHit={turnCacheHit}
             categories={[
               ...turnCategories.filter((category) => category.tokens > 0),
