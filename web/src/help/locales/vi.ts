@@ -265,7 +265,6 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'mailbox',
       'Ctrl+V',
       'context budget',
-      'auto-split',
       'đội',
       'Lead',
       'specialist'
@@ -275,7 +274,6 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
     tricks: [
       'Ctrl+V xoay Agent ↔ Split trên desktop (tắt khi field đang focus dùng paste).',
       'Command palette có Next / Previous Agent khi worker đang chạy — nhanh hơn lục identity dropdown.',
-      'Auto-split có thể mở khi specialist activate để bạn theo dõi mà không tìm view menu.',
       'Context budget bar trên workbench dùng context_length và summary_trigger_tokens của model — /compact sớm nếu thanh leo.',
       'Cấu hình model, skill, tool, permission từng agent trong Settings → Agents.',
       'Dùng Lead selector trên topbar để chọn Work hoặc Coding lead cho session đang idle. Mỗi option chỉ liệt kê member thuộc lead đó; không thể switch khi team đang chạy.',
@@ -295,7 +293,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'View: Agent (focus một agent) và Split (Lead + worker cạnh nhau). Dùng identity dropdown trên workbench để nhảy agent, hoặc palette Next/Previous Agent. Ctrl+V toggle Agent ↔ Split trên desktop. Bật auto-split thì khi specialist activate có thể tự mở Split.',
+        text: 'View: Agent (focus một agent) và Split (Lead + worker cạnh nhau). Dùng identity dropdown trên workbench để nhảy agent, hoặc palette Next/Previous Agent. Ctrl+V toggle Agent ↔ Split trên desktop.',
       },
       {
         type: 'p',
