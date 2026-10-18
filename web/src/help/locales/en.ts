@@ -272,7 +272,6 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'mailbox',
       'Ctrl+V',
       'context budget',
-      'auto-split',
       'đội',
       'trưởng nhóm',
       'chuyên gia',
@@ -285,7 +284,6 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
     tricks: [
       'Ctrl+V cycles Agent ↔ Split on desktop (disabled while the focused field uses paste).',
       'Command palette has Next / Previous Agent when workers are active — faster than hunting the identity dropdown.',
-      'Auto-split can open when specialists activate so you can watch them work without hunting the view menu.',
       'The context budget bar on the workbench uses the model’s context_length and summary_trigger_tokens — compact early if it climbs.',
       'Configure models, skills, tools, and permissions per agent in Settings → Agents.',
       'Use the topbar Lead selector to choose a Work or Coding lead for the current idle session. Each option lists only that lead’s owned members; switching is disabled during active work.',
@@ -305,7 +303,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'View modes: Agent (single focus on one agent) and Split (Lead + workers side by side). Use the workbench identity dropdown to jump between agents, or palette Next/Previous Agent. Ctrl+V toggles Agent ↔ Split on desktop. When auto-split is enabled, activating specialists may open Split automatically.',
+        text: 'View modes: Agent (single focus on one agent) and Split (Lead + workers side by side). Use the workbench identity dropdown to jump between agents, or palette Next/Previous Agent. Ctrl+V toggles Agent ↔ Split on desktop.',
       },
       {
         type: 'p',

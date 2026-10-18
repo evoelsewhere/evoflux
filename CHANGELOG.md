@@ -11,6 +11,10 @@ All notable changes to EvoFlux are documented in this file.
 - The agent runtime no longer writes an internal tool-capability map into session state that nothing read; sessions run slightly leaner with no behavior change.
 - The desktop boot splash shows a real error instead of hanging forever when no backend is available; the dev tooling no longer requires `lsof` on Windows.
 
+### Removed
+
+- Team chat no longer switches to **Split** on its own when three or more agents start working; open Split from the view menu or with `Ctrl+V` whenever you want it.
+
 ## [3.0.7] - 2026-10-14
 
 ### Fixed

@@ -1,61 +1,10 @@
-import { act, render, renderHook, screen } from '@testing-library/react'
+import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import {
-  AUTOMATIC_SPLIT_TRANSITION_MS,
-  AutomaticSplitTransition,
-} from '@/components/TeamChatView/AutomaticSplitTransition'
-import {
-  shouldStartAutomaticSplit,
-  shouldUseSidebarOverlay,
-} from '@/components/TeamChatView/auto-layout'
+import { shouldUseSidebarOverlay } from '@/components/TeamChatView/auto-layout'
 import { useAdaptiveSidebarOverlay } from '@/components/TeamChatView/useAdaptiveSidebarOverlay'
 import { MIN_PRIMARY_COLUMN_WIDTH, WORKSPACE_PANEL } from '@/lib/workspace-panel-layout'
 import { useUIStore } from '@/stores/useUIStore'
-
-describe('automatic Split layout', () => {
-  it('starts when active agents cross from two to three', () => {
-    expect(shouldStartAutomaticSplit({
-      previousActiveCount: 2,
-      activeCount: 3,
-      viewMode: 'agent',
-      isMobile: false,
-    })).toBe(true)
-  })
-
-  it('does not repeatedly override a manual Agent selection', () => {
-    expect(shouldStartAutomaticSplit({
-      previousActiveCount: 3,
-      activeCount: 3,
-      viewMode: 'agent',
-      isMobile: false,
-    })).toBe(false)
-  })
-
-  it('does not override a layout that is already Split, or a mobile one', () => {
-    expect(shouldStartAutomaticSplit({
-      previousActiveCount: 2,
-      activeCount: 3,
-      viewMode: 'split',
-      isMobile: false,
-    })).toBe(false)
-    expect(shouldStartAutomaticSplit({
-      previousActiveCount: 2,
-      activeCount: 3,
-      viewMode: 'agent',
-      isMobile: true,
-    })).toBe(false)
-  })
-
-  it('does not start with only two active agents', () => {
-    expect(shouldStartAutomaticSplit({
-      previousActiveCount: 1,
-      activeCount: 2,
-      viewMode: 'agent',
-      isMobile: false,
-    })).toBe(false)
-  })
-})
 
 describe('adaptive sidebar overlay', () => {
   it('uses a drawer when a docked sidebar would violate the primary-width contract', () => {
@@ -227,26 +176,5 @@ describe('adaptive sidebar overlay observer', () => {
 
     rerender({ workbenchOpen: false, isMobile: false })
     expect(activeObserver?.disconnect).toHaveBeenCalledOnce()
-  })
-})
-
-describe('AutomaticSplitTransition', () => {
-  it('announces the change and completes after the border orbit', () => {
-    vi.useFakeTimers()
-    const onComplete = vi.fn()
-    const { container } = render(
-      <AutomaticSplitTransition activeAgentCount={3} onComplete={onComplete} />,
-    )
-
-    expect(screen.getByRole('status')).toHaveAccessibleName(
-      'Organizing 3 active agents into Split layout',
-    )
-    const rings = container.querySelectorAll('.oa-layout-switch-ring')
-    expect(rings).toHaveLength(2)
-    act(() => {
-      vi.advanceTimersByTime(AUTOMATIC_SPLIT_TRANSITION_MS)
-    })
-    expect(onComplete).toHaveBeenCalledOnce()
-    vi.useRealTimers()
   })
 })

@@ -261,7 +261,6 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'mailbox',
       'Ctrl+V',
       'context budget',
-      'auto-split',
       'エージェント',
       'リード',
       'スプリット',
@@ -273,7 +272,6 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
     tricks: [
       'Ctrl+V はデスクトップで Agent ↔ Split を循環（フォーカス中フィールドがペーストを使う間は無効）。',
       'コマンドパレットの Next / Previous Agent は worker が活きているとき便利 — identity ドロップダウンを探すより速い。',
-      'auto-split が有効だと specialist 起動時に Split が開き、表示メニューを探さずに作業を眺められます。',
       'workbench のコンテキスト予算バーはモデルの context_length と summary_trigger_tokens を使います — 上がったら早めに compact。',
       'モデル、スキル、ツール、権限は Settings → Agents でエージェントごとに設定。',
       'topbar の Lead selector で idle session の Work/Coding lead を選択します。各 option はその lead 所有 member だけを表示し、active work 中は switch できません。',
@@ -293,7 +291,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: '表示モード: Agent（1 エージェントに集中）と Split（Lead + worker を並べる）。workbench の identity ドロップダウン、またはパレットの Next/Previous Agent で移動。デスクトップでは Ctrl+V が Agent ↔ Split。auto-split 有効時は specialist 起動で Split が自動で開くことがあります。',
+        text: '表示モード: Agent（1 エージェントに集中）と Split（Lead + worker を並べる）。workbench の identity ドロップダウン、またはパレットの Next/Previous Agent で移動。デスクトップでは Ctrl+V が Agent ↔ Split。',
       },
       {
         type: 'p',
