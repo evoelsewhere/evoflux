@@ -21,7 +21,7 @@ shows now: a timed-out click or submit may have gone through.
 
 | Message | Next step |
 |---|---|
-| `EvoFlux in-app browser is unavailable for this chat` | The chat is not open in EvoFlux Desktop. Say so; the user can open the task there or switch WebBridge on. |
+| `EvoFlux in-app browser could not open for this session` | EvoFlux Desktop is not reachable (a running session's browser opens on its own, even in the background). Say so; the user can start EvoFlux Desktop or switch WebBridge on. |
 | `The browser panel has no page yet: still opening the page` | The panel is still starting. `wait` a few seconds, then retry the same step once. |
 | `Timed out creating browser WebView`, `Browser is not ready` | `start`, `wait`, then retry once; if it fails again, report it. |
 | `No browser extension connected` | WebBridge lost its extension; the next call runs in the in-app browser. Tell the user if the task needs their browser. |

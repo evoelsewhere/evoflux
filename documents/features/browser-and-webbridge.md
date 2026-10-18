@@ -14,6 +14,21 @@ with the newest preview on top. A separate WebSocket carries versioned command
 requests and responses. Commands are serialized per visible browser connection
 and fail pending requests when the panel reconnects or closes.
 
+The preview and the browser panel are one browser per chat session: they share
+the same tab list and the same WebViews, so opening the panel shows the pages
+already open in the preview (never an empty page beside them) and closing the
+panel brings the preview back while pages are still open. Only closing the
+preview with no panel open, or closing the session's last page, ends the
+browser. The panel has priority while it is open: a view is a rectangle the
+pages are shown in, and handing the browser over re-targets that rectangle —
+no page is reloaded, moved or recreated.
+
+Any running session can mount the in-app browser, including one running in the
+background: presence attaches for running sessions, and a mount requested
+before its presence attaches is queued and delivered when it arrives. If no
+desktop surface exists the agent reports `EvoFlux in-app browser could not
+open for this session`.
+
 The built-in browser policy can independently allow/block domains and control
 JavaScript evaluation, storage, cookie-value access, HTTP requests, clipboard,
 uploads, downloads and agent acceptance of browser permission prompts. The

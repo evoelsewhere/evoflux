@@ -14,6 +14,7 @@
 import { create } from 'zustand'
 import { immer } from 'zustand/middleware/immer'
 import { STORAGE_KEYS } from '@/lib/storage-keys'
+import { hasLiveBrowserTabs } from '@/components/BrowserViewer/directBrowserSessionStore'
 
 const SIDEBAR_COLLAPSED_KEY = STORAGE_KEYS.sidebar.collapsed
 const WORKBENCH_MAXIMIZED_KEY = STORAGE_KEYS.panels.workbenchMaximized
@@ -245,6 +246,7 @@ function toggleTool(state: WorkbenchState, tool: WorkbenchTool): void {
 function closeTab(state: WorkbenchState, tabId: string): void {
   const index = state.workbenchTabs.findIndex((tab) => tab.id === tabId)
   if (index === -1) return
+  const closing = state.workbenchTabs[index]
   const wasActive = state.activeWorkbenchTabId === tabId
   state.workbenchTabs.splice(index, 1)
   if (wasActive) {
@@ -255,15 +257,42 @@ function closeTab(state: WorkbenchState, tabId: string): void {
     )
   }
   if (sessionWorkbenchTabs(state).length === 0) state.workbenchMaximized = false
+  undockBrowserSurface(state, closing)
+}
+
+/**
+ * Closing a browser surface does not destroy the session's pages: while
+ * they are still live the PiP takes the view back over (undocking). A
+ * session that still has a browser surface open stays docked — the panel
+ * has priority over the preview.
+ */
+function undockBrowserSurface(
+  state: WorkbenchState,
+  closing: { tool?: WorkbenchTool; sessionId?: string | null },
+): void {
+  if (closing.tool !== 'browser') return
+  const sessionId = closing.sessionId
+  if (!sessionId || !hasLiveBrowserTabs(sessionId)) return
+  const stillDocked = state.workbenchTabs.some(
+    (tab) => tab.tool === 'browser' && tab.sessionId === sessionId,
+  )
+  if (stillDocked) return
+  if (!state.browserPipSessionIds.includes(sessionId)) {
+    state.browserPipSessionIds.push(sessionId)
+  }
 }
 
 function closeTool(state: WorkbenchState, tool: WorkbenchTool): void {
   const activeIndex = state.workbenchTabs.findIndex(
     (tab) => tab.id === state.activeWorkbenchTabId,
   )
+  const closing = state.workbenchTabs.filter(
+    (tab) => tab.tool === tool && tabInSession(tab, state.workbenchSessionId),
+  )
   const closingActive = state.activeWorkbenchTool === tool
   state.workbenchTabs = state.workbenchTabs.filter((tab) =>
     tab.tool !== tool || !tabInSession(tab, state.workbenchSessionId))
+  for (const tab of closing) undockBrowserSurface(state, tab)
   if (closingActive) {
     const visible = sessionWorkbenchTabs(state)
     activateTab(

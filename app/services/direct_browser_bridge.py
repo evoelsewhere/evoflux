@@ -67,6 +67,10 @@ class DirectBrowserBridge:
     def __init__(self) -> None:
         self._connections: dict[str, _Connection] = {}
         self._presence: dict[str, _Connection] = {}
+        # Mounts requested while a session has no presence yet — a background
+        # chat the UI has not attached to. Each flushes the moment its
+        # presence connects instead of being lost.
+        self._pending_mounts: set[str] = set()
 
     def is_connected(self, session_id: str) -> bool:
         connection = self._connections.get(session_id)
@@ -82,6 +86,15 @@ class DirectBrowserBridge:
         connection = _Connection(websocket)
         self._presence[session_id] = connection
         logger.info("direct_browser_presence_connected session_id={}", session_id)
+        pending_mount = session_id in self._pending_mounts
+        if pending_mount:
+            self._pending_mounts.discard(session_id)
+            # A mount this session asked for while it had no presence opens
+            # the in-app browser the moment its presence attaches.
+            if await self._deliver_mount(session_id, connection):
+                logger.info("direct_browser_mount_flushed session_id={}", session_id)
+            else:
+                self._pending_mounts.add(session_id)
         try:
             while True:
                 await websocket.receive_text()
@@ -94,8 +107,33 @@ class DirectBrowserBridge:
                 "direct_browser_presence_disconnected session_id={}", session_id
             )
 
-    async def request_mount(self, session_id: str) -> bool:
-        presence = self._presence.get(session_id)
+    async def request_mount(
+        self, session_id: str, *, wait_timeout: float | None = None
+    ) -> bool:
+        """Ask the desktop to mount the in-app browser for a session.
+
+        A session with no presence yet keeps the request pending instead of
+        failing: the mount flushes when that session's presence attaches.
+        ``wait_timeout`` makes the call wait that long for the mount to be
+        delivered before reporting it as still pending.
+        """
+        if await self._deliver_mount(session_id, self._presence.get(session_id)):
+            return True
+        self._pending_mounts.add(session_id)
+        logger.info("direct_browser_mount_pending session_id={}", session_id)
+        if wait_timeout is not None and wait_timeout > 0:
+            deadline = asyncio.get_running_loop().time() + wait_timeout
+            while asyncio.get_running_loop().time() < deadline:
+                if session_id not in self._pending_mounts:
+                    return True
+                await asyncio.sleep(0.1)
+            return False
+        return True
+
+    async def _deliver_mount(
+        self, session_id: str, presence: _Connection | None
+    ) -> bool:
+        """Send the mount request over a session's presence socket."""
         if presence is None:
             return False
         try:

@@ -1489,6 +1489,8 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'Built-in: bật trong Settings → Browser, rồi Ctrl+T. WebBridge: cài extension từ Chrome Web Store (Edge cài từ cùng trang đó), bật master policy trong Settings → Browser, pair từ desktop status control, và để WebBridge bật trên workbench bar.',
     tricks: [
       'Ctrl+T toggle built-in browser workbench — không phải WebBridge pairing.',
+      'Xem trước trình duyệt nổi và bảng trình duyệt là MỘT trình duyệt cho mỗi chat: hai bên dùng chung tab và trang. Mở bảng sẽ hiện đúng các trang đang mở trong khung xem trước (không mở trang trống), và đóng bảng sẽ đưa khung xem trước trở lại khi vẫn còn trang đang mở.',
+      'Tác vụ có thể mở trình duyệt trong ứng dụng ngay cả khi chat chạy ở chế độ nền — không cần mở chat lên màn hình trước. Nếu EvoFlux Desktop không chạy, agent sẽ báo "EvoFlux in-app browser could not open for this session".',
       'Khi WebBridge bật và extension đã kết nối, mọi thao tác trình duyệt của agent chạy trên trình duyệt thật của bạn; không thì chạy trong browser trong app. Công tắc được lưu lại, không theo từng chat, và bật/tắt giữa chừng sẽ áp dụng ngay từ thao tác trình duyệt kế tiếp.',
       'Trên trình duyệt của bạn, mỗi chat làm việc trong một tab riêng: agent mở tab mới thay vì ghi đè trang bạn đang mở, và vẫn làm tiếp ở tab đó khi bạn chuyển sang tab khác.',
       'Skill tích hợp browser-use hướng dẫn agent trên mọi trang: kiểm tra từng bước bằng cách đọc lại trang, không bao giờ nhập mật khẩu hay mã một lần, và hỏi trước khi gửi, mua, đăng hoặc xóa. Có thể tắt trong Settings → Skills.',
