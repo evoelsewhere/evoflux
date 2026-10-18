@@ -400,3 +400,95 @@ async def test_read_only_repository_cannot_receive_worktree(tmp_path: Path):
             read_only_paths=[str(source)],
             spec=_spec(source),
         )
+
+
+@pytest.mark.asyncio
+async def test_snapshot_uses_goal_title_and_fast_forwards(tmp_path: Path):
+    repo = _repo(tmp_path, "titled")
+    spec = _spec(repo)
+    spec["goal"] = "Add a tab strip to the browser panel."
+    allocation = await service.allocate(
+        task_id="12121212-1212-7121-8121-121212121212",
+        recipient="executor#5",
+        session_id="23232323-2323-7232-8232-232323232323",
+        primary_workspace=str(repo),
+        extra_workspace_paths=[],
+        read_only_paths=[],
+        spec=spec,
+    )
+    assert allocation["title"] == "Add a tab strip to the browser panel"
+
+    task_workspace = Path(allocation["repositories"][0]["workspace"])
+    (task_workspace / "strip.txt").write_text("strip\n", encoding="utf-8")
+    reviewed, review = await service.snapshot(allocation)
+    commit = review["repositories"][0]["commit"]
+    assert _git(repo, "log", "-1", "--pretty=%s", commit) == (
+        "Add a tab strip to the browser panel"
+    )
+
+    merged, _ = await service.merge(reviewed)
+    assert merged["state"] == "merged"
+    assert merged["repositories"][0]["integration_commit"] == commit
+    assert _git(repo, "rev-list", "--count", "--merges", "HEAD") == "0"
+
+
+@pytest.mark.asyncio
+async def test_diverged_merge_commit_uses_task_title(tmp_path: Path):
+    repo = _repo(tmp_path, "diverged")
+    spec = _spec(repo)
+    spec["goal"] = "Land the parser fix."
+    common = {
+        "session_id": "34343434-3434-7343-8343-343434343434",
+        "primary_workspace": str(repo),
+        "extra_workspace_paths": [],
+        "read_only_paths": [],
+        "spec": spec,
+    }
+    first = await service.allocate(
+        task_id="45454545-4545-7454-8454-454545454545",
+        recipient="executor#6",
+        **common,
+    )
+    second = await service.allocate(
+        task_id="56565656-5656-7565-8565-565656565656",
+        recipient="executor#7",
+        **common,
+    )
+    (Path(first["repositories"][0]["workspace"]) / "first.txt").write_text(
+        "first\n", encoding="utf-8"
+    )
+    (Path(second["repositories"][0]["workspace"]) / "second.txt").write_text(
+        "second\n", encoding="utf-8"
+    )
+    first, _ = await service.snapshot(first)
+    second, _ = await service.snapshot(second)
+    first, _ = await service.merge(first)
+    merged, _ = await service.merge(second)
+
+    integration = Path(merged["repositories"][0]["integration_workspace"])
+    assert _git(integration, "log", "-1", "--pretty=%s", "HEAD") == (
+        "Merge task: Land the parser fix"
+    )
+    assert _git(integration, "rev-list", "--count", "--merges", "HEAD") == "1"
+
+
+@pytest.mark.asyncio
+async def test_snapshot_falls_back_to_task_id_without_title(tmp_path: Path):
+    repo = _repo(tmp_path, "legacy")
+    allocation = await service.allocate(
+        task_id="67676767-6767-7676-8676-676767676767",
+        recipient="executor#8",
+        session_id="78787878-7878-7787-8878-787878787878",
+        primary_workspace=str(repo),
+        extra_workspace_paths=[],
+        read_only_paths=[],
+        spec=_spec(repo),
+    )
+    allocation.pop("title", None)  # allocations persisted before titles existed
+    task_workspace = Path(allocation["repositories"][0]["workspace"])
+    (task_workspace / "legacy.txt").write_text("legacy\n", encoding="utf-8")
+    _, review = await service.snapshot(allocation)
+    commit = review["repositories"][0]["commit"]
+    assert _git(repo, "log", "-1", "--pretty=%s", commit) == (
+        "chore(evoflux): delegation 67676767-6767-7676-8676-676767676767"
+    )

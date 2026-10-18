@@ -97,7 +97,7 @@ Team-native actions cover:
 - hand off evidence/results to the lead;
 - reject a handoff and request targeted rework;
 - manage team instances and shared state;
-- create isolated Git worktrees for parallel Coding work;
+- create isolated Git worktrees for parallel Coding work, merged back as commits named from the task goal;
 - manage todos and durable delegation status;
 - `sleep` — end a turn while idle, waiting on a peer or dependency, or done.
 
