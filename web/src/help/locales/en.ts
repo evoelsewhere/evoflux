@@ -1541,6 +1541,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
     tricks: [
       'Ctrl+T toggles the built-in browser workbench — this is not WebBridge pairing.',
       'The floating preview and the browser panel are one browser per chat: they share the same tabs and pages. Opening the panel shows the pages already open in the preview instead of an empty page, and closing the panel brings the preview back while pages are still open.',
+      'The panel lists the shared tabs above the page: click a tab to switch the active page, and close a page from the close button on its tab.',
       'A task can open the in-app browser even while its chat runs in the background — nothing needs to be on screen first. If EvoFlux Desktop is not running, the agent reports "EvoFlux in-app browser could not open for this session".',
       'While WebBridge is on and the extension is connected, every agent browser action runs in your real browser; otherwise it runs in the in-app browser. The switch is saved, not per chat, and flipping it mid-task applies to the next browser action.',
       'In your browser each chat works in a tab of its own: the agent opens a new tab instead of replacing the page you have open, and keeps working there when you switch to another tab.',

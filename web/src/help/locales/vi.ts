@@ -1490,6 +1490,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
     tricks: [
       'Ctrl+T toggle built-in browser workbench — không phải WebBridge pairing.',
       'Xem trước trình duyệt nổi và bảng trình duyệt là MỘT trình duyệt cho mỗi chat: hai bên dùng chung tab và trang. Mở bảng sẽ hiện đúng các trang đang mở trong khung xem trước (không mở trang trống), và đóng bảng sẽ đưa khung xem trước trở lại khi vẫn còn trang đang mở.',
+      'Bảng liệt kê các tab dùng chung phía trên trang: bấm vào tab để chuyển trang đang xem, đóng trang bằng nút đóng trên tab đó.',
       'Tác vụ có thể mở trình duyệt trong ứng dụng ngay cả khi chat chạy ở chế độ nền — không cần mở chat lên màn hình trước. Nếu EvoFlux Desktop không chạy, agent sẽ báo "EvoFlux in-app browser could not open for this session".',
       'Khi WebBridge bật và extension đã kết nối, mọi thao tác trình duyệt của agent chạy trên trình duyệt thật của bạn; không thì chạy trong browser trong app. Công tắc được lưu lại, không theo từng chat, và bật/tắt giữa chừng sẽ áp dụng ngay từ thao tác trình duyệt kế tiếp.',
       'Trên trình duyệt của bạn, mỗi chat làm việc trong một tab riêng: agent mở tab mới thay vì ghi đè trang bạn đang mở, và vẫn làm tiếp ở tab đó khi bạn chuyển sang tab khác.',
