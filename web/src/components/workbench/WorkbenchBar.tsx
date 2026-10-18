@@ -295,6 +295,7 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
             turnOutput={activeUsage.turnCompletionTokens}
             turnCached={activeUsage.turnCachedTokens}
             turnCacheWrite={activeUsage.turnCacheWriteTokens}
+            turnPhases={activeUsage.turnPhases}
             turnCalls={activeUsage.turnCalls}
             cost={activeUsage.turnCost}
             trigger={summaryTrigger}

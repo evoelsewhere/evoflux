@@ -214,7 +214,10 @@ function AgentRailItem({
           <span className="min-w-0 flex-1 truncate" title={activity}>
             {activity}
           </span>
-          <span className="shrink-0 font-mono text-[10px] tabular-nums text-(--color-text-subtle)">
+          <span
+            className="shrink-0 font-mono text-[10px] tabular-nums text-(--color-text-subtle)"
+            title="Conversation size: latest prompt plus its response"
+          >
             {tokens > 0 ? formatTokens(tokens) : '—'}
           </span>
         </div>

@@ -297,7 +297,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Context budget — thanh gần header workbench phản ánh token so với context window của model đang dùng. Gần summary trigger thì /compact hoặc chat mới, đừng chờ hard failure. Áp lực budget thường hiện như “agent quên file trước đó” trước khi hiện lỗi rõ.',
+        text: 'Context budget — thanh gần header workbench phản ánh token so với context window của model đang dùng. Popover tách prompt đang sống khỏi các model call được tính của turn — mỗi call gửi lại prompt — và gọi tên các call nền (title, memory, summary) được tính vào turn nhưng không thuộc cuộc hội thoại. Gần summary trigger thì /compact hoặc chat mới, đừng chờ hard failure. Áp lực budget thường hiện như “agent quên file trước đó” trước khi hiện lỗi rõ.',
       },
       {
         type: 'tips',
