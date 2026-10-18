@@ -159,6 +159,7 @@ export function DirectBrowserShell({
   const browser = useDirectBrowserTabs({
     sessionId: sessionId ?? 'detached',
     instanceId: tabId,
+    surface: 'panel',
     viewportRef,
     enabled: Boolean(open && sessionId && enabled),
     visible: Boolean(

@@ -54,6 +54,7 @@ import {
   useTriggerDreamMutation,
   useUpdateWebBridgeAgentBrowsingMutation,
   useWebBridgeAgentBrowsingQuery,
+  useTeamSessionsQuery,
   useWebBridgeSettingsQuery,
 } from '@/queries'
 import { getSessionWorkspaceRoot, resolveTeamSession, setSessionPermissionMode } from '@/api/client'
@@ -432,7 +433,24 @@ export function TeamChatView({ sessionId, importedSource, mode = 'work', workspa
   const isContinuing   = useTeamStore((s) => s.isContinuing)
   const sessionIdState = useTeamStore((s) => s.sessionId)
   const browserPipSessionIds = useUIStore((state) => state.browserPipSessionIds)
-  useDirectBrowserPresence([sessionIdState, ...browserPipSessionIds])
+  // Presence is what lets a session mount the in-app browser, so it may not
+  // belong to the chat on screen alone: a session running in the background
+  // attaches here too, and the agent's browser request opens its preview
+  // wherever that chat is.
+  const workSessionsQuery = useTeamSessionsQuery('work')
+  const codingSessionsQuery = useTeamSessionsQuery('coding')
+  const presenceIds = new Set<string>()
+  for (const id of [sessionIdState, ...browserPipSessionIds]) {
+    if (id) presenceIds.add(id)
+  }
+  for (const query of [workSessionsQuery, codingSessionsQuery]) {
+    for (const page of query.data?.pages ?? []) {
+      for (const session of page.data) {
+        if (session.running) presenceIds.add(session.id)
+      }
+    }
+  }
+  useDirectBrowserPresence([...presenceIds])
   const computerPipSessionIds = useUIStore((state) => state.computerPipSessionIds)
   useComputerAppBridge([sessionIdState, ...computerPipSessionIds])
   useReleaseComputerAppWhenIdle(sessionIdState, isTeamWorking)

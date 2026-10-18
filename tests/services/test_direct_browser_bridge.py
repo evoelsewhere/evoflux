@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any
+from typing import Any, cast
 
 import pytest
-from fastapi import WebSocketDisconnect
+from fastapi import WebSocket, WebSocketDisconnect
 
 from app.services.direct_browser_bridge import (
     DirectBrowserBridge,
@@ -33,11 +33,16 @@ class _FakeWebSocket:
         return str(value)
 
 
+def _socket(websocket: _FakeWebSocket) -> WebSocket:
+    """The fake speaks the bridge's protocol; only the declared type differs."""
+    return cast(WebSocket, websocket)
+
+
 @pytest.mark.asyncio
 async def test_bridge_round_trip() -> None:
     bridge = DirectBrowserBridge()
     websocket = _FakeWebSocket()
-    attach_task = asyncio.create_task(bridge.attach("session-1", websocket))
+    attach_task = asyncio.create_task(bridge.attach("session-1", _socket(websocket)))
     await asyncio.sleep(0)
     await websocket.received.put({"type": "ready", "version": 1})
     await asyncio.sleep(0)
@@ -59,7 +64,7 @@ async def test_bridge_round_trip() -> None:
 async def test_bridge_serializes_concurrent_browser_commands() -> None:
     bridge = DirectBrowserBridge()
     websocket = _FakeWebSocket()
-    attach_task = asyncio.create_task(bridge.attach("session-1", websocket))
+    attach_task = asyncio.create_task(bridge.attach("session-1", _socket(websocket)))
     await websocket.received.put({"type": "ready", "version": 1})
     await asyncio.sleep(0)
 
@@ -90,7 +95,7 @@ async def test_bridge_serializes_concurrent_browser_commands() -> None:
 async def test_bridge_negotiates_capabilities_and_rejects_unknown_command() -> None:
     bridge = DirectBrowserBridge()
     websocket = _FakeWebSocket()
-    attach_task = asyncio.create_task(bridge.attach("session-1", websocket))
+    attach_task = asyncio.create_task(bridge.attach("session-1", _socket(websocket)))
     await websocket.received.put(
         {
             "type": "ready",
@@ -121,10 +126,70 @@ async def test_bridge_requires_connected_browser() -> None:
 
 
 @pytest.mark.asyncio
-async def test_presence_requests_browser_mount() -> None:
+async def test_mount_requested_without_presence_stays_pending() -> None:
+    bridge = DirectBrowserBridge()
+
+    # A background session may have no presence yet; the request is accepted
+    # and stays pending instead of failing.
+    assert await bridge.request_mount("session-1") is True
+
+    websocket = _FakeWebSocket()
+    attach_task = asyncio.create_task(
+        bridge.attach_presence("session-1", _socket(websocket))
+    )
+    await asyncio.sleep(0)
+    # The mount opens the in-app browser the moment its presence attaches.
+    assert await asyncio.wait_for(websocket.sent.get(), timeout=1) == {"action": "open"}
+
+    await websocket.received.put(None)
+    await attach_task
+
+
+@pytest.mark.asyncio
+async def test_mount_wait_timeout_reports_pending_mount() -> None:
+    bridge = DirectBrowserBridge()
+
+    assert await bridge.request_mount("session-1", wait_timeout=0.05) is False
+
+    websocket = _FakeWebSocket()
+    attach_task = asyncio.create_task(
+        bridge.attach_presence("session-1", _socket(websocket))
+    )
+    await asyncio.sleep(0)
+    assert await asyncio.wait_for(websocket.sent.get(), timeout=1) == {"action": "open"}
+
+    await websocket.received.put(None)
+    await attach_task
+
+
+@pytest.mark.asyncio
+async def test_pending_mount_flushes_only_once() -> None:
+    bridge = DirectBrowserBridge()
+    assert await bridge.request_mount("session-1") is True
+
+    first = _FakeWebSocket()
+    attach_task = asyncio.create_task(
+        bridge.attach_presence("session-1", _socket(first))
+    )
+    await asyncio.sleep(0)
+    assert await asyncio.wait_for(first.sent.get(), timeout=1) == {"action": "open"}
+    await first.received.put(None)
+    await attach_task
+
+    # A presence reconnect without a new request does not reopen the browser.
+    second = _FakeWebSocket()
+    attach_task = asyncio.create_task(
+        bridge.attach_presence("session-1", _socket(second))
+    )
+    await asyncio.sleep(0)
+    assert second.sent.empty()
+    await second.received.put(None)
+    await attach_task
     bridge = DirectBrowserBridge()
     websocket = _FakeWebSocket()
-    attach_task = asyncio.create_task(bridge.attach_presence("session-1", websocket))
+    attach_task = asyncio.create_task(
+        bridge.attach_presence("session-1", _socket(websocket))
+    )
     await asyncio.sleep(0)
 
     assert bridge.is_available("session-1") is True

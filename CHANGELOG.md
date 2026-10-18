@@ -4,6 +4,11 @@ All notable changes to EvoFlux are documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- Tasks running in the background can use the in-app browser: a running session keeps its browser presence attached whether or not its chat is on screen, and a mount requested before that is queued and opens the browser the moment the chat connects. `browser_use` on a background task no longer fails with "EvoFlux in-app browser is unavailable for this chat"; the remaining failure message is "EvoFlux in-app browser could not open for this session", which now only appears when EvoFlux Desktop is not running.
+- The floating browser preview and the browser panel are now one browser per chat. They share the same tabs and pages: opening the panel shows the pages already open in the preview instead of an empty tab, closing the panel brings the preview back while pages are still open, and switching between them no longer reloads, moves or recreates a page. Closing the preview with no panel open, or closing the session's last page, still ends the browser.
+
 ### Changed
 
 - Bump EvoFlux package and desktop application versions to 3.0.9.

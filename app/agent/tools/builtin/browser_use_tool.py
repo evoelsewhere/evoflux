@@ -920,8 +920,9 @@ async def _ensure_browser(session_id: str) -> bool:
 
     if direct_browser_bridge.is_connected(session_id):
         return True
-    if not direct_browser_bridge.is_available(session_id):
-        return False
+    # A session with no presence yet keeps the mount pending on the bridge
+    # instead of failing here: the chat may be running in the background,
+    # and the mount flushes as soon as its presence attaches.
     if not await direct_browser_bridge.request_mount(session_id):
         return False
     return await direct_browser_bridge.wait_connected(session_id)
@@ -1208,8 +1209,8 @@ async def browser_use(
     # not ask for; a batch of questions is answered without one.
     if _needs_surface(actions) and not await _ensure_browser(session_id):
         return (
-            "EvoFlux in-app browser is unavailable for this chat. "
-            "Open this task in EvoFlux Desktop and retry."
+            "EvoFlux in-app browser could not open for this session. "
+            "Make sure EvoFlux Desktop is running and retry."
         )
 
     from app.services.direct_browser_bridge import (
