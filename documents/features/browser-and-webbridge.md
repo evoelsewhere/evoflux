@@ -21,7 +21,9 @@ panel brings the preview back while pages are still open. Only closing the
 preview with no panel open, or closing the session's last page, ends the
 browser. The panel has priority while it is open: a view is a rectangle the
 pages are shown in, and handing the browser over re-targets that rectangle —
-no page is reloaded, moved or recreated.
+no page is reloaded, moved or recreated. The panel lists the session's shared
+tabs in a strip above the page: clicking a tab switches the shared active page,
+and each tab carries a close button wired to the session's tab close.
 
 Any running session can mount the in-app browser, including one running in the
 background: presence attaches for running sessions, and a mount requested

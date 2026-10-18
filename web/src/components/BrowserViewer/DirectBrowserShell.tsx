@@ -29,6 +29,7 @@ import {
 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import { useI18n } from '@/i18n'
 import { useMotionPreset } from '@/lib/motion'
 import { openExternalUrl } from '@/lib/open-external'
 import { cn } from '@/lib/utils'
@@ -375,6 +376,8 @@ export function DirectBrowserShell({
     }
   }, [currentUrl, preferences.defaultZoom])
 
+  const { t } = useI18n()
+
   const handleClearData = useCallback(async () => {
     try {
       await browser.clearBrowsingData()
@@ -559,6 +562,46 @@ export function DirectBrowserShell({
               <Menu size={16} />
             </button>
           </div>
+
+          {browser.tabs.length > 0 && (
+            <div
+              role="tablist"
+              aria-label={t('Browser tabs')}
+              className="flex h-9 shrink-0 items-center gap-1 overflow-x-auto border-b border-(--color-border) bg-(--bg-page) px-2"
+            >
+              {browser.tabs.map((tab) => {
+                const active = tab.id === browser.activeTabId
+                return (
+                  <div key={tab.id} className="flex h-7 shrink-0 items-center">
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={active}
+                      title={tab.url}
+                      onClick={() => browser.selectTab(tab.id)}
+                      className={cn(
+                        'h-full max-w-40 truncate rounded-md border px-2 text-xs transition-colors',
+                        active
+                          ? 'border-(--color-accent)/40 bg-(--color-accent)/12 text-(--color-accent)'
+                          : 'border-transparent text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text)',
+                      )}
+                    >
+                      {tabTitle(tab.url)}
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={t('Close tab')}
+                      title={t('Close tab')}
+                      onClick={() => browser.closeTab(tab.id)}
+                      className="ml-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded text-(--color-text-subtle) transition-colors hover:bg-(--color-border) hover:text-(--color-text)"
+                    >
+                      <X size={12} />
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+          )}
 
           <div className="relative flex min-h-0 flex-1 overflow-hidden">
             <div
