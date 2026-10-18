@@ -16,6 +16,8 @@ All notable changes to EvoFlux are documented in this file.
 - Coding agents read, search, list, and edit files with the built-in file tools (`read`, `grep`, `glob`, `ls`, `edit`, `write`, `patch`) and keep the **shell** for repository commands such as tests, linters, builds, and git. The built-in prompts and tool descriptions now say so, and the truncation notice on large files points to `grep` instead of shell text utilities.
 - The agent runtime no longer writes an internal tool-capability map into session state that nothing read; sessions run slightly leaner with no behavior change.
 - The desktop boot splash shows a real error instead of hanging forever when no backend is available; the dev tooling no longer requires `lsof` on Windows.
+- Task worktree merges now land as ordinary commits named after the task goal instead of `chore(evoflux): delegation <id>`. When the integration branch has not moved, the merge fast-forwards and keeps the member's own commit messages; only genuinely diverged work records a `Merge task: <goal>` merge commit.
+- Worktree snapshot and review diffs no longer fail on deep Windows paths; the delegation Git runner enables `core.longpaths`.
 
 ### Removed
 
