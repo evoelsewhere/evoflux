@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import time
-from collections.abc import AsyncGenerator, Iterator
+from collections.abc import AsyncGenerator, Awaitable, Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypeVar
 
 from loguru import logger
 from sqlalchemy import event
@@ -233,6 +234,45 @@ read_session_factory = async_sessionmaker(
 # async_sessionmaker[AsyncSession] satisfies this; so do @asynccontextmanager
 # helpers used in tests — both are callable async context managers.
 DbFactory = async_sessionmaker[AsyncSession]
+
+_T = TypeVar("_T")
+
+
+async def retry_on_db_timeout(
+    operation: Callable[[], Awaitable[_T]],
+    *,
+    operation_name: str,
+    attempts: int = 3,
+) -> _T:
+    """Retry an internal DB operation after bounded pool-admission failures.
+
+    Callers must make *operation* safe to repeat (normally by creating a new
+    session and transaction for each invocation). Request handlers should not
+    use this helper: pool timeouts there remain retryable ``database_busy``
+    responses instead of hidden retries.
+    """
+    if attempts < 1:
+        raise ValueError("attempts must be at least 1")
+
+    for attempt in range(1, attempts + 1):
+        try:
+            return await operation()
+        except SQLAlchemyTimeoutError as exc:
+            if attempt == attempts:
+                raise
+            delay = 0.1 * (2 ** (attempt - 1))
+            logger.warning(
+                "database_write_retry operation={} attempt={} attempts={} "
+                "delay_seconds={} error={}",
+                operation_name,
+                attempt,
+                attempts,
+                delay,
+                exc,
+            )
+            await asyncio.sleep(delay)
+
+    raise AssertionError("unreachable")
 
 
 def current_sqlite_path() -> str | None:

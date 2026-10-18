@@ -1,3 +1,4 @@
+import asyncio
 from unittest.mock import patch
 
 import httpx
@@ -411,3 +412,32 @@ def test_is_private_ip_fails_closed_on_garbage():
     assert _is_private_ip("10.0.0.1") is True
     assert _is_private_ip("::ffff:127.0.0.1") is True
     assert _is_private_ip("93.184.216.34") is False
+
+
+@pytest.mark.asyncio
+async def test_ddgs_searches_set_library_and_await_timeouts():
+    from app.agent.tools.builtin import web as web_module
+
+    with patch("app.agent.tools.builtin.web.DDGS") as mock_ddgs:
+        mock_ddgs.return_value.text.return_value = [
+            {"title": "Example", "href": "https://example.test", "body": "result"}
+        ]
+        with patch(
+            "app.agent.tools.builtin.web.asyncio.wait_for",
+            wraps=asyncio.wait_for,
+        ) as wait_for:
+            await web_module.web_search("timeout test")
+        assert mock_ddgs.call_args.kwargs["timeout"] == 10.0
+        assert wait_for.call_args.kwargs["timeout"] == 15.0
+
+    with patch("app.agent.tools.builtin.web.DDGS") as mock_ddgs:
+        mock_ddgs.return_value.images.return_value = [
+            {"title": "Example", "image": "https://example.test/image.png"}
+        ]
+        with patch(
+            "app.agent.tools.builtin.web.asyncio.wait_for",
+            wraps=asyncio.wait_for,
+        ) as wait_for:
+            await web_module.image_search("timeout test")
+        assert mock_ddgs.call_args.kwargs["timeout"] == 10.0
+        assert wait_for.call_args.kwargs["timeout"] == 15.0

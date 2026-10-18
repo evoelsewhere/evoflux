@@ -157,6 +157,13 @@ async def close_http_client() -> None:
     _http_client = None
 
 
+# DDGS (primp) opens sockets with no timeout by default, so one stalled
+# upstream connection hangs the tool (and the whole sidecar) forever. Bound
+# the client call and the await so both search tools always return.
+_DDSG_TIMEOUT = 10
+_DDSG_WAIT_TIMEOUT = 15
+
+
 @tool(
     name="web_search",
     concurrency_safe=True,
@@ -215,15 +222,18 @@ async def web_search(
     for backend in backends:
         try:
             loop = asyncio.get_running_loop()
-            results = await loop.run_in_executor(
-                None,
-                lambda b=backend: DDGS().text(
-                    query,
-                    max_results=max_results,
-                    page=page,
-                    safesearch=safesearch,
-                    backend=b,
+            results = await asyncio.wait_for(
+                loop.run_in_executor(
+                    None,
+                    lambda b=backend: DDGS(timeout=_DDSG_TIMEOUT).text(
+                        query,
+                        max_results=max_results,
+                        page=page,
+                        safesearch=safesearch,
+                        backend=b,
+                    ),
                 ),
+                timeout=_DDSG_WAIT_TIMEOUT,
             )
             if results:
                 logger.debug("web_search_succeeded backend={}", backend)
@@ -458,16 +468,19 @@ async def image_search(
 
     try:
         loop = asyncio.get_running_loop()
-        results = await loop.run_in_executor(
-            None,
-            lambda: DDGS().images(
-                query,
-                max_results=max_results,
-                size=size,
-                layout=layout,
-                license_image=license_image,
-                safesearch="moderate",
+        results = await asyncio.wait_for(
+            loop.run_in_executor(
+                None,
+                lambda: DDGS(timeout=_DDSG_TIMEOUT).images(
+                    query,
+                    max_results=max_results,
+                    size=size,
+                    layout=layout,
+                    license_image=license_image,
+                    safesearch="moderate",
+                ),
             ),
+            timeout=_DDSG_WAIT_TIMEOUT,
         )
     except Exception as e:
         logger.debug("image_search_failed err={}", e)
