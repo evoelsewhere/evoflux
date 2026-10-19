@@ -213,3 +213,51 @@ async def test_process_registry_is_isolated_by_session(process_sandbox):
         )
     finally:
         _sandbox_ctx.reset(other)
+
+
+@pytest.mark.asyncio
+async def test_process_wait_seconds_above_cap_is_clamped(process_sandbox, monkeypatch):
+    from importlib import import_module
+
+    process_module = import_module("app.agent.tools.builtin.process")
+    monkeypatch.setattr(process_module, "_MAX_WAIT_SECONDS", 1)
+    result = await shell_tool.arun(
+        command="sleep 30",
+        yield_time_ms=250,
+        timeout_seconds=60,
+    )
+    process_id = _process_id(result)
+
+    try:
+        waited = await process_tool.arun(
+            action="wait", process_id=process_id, wait_seconds=120
+        )
+        assert "Running" in waited
+    finally:
+        if process_id in _processes:
+            await process_tool.arun(action="terminate", process_id=process_id)
+
+
+@pytest.mark.asyncio
+async def test_process_is_killed_at_hard_max_lifetime(process_sandbox, monkeypatch):
+    from importlib import import_module
+
+    process_module = import_module("app.agent.tools.builtin.process")
+    monkeypatch.setattr(process_module, "_MAX_PROCESS_LIFETIME_SECONDS", 0.1)
+    result = await shell_tool.arun(
+        command=f'{Path(sys.executable).as_posix()} -c "import time; time.sleep(30)"',
+        yield_time_ms=250,
+        timeout_seconds=600,
+    )
+    process_id = _process_id(result)
+
+    try:
+        tracked = _processes[process_id]
+        assert tracked.timeout_seconds == 0.1
+        await asyncio.wait_for(tracked.proc.wait(), timeout=2)
+        assert tracked.timed_out
+        await process_tool.arun(action="poll", process_id=process_id)
+        assert process_id not in _processes
+    finally:
+        if process_id in _processes:
+            await process_tool.arun(action="terminate", process_id=process_id)
