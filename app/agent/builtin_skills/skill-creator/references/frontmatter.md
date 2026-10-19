@@ -22,7 +22,7 @@ always in context, so it alone decides whether the skill is ever read.
 | `description` | yes | 1-1,024 characters; third person; what the skill does and when to use it; no XML tags |
 | `license` | no | License name or a pointer to a bundled license file |
 | `compatibility` | no | At most 500 characters of environment requirements |
-| `metadata` | no | Map of string keys to string values |
+| `metadata` | no | Map of string keys to string values. A Skill may opt into runtime context with `runtime-preload-tool: <tool-name>` or `runtime-preload-tools: <tool-a>,<tool-b>`; its body is included when at least one declared tool is available to the active agent. This is capability-based, not message-keyword activation. |
 | `allowed-tools` | no | Space-separated tool list; displayed only |
 | `disable-model-invocation` | no | `true` hides the skill from the model catalog |
 | `user-invocable` | no | `false` removes the skill from the `$` picker |

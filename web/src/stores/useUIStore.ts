@@ -14,6 +14,7 @@
 import { create } from 'zustand'
 import { immer } from 'zustand/middleware/immer'
 import { STORAGE_KEYS } from '@/lib/storage-keys'
+import type { VisualArtifactPayload } from '@/api/types'
 import { hasLiveBrowserTabs } from '@/components/BrowserViewer/directBrowserSessionStore'
 
 const SIDEBAR_COLLAPSED_KEY = STORAGE_KEYS.sidebar.collapsed
@@ -29,12 +30,35 @@ export type WorkbenchTool =
   | 'plugins'
   | 'source-control'
   | 'problems'
+  | 'visual-artifact'
+
+export interface MotionReviewRequest {
+  id: number
+  frameIndex: number
+  timestampMs: number
+}
+
+export interface MotionSampleReviewRequest {
+  id: string
+  jobId: string
+  sampleRequestId: string
+  samples: Array<{
+    sampleId: string
+    beatId: string
+    frameIndex: number
+    timestampMs: number
+    role: 'style' | 'key_state' | 'before_transition' | 'after_transition' | 'impact'
+  }>
+}
 
 export interface WorkbenchTab {
   id: string
   tool: WorkbenchTool
   title?: string
   initialUrl?: string
+  artifact?: VisualArtifactPayload
+  motionReviewRequest?: MotionReviewRequest
+  motionSampleReviewRequest?: MotionSampleReviewRequest
   /**
    * The chat session this tab belongs to.
    *
@@ -51,6 +75,9 @@ export interface WorkbenchTabOptions {
   id?: string
   initialUrl?: string
   title?: string
+  artifact?: VisualArtifactPayload
+  motionReviewRequest?: MotionReviewRequest
+  motionSampleReviewRequest?: MotionSampleReviewRequest
 }
 
 /**
@@ -64,6 +91,7 @@ const SESSION_SCOPED_TOOLS: ReadonlySet<WorkbenchTool> = new Set([
   'side-chat',
   'source-control',
   'problems',
+  'visual-artifact',
 ])
 // 'wiki', 'scheduler' and 'plugins' mean the same thing in every session,
 // so their tabs stay put across a switch.
@@ -150,6 +178,9 @@ function newWorkbenchTab(
     tool,
     initialUrl: options.initialUrl,
     title: options.title,
+    artifact: options.artifact,
+    motionReviewRequest: options.motionReviewRequest,
+    motionSampleReviewRequest: options.motionSampleReviewRequest,
     sessionId: SESSION_SCOPED_TOOLS.has(tool) ? sessionId : null,
   }
 }
@@ -223,6 +254,12 @@ function addOrActivateTool(
     : lastTabForTool(state, tool)
   const tab = existing ?? newWorkbenchTab(tool, options, state.workbenchSessionId)
   if (!existing) state.workbenchTabs.push(tab)
+  else if (tool === 'visual-artifact' && options.artifact) {
+    existing.artifact = options.artifact
+    existing.title = options.title
+    if (options.motionReviewRequest) existing.motionReviewRequest = options.motionReviewRequest
+    if (options.motionSampleReviewRequest) existing.motionSampleReviewRequest = options.motionSampleReviewRequest
+  }
   activateTab(state, tab)
   state.workbenchOpen = true
   return tab
@@ -425,7 +462,7 @@ interface UIStore extends WorkbenchState {
   selectWorkbenchTool: (tool: WorkbenchTool) => void
   closeWorkbenchTab: (tabId: string) => void
   closeWorkbenchTool: (tool: WorkbenchTool) => void
-  updateWorkbenchTab: (tabId: string, patch: Pick<WorkbenchTabOptions, 'title'>) => void
+  updateWorkbenchTab: (tabId: string, patch: Partial<Pick<WorkbenchTabOptions, 'title' | 'artifact'>>) => void
   closeActiveWorkbenchTool: () => void
   toggleWorkbench: () => void
   closeWorkbench: () => void

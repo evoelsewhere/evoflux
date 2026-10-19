@@ -10,6 +10,11 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      // Recharts needs decimal.js-light's ESM build under Vite 8.
+      "decimal.js-light": path.resolve(
+        __dirname,
+        "./node_modules/decimal.js-light/decimal.mjs",
+      ),
     },
   },
   server: {

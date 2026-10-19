@@ -43,6 +43,21 @@ describe('help catalog', () => {
       /Getting started/,
     )
   })
+
+  it('documents rich Intelligent UI behavior and fallbacks in every locale', () => {
+    for (const locale of ['en', 'vi', 'ja'] as const) {
+      const article = getHelpArticles(locale).find((item) => item.id === 'settings-safety')
+      const text = JSON.stringify(article?.blocks ?? [])
+      expect(text).toMatch(/dashboard|ダッシュボード/i)
+      expect(text).toMatch(/source|nguồn|検証/i)
+      expect(text).toMatch(/motion|animation|モーション/i)
+      expect(text).toMatch(/WebM|MP4/i)
+      expect(text).toMatch(/3D/i)
+      expect(text).toMatch(/theme|theme|テーマ/i)
+      expect(text).toMatch(/Workbench/i)
+      expect(text).toMatch(/commit|コミット/i)
+    }
+  })
 })
 
 describe('searchHelpArticles', () => {

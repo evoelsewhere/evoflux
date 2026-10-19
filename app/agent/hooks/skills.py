@@ -9,13 +9,13 @@ See ``documents/architecture/agent-skills.md``. Per run this hook:
   the matching ``SKILL.md``;
 * grants a plugin's MCP tools once one of its Skills has been read;
 * appends the ``## Skills`` system-prompt section (Level 1 catalog plus any
-  Skills preloaded by the agent's ``skills:`` field).
+  Skills preloaded by agent configuration or runtime tool capability).
 """
 
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Sequence
+from typing import TYPE_CHECKING, Mapping, Sequence
 
 from loguru import logger
 
@@ -112,8 +112,17 @@ class SkillsHook(BaseAgentHook):
         for skill in activated_skills(state.messages, catalog).values():
             _grant_plugin_tools(state, skill)
 
+        preload_names = list(self._preloaded)
+        preload_names.extend(
+            skill.name
+            for skill in catalog.active()
+            if skill.model_visible
+            and _runtime_preload_available(skill.metadata, state.tool_names)
+            and skill.name not in preload_names
+        )
+
         preloaded: list[tuple[Skill, str]] = []
-        for name in self._preloaded:
+        for name in preload_names:
             skill = catalog.get(name)
             if skill is None or not skill.valid or not skill.enabled:
                 logger.warning(
@@ -197,6 +206,24 @@ class SkillsHook(BaseAgentHook):
                 _grant_plugin_tools(state, skill)
                 _record_activation(skill)
         return result
+
+
+def _runtime_preload_available(
+    metadata: Mapping[str, object], tool_names: Sequence[str]
+) -> bool:
+    """Support plural capability declarations and the historic singular key."""
+    declared = metadata.get("runtime-preload-tools")
+    names = (
+        {name.strip() for name in declared.split(",") if name.strip()}
+        if isinstance(declared, str)
+        else set(declared)
+        if isinstance(declared, (list, tuple, set))
+        else set()
+    )
+    legacy = metadata.get("runtime-preload-tool")
+    if isinstance(legacy, str) and legacy:
+        names.add(legacy)
+    return bool(names & set(tool_names))
 
 
 class SkillsPromptFinalizerHook(BaseAgentHook):

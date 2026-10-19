@@ -2527,13 +2527,17 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       },
       {
         type: 'p',
+        text: 'Intelligent UI chọn văn bản, control native, dashboard, motion explainer hoặc góc nhìn 3D dựa trên lợi ích thực tế với tác vụ. Rich view mở trong một tab Workbench; chat chỉ giữ thẻ gọn để mở lại. Source được giữ trong lịch sử session, không tạo file trong repo khi preview; bạn có thể tải xuống hoặc, trong Desktop Coding mode, chủ động lưu vào project để review và commit. Dashboard hiển thị nguồn và query summary đã xác minh; dữ liệu chưa xác minh được gắn nhãn minh họa. Rich view theo theme light, dark, system và reduced motion. Motion mới có thể dựng từng frame của canvas thành MP4/WebM ngay trên máy, có tiến độ từng frame và nút hủy; thẻ chat giữ vài frame đại diện, còn timeline Workbench cho phép xem và seek toàn bộ composition. Agent chỉ rà frame đại diện khi model hỗ trợ vision; nếu không, tool báo rõ là không có sample để xem. Chọn Balanced (tối đa 720p) hoặc High (tối đa 1080p); canvas nhỏ hơn không bị phóng to. Bản render gắn với revision của artifact và sẽ bị hủy nếu revision đổi giữa chừng. Motion có thể thêm tối đa 64 cue hiệu ứng âm thanh giới hạn, được tổng hợp cục bộ; Workbench báo soundtrack đã ghép hay không dựng được âm thanh. Cue không tạo nhạc, giọng nói hoặc nhập file âm thanh. Video hoàn tất được xem lại trong Workbench trước khi tải xuống; artifact cũ ghi video thời gian thực bằng browser và vẫn không có âm thanh. Skill Intelligent UI có hướng dẫn nạp khi cần để lập storyboard và sửa riêng từng scene. Tiêu đề và caption phải được vẽ bên trong canvas. Nếu WebGL không chạy, 3D hiện bản xem trước tĩnh có nhãn.',
+      },
+      {
+        type: 'p',
         text: 'Biết trang nào sở hữu concern nào tránh lục: models vs agents vs sandbox vs browser policy tách cố ý để toggle rủi ro vẫn chủ đích. Đổi theme không nên nằm cạnh force-with-lease trong mental model của bạn.',
       },
       {
         type: 'tips',
         items: [
           'Providers — API key, OAuth, daemon local, model registry',
-          'Agents — model, tool, system prompt theo thành viên team',
+          'Agents — model, tool, system prompt, và Response style (Simple/Visual) theo thành viên team',
           'Skills — tạo/sửa thư mục SKILL.md, bật/tắt bất kỳ skill nào',
           'MCP servers — tool ngoài stdio / HTTP / SSE',
           'Memory — wiki dài hạn + lịch Dream',
@@ -2562,7 +2566,8 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
         items: [
           'Mỗi bài Guidelines lớn deep-link qua openAction tới đúng trang khi có.',
           'Locale chỉ đổi phần giao diện dùng chung — nội dung chat giữ như bạn viết.',
-          'Telemetry trống thường nghĩa extras tắt, không phải chat outage.'
+          'Telemetry trống thường nghĩa extras tắt, không phải chat outage.',
+          'Response style trong Settings → Agents quyết định cách trình bày câu trả lời mới: Simple ưu tiên văn bản thuần; Visual để model chọn văn bản, markdown có cấu trúc hoặc UI tương tác theo mục tiêu của người dùng và ích lợi thực tế của các điều khiển. Khi ui_block khả dụng, hướng dẫn đánh giá và dùng UI được đưa vào context của agent. Chỉ áp dụng từ tin nhắn kế tiếp, không viết lại câu trả lời cũ.'
 ],
       }
 ],
@@ -2770,5 +2775,40 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
         { type: 'p', text: 'Snake nhận phím mũi tên hoặc WASD chỉ khi bàn cờ được focus; nhấn Space để tạm dừng hoặc tiếp tục. Khi bật giảm chuyển động, Snake chạy chậm hơn và hiệu ứng 2048 được tắt. Dùng phím mũi tên để di chuyển giữa các ô Minesweeper Mini, Tic-tac-toe và Ghép cặp, rồi nhấn Enter hoặc Space để thao tác. Mini Breakout dùng phím trái/phải hoặc A/D để điều khiển thanh đỡ; Space để bắt đầu hoặc tạm dừng. Với 2048, hãy focus bàn cờ trước khi dùng phím mũi tên. Đóng bằng nút Close, Escape hoặc click bên ngoài panel.' },
     ],
     related: ['chat', 'composer-power', 'troubleshooting'],
+  },
+  {
+    id: 'chat-charts',
+    category: 'chat',
+    title: 'Biểu đồ và sơ đồ',
+    summary:
+      'Câu trả lời có thể hiển thị biểu đồ và sơ đồ Mermaid inline từ fence ```chart và ```mermaid.',
+    keywords: [
+      'chart',
+      'mermaid',
+      'diagram',
+      'graph',
+      'inline',
+      'fence',
+      'bar chart',
+      'line chart',
+      'pie',
+      'flowchart',
+      'biểu đồ',
+      'sơ đồ',
+      'lưu đồ',
+      'チャート',
+      '図表',
+      'ダイアグラム',
+    ],
+    blocks: [
+      { type: 'p', text: 'Fence ```chart với một spec JSON nhỏ sẽ hiển thị biểu đồ native — line, bar, area hoặc pie — theo màu theme của app. Spec cần có type, xKey, series và mảng data; các trường tùy chọn là title, yLabel, unit và stacked cho bar.' },
+      { type: 'p', text: 'Fence ```mermaid hiển thị sơ đồ qua runtime Mermaid với securityLevel: strict, nên nội dung sơ đồ không thể chạy script. Flowchart, sequence diagram và toàn bộ ngữ pháp Mermaid đều hoạt động.' },
+      { type: 'p', text: 'Khi agent còn đang streaming, fence chưa hoàn chỉnh hiển thị placeholder thay vì code. Nếu fence đã đóng nhưng spec hoặc sơ đồ không hợp lệ, câu trả lời quay về code block có thể copy kèm một dòng thông báo — không mất dữ liệu nào.' },
+      { type: 'p', text: 'Cả hai renderer đều load on demand, nên chat không bao giờ phải chờ thư viện biểu đồ mà mình không dùng.' },
+    ],
+    tricks: [
+      'Fence không hợp lệ vẫn copy được — lấy spec gốc hoặc nguồn sơ đồ từ code block fallback và sửa ở tin nhắn kế tiếp.',
+    ],
+    related: ['chat', 'chat-team', 'composer-power'],
   }
 ]

@@ -59,3 +59,79 @@ def test_skill_md_has_no_time_sensitive_statements(skill_dir):
     text = (skill_dir / "SKILL.md").read_text(encoding="utf-8")
 
     assert _TIME_SENSITIVE.search(text) is None
+
+
+def test_intelligent_ui_links_runtime_accurate_motion_authoring_guidance():
+    skill_dir = BUILTIN / "intelligent-ui"
+    skill_text = (skill_dir / "SKILL.md").read_text(encoding="utf-8")
+    assert "reference/motion-authoring.md" in skill_text
+    guide = (skill_dir / "reference" / "motion-authoring.md").read_text(
+        encoding="utf-8"
+    )
+    for runtime_api in (
+        "registerFrameRenderer(drawAt)",
+        "onCommand(handler)",
+        "reportPlayback(state, currentTimeMs)",
+    ):
+        assert runtime_api in guide
+    assert "stable ids" in guide.lower()
+
+
+def test_intelligent_ui_skill_covers_video_as_a_deliverable_and_in_app_view():
+    skill_text = (
+        (BUILTIN / "intelligent-ui" / "SKILL.md").read_text(encoding="utf-8").lower()
+    )
+
+    assert "video or code-authored animation" in skill_text
+    assert "requested deliverable" in skill_text
+    assert "opens in the evoflux workbench" in skill_text
+
+
+def test_motion_production_requires_intentional_visual_craft_and_visible_action():
+    guide = (
+        (BUILTIN / "intelligent-ui" / "reference" / "motion-production.md")
+        .read_text(encoding="utf-8")
+        .lower()
+    )
+    guide = " ".join(guide.split())
+
+    for craft_rule in (
+        "quality gate for authored motion",
+        "choose a specific visual medium",
+        "source and destination",
+        "reaction, and the settle",
+        "camera motion alone",
+        "at the intended viewing size",
+        "slideshow",
+    ):
+        assert craft_rule in guide
+
+
+def test_motion_authoring_requires_choreography_instead_of_slide_like_scenes():
+    skill_dir = BUILTIN / "intelligent-ui"
+    guide = (
+        (skill_dir / "reference" / "motion-authoring.md")
+        .read_text(encoding="utf-8")
+        .lower()
+    )
+    guide = " ".join(guide.split())
+
+    for craft_rule in (
+        "beat-level timeline",
+        "startframe",
+        "endframe",
+        "drawat(timems)",
+        "before",
+        "after",
+        "holdframes",
+        "transitionin",
+        "soundcue",
+        "persistent visual anchor",
+        "anticipation",
+        "impact hit",
+        "settle",
+        "transition grammar",
+        "sound-design cue",
+        "older real-time canvas recordings remain silent",
+    ):
+        assert craft_rule in guide

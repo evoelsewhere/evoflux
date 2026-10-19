@@ -57,6 +57,7 @@ from app.api.schemas.settings import (
     TeamSpawnSettingsBody,
     ProviderVisibleModelsResponse,
     ProvidersListBody,
+    ResponseStyleSettingsBody,
     SandboxSettingsBody,
     SeedInstallRequest,
     SeedInstallResponse,
@@ -721,6 +722,25 @@ async def save_follow_up_settings(body: FollowUpSettingsBody) -> FollowUpSetting
     cfg.follow_up.delivery = body.delivery
     save_runtime_settings(cfg)
     return FollowUpSettingsBody(delivery=cfg.follow_up.delivery)
+
+
+@router.get("/response-style")
+async def get_response_style_settings() -> ResponseStyleSettingsBody:
+    cfg = load_runtime_settings()
+    return ResponseStyleSettingsBody(style=cfg.response_style.style)
+
+
+@router.put("/response-style")
+async def save_response_style_settings(
+    body: ResponseStyleSettingsBody,
+) -> ResponseStyleSettingsBody:
+    try:
+        cfg = load_runtime_settings()
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    cfg.response_style.style = body.style
+    save_runtime_settings(cfg)
+    return ResponseStyleSettingsBody(style=cfg.response_style.style)
 
 
 # Providers (Settings -> Providers tab)
@@ -1577,16 +1597,12 @@ async def delete_provider(provider_id: str) -> dict[str, bool]:
             creds_to_clear[name] = ""
 
     # Also clear any credentials from the plugin registry
-    from app.agent.providers.plugin_registry import (
-        ProviderCredentialStore,
-        find_provider_plugin,
-    )
+    from app.agent.providers.plugin_registry import find_provider_plugin
 
     plugin = find_provider_plugin(provider_id)
     if plugin is not None:
-        store = ProviderCredentialStore(plugin.id)
         for field in plugin.credentials:
-            store.delete(field.name)
+            creds_to_clear[field.name] = ""
 
     if creds_to_clear:
         write_env_credentials(env_file, creds_to_clear)

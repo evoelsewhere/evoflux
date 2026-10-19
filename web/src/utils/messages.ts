@@ -1,4 +1,5 @@
-import type { AgentUsage, ChatMessage, ContentBlock, MessageResponse, TurnCost, TurnUsage } from '@/api/types'
+import type { AgentUsage, ChatMessage, ContentBlock, MessageResponse, TurnCost, TurnUsage, VisualArtifactSource } from '@/api/types'
+import { parseVisualArtifactMessage } from '@/lib/visual-artifact-bridge'
 
 // Me sort messages by timestamp asc, assistant before tool on ties
 
@@ -146,10 +147,51 @@ function finishImportedToolBlocks(pendingToolBlocks: Map<string, ContentBlock>):
   }
 }
 
-// Me extract ContentBlock[] from one assistant MessageResponse
+function buildVisualSourceCalls(
+  messages: MessageResponse[],
+): Map<string, Omit<VisualArtifactSource, 'toolCallId' | 'querySummary'>> {
+  const calls = new Map<string, Omit<VisualArtifactSource, 'toolCallId' | 'querySummary'>>()
+  for (const message of messages) {
+    if (message.role === 'assistant') {
+      for (const call of message.tool_calls ?? []) {
+        const name = call.function?.name
+        if (!name) continue
+        calls.set(call.id, {
+          verified: false,
+          toolName: name,
+          arguments: call.function?.arguments ?? undefined,
+        })
+      }
+    } else if (message.role === 'tool' && message.tool_call_id) {
+      const previous = calls.get(message.tool_call_id)
+      if (!previous) continue
+      const result = message.content ?? ''
+      let succeeded = Boolean(result.trim()) && !result.trim().toLowerCase().startsWith('error:')
+      try {
+        const parsed: unknown = JSON.parse(result)
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          const payload = parsed as Record<string, unknown>
+          succeeded = succeeded && payload.success !== false && !payload.error
+        }
+      } catch {
+        // Plain-text tool results are successful unless explicitly error-prefixed.
+      }
+      calls.set(message.tool_call_id, { ...previous, verified: succeeded, result })
+    }
+  }
+  return calls
+}
+
+// Me extract ContentBlock[] from one assistant MessageResponse.
+// `uiBlockGroups` mirrors `pendingToolBlocks`: threaded through the whole
+// parse so a later call with the same identity (or a replace_id) can find
+// and update the group in place instead of appending a duplicate (§1.4/§1.6).
 function assistantBlocks(
   msg: MessageResponse,
   pendingToolBlocks: Map<string, ContentBlock>,
+  uiBlockGroups: Map<string, ContentBlock>,
+  visualArtifactGroups: Map<string, ContentBlock>,
+  sourceCalls: Map<string, Omit<VisualArtifactSource, 'toolCallId' | 'querySummary'>>,
   timestamp?: Date,
 ): ContentBlock[] {
   const blocks: ContentBlock[] = []
@@ -238,6 +280,107 @@ function assistantBlocks(
       continue
     }
 
+    // ui_block persists through its own tool arguments (Feature C, §6.1) —
+    // reconstruct the declarative block from history instead of falling back
+    // to a generic collapsed tool-call chip. No DB migration: the full args
+    // already live in SessionMessage.tool_calls.
+    if (name === 'ui_block' && Array.isArray(parsedArgs?.blocks)) {
+      const blockId = typeof parsedArgs.block_id === 'string' ? parsedArgs.block_id : undefined
+      const replaceId = typeof parsedArgs.replace_id === 'string' ? parsedArgs.replace_id : undefined
+      // Identity per §1.4: block_id ?? tool_call_id; a set replace_id finds
+      // (and, on append, names) the group instead (§1.6 rule 4).
+      const identity = replaceId ?? blockId ?? (tool.id || `${msg.id}#${toolIndex}`)
+      const target = uiBlockGroups.get(identity)
+      if (target) {
+        // Hit — update in place; id / uiBlockIdentity / position stay put,
+        // title only when a later call supplies one (§1.6).
+        //
+        // Exception: history can deliver the `replace_id` call before the
+        // `block_id` create it updates (messages sharing one `created_at` are
+        // returned in arbitrary order). That unmatched replace seeded the
+        // group, so the create re-finding it here is the ORIGINAL arriving
+        // late — letting it overwrite would clobber the replace's content and
+        // render stale blocks with the replace's tool result. Keep the
+        // seeded content; a replace or a later block_id upsert (unseeded
+        // group) still replaces wholesale (§1.4 rule 3).
+        const seededByReplace = target.extra?.ui_block_replace_seeded === true
+        if (!(replaceId === undefined && seededByReplace)) {
+          target.uiBlocks = parsedArgs.blocks
+        }
+        const laterTitle = typeof parsedArgs.title === 'string' ? parsedArgs.title : undefined
+        if (laterTitle) target.title = laterTitle
+        if (tool.id) {
+          target.toolCallId = tool.id // latest writer
+          // The replaced call's tool-result still attaches to this group.
+          pendingToolBlocks.set(tool.id, target)
+        }
+        continue
+      }
+      const block: ContentBlock = {
+        id: `${msg.id}:ui_block:${identity}`, // identity-based, not toolIndex (§1.6)
+        type: 'ui_block',
+        content: '',
+        toolCallId: tool.id,
+        uiBlocks: parsedArgs.blocks,
+        uiBlockIdentity: identity,
+        isStreaming: false,
+        title: typeof parsedArgs.title === 'string' ? parsedArgs.title : 'UI Block',
+        timestamp,
+        // Rule 4: an unmatched replace_id names the new group. Flag it so a
+        // block_id create that chains in later (out-of-order history delivery)
+        // cannot clobber the replace's content — see the hit branch above.
+        extra: replaceId === undefined ? undefined : { ui_block_replace_seeded: true },
+      }
+      uiBlockGroups.set(identity, block)
+      blocks.push(block)
+      if (tool.id) pendingToolBlocks.set(tool.id, block)
+      continue
+    }
+
+    if (name === 'visual_artifact') {
+      const parsed = parseVisualArtifactMessage({
+        ...parsedArgs,
+        type: 'visual_artifact',
+        artifact_id: parsedArgs?.artifact_id,
+        source_html: parsedArgs?.source_html,
+        scene: parsedArgs?.scene ?? null,
+        sources: parsedArgs?.sources ?? [],
+        duration_ms: parsedArgs?.duration_ms ?? null,
+        is_final: true,
+      })
+      if (parsed) {
+        parsed.sources = parsed.sources.map((source) => ({
+          ...source,
+          ...(sourceCalls.get(source.toolCallId) ?? {}),
+        }))
+        const target = visualArtifactGroups.get(parsed.artifactId)
+        if (target?.visualArtifact) {
+          parsed.revision = target.visualArtifact.revision + 1
+          target.visualArtifact = parsed
+          target.title = parsed.title
+          if (tool.id) {
+            target.toolCallId = tool.id
+            pendingToolBlocks.set(tool.id, target)
+          }
+        } else {
+          const block: ContentBlock = {
+            id: `${msg.id}:visual_artifact:${parsed.artifactId}`,
+            type: 'visual_artifact',
+            content: '',
+            title: parsed.title,
+            visualArtifact: parsed,
+            toolCallId: tool.id,
+            isStreaming: false,
+            timestamp,
+          }
+          visualArtifactGroups.set(parsed.artifactId, block)
+          blocks.push(block)
+          if (tool.id) pendingToolBlocks.set(tool.id, block)
+        }
+        continue
+      }
+    }
+
     const block: ContentBlock = {
       id: `${msg.id}:tool:${tool.id || toolIndex}`,
       type: 'tool',
@@ -279,6 +422,9 @@ function assistantBlocks(
 export function parseApiMessages(msgs: MessageResponse[]): ChatMessage[] {
   const result: ChatMessage[] = []
   const pendingToolBlocks: Map<string, ContentBlock> = new Map()
+  const uiBlockGroups: Map<string, ContentBlock> = new Map()
+  const visualArtifactGroups: Map<string, ContentBlock> = new Map()
+  const sourceCalls = buildVisualSourceCalls(msgs)
 
   for (const msg of sortMessages(msgs)) {
     // Summaries surface as an inline "Session compacted" divider rather
@@ -329,7 +475,7 @@ export function parseApiMessages(msgs: MessageResponse[]): ChatMessage[] {
 
     if (msg.role === 'assistant') {
       const timestamp = msg.created_at ? new Date(msg.created_at) : new Date()
-      const blocks = assistantBlocks(msg, pendingToolBlocks, timestamp)
+      const blocks = assistantBlocks(msg, pendingToolBlocks, uiBlockGroups, visualArtifactGroups, sourceCalls, timestamp)
       const extra = msg.extra as {
         usage?: { input?: number; output?: number; cache?: number }
         turn_usage?: {
@@ -442,6 +588,9 @@ export function sumUsageFromMessages(msgs: MessageResponse[]): AgentUsage {
 export function parseTeamBlocks(msgs: MessageResponse[]): ContentBlock[] {
   const result: ContentBlock[] = []
   const pendingToolBlocks: Map<string, ContentBlock> = new Map()
+  const uiBlockGroups: Map<string, ContentBlock> = new Map()
+  const visualArtifactGroups: Map<string, ContentBlock> = new Map()
+  const sourceCalls = buildVisualSourceCalls(msgs)
 
   for (const msg of sortMessages(msgs)) {
     if (msg.extra?.queue_status === 'queued') continue
@@ -492,7 +641,7 @@ export function parseTeamBlocks(msgs: MessageResponse[]): ContentBlock[] {
 
     if (msg.role === 'assistant') {
       const timestamp = msg.created_at ? new Date(msg.created_at) : new Date()
-      for (const block of assistantBlocks(msg, pendingToolBlocks, timestamp)) {
+      for (const block of assistantBlocks(msg, pendingToolBlocks, uiBlockGroups, visualArtifactGroups, sourceCalls, timestamp)) {
         const lastBlock = result[result.length - 1]
         if (msg.extra?.is_continuation && block.type === 'text' && lastBlock?.type === 'text') {
           lastBlock.content += continuationSeparator(lastBlock.content, block.content) + block.content

@@ -4,8 +4,16 @@ All notable changes to EvoFlux are documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Settings → Agents now offers Simple / Visual response style, letting the assistant choose prose, native controls, or a richer artifact based on the task.
+- Chat supports validated native UI blocks, interactive tables, chart and Mermaid fences, with stable block identities for in-place updates and transcript replay.
+- Dashboards, motion explainers, and bounded 3D scenes open in the EvoFlux Workbench, inherit app theme and reduced-motion settings, and can be saved to a project explicitly.
+- Motion artifacts support beat timelines, deterministic local MP4 / WebM export, per-frame progress, cancellation, bounded review, and optional synthesized sound effects.
+
 ### Fixed
 
+- Chart fences accept label/value rows as well as JSON, Recharts resolves decimal.js-light to its ESM build under Vite 8, and Mermaid failures clean up temporary render nodes.
 - Web and image searches now bound DuckDuckGo requests, and network tools have shorter individual limits so a stalled provider cannot hold an agent turn indefinitely.
 - Session message persistence now commits in bounded batches and retries temporary writer-pool timeouts, reducing reload and session-write stalls without changing the retryable `database_busy` response contract.
 - Token numbers no longer overstate usage. The per-agent token figure on the team workbench is now the conversation's size as the model sees it — the latest prompt plus its response — instead of that prompt plus the output of every turn in the session, which only grew over time. The **Context Usage** popover's **This turn** section names background calls (title, memory, summaries) that are billed to the turn but are not part of the conversation, and model streams that repeat the same usage on every chunk now report it once instead of once per chunk.
@@ -14,6 +22,7 @@ All notable changes to EvoFlux are documented in this file.
 
 ### Changed
 
+- Visual routing weighs task utility and temporal value instead of relying on prompt length or isolated keywords; matching visual skill guidance loads only when the active run has the required tool.
 - Bump EvoFlux package and desktop application versions to 3.0.9.
 - Coding agents read, search, list, and edit files with the built-in file tools (`read`, `grep`, `glob`, `ls`, `edit`, `write`, `patch`) and keep the **shell** for repository commands such as tests, linters, builds, and git. The built-in prompts and tool descriptions now say so, and the truncation notice on large files points to `grep` instead of shell text utilities.
 - The agent runtime no longer writes an internal tool-capability map into session state that nothing read; sessions run slightly leaner with no behavior change.

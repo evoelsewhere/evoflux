@@ -1,5 +1,7 @@
 // API Response Types
 
+import type { UiBlockNode } from '@/components/ui/ui-block-types'
+
 export type DiagnosticsStatus = 'ok' | 'warn' | 'fail'
 
 /** A fix the user can trigger from the check's row. */
@@ -828,6 +830,9 @@ export type SSEEventType =
   | 'summarization_content'
   | 'summarization_end'
   | 'browser_session'
+  | 'ui_block'
+  | 'visual_artifact'
+  | 'motion_progress'
 
 export interface SSEEvent {
   type: SSEEventType
@@ -835,9 +840,27 @@ export interface SSEEvent {
 }
 
 // Content Block Types
+export type MotionProgressStatus = 'running' | 'complete' | 'cancelled' | 'failed' | 'interrupted'
+export type MotionProgressPhase = 'planning' | 'storyboard' | 'style_samples' | 'composing' | 'rendering_samples' | 'reviewing' | 'revising' | 'final_render' | 'encoding' | 'audio'
+
+export interface MotionProgressPayload {
+  jobId: string
+  sequence: number
+  artifactId: string
+  artifactRevision: number
+  status: MotionProgressStatus
+  phase: MotionProgressPhase
+  beat?: { id: string; index: number; total: number; title: string }
+  frames?: { scope: 'review_samples' | 'final_output'; completed: number; total: number | null; fps: number | null; lastCompletedIndex: number | null }
+  iteration?: { current: number; budget: number }
+  sampleRequestId?: string
+  selectedSamples: Array<{ sampleId: string; beatId: string; frameIndex: number; timestampMs: number; role: 'style' | 'key_state' | 'before_transition' | 'after_transition' | 'impact' }>
+  audioStatus: 'not_requested' | 'unavailable' | 'pending' | 'rendering' | 'included'
+}
+
 export interface ContentBlock {
   id: string
-  type: 'thinking' | 'tool' | 'text' | 'user' | 'compaction' | 'provider_status' | 'widget'
+  type: 'thinking' | 'tool' | 'text' | 'user' | 'compaction' | 'provider_status' | 'widget' | 'ui_block' | 'visual_artifact' | 'motion_progress'
   content: string
   toolName?: string
   toolArgs?: string
@@ -855,6 +878,11 @@ export interface ContentBlock {
   widgetHtml?: string   // HTML content for widget blocks
   isStreaming?: boolean // whether widget is still streaming
   title?: string        // widget title
+  /** ui_block-specific fields (Feature B) */
+  uiBlocks?: UiBlockNode[] // validated declarative UI block nodes
+  uiBlockIdentity?: string // group identity (block_id ?? replace_id ?? tool_call_id)
+  visualArtifact?: VisualArtifactPayload
+  motionProgress?: MotionProgressPayload
   /** Variant-specific metadata. ``user`` inbox blocks carry ``from_agent``;
    *  ``compaction`` blocks are content-free status markers carrying
    *  ``state: 'compacting' | 'compacted'`` and optional ``error: true``.
@@ -865,6 +893,59 @@ export interface ContentBlock {
   timestamp?: Date
   /** File attachments (images, documents, etc.) — for user blocks */
   attachments?: MessageAttachment[]
+}
+
+export type VisualArtifactKind = 'dashboard' | 'motion' | 'scene3d'
+
+export type MotionSoundWaveform = 'sine' | 'triangle' | 'square' | 'sawtooth' | 'noise'
+
+export interface MotionSoundCue {
+  id: string
+  startMs: number
+  durationMs: number
+  waveform: MotionSoundWaveform
+  frequencyHz: number
+  gain: number
+}
+
+export interface MotionSoundtrackSpec {
+  style: string
+  cues: MotionSoundCue[]
+}
+
+export interface VisualArtifactSource {
+  toolCallId: string
+  querySummary: string
+  verified: boolean
+  toolName?: string
+  arguments?: string
+  result?: string
+  retrievedAt?: string
+}
+
+export interface Scene3DNode {
+  id: string
+  geometry: 'box' | 'sphere' | 'cylinder' | 'torus'
+  position: [number, number, number]
+  rotation: [number, number, number]
+  scale: [number, number, number]
+  color: 'accent' | 'foreground' | 'muted' | 'success' | 'warning' | 'danger' | 'info'
+  label?: string | null
+}
+
+export interface Scene3DSpec { nodes: Scene3DNode[] }
+
+export interface VisualArtifactPayload {
+  artifactId: string
+  kind: VisualArtifactKind
+  title: string
+  summary: string
+  sourceHtml: string | null
+  scene: Scene3DSpec | null
+  sources: VisualArtifactSource[]
+  durationMs: number | null
+  soundtrack?: MotionSoundtrackSpec | null
+  revision: number
 }
 
 // Chat Message Type

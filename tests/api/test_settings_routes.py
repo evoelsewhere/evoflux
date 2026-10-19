@@ -1570,7 +1570,6 @@ def test_webbridge_agent_browsing_toggle_applies_live(tmp_path, monkeypatch):
         encoding="utf-8"
     )
 
-
     form = client.get("/api/settings/webbridge").json()
     assert "agent_browsing" not in form
 
@@ -2278,3 +2277,57 @@ def test_an_unrelated_section_survives_a_bad_context_value(
     from app.core.runtime_settings import provider_visible_models
 
     assert provider_visible_models("openai") == ["gpt-4o"]
+
+
+# ---------------------------------------------------------------------------
+# Response style (Settings -> Agents — Intelligent UI feature A)
+# ---------------------------------------------------------------------------
+
+
+def test_get_response_style_defaults_to_visual(
+    isolated_runtime_settings: Path,
+) -> None:
+    """A missing settings file answers with the built-in visual default."""
+    client = TestClient(_make_app())
+    response = client.get("/api/settings/response-style")
+
+    assert response.status_code == 200
+    assert response.json() == {"style": "visual"}
+
+
+def test_put_response_style_persists_and_reads_back(
+    isolated_runtime_settings: Path,
+) -> None:
+    """PUT writes settings.yaml and the next GET reflects the saved style."""
+    client = TestClient(_make_app())
+    saved = client.put("/api/settings/response-style", json={"style": "simple"})
+
+    assert saved.status_code == 200
+    assert saved.json() == {"style": "simple"}
+    persisted = isolated_runtime_settings.read_text(encoding="utf-8")
+    assert "response_style:" in persisted
+    assert "style: simple" in persisted
+    assert client.get("/api/settings/response-style").json() == {"style": "simple"}
+
+
+def test_put_response_style_rejects_an_unknown_style(
+    isolated_runtime_settings: Path,
+) -> None:
+    """Only the two contract values are accepted; anything else is 422."""
+    client = TestClient(_make_app())
+    response = client.put("/api/settings/response-style", json={"style": "poetic"})
+
+    assert response.status_code == 422
+
+
+def test_response_style_reads_a_hand_edited_yaml(
+    isolated_runtime_settings: Path,
+) -> None:
+    """A hand-edited response_style block is honoured without a restart."""
+    isolated_runtime_settings.write_text(
+        "response_style:\n  style: simple\n",
+        encoding="utf-8",
+    )
+    client = TestClient(_make_app())
+
+    assert client.get("/api/settings/response-style").json() == {"style": "simple"}
