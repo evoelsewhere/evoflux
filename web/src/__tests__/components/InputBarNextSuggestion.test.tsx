@@ -44,7 +44,9 @@ describe('InputBar next-message ghost text', () => {
       expect(input.selectionStart).toBe('Run the test suite'.length)
       expect(input.selectionEnd).toBe('Run the test suite'.length)
     })
-    expect(screen.queryByText('Run the test suite')).not.toBeInTheDocument()
+    // The ghost layer is gone (the mirror overlay and the textarea itself
+    // still show the accepted text, so target the ghost's role explicitly).
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
 
   it('hides the ghost while typing and brings it back when the input is emptied', () => {
