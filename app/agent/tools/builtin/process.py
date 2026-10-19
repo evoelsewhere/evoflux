@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import os
 import signal
+import subprocess
 import time
 import uuid
 from collections import deque
@@ -31,6 +32,7 @@ _MODEL_SUCCESS_MAX_BYTES = 6_000
 _MODEL_FAILURE_MAX_BYTES = 12_000
 _PROCESS_REGISTRY_CAP = 100
 _MAX_WAIT_SECONDS = 60
+_MAX_PROCESS_LIFETIME_SECONDS = 30 * 60
 _FORCE_KILL = getattr(signal, "SIGKILL", signal.SIGTERM)
 
 
@@ -40,17 +42,36 @@ def command_process_scope(session_id: str | None, workspace: Path) -> str:
     return f"session:{session_id}" if session_id else f"workspace:{workspace.resolve()}"
 
 
-def _kill_process_group(proc: asyncio.subprocess.Process, sig: int) -> None:
+async def _kill_process_group(proc: asyncio.subprocess.Process, sig: int) -> None:
     """Signal a spawned command's process group, falling back to the process."""
 
     pid = proc.pid
     if pid is None:
         return
     if os.name == "nt":
+        killer: asyncio.subprocess.Process | None = None
         try:
-            proc.kill()
-        except (ProcessLookupError, OSError):
-            pass
+            killer = await asyncio.create_subprocess_exec(
+                "taskkill.exe",
+                "/PID",
+                str(pid),
+                "/T",
+                "/F",
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                creationflags=subprocess.CREATE_NO_WINDOW,
+            )
+            await asyncio.wait_for(killer.wait(), timeout=5)
+        except (OSError, asyncio.TimeoutError):
+            if killer is not None and killer.returncode is None:
+                killer.kill()
+                await killer.wait()
+        if proc.returncode is None:
+            try:
+                proc.kill()
+            except (ProcessLookupError, OSError):
+                pass
         return
     try:
         os.killpg(os.getpgid(pid), sig)
@@ -162,7 +183,12 @@ class TrackedProcess:
         self.cwd = cwd
         self.process_id = process_id or f"proc_{uuid.uuid4().hex[:10]}"
         self.started_at = time.monotonic()
-        self.timeout_seconds = timeout_seconds
+        requested_lifetime = (
+            timeout_seconds
+            if timeout_seconds is not None
+            else _MAX_PROCESS_LIFETIME_SECONDS
+        )
+        self.timeout_seconds = min(requested_lifetime, _MAX_PROCESS_LIFETIME_SECONDS)
         self.scope = scope
         self.timed_out = False
         self.output_path = shell_output_dir() / f"{self.process_id}.txt"
@@ -264,8 +290,30 @@ class TrackedProcess:
             await asyncio.sleep(self.timeout_seconds)
             if self.running:
                 self.timed_out = True
-                _kill_process_group(self.proc, _FORCE_KILL)
-                await self.proc.wait()
+                logger.warning(
+                    "command_process_timeout process_id={} pid={} timeout_seconds={}",
+                    self.process_id,
+                    self.proc.pid,
+                    self.timeout_seconds,
+                )
+                await _kill_process_group(self.proc, _FORCE_KILL)
+                try:
+                    await asyncio.wait_for(self.proc.wait(), timeout=5)
+                except asyncio.TimeoutError:
+                    logger.error(
+                        "command_process_timeout_kill_pending process_id={} pid={}",
+                        self.process_id,
+                        self.proc.pid,
+                    )
+                    await _kill_process_group(self.proc, _FORCE_KILL)
+                    try:
+                        await asyncio.wait_for(self.proc.wait(), timeout=5)
+                    except asyncio.TimeoutError:
+                        logger.critical(
+                            "command_process_timeout_kill_failed process_id={} pid={}",
+                            self.process_id,
+                            self.proc.pid,
+                        )
         except asyncio.CancelledError:
             pass
 
@@ -314,11 +362,11 @@ class TrackedProcess:
 
     async def terminate(self) -> None:
         if self.running:
-            _kill_process_group(self.proc, signal.SIGTERM)
+            await _kill_process_group(self.proc, signal.SIGTERM)
             try:
                 await asyncio.wait_for(self.proc.wait(), timeout=5)
             except asyncio.TimeoutError:
-                _kill_process_group(self.proc, _FORCE_KILL)
+                await _kill_process_group(self.proc, _FORCE_KILL)
                 await self.proc.wait()
         await self._reader_task
         await self._cancel_timeout_task()
@@ -515,7 +563,6 @@ async def _process(
                 "the latest output (max 60). Use poll for immediate progress."
             ),
             ge=1,
-            le=60,
         ),
     ] = 10,
     _state: Annotated[Any, InjectedArg()] = None,
