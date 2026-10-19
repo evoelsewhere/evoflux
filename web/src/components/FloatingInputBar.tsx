@@ -50,6 +50,8 @@ interface FloatingInputBarProps {
   workspaceSelector?: React.ReactNode
   // Forwarded to InputBar through the rest spread below, like the other
   // composer props — declared here so the call site stays type-checked.
+  suggestion?: { message: string; reason?: string } | null
+  onSuggestionDismiss?: () => void
   permissionMode?: import('@/api/types').PermissionMode
   onPermissionModeChange?: (mode: import('@/api/types').PermissionMode) => void
   goal?: GoalResponse | null

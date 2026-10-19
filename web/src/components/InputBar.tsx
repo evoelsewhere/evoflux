@@ -113,6 +113,10 @@ interface InputBarProps {
    * honour `delivery` — Tab then keeps moving focus, as it always did.
    */
   followUpLane?: 'steer' | 'queue' | null
+  /** Agent-proposed next message, shown as ghost text while the input is empty. */
+  suggestion?: { message: string; reason?: string } | null
+  /** Dismiss the current suggestion (Esc). */
+  onSuggestionDismiss?: () => void
   disabled?: boolean
   /** Whether this composer can submit file attachments. Defaults to true. */
   attachmentsEnabled?: boolean
@@ -247,6 +251,8 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
   isStreaming = false,
   workingActionSlot,
   followUpLane = null,
+  suggestion = null,
+  onSuggestionDismiss,
   disabled,
   attachmentsEnabled = true,
   pendingSlot,
@@ -1168,6 +1174,33 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
       }
     }
 
+    // Tab accepts the agent's ghost-text suggestion while the composer is
+    // empty. Gated on !isStreaming so the follow-up lane binding below is
+    // untouched: during a turn, Tab keeps submitting the queued follow-up.
+    if (
+      e.key === 'Tab'
+      && suggestion
+      && value.trim() === ''
+      && !isStreaming
+      && !isComposing
+      && !e.nativeEvent.isComposing
+      && !e.shiftKey
+      && !e.ctrlKey
+      && !e.altKey
+      && !e.metaKey
+    ) {
+      e.preventDefault()
+      const accepted = suggestion.message
+      setValue(accepted)
+      requestAnimationFrame(() => {
+        const el = textareaRef.current
+        el?.focus()
+        el?.setSelectionRange(accepted.length, accepted.length)
+        resize()
+      })
+      return
+    }
+
     // Tab takes the lane Enter is not using, so both stay one keystroke
     // away whichever way Settings -> Follow-up behavior is set. Every picker
     // that owns Tab has already returned by this point, so the key is free.
@@ -1190,6 +1223,13 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     if (e.key === 'Enter' && !e.shiftKey && !isMobile) {
       e.preventDefault()
       void submit(primaryLane)
+      return
+    }
+
+    // Esc dismisses the suggestion only when nothing above consumed the key —
+    // every open picker's Esc handler returns first, so menus always win.
+    if (e.key === 'Escape' && suggestion && onSuggestionDismiss) {
+      onSuggestionDismiss()
     }
   }
 
@@ -1347,6 +1387,14 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     return hints
   }, [fileRefs.length, onFileRefsNeeded, composerSkills.length, slashCommands.length, isMobile])
 
+  // Ghost text (Claude Code-style): the agent's proposed next message.
+  // Visible only while the composer is empty and idle — typing, streaming,
+  // or an IME composition hides it until the input is empty again.
+  const showSuggestion = Boolean(suggestion?.message)
+    && value.trim() === ''
+    && !isStreaming
+    && !isComposing
+
   const effectivePlaceholder = shellMode
     ? 'Run a shell command — git status · Esc to exit'
     : disabled
@@ -1458,6 +1506,21 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
         commandNames={composerCommandNames}
         hidden={isComposing}
       />
+      {/* Ghost text (Claude Code-style) — its own overlay layer like
+          MentionOverlay: pointer-events-none keeps the textarea interactive
+          and the mirrored text classes keep the suggestion baseline-aligned. */}
+      {showSuggestion && suggestion && (
+        <div
+          role="status"
+          className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words text-sm leading-relaxed text-(--color-text-subtle)"
+          style={{ maxHeight: '120px' }}
+        >
+          {suggestion.message}
+          <span className="ml-2 rounded border border-(--color-border) px-1 text-xs align-middle opacity-70">
+            Tab
+          </span>
+        </div>
+      )}
       <textarea
         ref={setTextareaRef}
         value={value}
@@ -1488,7 +1551,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
           setSkillRange(null)
         }}
         disabled={disabled || minimized}
-        placeholder={minimized ? '' : effectivePlaceholder}
+        placeholder={minimized || showSuggestion ? '' : effectivePlaceholder}
         rows={1}
         autoFocus={autoFocus}
         tabIndex={minimized ? -1 : 0}
