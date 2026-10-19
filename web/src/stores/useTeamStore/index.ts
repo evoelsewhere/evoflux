@@ -325,6 +325,8 @@ const SESSION_OWNED_KEYS = [
   'error',
   'activeGoal',
   'suggestedTasks',
+  'nextMessageSuggestion',
+  '_pendingNextMessageSuggestion',
   'setupRequired',
   'browserSession',
   'turnChanges',
@@ -443,6 +445,8 @@ function resetSessionState(
   state.error = null
   state.activeGoal = null
   state.suggestedTasks = []
+  state.nextMessageSuggestion = null
+  state._pendingNextMessageSuggestion = null
   state.setupRequired = null
   state.turnChanges = null
   state.turnChangesOpen = false
@@ -562,6 +566,8 @@ export const useTeamStore = create<TeamStore>()(
     error: null,
     activeGoal: null,
     suggestedTasks: [],
+    nextMessageSuggestion: null,
+    _pendingNextMessageSuggestion: null,
     setupRequired: null,
     browserSession: null,
     turnChanges: null,
@@ -581,6 +587,13 @@ export const useTeamStore = create<TeamStore>()(
     _resolvedSessionReadyId: null,
     _unloading: false,
     activityLog: [],
+
+    clearNextMessageSuggestion: () => {
+      set((draft) => {
+        draft.nextMessageSuggestion = null
+        draft._pendingNextMessageSuggestion = null
+      })
+    },
 
     newSession: () => {
       get()._abortController?.abort()
@@ -655,6 +668,12 @@ export const useTeamStore = create<TeamStore>()(
 
     sendMessage: async (content: string, files?: File[], options?: { mode?: string; workspace?: string | null; model?: string | null; thinkingLevel?: string | null; fastMode?: boolean; shell?: boolean; delivery?: 'steer' | 'queue' }) => {
       let resolvedOptions = options
+      // Sending a message of your own consumes the ghost-text suggestion;
+      // nothing stale survives into the next turn.
+      set((draft) => {
+        draft.nextMessageSuggestion = null
+        draft._pendingNextMessageSuggestion = null
+      })
       // Queue unless the caller names a lane: holding a follow-up never
       // redirects work the agent is part-way through, and the tray's Steer
       // button promotes it the moment the user wants it sooner.
