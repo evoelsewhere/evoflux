@@ -340,6 +340,9 @@ export function useDirectBrowserTabs({
       return sessionRef.current.webviews
     },
   }
+  // NOT plain refs: writing `.current` on these two runs a state setter or
+  // notifies other views. Only write them from callbacks and effects — a
+  // render-phase write re-renders forever (React error #301).
   const activeIdRef: { current: string | null } = {
     get current() {
       return shownTabRef.current
@@ -599,8 +602,17 @@ export function useDirectBrowserTabs({
     return null
   }, [invokeFor, waitForDocumentNavigation])
 
+  const releaseSessionCreating = useCallback(() => {
+    const session = sessionRef.current
+    if (session.creatingBy === surfaceIdRef.current) session.creatingBy = null
+  }, [])
+
   const createTab = useCallback(async (initialUrl = NEW_TAB_URL) => {
     if (!supported || !enabled || creatingRef.current) return
+    // Another view of this session is already opening a page: the shared tab
+    // list will show it, and a second one here would be a duplicate blank page.
+    const creatingBy = sessionRef.current.creatingBy
+    if (creatingBy && creatingBy !== surfaceIdRef.current) return
     const viewport = viewportRef.current
     // A WebView cannot be created without somewhere to put it. Returning
     // here used to be the end of the story: the auto-create effect only
@@ -618,6 +630,7 @@ export function useDirectBrowserTabs({
     }
 
     creatingRef.current = true
+    sessionRef.current.creatingBy = surfaceIdRef.current
     setCreating(true)
     createStageRef.current = 'the Tauri API modules'
     const token = createTokenRef.current
@@ -634,6 +647,7 @@ export function useDirectBrowserTabs({
         + 'nothing in this panel can work until it does; restart EvoFlux Desktop'
       createStageRef.current = ''
       creatingRef.current = false
+      releaseSessionCreating()
       setCreating(false)
       retryCreateRef.current?.()
       return
@@ -651,6 +665,7 @@ export function useDirectBrowserTabs({
       createTokenRef.current += 1
       createStageRef.current = ''
       creatingRef.current = false
+      releaseSessionCreating()
       setCreating(false)
       retryCreateRef.current?.()
     }, CREATE_TIMEOUT_MS)
@@ -752,10 +767,11 @@ export function useDirectBrowserTabs({
       if (createTokenRef.current === token) {
         createStageRef.current = ''
         creatingRef.current = false
+        releaseSessionCreating()
         setCreating(false)
       }
     }
-  }, [devtools, enabled, instanceId, onError, profileMode, sessionId, singleTab, supported, viewportRef, waitForPageReady, zoom])
+  }, [devtools, enabled, instanceId, onError, profileMode, releaseSessionCreating, sessionId, singleTab, supported, viewportRef, waitForPageReady, zoom])
 
   useEffect(() => {
     if (!supported || !enabled || creating) return
@@ -1401,23 +1417,26 @@ export function useDirectBrowserTabs({
   // instead of two views fighting over the same WebViews.
   useEffect(() => {
     if (!supported) return
-    registerDirectBrowserSurfaceSlot(sessionRef.current.sessionId, {
-      id: surfaceIdRef.current,
+    // Captured: `sessionRef` already points at the next session by the time a
+    // session change runs this cleanup.
+    const slotSessionId = sessionRef.current.sessionId
+    const slotId = surfaceIdRef.current
+    registerDirectBrowserSurfaceSlot(slotSessionId, {
+      id: slotId,
       kind: surfaceKindRef.current,
       visible: visibleRef.current,
       boundTabId: shownTabRef.current,
     })
     return () => {
-      unregisterDirectBrowserSurfaceSlot(
-        sessionRef.current.sessionId,
-        surfaceIdRef.current,
-      )
+      unregisterDirectBrowserSurfaceSlot(slotSessionId, slotId)
+      const slotSession = getDirectBrowserSession(slotSessionId)
+      if (slotSession.creatingBy === slotId) slotSession.creatingBy = null
       // Unmounting a view hands the browser back, it does not close it: the
       // session keeps its pages and WebViews for whoever shows them next.
       // Only a session with no pages left is disposed.
-      disposeDirectBrowserSessionIfAbandoned(sessionRef.current.sessionId)
+      disposeDirectBrowserSessionIfAbandoned(slotSessionId)
     }
-  }, [supported])
+  }, [sessionId, supported])
 
   useEffect(() => {
     updateDirectBrowserSurfaceSlot(sessionId, surfaceId, { visible })
