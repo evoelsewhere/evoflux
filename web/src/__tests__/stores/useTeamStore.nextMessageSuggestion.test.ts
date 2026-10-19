@@ -47,6 +47,16 @@ describe('next message suggestion SSE events', () => {
     })
   })
 
+  it('drops the pending suggestion when the turn errors', () => {
+    const handle = useTeamStore.getState()._handleSSEEvent
+    handle('next_message_suggestion', suggestionEvent())
+
+    handle('error', { message: 'boom' })
+    handle('done', {})
+
+    expect(useTeamStore.getState().nextMessageSuggestion).toBeNull()
+  })
+
   it('promotes the pending suggestion when the turn completes', () => {
     const handle = useTeamStore.getState()._handleSSEEvent
     handle('next_message_suggestion', suggestionEvent())

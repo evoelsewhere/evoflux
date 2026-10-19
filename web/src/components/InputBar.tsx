@@ -1228,7 +1228,13 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
 
     // Esc dismisses the suggestion only when nothing above consumed the key —
     // every open picker's Esc handler returns first, so menus always win.
-    if (e.key === 'Escape' && suggestion && onSuggestionDismiss) {
+    if (
+      e.key === 'Escape'
+      && suggestion
+      && onSuggestionDismiss
+      && !isComposing
+      && !e.nativeEvent.isComposing
+    ) {
       onSuggestionDismiss()
     }
   }
@@ -1511,7 +1517,8 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
           and the mirrored text classes keep the suggestion baseline-aligned. */}
       {showSuggestion && suggestion && (
         <div
-          role="status"
+          data-testid="next-message-ghost"
+          aria-hidden="true"
           className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words text-sm leading-relaxed text-(--color-text-subtle)"
           style={{ maxHeight: '120px' }}
         >

@@ -33,7 +33,7 @@ const MAX_SERIES = 6
 const MAX_DATA_POINTS = 500
 
 /** Trailing numeric value, optionally thousands-separated or percent. */
-const SIMPLE_ROW = /^(.*?)\s*(-?[\d,]+(?:\.\d+)?)\s*%?$/
+const SIMPLE_ROW = /^(.*?)\s*(-?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?)\s*%?$/
 
 function parseSimpleChart(text: string): ChartSpec | null {
   const lines = text
