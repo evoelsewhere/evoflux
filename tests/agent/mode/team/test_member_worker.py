@@ -87,8 +87,8 @@ class ClaimThenStopProvider(MockTeamProvider):
         return _gen()
 
 
-class DeferredMcpSequenceProvider(MockTeamProvider):
-    """Search, activate, then expose a dynamically granted MCP tool."""
+class McpSchemaCaptureProvider(MockTeamProvider):
+    """Capture each call's visible tool schemas, then finish."""
 
     def __init__(self):
         super().__init__("done")
@@ -104,36 +104,7 @@ class DeferredMcpSequenceProvider(MockTeamProvider):
         self.tool_schemas.append(
             frozenset(tool["function"]["name"] for tool in (tools or []))
         )
-        if self.call_count == 1:
-            chunk = _tool_chunk(
-                "load_tool",
-                "search_dynamic_mcp",
-                '{"query":"documentation search"}',
-            )
-        elif self.call_count == 2:
-            chunk = _tool_chunk(
-                "load_tool",
-                "activate_dynamic_mcp",
-                '{"tool_name":"mcp_docs_search"}',
-            )
-        else:
-            chunk = ChatCompletionChunk(
-                id="dynamic-mcp-done",
-                created=1,
-                model="mock-model",
-                choices=[
-                    ChatCompletionChunkChoice(
-                        index=0,
-                        delta=ChatCompletionDelta(content="done"),
-                        finish_reason="stop",
-                    )
-                ],
-            )
-
-        async def _gen():
-            yield chunk
-
-        return _gen()
+        return super().stream(messages, tools=tools, **kwargs)
 
 
 def _tool_chunk(name: str, tool_id: str, arguments: str) -> ChatCompletionChunk:
@@ -304,7 +275,6 @@ class TestOnDemandActivation:
     ):
         """browser_use always stays; the webbridge tool is offered only while
         WebBridge is ready. A legacy "webbridge" tag changes nothing."""
-        from app.agent.tools.builtin.load_tool import load_tool
         from app.agent.tools.registry import Tool
         from app.services.webbridge_service import webbridge_manager
 
@@ -312,10 +282,9 @@ class TestOnDemandActivation:
         db_factory = _make_mock_db_factory()
         tools = [
             Tool(lambda: None, name="read"),
-            load_tool,
-            Tool(lambda: None, name="webbridge", deferred=True),
-            Tool(lambda: None, name="browser_use", deferred=True),
-            Tool(lambda: None, name="web_search", deferred=True),
+            Tool(lambda: None, name="webbridge"),
+            Tool(lambda: None, name="browser_use"),
+            Tool(lambda: None, name="web_search"),
         ]
         lead = TeamLead(
             Agent(name="lead", llm_provider=MockTeamProvider(), tools=tools),
@@ -338,37 +307,26 @@ class TestOnDemandActivation:
         await lead._handle_messages(force_compaction=True)
 
         excluded = frozenset(captured["excluded_tools"] or ())  # type: ignore[arg-type]
-        deferred = frozenset(captured["deferred_tools"] or ())  # type: ignore[arg-type]
-        assert {"read", "load_tool", "browser_use", "web_search"}.isdisjoint(excluded)
-        assert {"browser_use", "web_search"} <= deferred
+        assert {"read", "browser_use", "web_search"}.isdisjoint(excluded)
         assert ("webbridge" in excluded) is not ready
 
     @pytest.mark.parametrize("ready", [False, True], ids=["off", "ready"])
-    async def test_team_lead_hot_refreshes_new_mcp_with_session_exclusions(
+    async def test_team_lead_mcp_tools_are_eager_with_session_exclusions(
         self, tmp_path, monkeypatch, ready
     ):
-        """The real TeamLead path always passes exclusions; they must not
-        disable same-run MCP discovery whichever browser WebBridge picks."""
+        """MCP tools granted to the run are in tool_defs from the first model
+        call, and session exclusions still apply on top of eagerness."""
         from app.services.webbridge_service import webbridge_manager
 
         monkeypatch.setattr(webbridge_manager, "agent_browsing_ready", lambda: ready)
-        from app.agent.mcp import mcp_manager
-        from app.agent.tools.builtin.load_tool import load_tool
         from app.agent.tools.registry import Tool
 
         mcp_search = Tool(
             lambda: "docs result",
             name="mcp_docs_search",
-            deferred=True,
-            deferred_summary="Search the connected documentation server.",
             capabilities=("webbridge-safe",),
         )
         mcp_search.origin = "mcp"
-        monkeypatch.setattr(
-            mcp_manager,
-            "get_tools_for_server",
-            lambda name: [mcp_search] if name == "docs" else None,
-        )
         monkeypatch.setattr(
             "app.agent.mode.team.member.build_title_generation_hook",
             lambda *_args, **_kwargs: None,
@@ -378,36 +336,33 @@ class TestOnDemandActivation:
             lambda *_args, **_kwargs: None,
         )
 
-        source = tmp_path / "lead.md"
-        source.write_text(
-            "---\nname: lead\nrole: lead\nmcp:\n  - docs\n---\n\nUse connected tools.",
-            encoding="utf-8",
-        )
-        provider = DeferredMcpSequenceProvider()
-        webbridge = Tool(lambda: None, name="webbridge", deferred=True)
+        provider = McpSchemaCaptureProvider()
+        webbridge = Tool(lambda: None, name="webbridge")
         db_factory = _make_mock_db_factory()
         lead = TeamLead(
             Agent(
                 name="lead",
                 llm_provider=provider,
-                tools=[load_tool, webbridge],
+                tools=[mcp_search, webbridge],
             ),
             db_factory=db_factory,
         )
-        lead.agent.source_path = source
-        team = AgentTeam(lead=lead, db_factory=db_factory)
+        team = AgentTeam(
+            lead=lead,
+            db_factory=db_factory,
+            session_tags=frozenset({"webbridge"}),
+        )
         lead.register(team)
 
         await lead._handle_messages()
 
-        assert len(provider.tool_schemas) == 3
-        assert "mcp_docs_search" not in provider.tool_schemas[0]
-        assert "mcp_docs_search" in provider.tool_schemas[2]
+        assert len(provider.tool_schemas) == 1
+        assert "mcp_docs_search" in provider.tool_schemas[0]
+        assert ("webbridge" in provider.tool_schemas[0]) is ready
 
     async def test_member_keeps_every_browser_tool_while_webbridge_is_ready(
         self, monkeypatch
     ):
-        from app.agent.tools.builtin.load_tool import load_tool
         from app.agent.tools.registry import Tool
         from app.services.webbridge_service import webbridge_manager
 
@@ -420,7 +375,6 @@ class TestOnDemandActivation:
         mcp_browser_tool = Tool(
             lambda: None,
             name="mcp_chrome-devtools_click",
-            deferred=True,
             capabilities=("browser",),
         )
         mcp_browser_tool.origin = "mcp"
@@ -432,9 +386,8 @@ class TestOnDemandActivation:
                     Tool(lambda: None, name="read"),
                     Tool(lambda: None, name="edit"),
                     Tool(lambda: None, name="shell"),
-                    load_tool,
-                    Tool(lambda: None, name="webbridge", deferred=True),
-                    Tool(lambda: None, name="browser_use", deferred=True),
+                    Tool(lambda: None, name="webbridge"),
+                    Tool(lambda: None, name="browser_use"),
                     mcp_browser_tool,
                 ],
             ),
@@ -461,7 +414,6 @@ class TestOnDemandActivation:
             "read",
             "edit",
             "shell",
-            "load_tool",
             "team_message",
             "webbridge",
             "browser_use",

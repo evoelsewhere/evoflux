@@ -435,11 +435,6 @@ async def stop_all_processes() -> None:
     )
 
 
-def activate_process_tool(state: Any) -> None:
-    if state is not None:
-        state.metadata.setdefault("activated_deferred_tools", set()).add("process")
-
-
 def format_completed_process(tracked: TrackedProcess, *, output_limit: int) -> str:
     failed = tracked.timed_out or tracked.exit_code != 0
     limit = min(
@@ -621,8 +616,6 @@ async def _process(
 process_tool = Tool(
     _process,
     name="process",
-    deferred=True,
-    deferred_summary="Poll, wait for, list, or terminate a command process returned by shell.",
     description=(
         "Continue a command process returned by shell. Poll returns progress "
         "immediately; wait blocks for completion up to wait_seconds. Both return "

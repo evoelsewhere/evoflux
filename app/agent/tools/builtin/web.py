@@ -168,19 +168,6 @@ _DDSG_WAIT_TIMEOUT = 15
     name="web_search",
     concurrency_safe=True,
     read_only=True,
-    deferred=True,
-    deferred_summary="Search the public web for current information and sources.",
-    search_aliases=(
-        "google",
-        "internet",
-        "online",
-        "news",
-        "latest",
-        "recent",
-        "research",
-        "documentation",
-        "docs",
-    ),
 )
 async def web_search(
     query: Annotated[
@@ -280,20 +267,6 @@ async def web_search(
     name="web_fetch",
     concurrency_safe=True,
     read_only=True,
-    deferred=True,
-    deferred_summary="Fetch a web URL as Markdown, HTML, or plain text.",
-    search_aliases=(
-        "url",
-        "link",
-        "website",
-        "scrape",
-        "download",
-        "http",
-        "https",
-        "article",
-        "documentation",
-        "docs",
-    ),
 )
 async def web_fetch(
     url: Annotated[
@@ -396,20 +369,6 @@ async def web_fetch(
     name="image_search",
     concurrency_safe=True,
     read_only=True,
-    deferred=True,
-    deferred_summary="Search the web for usable photos, illustrations, icons, or backgrounds.",
-    search_aliases=(
-        "image",
-        "images",
-        "picture",
-        "photo",
-        "stock",
-        "logo",
-        "asset",
-        "wallpaper",
-        "graphic",
-        "thumbnail",
-    ),
 )
 async def image_search(
     query: Annotated[

@@ -1321,10 +1321,6 @@ _UNTRUSTED_BROWSER_ACTIONS = frozenset(
 @tool(
     name="webbridge",
     description=_DESCRIPTION,
-    deferred=True,
-    deferred_summary=(
-        "Drive an external Chrome/Edge browser through the opt-in WebBridge extension."
-    ),
 )
 async def webbridge(
     actions: Annotated[

@@ -1082,17 +1082,4 @@ preview_tool = Tool(
     name="preview",
     concurrency_safe=False,
     tiers=("work", "coding"),
-    deferred=True,
-    deferred_summary="Start, inspect, or stop a configured development server for browser verification.",
-    search_aliases=(
-        "devserver",
-        "localhost",
-        "npm",
-        "vite",
-        "port",
-        "frontend",
-        "backend",
-        "dependsOn",
-        "multi-server",
-    ),
 )

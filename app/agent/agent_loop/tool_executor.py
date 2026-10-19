@@ -18,7 +18,6 @@ from __future__ import annotations
 import hashlib
 import json
 import time
-from collections.abc import Set
 from typing import TYPE_CHECKING, Any
 
 from loguru import logger
@@ -137,21 +136,12 @@ def _prepare_observation(
 def make_tool_executor(
     run_tools: dict[str, Tool],
     agent_name: str,
-    deferred_names: Set[str] = frozenset(),
 ) -> ToolCallHandler:
     """Return the innermost tool executor coroutine for one ``Agent.run``.
 
     Closed over ``run_tools`` (constructor + injected tools) and the
     agent's ``name`` (logging only).  The executor itself depends on
     no instance state, so it can live outside the class.
-
-    ``deferred_names`` are tools hidden from ``tool_defs`` by default (see
-    ``Agent.run``'s ``deferred_tools`` param) but still present in
-    ``run_tools`` so they work once unlocked via ``load_tool``. Hiding a
-    schema is not an execution gate on its own — a model that names one
-    directly (e.g. from ``load_tool``'s own catalog, which must list names to
-    be useful) would otherwise have it run anyway. This closure enforces the
-    activation requirement at the one place every tool call passes through.
     """
 
     async def execute(ctx: RunContext, s: AgentState, tc: ToolCall) -> str:
@@ -184,24 +174,6 @@ def make_tool_executor(
             if tc.function.name not in run_tools:
                 raise ToolNotFoundError(f"Tool '{tc.function.name}' not found.")
             active_tool = run_tools[tc.function.name]
-
-            # ── Deferred-tool activation gate ───────────────────────────────
-            # Visibility (tool_defs) says "call load_tool first"; this is the
-            # actual enforcement so that guidance can't be silently bypassed.
-            if tc.function.name in deferred_names and tc.function.name not in (
-                s.metadata.get("activated_deferred_tools") or ()
-            ):
-                logger.info(
-                    "tool_call_blocked_not_activated agent={} tool={}",
-                    agent_name,
-                    tc.function.name,
-                )
-                return (
-                    f"'{tc.function.name}' is not yet available — call "
-                    f"load_tool(tool_name='{tc.function.name}') first, then "
-                    f"call '{tc.function.name}' again on your next turn."
-                )
-            # ─────────────────────────────────────────────────────────────
 
             (
                 observation_cache_key,

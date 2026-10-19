@@ -64,7 +64,7 @@ Tools declare their mode tier and role constraints in tool metadata. The
 effective agent config may add allowed extras or opt out of defaults. Runtime
 protocols may name guaranteed lifecycle/team tools, but first-party role
 prompts remain capability-agnostic because optional tool schemas can be
-deferred or excluded.
+excluded.
 
 ## Runtime context and hooks
 
@@ -100,8 +100,8 @@ file again.
 Command execution has one continuation contract. `shell` starts a
 non-interactive command, journals raw combined stdout/stderr to a
 session-scoped artifact, and returns a bounded head/tail observation. If the
-command outlives `yield_time_ms`, `shell` returns an opaque process ID and
-activates the deferred `process` tool. `process` owns list, poll, wait, and
+command outlives `yield_time_ms`, `shell` returns an opaque process ID and the
+`process` tool owns list, poll, wait, and
 terminate; poll and wait consume only output produced since the previous
 observation. There are no parallel `bg` or `shell_bg_*` APIs. Preview servers
 reuse the same journalled process runtime but keep their specialized lifecycle

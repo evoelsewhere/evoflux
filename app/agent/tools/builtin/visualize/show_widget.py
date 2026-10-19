@@ -23,24 +23,6 @@ from app.agent.tools.builtin.visualize.geometry import check_svg_layout
     ),
     concurrency_safe=False,
     read_only=True,
-    deferred=True,
-    deferred_summary="Render an interactive HTML widget inline in the conversation.",
-    search_aliases=(
-        "chart",
-        "charts",
-        "plot",
-        "graph",
-        "diagram",
-        "flowchart",
-        "dashboard",
-        "visualise",
-        "visualize",
-        "visualization",
-        "mockup",
-        "timeline",
-        "infographic",
-        "svg",
-    ),
 )
 async def show_widget(
     title: Annotated[

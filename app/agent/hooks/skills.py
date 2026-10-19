@@ -84,8 +84,7 @@ def _grant_plugin_tools(state: AgentState, skill: Skill) -> None:
 
     grant = state.metadata.get("_grant_plugin_mcp_tools")
     if skill.plugin_id and callable(grant):
-        tools = grant(skill.plugin_id)
-        state.metadata.setdefault("activated_deferred_tools", set()).update(tools)
+        grant(skill.plugin_id)
 
 
 def _record_activation(skill: Skill) -> None:

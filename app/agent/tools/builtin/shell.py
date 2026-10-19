@@ -18,7 +18,6 @@ from app.agent.tools.builtin import shell_runtime as _shell_mod
 from app.agent.tools.builtin.process import (
     TrackedProcess,
     _kill_process_group as _kill_process_group,
-    activate_process_tool,
     command_process_scope,
     completed_metadata,
     format_completed_process,
@@ -379,7 +378,6 @@ async def _shell(
 
     initial, dropped = tracked.consume_delta()
     register_process(tracked)
-    activate_process_tool(_state)
     result, metadata = format_running_process(
         tracked,
         initial=initial,

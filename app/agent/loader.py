@@ -356,7 +356,6 @@ def _default_tool_registry() -> dict[str, Tool]:
         image_search,
         write_file,
     )
-    from app.agent.tools.builtin.load_tool import load_tool
     from app.agent.tools.builtin.memory_search import memory_search
     from app.agent.tools.builtin.note import note_tool
     from app.agent.tools.builtin.ask_user import ask_user
@@ -403,7 +402,6 @@ def _default_tool_registry() -> dict[str, Tool]:
         "rm": remove_path,
         "python": python_tool,
         "shell": shell_tool,
-        "load_tool": load_tool,
         "schedule_task": schedule_task,
         "todo_manage": todo_manage,
         "memory_search": memory_search,

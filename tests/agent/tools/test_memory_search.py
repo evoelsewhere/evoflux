@@ -66,4 +66,6 @@ def test_memory_search_is_exported_from_builtin_package():
 
 
 def test_memory_search_is_always_visible_to_the_model():
-    assert memory_search.deferred is False
+    from app.agent.loader import _default_tool_registry
+
+    assert _default_tool_registry()["memory_search"] is memory_search

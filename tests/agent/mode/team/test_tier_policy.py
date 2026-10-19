@@ -24,7 +24,6 @@ from app.agent.mode.team.tier_policy import (
     SIDE_CHAT_SESSION_TAG,
     TIER_DENIED_TOOLS,
     WEBBRIDGE_OFF_DENIED_TOOLS,
-    deferred_tools_for_run,
     denied_tools_for_tier,
     resolve_member_tier,
     side_chat_session_excluded_tools,
@@ -54,7 +53,6 @@ class TestDeniedToolsForTier:
         future_tool = Tool(
             lambda: None,
             name="future_side_effect",
-            deferred=True,
             read_only=False,
         )
 
@@ -66,7 +64,6 @@ class TestDeniedToolsForTier:
         future_tool = Tool(
             lambda: None,
             name="future_inspector",
-            deferred=True,
             read_only=True,
         )
 
@@ -111,16 +108,16 @@ class TestDeniedToolsForTier:
         assert "complex" in TIER_DENIED_TOOLS
 
 
-# ── Registry-driven deferred tools ───────────────────────────────────────
+# ── Registry-driven tool metadata ────────────────────────────────────────
 
 
-class TestDefaultDeferredTools:
+class TestDefaultRegisteredTools:
     def test_includes_browser_tools(self):
         from app.agent.loader import _default_tool_registry
 
         registry = _default_tool_registry()
-        assert registry["browser_use"].deferred
-        assert registry["webbridge"].deferred
+        assert "browser_use" in registry
+        assert "webbridge" in registry
 
     def test_preview_is_available_in_every_first_party_mode(self):
         from app.agent.builtin_prompts import EVOFLUX_prompt_for_mode, tier_tools
@@ -147,34 +144,24 @@ class TestDefaultDeferredTools:
             "show_widget",
             "create_pull_request",
         }
-        assert all(registry[name].deferred for name in expected)
-        assert all(registry[name].deferred_summary for name in expected)
+        assert expected <= registry.keys()
+        assert all(registry[name].description for name in expected)
 
-    def test_excludes_core_coding_tools(self):
-        """Tools nearly every turn needs must never be deferred."""
+    def test_core_coding_tools_are_registered(self):
+        """Tools nearly every turn needs are always present."""
         from app.agent.loader import _default_tool_registry
 
         registry = _default_tool_registry()
-        assert not any(
-            registry[name].deferred
-            for name in (
-                "read",
-                "write",
-                "edit",
-                "grep",
-                "glob",
-                "shell",
-                "todo_manage",
-            )
-        )
+        assert {
+            "read",
+            "write",
+            "edit",
+            "grep",
+            "glob",
+            "shell",
+            "todo_manage",
+        } <= registry.keys()
         assert "skill" not in registry
-
-    def test_loader_is_core_and_read_only(self):
-        from app.agent.loader import _default_tool_registry
-
-        loader = _default_tool_registry()["load_tool"]
-        assert not loader.deferred
-        assert loader.read_only
 
     def test_lead_registry_core_includes_goal_controls(self):
         from app.agent.builtin_prompts import tier_tools
@@ -188,7 +175,6 @@ class TestDefaultDeferredTools:
             "glob",
             "grep",
             "get_goal",
-            "load_tool",
             "ls",
             "memory_search",
             "patch",
@@ -202,15 +188,13 @@ class TestDefaultDeferredTools:
         for mode in ("work", "coding"):
             granted = set(tier_tools(registry, mode=mode, role="lead"))
             granted.update({"todo_manage", "schedule_task", "note"})
-            eager = {name for name in granted if not registry[name].deferred}
-            assert 12 <= len(eager) <= 19
             expected = set(expected_core)
             if mode == "coding":
                 # Coding-only: repository navigation, and parking out-of-scope
                 # work, which has to be reachable the moment the lead notices
-                # something rather than after a load_tool round trip.
+                # something rather than after an extra tool round trip.
                 expected.update({"spawn_task"})
-            assert eager == expected
+            assert expected <= granted
 
     def test_actual_coding_lead_payload_includes_memory_search(self):
         from app.agent.builtin_prompts import tier_tools
@@ -232,9 +216,7 @@ class TestDefaultDeferredTools:
             for tool in (*agent._tools.values(), *team.get_injected_tools("lead"))
         }
 
-        eager = {name for name, tool in merged.items() if not tool.deferred}
-
-        assert eager == {
+        assert {
             "ask_user",
             "document_preview",
             "edit",
@@ -242,7 +224,6 @@ class TestDefaultDeferredTools:
             "glob",
             "grep",
             "get_goal",
-            "load_tool",
             "ls",
             "memory_search",
             "patch",
@@ -256,26 +237,7 @@ class TestDefaultDeferredTools:
             "todo_manage",
             "update_goal",
             "write",
-        }
-
-
-class TestDeferredTools:
-    @staticmethod
-    def _tool(name: str, *, deferred: bool = False) -> Tool:
-        return Tool(lambda: None, name=name, deferred=deferred)
-
-    def test_browser_and_preview_stay_deferred_until_explicitly_loaded(self):
-        tools = [
-            self._tool("load_tool"),
-            self._tool("browser_use", deferred=True),
-            self._tool("preview", deferred=True),
-            self._tool("webbridge", deferred=True),
-            self._tool("lsp_diagnostics", deferred=True),
-        ]
-
-        deferred = deferred_tools_for_run(tools)
-
-        assert {"browser_use", "preview", "webbridge", "lsp_diagnostics"} <= deferred
+        } <= merged.keys()
 
 
 # ── resolve_member_tier ──────────────────────────────────────────────────
@@ -485,7 +447,6 @@ class TestWebbridgeAvailability:
         team = AgentTeam(lead=lead, session_tags=frozenset({"webbridge"}))
         prompt = team.lead.build_protocol("base", team)
         assert "WebBridge session" not in prompt
-        assert "## Deferred tool activation" in prompt
 
 
 # ── Side Chat session scoping ────────────────────────────────────────────

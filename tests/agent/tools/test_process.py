@@ -61,7 +61,6 @@ async def test_shell_yields_process_and_activates_continuation(process_sandbox):
     process_id = _process_id(result)
     assert process_id in _processes
     assert "ready" in result
-    assert "process" in state.metadata["activated_deferred_tools"]
     metadata = state.metadata["_tool_result_metadata"]["call-shell"]
     assert metadata["process_id"] == process_id
     assert metadata["artifact"]

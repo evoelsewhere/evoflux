@@ -1178,19 +1178,6 @@ async def _browser_use_via_webbridge(
 @tool(
     name="browser_use",
     description=_DESCRIPTION,
-    deferred=True,
-    deferred_summary=(
-        "Read and control a browser: the user's real Chrome/Edge via WebBridge "
-        "when it is enabled and connected, otherwise EvoFlux's in-app browser."
-    ),
-    search_aliases=(
-        "screenshot",
-        "chrome",
-        "devtools",
-        "console",
-        "webbridge",
-        "extension",
-    ),
     capabilities=("browser",),
 )
 async def browser_use(

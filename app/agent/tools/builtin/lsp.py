@@ -598,25 +598,7 @@ static_diagnostics = Tool(
     ),
     concurrency_safe=True,
     read_only=True,
-    deferred=True,
-    deferred_summary="Run static diagnostics for a file or directory.",
     observation_kind="runtime",
-    search_aliases=(
-        "lint",
-        "linter",
-        "lints",
-        "typecheck",
-        "types",
-        "error",
-        "errors",
-        "warning",
-        "warnings",
-        "ruff",
-        "tsc",
-        "mypy",
-        "eslint",
-        "syntax",
-    ),
 )
 
 lsp_diagnostics = Tool(
@@ -629,20 +611,7 @@ lsp_diagnostics = Tool(
     ),
     concurrency_safe=True,
     read_only=True,
-    deferred=True,
-    deferred_summary="Get live diagnostics from a language server.",
     observation_kind="runtime",
-    search_aliases=(
-        "lint",
-        "typecheck",
-        "types",
-        "error",
-        "errors",
-        "warning",
-        "warnings",
-        "syntax",
-        "lsp",
-    ),
 )
 
 lsp_definition = Tool(
@@ -655,8 +624,6 @@ lsp_definition = Tool(
     ),
     concurrency_safe=True,
     read_only=True,
-    deferred=True,
-    deferred_summary="Resolve a source position with a language server.",
     capabilities=("source_navigation",),
     observation_kind="structural",
 )
@@ -671,8 +638,6 @@ lsp_references = Tool(
     ),
     concurrency_safe=True,
     read_only=True,
-    deferred=True,
-    deferred_summary="Find live references with a language server.",
     capabilities=("source_navigation",),
     observation_kind="structural",
 )
@@ -688,18 +653,6 @@ lsp_semantic = Tool(
     ),
     concurrency_safe=True,
     read_only=True,
-    deferred=True,
-    deferred_summary="Inspect semantic code information or calculate LSP edits.",
     capabilities=("source_navigation", "semantic_edits"),
     observation_kind="structural",
-    search_aliases=(
-        "hover",
-        "quick fix",
-        "code action",
-        "rename",
-        "format",
-        "organize imports",
-        "symbols",
-        "lsp",
-    ),
 )

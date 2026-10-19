@@ -192,11 +192,6 @@ async def _create_pull_request(
 create_pull_request = Tool(
     _create_pull_request,
     name="create_pull_request",
-    deferred=True,
-    deferred_summary=(
-        "Commit, push, and create a PR/MR for the current branch through the "
-        "configured Git server API."
-    ),
     description=(
         "Stage all changes, commit, push, and create a pull/merge request through "
         "the configured Git server REST API. Uses the shared or repository-specific "

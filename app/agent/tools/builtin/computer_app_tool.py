@@ -842,19 +842,6 @@ async def _attached_app_refusal(session_id: str, policy: Any) -> str | None:
 @tool(
     name="computer_app",
     description=_DESCRIPTION,
-    deferred=True,
-    deferred_summary=(
-        "Control one desktop application window in the background (Windows, macOS)."
-    ),
-    search_aliases=(
-        "computer use",
-        "desktop app",
-        "windows app",
-        "mac app",
-        "app control",
-        "spreadsheet",
-        "document editor",
-    ),
     capabilities=("computer",),
 )
 async def computer_app(

@@ -450,11 +450,6 @@ list_code_reviews = Tool(
     read_only=True,
     concurrency_safe=True,
     tiers=("coding",),
-    deferred=True,
-    deferred_summary=(
-        "List open PRs/MRs for the active Coding workspace or multi-repo project "
-        "using configured Git server API credentials."
-    ),
 )
 
 get_code_review = Tool(
@@ -463,61 +458,42 @@ get_code_review = Tool(
     read_only=True,
     concurrency_safe=True,
     tiers=("coding",),
-    deferred=True,
-    deferred_summary=(
-        "Fetch a PR/MR with changed files and comments using configured Git "
-        "server API credentials."
-    ),
 )
 
 add_code_review_comment = Tool(
     _add_code_review_comment,
     name="add_code_review_comment",
     tiers=("coding",),
-    deferred=True,
-    deferred_summary="Add a provider-neutral PR/MR conversation comment.",
 )
 add_code_review_inline_comment = Tool(
     _add_code_review_inline_comment,
     name="add_code_review_inline_comment",
     tiers=("coding",),
-    deferred=True,
-    deferred_summary="Add an inline PR/MR comment using normalized file position data.",
 )
 reply_code_review_thread = Tool(
     _reply_code_review_thread,
     name="reply_code_review_thread",
     tiers=("coding",),
-    deferred=True,
-    deferred_summary="Reply to a PR/MR discussion thread.",
 )
 resolve_code_review_thread = Tool(
     _resolve_code_review_thread,
     name="resolve_code_review_thread",
     tiers=("coding",),
-    deferred=True,
-    deferred_summary="Resolve a PR/MR discussion thread when supported.",
 )
 reopen_code_review_thread = Tool(
     _reopen_code_review_thread,
     name="reopen_code_review_thread",
     tiers=("coding",),
-    deferred=True,
-    deferred_summary="Reopen a resolved PR/MR discussion thread when supported.",
 )
 submit_code_review = Tool(
     _submit_code_review,
     name="submit_code_review",
     tiers=("coding",),
-    deferred=True,
-    deferred_summary="Approve, request changes, or submit a PR/MR review comment.",
 )
 update_code_review = Tool(
     _update_code_review,
     name="update_code_review",
     tiers=("coding",),
-    deferred=True,
-    deferred_summary="Update PR/MR metadata supported by the configured provider.",
 )
 get_code_review_checks = Tool(
     _get_code_review_checks,
@@ -525,27 +501,19 @@ get_code_review_checks = Tool(
     read_only=True,
     concurrency_safe=True,
     tiers=("coding",),
-    deferred=True,
-    deferred_summary="Read normalized CI checks or pipelines for a PR/MR.",
 )
 merge_code_review = Tool(
     _merge_code_review,
     name="merge_code_review",
     tiers=("coding",),
-    deferred=True,
-    deferred_summary="Merge a PR/MR through its provider REST API (important action).",
 )
 close_code_review = Tool(
     _close_code_review,
     name="close_code_review",
     tiers=("coding",),
-    deferred=True,
-    deferred_summary="Close or decline a PR/MR (important action).",
 )
 reopen_code_review = Tool(
     _reopen_code_review,
     name="reopen_code_review",
     tiers=("coding",),
-    deferred=True,
-    deferred_summary="Reopen a closed PR/MR through its provider REST API.",
 )
