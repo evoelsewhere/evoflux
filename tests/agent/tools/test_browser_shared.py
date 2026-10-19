@@ -143,9 +143,11 @@ def test_browser_tool_definitions_are_unchanged() -> None:
     # mappings and null branches of optional fields; then the guide said the
     # call runs through WebBridge whenever it is enabled and connected; then
     # it named the saved switch, the chat's own WebBridge tab and every
-    # action refused there.
+    # action refused there; then `done_browsing` teardown, `load_state`
+    # aliases and the tab-group `label` grew the schema after this digest
+    # was last recorded.
     assert _definition_digest(browser_use) == (
-        "286fbc7d3d7c364a9a76bcba08715bf0f3aa1e75889b2b7c49d122693b9375ba"
+        "bfefeabe0115c7fb6367070d50156e543e89c25f337db8be6880503bdd99ce1f"
     )
     # Changed deliberately: the tool guide (`_DESCRIPTION`) was defined but
     # never passed to `@tool`, so the model saw only the one-line docstring;
@@ -154,7 +156,9 @@ def test_browser_tool_definitions_are_unchanged() -> None:
     # then the schema was compacted (registry noise, per-field tab_id text)
     # and the guide rewritten, 67k → 35k characters; then wait_for_hmr and
     # console level "warn" were added; then the guide said browser_use
-    # reaches the same browser and what only webbridge offers.
+    # reaches the same browser and what only webbridge offers; then
+    # non-intrusive `target: "active"` tab binding and `release_session`
+    # grew the schema after this digest was last recorded.
     assert _definition_digest(webbridge) == (
-        "5ec37fe89f79d8ba07855bdfac30b8da5ee9214e3f8e58c5cd3c5e79d401655c"
+        "673cc4d11dee168d741906fcc5cfd3663e1d393a7a57bd8bd3a0a5b875569bbe"
     )
