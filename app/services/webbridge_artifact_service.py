@@ -10,7 +10,7 @@ from typing import Any, cast
 from uuid import UUID
 
 from loguru import logger
-from sqlalchemy import Text, update
+from sqlalchemy import Text, func as sql_func, literal_column, update
 from sqlalchemy import cast as sql_cast
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -106,17 +106,26 @@ async def cleanup_expired_artifacts(
     return await _apply_artifact_cleanup(db, plan)
 
 
-def _candidate_rows_statement():
-    """Messages whose metadata mentions an artifact retention window.
+def _candidate_rows_statement(dialect_name: str = "sqlite"):
+    """Select only rows carrying the WebBridge artifact-retention key.
 
-    Almost every message has metadata (usage, timing), so ``extra IS NOT NULL``
-    selects nearly the whole table and an index on it would too. Only the few
-    rows that carry an attachment with a retention window can ever expire, so
-    ask the database for those and parse only them.
+    SQLite uses the matching partial index; other dialects retain the portable
+    text search. This avoids loading the metadata for every message at startup.
     """
+    extra_text = sql_cast(col(SessionMessage.extra), Text)
+    if dialect_name == "sqlite":
+        has_artifact_key = (
+            sql_func.instr(
+                extra_text,
+                literal_column(f"'\"{_ARTIFACT_KEY}\"'"),
+            )
+            > 0
+        )
+    else:
+        has_artifact_key = extra_text.like(f'%"{_ARTIFACT_KEY}"%')
     return select(
         SessionMessage.id, SessionMessage.session_id, SessionMessage.extra
-    ).where(sql_cast(col(SessionMessage.extra), Text).like(f'%"{_ARTIFACT_KEY}"%'))
+    ).where(has_artifact_key)
 
 
 async def _plan_expired_artifact_cleanup(
@@ -126,7 +135,11 @@ async def _plan_expired_artifact_cleanup(
 ) -> list[_ArtifactCleanup]:
     """Project only metadata columns; message bodies can occupy hundreds of MB."""
 
-    rows = (await db.exec(_candidate_rows_statement())).all()
+    rows = (
+        await db.exec(
+            _candidate_rows_statement(dialect_name=db.get_bind().dialect.name)
+        )
+    ).all()
     plan: list[_ArtifactCleanup] = []
     for message_id, session_id, raw_extra in rows:
         extra = dict(raw_extra or {})
