@@ -7,9 +7,15 @@ from typing import Literal
 from urllib.parse import urlsplit
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.core.config import settings
+from app.agent.plugins.hook_contract import (
+    HookDefinition,
+    HookEvent,
+    HookMode,
+    HookTarget,
+)
 
 PROVIDER_MODEL_PLACEHOLDER = "__PROVIDER_MODEL__"
 
@@ -117,6 +123,43 @@ class ContextSettings(BaseModel):
     #: Tool-call batches kept verbatim at the provider boundary. Older
     #: results outside this window are replaced by deterministic receipts.
     keep_recent_tool_batches: int | None = Field(default=None, ge=1, le=12)
+
+
+class HookRuntimeSettings(BaseModel):
+    """Persisted user hook definitions and their plugin precedence policy."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    mode: HookMode = HookMode.AUGMENT
+    replace_plugin_events: tuple[HookEvent, ...] = ()
+    disabled_plugin_hooks: tuple[HookTarget, ...] = ()
+    definitions: tuple[HookDefinition, ...] = ()
+
+    @field_validator("replace_plugin_events", "disabled_plugin_hooks")
+    @classmethod
+    def validate_unique_policy_entries(cls, values: tuple) -> tuple:
+        if len(values) != len(set(values)):
+            raise ValueError("hook settings entries must not contain duplicates")
+        return values
+
+    @field_validator("definitions")
+    @classmethod
+    def validate_unique_definition_ids(
+        cls, definitions: tuple[HookDefinition, ...]
+    ) -> tuple[HookDefinition, ...]:
+        ids = [definition.hook_id for definition in definitions]
+        if len(ids) != len(set(ids)):
+            raise ValueError("Settings hook IDs must be unique")
+        for definition in definitions:
+            executable = definition.command[0]
+            parts = executable[2:].replace("\\", "/").split("/")
+            if not executable.startswith("./") or any(
+                part in {"", ".", ".."} for part in parts
+            ):
+                raise ValueError(
+                    "Settings hook executables must be safe ./ relative paths"
+                )
+        return definitions
 
 
 class CodeReviewSettings(BaseModel):
@@ -328,6 +371,7 @@ class RuntimeSettings(BaseModel):
     providers: dict[str, ProviderUiSettings] = Field(default_factory=dict)
     git: GitSettings = Field(default_factory=GitSettings)
     context: ContextSettings = Field(default_factory=ContextSettings)
+    hooks: HookRuntimeSettings = Field(default_factory=HookRuntimeSettings)
     code_reviews: CodeReviewSettings = Field(default_factory=CodeReviewSettings)
     browser: BuiltInBrowserSettings = Field(default_factory=BuiltInBrowserSettings)
     webbridge: WebBridgeSettings = Field(default_factory=WebBridgeSettings)

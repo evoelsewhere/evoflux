@@ -14,6 +14,7 @@ from pydantic import SecretStr
 
 from app.agent.sandbox_config import DEFAULT_DENIED_PATTERNS
 from app.api.routes import settings as settings_routes
+from app.agent.plugins.hook_runner import hook_isolation_available
 from app.cli.seed import SeedDownloadError, SeedResult
 from app.api.routes.settings import router
 from app.agent.providers.codex.oauth import CodexOAuth
@@ -1570,7 +1571,6 @@ def test_webbridge_agent_browsing_toggle_applies_live(tmp_path, monkeypatch):
         encoding="utf-8"
     )
 
-
     form = client.get("/api/settings/webbridge").json()
     assert "agent_browsing" not in form
 
@@ -2125,6 +2125,607 @@ def test_get_context_reports_every_default(
     }
     # GET must not write the file.
     assert not isolated_runtime_settings.exists()
+
+
+def test_get_hook_settings_reports_host_execution_state(
+    isolated_runtime_settings: Path,
+) -> None:
+    response = TestClient(_make_app()).get("/api/settings/hooks")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "mode": "augment",
+        "replace_plugin_events": [],
+        "disabled_plugin_hooks": [],
+        "definitions": [],
+        "execution_state": (
+            "available"
+            if hook_isolation_available()
+            else "blocked_isolation_unavailable"
+        ),
+        "trust_required": True,
+        "hook_statuses": [],
+    }
+    assert not isolated_runtime_settings.exists()
+
+
+def test_settings_hook_workflow_content_writes_only_fixed_bounded_markdown(
+    isolated_runtime_settings: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "EVOFLUX_CONFIG_DIR", str(tmp_path))
+    workflow_id = "a" * 32
+    client = TestClient(_make_app())
+
+    response = client.put(
+        f"/api/settings/hooks/workflows/{workflow_id}/content",
+        json={"content": "# Chào bạn\n\nUse the project skill."},
+    )
+
+    assert response.status_code == 200
+    relative_path = response.json()["path"]
+    assert relative_path == f"./settings-workflows/{workflow_id}.md"
+    assert (tmp_path / "settings-workflows" / f"{workflow_id}.md").read_text(
+        encoding="utf-8"
+    ) == "# Chào bạn\n\nUse the project skill."
+    assert not isolated_runtime_settings.exists()
+    assert not (tmp_path / "settings.yaml").exists()
+
+    updated = client.put(
+        f"/api/settings/hooks/workflows/{workflow_id}/content",
+        json={"content": "Updated guidance."},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["path"] == relative_path
+    assert (tmp_path / "settings-workflows" / f"{workflow_id}.md").read_text(
+        encoding="utf-8"
+    ) == "Updated guidance."
+
+
+def test_settings_hook_workflow_content_can_be_read_for_editing(
+    isolated_runtime_settings: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "EVOFLUX_CONFIG_DIR", str(tmp_path))
+    workflow_id = "d" * 32
+    client = TestClient(_make_app())
+    content = "# Session guide\n\nUse the project skill.\n"
+    saved = client.put(
+        f"/api/settings/hooks/workflows/{workflow_id}/content",
+        json={"content": content},
+    )
+    assert saved.status_code == 200
+
+    response = client.get(f"/api/settings/hooks/workflows/{workflow_id}/content")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "path": f"./settings-workflows/{workflow_id}.md",
+        "content": content,
+    }
+    assert not isolated_runtime_settings.exists()
+
+
+def test_settings_hook_workflow_content_delete_removes_only_named_file(
+    isolated_runtime_settings: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "EVOFLUX_CONFIG_DIR", str(tmp_path))
+    client = TestClient(_make_app())
+    first_id, second_id = "e" * 32, "f" * 32
+    for workflow_id in (first_id, second_id):
+        response = client.put(
+            f"/api/settings/hooks/workflows/{workflow_id}/content",
+            json={"content": f"Workflow {workflow_id[0]}"},
+        )
+        assert response.status_code == 200
+
+    removed = client.delete(f"/api/settings/hooks/workflows/{first_id}/content")
+
+    assert removed.status_code == 200
+    assert removed.json() == {"deleted": True}
+    assert not (tmp_path / "settings-workflows" / f"{first_id}.md").exists()
+    assert (tmp_path / "settings-workflows" / f"{second_id}.md").read_text(
+        encoding="utf-8"
+    ) == f"Workflow {second_id[0]}"
+    assert not isolated_runtime_settings.exists()
+
+
+def test_editing_guided_workflow_content_requires_new_digest_bound_trust(
+    isolated_runtime_settings: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "EVOFLUX_CONFIG_DIR", str(tmp_path))
+    monkeypatch.setattr(settings, "EVOFLUX_DATA_DIR", str(tmp_path / "data"))
+    client = TestClient(_make_app())
+    workflow_id = "9" * 32
+    hook_id = "workflow-session-guide-12345678"
+    content_path = f"/api/settings/hooks/workflows/{workflow_id}/content"
+    saved_content = client.put(content_path, json={"content": "# Guide\n\nOriginal."})
+    assert saved_content.status_code == 200
+    definition = {
+        "hook_id": hook_id,
+        "event": "session.start",
+        "runtime": "native",
+        "command": [saved_content.json()["path"]],
+        "files": [],
+        "execution_kind": "static_context",
+        "context_prefix": "",
+        "context_suffix": "",
+        "timeout_seconds": 10,
+        "input_fields": [],
+        "output_fields": ["context"],
+        "failure_policy": "fail_closed",
+        "overrides": [],
+    }
+    configured = client.put("/api/settings/hooks", json={"definitions": [definition]})
+    assert configured.status_code == 200
+    first = configured.json()["hook_statuses"][0]
+    assert first["status"] == "awaiting_trust"
+    approved = client.post(
+        f"/api/settings/hooks/{hook_id}/trust",
+        json={"confirm": True, "expected_digest": first["digest"]},
+    )
+    assert approved.status_code == 200
+    assert approved.json()["hook_statuses"][0]["trusted"] is True
+
+    changed_content = client.put(content_path, json={"content": "# Guide\n\nChanged."})
+    assert changed_content.status_code == 200
+    changed = client.get("/api/settings/hooks").json()["hook_statuses"][0]
+
+    assert changed["digest"] != first["digest"]
+    assert changed["trusted"] is False
+    assert changed["has_approvals"] is True
+    assert changed["status"] == "awaiting_trust"
+
+
+@pytest.mark.parametrize(
+    ("workflow_id", "payload", "expected_status"),
+    [
+        ("../outside", {"content": "Guidance."}, 404),
+        ("a" * 32, {"content": ""}, 422),
+        ("a" * 32, {"content": "x" * (64 * 1024 + 1)}, 422),
+        ("a" * 32, {"content": 42}, 422),
+    ],
+)
+def test_settings_hook_workflow_content_rejects_invalid_ids_and_content(
+    workflow_id: str,
+    payload: dict[str, object],
+    expected_status: int,
+    isolated_runtime_settings: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "EVOFLUX_CONFIG_DIR", str(tmp_path))
+
+    response = TestClient(_make_app()).put(
+        f"/api/settings/hooks/workflows/{workflow_id}/content", json=payload
+    )
+
+    assert response.status_code == expected_status
+    assert not (tmp_path / "settings-workflows").exists()
+    assert not isolated_runtime_settings.exists()
+
+
+def test_settings_hook_workflow_content_rejects_symlinked_directory_or_target(
+    isolated_runtime_settings: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "EVOFLUX_CONFIG_DIR", str(tmp_path))
+    workflow_id = "b" * 32
+    client = TestClient(_make_app())
+    outside = tmp_path.parent / "outside-workflow.md"
+    outside.write_text("keep this file unchanged", encoding="utf-8")
+    link_dir = tmp_path / "settings-workflows"
+
+    try:
+        link_dir.symlink_to(outside.parent, target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlink creation is unavailable on this host")
+    directory_response = client.put(
+        f"/api/settings/hooks/workflows/{workflow_id}/content",
+        json={"content": "Must not escape."},
+    )
+    assert directory_response.status_code == 422
+    assert outside.read_text(encoding="utf-8") == "keep this file unchanged"
+    link_dir.unlink()
+    link_dir.mkdir()
+
+    target = link_dir / f"{workflow_id}.md"
+    target.symlink_to(outside)
+    target_response = client.put(
+        f"/api/settings/hooks/workflows/{workflow_id}/content",
+        json={"content": "Must not follow a target symlink."},
+    )
+    assert target_response.status_code == 422
+    assert outside.read_text(encoding="utf-8") == "keep this file unchanged"
+    assert not isolated_runtime_settings.exists()
+
+
+def test_settings_hook_workflow_content_keeps_old_file_on_atomic_replace_error(
+    isolated_runtime_settings: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "EVOFLUX_CONFIG_DIR", str(tmp_path))
+    workflow_id = "c" * 32
+    client = TestClient(_make_app())
+    url = f"/api/settings/hooks/workflows/{workflow_id}/content"
+    saved = client.put(url, json={"content": "Existing guidance."})
+    assert saved.status_code == 200
+
+    def fail_replace(_source: object, _target: object) -> None:
+        raise OSError("simulated filesystem failure")
+
+    monkeypatch.setattr(settings_routes.os, "replace", fail_replace)
+    response = TestClient(_make_app(), raise_server_exceptions=False).put(
+        url, json={"content": "Replacement guidance."}
+    )
+
+    assert response.status_code == 500
+    assert (tmp_path / "settings-workflows" / f"{workflow_id}.md").read_text(
+        encoding="utf-8"
+    ) == "Existing guidance."
+    assert list((tmp_path / "settings-workflows").glob("*.tmp")) == []
+    assert not isolated_runtime_settings.exists()
+
+
+def test_put_hook_settings_persists_definitions_without_granting_trust(
+    isolated_runtime_settings: Path,
+) -> None:
+    body = {
+        "mode": "replace",
+        "replace_plugin_events": ["session.start"],
+        "disabled_plugin_hooks": [],
+        "definitions": [
+            {
+                "hook_id": "settings-bootstrap",
+                "event": "session.start",
+                "runtime": "python",
+                "command": ["./hooks/bootstrap.py"],
+                "files": ["./hooks/helper.py"],
+                "timeout_seconds": 10,
+                "input_fields": ["session_id", "source"],
+                "output_fields": ["context"],
+                "failure_policy": "fail_open",
+            }
+        ],
+    }
+
+    response = TestClient(_make_app()).put("/api/settings/hooks", json=body)
+
+    assert response.status_code == 200
+    assert response.json()["definitions"][0]["hook_id"] == "settings-bootstrap"
+    assert response.json()["definitions"][0]["command"] == ["./hooks/bootstrap.py"]
+    assert response.json()["definitions"][0]["runtime"] == "python"
+    assert response.json()["definitions"][0]["files"] == ["./hooks/helper.py"]
+    assert response.json()["execution_state"] == (
+        "available" if hook_isolation_available() else "blocked_isolation_unavailable"
+    )
+    assert "hooks:" in isolated_runtime_settings.read_text(encoding="utf-8")
+
+
+def test_put_hook_settings_rejects_duplicate_ids_and_stays_untrusted(
+    isolated_runtime_settings: Path,
+) -> None:
+    definition = {
+        "hook_id": "duplicate",
+        "event": "session.start",
+        "command": ["./hooks/bootstrap.py"],
+        "timeout_seconds": 10,
+        "failure_policy": "fail_closed",
+    }
+    body = {"definitions": [definition, definition]}
+
+    response = TestClient(_make_app()).put("/api/settings/hooks", json=body)
+
+    assert response.status_code == 422
+    assert not isolated_runtime_settings.exists()
+
+
+def test_settings_hook_requires_explicit_digest_bound_trust_and_can_be_revoked(
+    isolated_runtime_settings: Path,
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    from app.core.config import settings
+    from app.plugin_platform.hook_trust_store import HookTrustStore
+
+    monkeypatch.setattr(settings, "EVOFLUX_CONFIG_DIR", str(tmp_path))
+    hook_root = tmp_path / "hooks"
+    hook_root.mkdir()
+    executable = hook_root / "bootstrap.py"
+    executable.write_text("print('safe')\n", encoding="utf-8")
+    (hook_root / "helper.py").write_text("VALUE = 1\n", encoding="utf-8")
+    client = TestClient(_make_app())
+    body = {
+        "definitions": [
+            {
+                "hook_id": "settings-bootstrap",
+                "event": "session.start",
+                "runtime": "python",
+                "command": ["./hooks/bootstrap.py"],
+                "files": ["./hooks/helper.py"],
+                "timeout_seconds": 10,
+                "input_fields": ["session_id", "source"],
+                "output_fields": ["context"],
+                "failure_policy": "fail_open",
+            }
+        ]
+    }
+    saved = client.put("/api/settings/hooks", json=body)
+    assert saved.status_code == 200
+    row = saved.json()["hook_statuses"][0]
+    assert row["status"] == "awaiting_trust"
+    assert row["trusted"] is False
+    assert row["runtime"] == "python"
+    assert row["files"] == ["./hooks/helper.py"]
+    digest = row["digest"]
+    assert isinstance(digest, str) and len(digest) == 64
+
+    stale_review = client.post(
+        "/api/settings/hooks/settings-bootstrap/trust",
+        json={"confirm": True, "expected_digest": "0" * 64},
+    )
+    assert stale_review.status_code == 409
+    assert (
+        client.get("/api/settings/hooks").json()["hook_statuses"][0]["trusted"] is False
+    )
+
+    not_confirmed = client.post(
+        "/api/settings/hooks/settings-bootstrap/trust",
+        json={"confirm": False, "expected_digest": digest},
+    )
+    assert not_confirmed.status_code == 422
+
+    approved = client.post(
+        "/api/settings/hooks/settings-bootstrap/trust",
+        json={"confirm": True, "expected_digest": digest},
+    )
+    assert approved.status_code == 200
+    trusted_row = approved.json()["hook_statuses"][0]
+    assert trusted_row["trusted"] is True
+    assert trusted_row["has_approvals"] is True
+    assert trusted_row["digest"] == digest
+    assert trusted_row["status"] == (
+        "active" if hook_isolation_available() else "blocked_isolation_unavailable"
+    )
+
+    executable.write_text("print('changed')\n", encoding="utf-8")
+    changed = client.get("/api/settings/hooks").json()["hook_statuses"][0]
+    assert changed["trusted"] is False
+    assert changed["has_approvals"] is True
+    assert changed["status"] == "awaiting_trust"
+    assert changed["digest"] != digest
+
+    revoked = client.delete("/api/settings/hooks/settings-bootstrap/trust")
+    assert revoked.status_code == 200
+    assert revoked.json()["hook_statuses"][0]["trusted"] is False
+    assert revoked.json()["hook_statuses"][0]["has_approvals"] is False
+
+    reapproved = client.post(
+        "/api/settings/hooks/settings-bootstrap/trust",
+        json={"confirm": True, "expected_digest": changed["digest"]},
+    )
+    assert reapproved.status_code == 200
+    removed = client.put("/api/settings/hooks", json={"definitions": []})
+    assert removed.status_code == 200
+    assert removed.json()["hook_statuses"] == []
+    assert not any(
+        grant.owner_type == "settings"
+        and grant.owner_id == "global"
+        and grant.hook_id == "settings-bootstrap"
+        for grant in HookTrustStore().grants()
+    )
+
+
+def test_settings_hook_trust_rejects_missing_or_unsafe_executable(
+    isolated_runtime_settings: Path,
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "EVOFLUX_CONFIG_DIR", str(tmp_path))
+    client = TestClient(_make_app())
+    saved = client.put(
+        "/api/settings/hooks",
+        json={
+            "definitions": [
+                {
+                    "hook_id": "missing",
+                    "event": "session.start",
+                    "command": ["./hooks/missing.py"],
+                    "timeout_seconds": 10,
+                    "failure_policy": "fail_open",
+                }
+            ]
+        },
+    )
+    assert saved.status_code == 200
+    assert saved.json()["hook_statuses"][0]["status"] == "invalid"
+
+    response = client.post(
+        "/api/settings/hooks/missing/trust",
+        json={"confirm": True, "expected_digest": "0" * 64},
+    )
+    assert response.status_code == 422
+
+
+def test_hook_replace_preview_lists_exact_enabled_plugin_registrations(
+    isolated_runtime_settings: Path,
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    from types import SimpleNamespace
+
+    from app.agent.plugins.hook_contract import HookDefinition, HookEvent
+    from app.plugin_platform import registry, validator
+    from app.plugin_platform.models import PluginHookComponent
+
+    definition = HookDefinition(
+        hook_id="startup-context",
+        event=HookEvent.SESSION_START,
+        command=("./hooks/start.py",),
+        timeout_seconds=10,
+        failure_policy="fail_open",
+    )
+    component = PluginHookComponent(
+        definition=definition,
+        command_path="hooks/start.py",
+        digest="a" * 64,
+        valid=True,
+    )
+    installation = SimpleNamespace(
+        id="0123456789abcdef0123456789abcdef",
+        root=str(tmp_path / "plugin"),
+        name="demo-plugin",
+        enabled=True,
+    )
+    monkeypatch.setattr(
+        registry, "list_effective_installations", lambda: [installation]
+    )
+    monkeypatch.setattr(registry, "plugin_data_root", lambda _id: tmp_path / "data")
+    monkeypatch.setattr(
+        validator,
+        "inspect_plugin",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            manifest=SimpleNamespace(name="demo-plugin"), hooks=[component]
+        ),
+    )
+
+    response = TestClient(_make_app()).post(
+        "/api/settings/hooks/replace-preview",
+        json={"mode": "replace", "replace_plugin_events": ["session.start"]},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "registrations": [
+            {
+                "event": "session.start",
+                "plugin_id": "demo-plugin",
+                "hook_id": "startup-context",
+                "installation_id": installation.id,
+                "source": "managed_plugin",
+                "display_name": "demo-plugin",
+                "certainty": "exact",
+            }
+        ]
+    }
+    assert not isolated_runtime_settings.exists()
+
+
+def test_hook_replace_preview_reports_trusted_legacy_python_subscriptions(
+    isolated_runtime_settings: Path,
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    import hashlib
+    import json
+
+    from app.core.config import settings
+    from app.plugin_platform import registry
+
+    plugin_dir = tmp_path / "legacy-plugins"
+    plugin_dir.mkdir()
+    plugin_file = plugin_dir / "daily_guide.py"
+    source = (
+        "async def before_tool(payload, output):\n"
+        "    return None\n\n"
+        "async def plugin():\n"
+        "    return {'tool.before': before_tool}\n"
+    )
+    plugin_file.write_text(source, encoding="utf-8")
+    (plugin_dir / ".trusted-hooks.json").write_text(
+        json.dumps(
+            {plugin_file.name: hashlib.sha256(plugin_file.read_bytes()).hexdigest()}
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(settings, "EVOFLUX_PLUGINS_DIRS", str(plugin_dir))
+    monkeypatch.setattr(registry, "list_effective_installations", lambda: [])
+
+    response = TestClient(_make_app()).post(
+        "/api/settings/hooks/replace-preview",
+        json={"mode": "replace", "replace_plugin_events": ["tool.before"]},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["registrations"] == [
+        {
+            "event": "tool.before",
+            "plugin_id": "local-python",
+            "hook_id": "daily_guide",
+            "installation_id": hashlib.sha256(
+                str(plugin_dir.resolve()).encode("utf-8")
+            ).hexdigest()[:16],
+            "source": "legacy_python",
+            "display_name": "daily_guide.py",
+            "certainty": "exact",
+        }
+    ]
+
+
+def test_hook_replace_preview_marks_dynamic_legacy_plugins_without_running_them(
+    isolated_runtime_settings: Path,
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    import hashlib
+    import json
+
+    from app.core.config import settings
+    from app.plugin_platform import registry
+
+    plugin_dir = tmp_path / "legacy-plugins"
+    plugin_dir.mkdir()
+    plugin_file = plugin_dir / "dynamic_guide.py"
+    source = (
+        "import os\n"
+        "os.environ['EVOFLUX_PREVIEW_IMPORTED_LEGACY'] = '1'\n"
+        "async def plugin():\n"
+        "    return build_handlers()\n"
+    )
+    plugin_file.write_text(source, encoding="utf-8")
+    (plugin_dir / ".trusted-hooks.json").write_text(
+        json.dumps(
+            {plugin_file.name: hashlib.sha256(plugin_file.read_bytes()).hexdigest()}
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(settings, "EVOFLUX_PLUGINS_DIRS", str(plugin_dir))
+    monkeypatch.setattr(registry, "list_effective_installations", lambda: [])
+    monkeypatch.delenv("EVOFLUX_PREVIEW_IMPORTED_LEGACY", raising=False)
+
+    response = TestClient(_make_app()).post(
+        "/api/settings/hooks/replace-preview",
+        json={"mode": "replace", "replace_plugin_events": ["tool.before"]},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["registrations"][0]["certainty"] == "possible"
+    assert response.json()["registrations"][0]["display_name"] == "dynamic_guide.py"
+    assert "EVOFLUX_PREVIEW_IMPORTED_LEGACY" not in os.environ
 
 
 def test_put_context_persists_the_override(

@@ -112,6 +112,37 @@ export async function setPluginEnabled(
   return response.json()
 }
 
+export async function trustPluginHook(
+  installationId: string,
+  hookId: string,
+  digest: string,
+): Promise<PluginOperationResponse> {
+  const response = await fetch(
+    `${apiBaseUrl()}/plugins/${encodeURIComponent(installationId)}`
+      + `/hooks/${encodeURIComponent(hookId)}/trust`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ digest }),
+    },
+  )
+  if (!response.ok) await parseDetailOrThrow(response, 'POST /plugins/:id/hooks/:hook/trust')
+  return response.json()
+}
+
+export async function revokePluginHookTrust(
+  installationId: string,
+  hookId: string,
+): Promise<PluginOperationResponse> {
+  const response = await fetch(
+    `${apiBaseUrl()}/plugins/${encodeURIComponent(installationId)}`
+      + `/hooks/${encodeURIComponent(hookId)}/trust`,
+    { method: 'DELETE' },
+  )
+  if (!response.ok) await parseDetailOrThrow(response, 'DELETE /plugins/:id/hooks/:hook/trust')
+  return response.json()
+}
+
 export async function uninstallPlugin(id: string): Promise<PluginOperationResponse> {
   const response = await fetch(`${apiBaseUrl()}/plugins/${encodeURIComponent(id)}`, {
     method: 'DELETE',

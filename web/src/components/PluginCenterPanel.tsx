@@ -18,6 +18,7 @@ import {
   Search,
   Server,
   Trash2,
+  Webhook,
 } from 'lucide-react'
 import {
   approveConductorResource,
@@ -197,6 +198,22 @@ function PluginCard({
   const isValid = inspection.valid && problems.length === 0
   const skillCount = inspection.skills.filter((skill) => skill.valid).length
   const mcpCount = inspection.mcp_servers.filter((server) => server.valid).length
+  const hookCount = (inspection.hooks ?? []).length
+  const hookStatuses = inspection.hook_statuses ?? []
+  const invalidHookCount = (inspection.hooks ?? []).filter((hook) => !hook.valid).length
+  const workflowStateLabel = invalidHookCount > 0
+    ? 'Invalid'
+    : !installation.enabled
+      ? 'Plugin is off'
+      : hookStatuses.some((status) => status.status === 'blocked_isolation_unavailable')
+        ? 'Blocked on this device'
+        : hookStatuses.some((status) => status.status === 'awaiting_trust')
+          ? 'Needs review'
+          : hookStatuses.some((status) => status.status === 'disabled_by_settings')
+            ? 'Paused'
+            : hookStatuses.some((status) => status.status === 'active')
+              ? 'On'
+              : 'Unavailable'
   const configuredCredentialCount = item.credentials.fields.filter(
     (field) => field.configured,
   ).length
@@ -310,6 +327,12 @@ function PluginCard({
                 <KeyRound size={12} /> {credentialLabel}
               </span>
             )}
+            {hookCount > 0 && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-(--bg-key) px-2 py-0.5 font-medium text-(--color-text-muted)">
+                <Webhook size={12} aria-hidden="true" />
+                {hookCount} {hookCount === 1 ? 'automatic workflow' : 'automatic workflows'} · {workflowStateLabel}
+              </span>
+            )}
           </div>
         </div>
 
@@ -343,7 +366,11 @@ function PluginCard({
             className="grid gap-4 p-4 @2xl/plugin-card:grid-cols-[minmax(150px,1fr)_minmax(150px,1fr)_auto]"
           >
             {expanded && <section className="space-y-4 @2xl/plugin-card:col-span-3" aria-label={`Package contents for ${installation.name}`}>
-              <PluginInspectionDetails inspection={inspection} />
+              <PluginInspectionDetails
+                inspection={inspection}
+                installationId={installation.id}
+                onHookTrustChanged={onUpdate}
+              />
               <PluginPackageFiles target="installation" id={installation.id} />
             </section>}
             {item.provider
@@ -366,6 +393,9 @@ function PluginCard({
                 <span className="inline-flex items-center gap-1 rounded-md bg-(--bg-key) px-2 py-1">
                   <Server size={12} /> {mcpCount} MCP
                 </span>
+                {hookCount > 0 && <span className="inline-flex items-center gap-1 rounded-md bg-(--bg-key) px-2 py-1">
+                  <Webhook size={12} /> {hookCount} automatic workflows
+                </span>}
               </div>
               <p className="mt-2 break-all font-mono text-[10px] text-(--color-text-subtle)">
                 {installation.root}

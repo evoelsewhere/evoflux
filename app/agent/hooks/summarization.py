@@ -861,6 +861,9 @@ class SummarizationHook(BaseAgentHook):
 
         state.metadata["_compact_pending"] = True
         self._pending_summary = (ctx, state)
+        dispatch_compaction = state.metadata.get("_plugin_hook_compact")
+        if callable(dispatch_compaction):
+            await dispatch_compaction(ctx, state, "before")
 
         # The actual summariser LLM call runs from wrap_model_call(), after
         # earlier prompt-building wrappers (date, memory, team protocol,
@@ -886,6 +889,9 @@ class SummarizationHook(BaseAgentHook):
 
         self._pending_summary = None
         await self._summarise(ctx, state, system_prompt=request.system_prompt)
+        dispatch_compaction = state.metadata.get("_plugin_hook_compact")
+        if callable(dispatch_compaction):
+            await dispatch_compaction(ctx, state, "after")
 
         # Return a fresh request so the current LLM call sees the summary
         # immediately, without the loop needing to rebuild the message list.

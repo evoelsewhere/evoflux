@@ -584,6 +584,27 @@ async def team_chat(
             async with write_db.begin():
                 await _register_session_workspace(write_db, workspace)
 
+    async def dispatch_session_start_for_new_chat() -> None:
+        """Run the create boundary for drafts sent without /sessions/resolve.
+
+        The web composer keeps a new chat as a client-side draft and sends its
+        first message directly to this route. That path still needs the same
+        session-start hook boundary as an explicitly resolved session.
+        """
+        if existing is not None:
+            return
+
+        from app.agent.plugins.hook_contract import HookEvent
+        from app.agent.plugins.hook_lifecycle import dispatch_session_event
+
+        allowed = await dispatch_session_event(
+            HookEvent.SESSION_START, session_id, "create"
+        )
+        if not allowed:
+            raise HTTPException(
+                status_code=403, detail="Session start was blocked by a plugin hook."
+            )
+
     # Restore persisted session settings so the in-memory team reflects the
     # user's selection even after a server restart or a cold team boot.
     team_obj.session_tags = frozenset(session_tags)
@@ -658,6 +679,7 @@ async def team_chat(
             command = command[1:].strip()
         if not command:
             raise HTTPException(status_code=422, detail="Shell command is required.")
+        await dispatch_session_start_for_new_chat()
         await register_workspace_for_created_session()
         sid = await agent_service.dispatch_user_shell_command(
             team_obj,
@@ -793,6 +815,7 @@ async def team_chat(
                 "message_id": str(queued.id),
             }
 
+        await dispatch_session_start_for_new_chat()
         await register_workspace_for_created_session()
         try:
             sid, n_attachments = await agent_service.dispatch_user_message(
@@ -1451,6 +1474,18 @@ async def resolve_team_session(
             await _register_session_workspace(db, workspace)
         await db.flush()
         await db.refresh(session)
+        from app.agent.plugins.hook_contract import HookEvent
+        from app.agent.plugins.hook_lifecycle import dispatch_session_event
+
+        allowed = await dispatch_session_event(
+            HookEvent.SESSION_START,
+            str(session.id),
+            "create" if created else "resume",
+        )
+        if not allowed:
+            raise HTTPException(
+                status_code=403, detail="Session start was blocked by a plugin hook."
+            )
 
     data = SessionResponse.model_validate(session).model_dump()
     team_manager.prewarm_session_team(
@@ -1682,6 +1717,16 @@ async def duplicate_team_session(session_id: UUID, db: DbSession) -> SessionResp
     session = await duplicate_session(db, session_id)
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found.")
+    from app.agent.plugins.hook_contract import HookEvent
+    from app.agent.plugins.hook_lifecycle import dispatch_session_event
+
+    if not await dispatch_session_event(
+        HookEvent.SESSION_START, str(session.id), "duplicate"
+    ):
+        await delete_session(db, session.id)
+        raise HTTPException(
+            status_code=403, detail="Session start was blocked by a plugin hook."
+        )
     return SessionResponse.model_validate(session)
 
 
@@ -1766,9 +1811,24 @@ async def set_session_permission_mode(
 @router.delete("/sessions/{session_id}", status_code=204)
 async def delete_team_session(session_id: UUID, db: DbSession) -> None:
     """Delete a team session, all its messages, and uploaded files."""
+    from app.agent.plugins.hook_contract import HookEvent
+    from app.agent.plugins.hook_lifecycle import (
+        clear_session_hook_context,
+        dispatch_session_event,
+    )
+
+    if await db.get(ChatSession, session_id) is not None:
+        allowed = await dispatch_session_event(
+            HookEvent.SESSION_END, str(session_id), "delete"
+        )
+        if not allowed:
+            raise HTTPException(
+                status_code=403, detail="Session end was blocked by a plugin hook."
+            )
     found = await delete_session(db, session_id)
     if not found:
         raise HTTPException(status_code=404, detail="Session not found.")
+    clear_session_hook_context(str(session_id))
 
 
 @router.get("/{session_id}/history")
@@ -1903,6 +1963,17 @@ async def create_side_chat(
         )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    from app.agent.plugins.hook_contract import HookEvent
+    from app.agent.plugins.hook_lifecycle import dispatch_session_event
+
+    if not await dispatch_session_event(
+        HookEvent.SESSION_START, str(side_chat.id), "side_chat"
+    ):
+        await db.rollback()
+        raise HTTPException(
+            status_code=403, detail="Session start was blocked by a plugin hook."
+        )
 
     return SessionResponse.model_validate(side_chat)
 

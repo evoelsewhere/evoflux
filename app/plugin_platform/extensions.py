@@ -8,6 +8,7 @@ from collections.abc import Mapping
 EVOFLUX_EXTENSION_NAMESPACE = "org.evoelsewhere.evoflux"
 CREDENTIALS_EXTENSION = f"{EVOFLUX_EXTENSION_NAMESPACE}.credentials"
 MCP_EXTENSION = f"{EVOFLUX_EXTENSION_NAMESPACE}.mcp"
+HOOKS_EXTENSION = "com.evoflux.hooks"
 
 # These pre-canonical names shipped before EvoFlux adopted a reverse-domain
 # namespace. Keep them readable so existing installed plugins do not break.
@@ -32,6 +33,7 @@ def resolve_extension(
 __all__ = [
     "CREDENTIALS_EXTENSION",
     "EVOFLUX_EXTENSION_NAMESPACE",
+    "HOOKS_EXTENSION",
     "LEGACY_CREDENTIALS_EXTENSIONS",
     "LEGACY_MCP_EXTENSIONS",
     "MCP_EXTENSION",

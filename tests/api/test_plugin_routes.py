@@ -10,6 +10,7 @@ import pytest
 from fastapi import FastAPI
 
 from app.api.routes import plugins as plugin_routes
+from app.agent.plugins.hook_runner import hook_isolation_available
 from app.core.config import settings
 from app.plugin_platform.installer import pack_plugin
 from app.plugin_platform.runtime import plugin_mcp_runtime
@@ -53,6 +54,7 @@ async def test_plugin_install_defaults_to_disabled_pending_trust_review(
         "remote_hosts": [],
         "environment_fields": [],
         "capabilities": [],
+        "hooks": [],
     }
 
 
@@ -106,6 +108,307 @@ async def test_plugin_api_has_no_bundled_documents_plugin(
 
     assert listed.status_code == 200
     assert listed.json()["plugins"] == []
+
+
+def test_installed_plugin_hook_status_is_digest_bound_and_fail_closed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.agent.plugins.hook_contract import HookEvent, HookMode
+    from app.core.runtime_settings import RuntimeSettings, save_runtime_settings
+    from app.plugin_platform.hook_trust_store import HookTrustGrant, HookTrustStore
+    from app.plugin_platform.installer import link_plugin
+
+    monkeypatch.setattr(settings, "EVOFLUX_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setattr(settings, "EVOFLUX_CACHE_DIR", str(tmp_path / "cache"))
+    monkeypatch.setattr(settings, "EVOFLUX_CONFIG_DIR", str(tmp_path / "config"))
+    root = tmp_path / "plugin"
+    (root / "hooks").mkdir(parents=True)
+    (root / "hooks" / "startup.py").write_text("print('ok')\n", encoding="utf-8")
+    (root / "plugin.json").write_text(
+        json.dumps(
+            {
+                "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+                "name": "hook-status-plugin",
+                "extensions": {
+                    "com.evoflux.hooks": {
+                        "version": 1,
+                        "hooks": [
+                            {
+                                "hook_id": "startup",
+                                "event": "session.start",
+                                "command": ["./hooks/startup.py"],
+                                "timeout_seconds": 5,
+                                "input_fields": ["source"],
+                                "output_fields": ["context"],
+                                "failure_policy": "fail_open",
+                            }
+                        ],
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    installation = link_plugin(root, enabled=True)
+
+    untrusted = plugin_routes._inspection_for(installation).hook_statuses[0]
+    assert untrusted.status == "awaiting_trust"
+    assert untrusted.trusted is False
+    disabled = plugin_routes._inspection_for(
+        installation.model_copy(update={"enabled": False})
+    ).hook_statuses[0]
+    assert disabled.status == "disabled"
+
+    trust_store = HookTrustStore()
+    trust_store.approve(
+        HookTrustGrant(
+            owner_type="plugin",
+            owner_id=installation.id,
+            hook_id="startup",
+            digest=untrusted.digest,
+            isolation_profile="evoflux-plugin-hook-v2",
+        )
+    )
+    trusted = plugin_routes._inspection_for(installation).hook_statuses[0]
+    assert trusted.status == (
+        "active" if hook_isolation_available() else "blocked_isolation_unavailable"
+    )
+    assert trusted.trusted is True
+
+    config = RuntimeSettings()
+    config.hooks.mode = HookMode.REPLACE
+    config.hooks.replace_plugin_events = (HookEvent.SESSION_START,)
+    save_runtime_settings(config)
+    replaced = plugin_routes._inspection_for(installation).hook_statuses[0]
+    assert replaced.status == "replaced_by_settings"
+
+
+@pytest.mark.asyncio
+async def test_static_context_trust_uses_its_own_profile_and_becomes_active(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.api.schemas.plugins import PluginHookTrustRequest
+    from app.agent.plugins.hook_runner import STATIC_CONTEXT_PROFILE
+    from app.plugin_platform.hook_trust_store import HookTrustStore
+    from app.plugin_platform.installer import link_plugin
+
+    monkeypatch.setattr(settings, "EVOFLUX_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setattr(settings, "EVOFLUX_CACHE_DIR", str(tmp_path / "cache"))
+    monkeypatch.setattr(settings, "EVOFLUX_CONFIG_DIR", str(tmp_path / "config"))
+    root = tmp_path / "plugin"
+    skill = root / "skills" / "using-superpowers" / "SKILL.md"
+    skill.parent.mkdir(parents=True)
+    skill.write_text("reviewed workflow", encoding="utf-8")
+    (root / "plugin.json").write_text(
+        json.dumps(
+            {
+                "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+                "name": "static-context-plugin",
+                "extensions": {
+                    "com.evoflux.hooks": {
+                        "version": 1,
+                        "hooks": [
+                            {
+                                "hook_id": "bootstrap",
+                                "event": "session.start",
+                                "command": ["./skills/using-superpowers/SKILL.md"],
+                                "execution_kind": "static_context",
+                                "timeout_seconds": 1,
+                                "output_fields": ["context"],
+                                "failure_policy": "fail_open",
+                            }
+                        ],
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    installation = link_plugin(root, enabled=True)
+    before = plugin_routes._inspection_for(installation).hook_statuses[0]
+    assert before.status == "awaiting_trust"
+
+    approved = await plugin_routes.trust_plugin_hook(
+        installation.id,
+        "bootstrap",
+        PluginHookTrustRequest(digest=before.digest),
+    )
+
+    assert approved.inspection.hook_statuses[0].status == "active"
+    assert HookTrustStore().is_trusted(
+        owner_type="plugin",
+        owner_id=installation.id,
+        hook_id="bootstrap",
+        digest=before.digest,
+        isolation_profile=STATIC_CONTEXT_PROFILE,
+    )
+
+
+def test_plugin_hook_status_shows_exact_trusted_settings_shadow(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.agent.plugins.hook_contract import (
+        HookDefinition,
+        HookEvent,
+        HookFailurePolicy,
+        HookTarget,
+    )
+    from app.core.runtime_settings import RuntimeSettings, save_runtime_settings
+    from app.plugin_platform.hook_inspection import hook_digest
+    from app.plugin_platform.hook_trust_store import HookTrustGrant, HookTrustStore
+    from app.plugin_platform.installer import link_plugin
+
+    monkeypatch.setattr(settings, "EVOFLUX_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setattr(settings, "EVOFLUX_CACHE_DIR", str(tmp_path / "cache"))
+    config_root = tmp_path / "config"
+    monkeypatch.setattr(settings, "EVOFLUX_CONFIG_DIR", str(config_root))
+    root = tmp_path / "plugin"
+    (root / "hooks").mkdir(parents=True)
+    (root / "hooks" / "startup.py").write_text("print('ok')\n", encoding="utf-8")
+    (root / "plugin.json").write_text(
+        json.dumps(
+            {
+                "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+                "name": "hook-status-plugin",
+                "extensions": {
+                    "com.evoflux.hooks": {
+                        "version": 1,
+                        "hooks": [
+                            {
+                                "hook_id": "startup",
+                                "event": "session.start",
+                                "command": ["./hooks/startup.py"],
+                                "timeout_seconds": 5,
+                                "input_fields": ["source"],
+                                "output_fields": ["context"],
+                                "failure_policy": "fail_open",
+                            }
+                        ],
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    installation = link_plugin(root, enabled=True)
+    plugin_hook = plugin_routes._inspection_for(installation).hooks[0]
+    HookTrustStore().approve(
+        HookTrustGrant(
+            owner_type="plugin",
+            owner_id=installation.id,
+            hook_id="startup",
+            digest=plugin_hook.digest,
+            isolation_profile="evoflux-plugin-hook-v2",
+        )
+    )
+    (config_root / "hooks").mkdir(parents=True)
+    (config_root / "hooks" / "override.py").write_text(
+        "print('{}')\n", encoding="utf-8"
+    )
+    override = HookDefinition(
+        hook_id="settings-bootstrap",
+        event=HookEvent.SESSION_START,
+        command=("./hooks/override.py",),
+        timeout_seconds=5,
+        input_fields=("source",),
+        output_fields=("context",),
+        failure_policy=HookFailurePolicy.FAIL_OPEN,
+        overrides=(HookTarget(plugin_id="hook-status-plugin", hook_id="startup"),),
+    )
+    config = RuntimeSettings()
+    config.hooks.definitions = (override,)
+    save_runtime_settings(config)
+    digest = hook_digest(config_root, override)
+    HookTrustStore().approve(
+        HookTrustGrant(
+            owner_type="settings",
+            owner_id="global",
+            hook_id=override.hook_id,
+            digest=digest,
+            isolation_profile="evoflux-plugin-hook-v2",
+        )
+    )
+
+    status = plugin_routes._inspection_for(installation).hook_statuses[0]
+
+    assert status.status == "shadowed_by_settings"
+
+
+@pytest.mark.asyncio
+async def test_plugin_hook_trust_is_explicit_digest_bound_and_revocable(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "EVOFLUX_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setattr(settings, "EVOFLUX_CACHE_DIR", str(tmp_path / "cache"))
+    monkeypatch.setattr(settings, "EVOFLUX_CONFIG_DIR", str(tmp_path / "config"))
+    root = tmp_path / "plugin"
+    (root / "hooks").mkdir(parents=True)
+    (root / "hooks" / "startup.py").write_text("print('{}')\n", encoding="utf-8")
+    (root / "plugin.json").write_text(
+        json.dumps(
+            {
+                "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+                "name": "hook-trust-api",
+                "extensions": {
+                    "com.evoflux.hooks": {
+                        "version": 1,
+                        "hooks": [
+                            {
+                                "hook_id": "startup",
+                                "event": "session.start",
+                                "command": ["./hooks/startup.py"],
+                                "timeout_seconds": 5,
+                                "input_fields": ["source"],
+                                "output_fields": ["context"],
+                                "failure_policy": "fail_open",
+                            }
+                        ],
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    from app.plugin_platform.installer import link_plugin
+
+    installation = link_plugin(root, enabled=True)
+    app = FastAPI()
+    app.include_router(plugin_routes.router, prefix="/api/plugins")
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        current = await client.get(f"/api/plugins/{installation.id}")
+        hook = current.json()["inspection"]["hooks"][0]
+        digest = hook["digest"]
+        stale = await client.post(
+            f"/api/plugins/{installation.id}/hooks/startup/trust",
+            json={"digest": "0" * 64},
+        )
+        assert stale.status_code == 409
+
+        approved = await client.post(
+            f"/api/plugins/{installation.id}/hooks/startup/trust",
+            json={"digest": digest},
+        )
+        assert approved.status_code == 200
+        status = approved.json()["inspection"]["hook_statuses"][0]
+        assert status["trusted"] is True
+        assert status["status"] == (
+            "active" if hook_isolation_available() else "blocked_isolation_unavailable"
+        )
+
+        revoked = await client.delete(
+            f"/api/plugins/{installation.id}/hooks/startup/trust"
+        )
+
+    assert revoked.status_code == 200
+    status = revoked.json()["inspection"]["hook_statuses"][0]
+    assert status["trusted"] is False
+    assert status["status"] == "awaiting_trust"
 
 
 @pytest.mark.asyncio

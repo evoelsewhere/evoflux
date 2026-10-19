@@ -102,6 +102,13 @@ export {
   useUpdateContextSettingsMutation,
 } from './useContextSettingsQuery'
 export {
+  useHookSettingsQuery,
+  useUpdateHookSettingsMutation,
+  useSaveSettingsHookWorkflowContentMutation,
+  useTrustSettingsHookMutation,
+  useRevokeSettingsHookTrustMutation,
+} from './useHookSettingsQuery'
+export {
   useWebBridgeSettingsQuery,
   useUpdateWebBridgeSettingsMutation,
   useWebBridgeAgentBrowsingQuery,

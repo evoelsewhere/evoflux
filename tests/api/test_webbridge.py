@@ -4393,6 +4393,18 @@ async def test_new_browser_conversation_is_atomic_and_preserves_running_binding(
 ):
     from app.core import db as db_module
     from app.models.chat import ChatSession
+    from app.agent.plugins.hook_contract import HookEvent
+
+    session_events = []
+
+    async def record_session_event(event, session_id, source):
+        session_events.append((event, session_id, source))
+        return True
+
+    monkeypatch.setattr(
+        "app.agent.plugins.hook_lifecycle.dispatch_session_event",
+        record_session_event,
+    )
 
     current = ChatSession(title="Current browser session", tags=["webbridge"])
     async with db_module.async_session_factory() as db:
@@ -4433,6 +4445,9 @@ async def test_new_browser_conversation_is_atomic_and_preserves_running_binding(
     assert created.status_code == 201
     created_id = UUID(created.json()["session"]["id"])
     assert created.json()["binding"]["session_id"] == str(created_id)
+    assert session_events == [
+        (HookEvent.SESSION_START, str(created_id), "webbridge_create")
+    ]
     async with db_module.async_session_factory() as db:
         created_row = await db.get(ChatSession, created_id)
     assert created_row is not None
@@ -4514,9 +4529,22 @@ def test_manual_pairing_code_endpoints_are_removed(client: TestClient):
 
 async def test_paired_extension_lists_and_creates_browser_sessions(
     client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
 ):
     from app.core import db as db_module
     from app.models.chat import ChatSession
+    from app.agent.plugins.hook_contract import HookEvent
+
+    session_events = []
+
+    async def record_session_event(event, session_id, source):
+        session_events.append((event, session_id, source))
+        return True
+
+    monkeypatch.setattr(
+        "app.agent.plugins.hook_lifecycle.dispatch_session_event",
+        record_session_event,
+    )
 
     async with db_module.async_session_factory() as db:
         existing = ChatSession(title="Existing WebBridge session", tags=["webbridge"])
@@ -4564,6 +4592,10 @@ async def test_paired_extension_lists_and_creates_browser_sessions(
     assert created.status_code == 201
     assert created.json() == replay.json()
     assert created.json()["title"] == "Browser: Example docs"
+    assert session_events == [
+        (HookEvent.SESSION_START, created.json()["id"], "webbridge_create"),
+        (HookEvent.SESSION_START, replay.json()["id"], "webbridge_resume"),
+    ]
     async with db_module.async_session_factory() as db:
         created_row = await db.get(ChatSession, UUID(created.json()["id"]))
     assert created_row is not None
@@ -4572,6 +4604,31 @@ async def test_paired_extension_lists_and_creates_browser_sessions(
     assert "webbridge" not in (created_row.tags or ())
     assert "webbridge_origin:browser" in (created_row.tags or ())
     assert f"webbridge_pairing:{pairing['pairing_id']}" in (created_row.tags or ())
+
+    async def block_session_start(event, session_id, source):
+        del event, session_id, source
+        return False
+
+    monkeypatch.setattr(
+        "app.agent.plugins.hook_lifecycle.dispatch_session_event",
+        block_session_start,
+    )
+    headers["Idempotency-Key"] = "blocked-browser-session"
+    blocked = client.post(
+        f"{_PREFIX}/sessions",
+        headers=headers,
+        json={"title": "Blocked browser session"},
+    )
+    assert blocked.status_code == 403
+    async with db_module.async_session_factory() as db:
+        persisted = (
+            await db.exec(
+                select(ChatSession).where(
+                    ChatSession.title == "Blocked browser session"
+                )
+            )
+        ).first()
+    assert persisted is None
 
 
 async def test_pairing_session_list_filters_before_limit(client: TestClient):

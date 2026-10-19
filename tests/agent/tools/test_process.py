@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import re
+import shlex
+import subprocess
 import sys
 from pathlib import Path
 
@@ -17,6 +19,24 @@ from app.agent.tools.builtin.process import (
     stop_all_processes,
 )
 from app.agent.tools.builtin.shell import shell_tool
+
+
+def _shell_executable_path() -> str:
+    executable = sys.executable
+    if sys.platform == "win32":
+        from app.agent.tools.builtin.shell_runtime import acceptable
+
+        shell = Path(acceptable())
+        if shell.stem.lower() == "bash":
+            cygpath = shell.parent.parent / "usr" / "bin" / "cygpath.exe"
+            executable = subprocess.run(
+                [str(cygpath), "-u", executable],
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            ).stdout.strip()
+    return shlex.quote(executable)
 
 
 def _process_id(result: str) -> str:
@@ -52,7 +72,7 @@ def process_sandbox(tmp_path):
 async def test_shell_yields_process_and_activates_continuation(process_sandbox):
     state = AgentState(messages=[])
     result = await shell_tool.arun(
-        command=f"{Path(sys.executable).as_posix()} -c \"import time; print('ready', flush=True); time.sleep(30)\"",
+        command=f"{_shell_executable_path()} -c \"import time; print('ready', flush=True); time.sleep(30)\"",
         yield_time_ms=250,
         timeout_seconds=60,
         _injected={"_state": state, "tool_call_id": "call-shell"},

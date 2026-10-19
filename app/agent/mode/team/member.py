@@ -1734,6 +1734,7 @@ class TeamMemberBase(abc.ABC):
             "session_id": self.session_id,
             "execution_complexity": execution_policy.complexity,
             "verification_rigor": execution_policy.verification_rigor,
+            "parent_agent_name": self._team.lead.name,
         }
         if force_compaction:
             run_metadata["force_summarization"] = True

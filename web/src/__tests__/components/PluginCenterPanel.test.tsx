@@ -279,6 +279,34 @@ describe('PluginCenterPanel health status', () => {
     expect(screen.getByText(/needs attention: 1 MCP server failed/)).toBeInTheDocument()
   })
 
+  it('summarizes automatic workflows in plain language on the collapsed plugin card', async () => {
+    pluginApi.listPlugins.mockResolvedValue({
+      plugins: [{
+        ...item,
+        inspection: {
+          ...inspection,
+          hooks: [{
+            definition: {
+              hook_id: 'session-bootstrap', event: 'session.start', execution_kind: 'static_context',
+              command: ['./hooks/session.md'], input_fields: [], output_fields: ['context'],
+            },
+            command_path: 'hooks/session.md', digest: 'c'.repeat(64), valid: true, diagnostics: [],
+          }],
+          hook_statuses: [{
+            hook_id: 'session-bootstrap', event: 'session.start', digest: 'c'.repeat(64),
+            trusted: false, enabled: true, status: 'awaiting_trust',
+          }],
+        },
+      }],
+      mcp_servers: [],
+    })
+    await renderPanel()
+
+    const collapsedCard = screen.getByRole('button', { name: /1 automatic workflow/i })
+    expect(collapsedCard).toHaveTextContent(/needs review/i)
+    expect(screen.queryByText(/hooks$/i)).not.toBeInTheDocument()
+  })
+
   it('shows active installed filters in the collapsed summary and offers reset', async () => {
     pluginApi.listPlugins.mockResolvedValue({ plugins: [item], mcp_servers: [] })
     await renderPanel()

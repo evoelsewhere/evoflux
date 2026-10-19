@@ -9,6 +9,7 @@ import asyncio
 import json
 import re
 import os
+import tempfile
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any
@@ -16,8 +17,10 @@ from typing import TYPE_CHECKING, Annotated, Any
 import httpx
 from fastapi import APIRouter, HTTPException, Query, Response
 from loguru import logger
+from pydantic import ValidationError
 
 from app.agent.sandbox_config import SandboxFileConfig, load_config, save_config
+from app.agent.plugins.hook_runner import hook_trust_profile
 from app.core.config import settings
 from app.core.runtime_settings import (
     BuiltInBrowserSettings,
@@ -26,6 +29,7 @@ from app.core.runtime_settings import (
     ConductorSettings,
     ContextSettings,
     GitSettings,
+    HookRuntimeSettings,
     WebBridgeSettings,
     load_runtime_settings,
     load_runtime_settings_report,
@@ -33,6 +37,7 @@ from app.core.runtime_settings import (
     save_runtime_settings,
     set_provider_visible_models,
 )
+from app.agent.plugins.hook_runner import hook_isolation_available
 
 if TYPE_CHECKING:
     from app.agent.providers.catalog import ProviderEntry
@@ -42,6 +47,16 @@ from app.api.schemas.settings import (
     ConductorEnrollmentRequest,
     ConductorSettingsBody,
     ContextSettingsBody,
+    HookSettingsBody,
+    HookSettingsResponse,
+    SettingsHookWorkflowContentRequest,
+    SettingsHookWorkflowContentResponse,
+    SettingsHookWorkflowContentDetailResponse,
+    SettingsHookWorkflowContentDeleteResponse,
+    HookReplacePreviewRegistration,
+    HookReplacePreviewResponse,
+    SettingsHookStatus,
+    SettingsHookTrustRequest,
     IgnoredSettingBody,
     ProviderInfo,
     ProviderModelsRequest,
@@ -64,6 +79,8 @@ from app.api.schemas.settings import (
     WebBridgeAgentBrowsingBody,
     WebBridgeSettingsBody,
 )
+from app.plugin_platform.hook_inspection import hook_digest
+from app.plugin_platform.hook_trust_store import HookTrustGrant, HookTrustStore
 from app.services.provider_usage import (
     ProviderUsageCredentialsError,
     ProviderUsageUnavailableError,
@@ -87,6 +104,10 @@ _TEST_PROVIDER_LOCK = asyncio.Lock()
 _LOCAL_REACHABLE_TTL_S = 10.0
 _LOCAL_REACHABLE_TIMEOUT_S = 1.0
 _local_reachable_cache: dict[str, tuple[float, bool]] = {}
+
+# Keep this in sync with the static-context runner's bounded file/output cap.
+_SETTINGS_HOOK_WORKFLOW_MAX_BYTES = 64 * 1024
+_SETTINGS_HOOK_WORKFLOW_ID = re.compile(r"^[a-f0-9]{32}$")
 
 # Providers that run as a local-ish daemon — even when authed by API key,
 # "Connected" should mean the daemon actually responds.
@@ -490,6 +511,401 @@ async def update_context_settings(body: ContextSettingsBody) -> ContextSettingsB
     )
     save_runtime_settings(cfg)
     return _context_settings_body()
+
+
+def _hook_settings_response() -> HookSettingsResponse:
+    cfg = load_runtime_settings()
+    hook_root = Path(settings.EVOFLUX_CONFIG_DIR)
+    trust_store = HookTrustStore()
+    grants = trust_store.grants()
+    isolation_available = hook_isolation_available()
+    statuses: list[SettingsHookStatus] = []
+    for definition in cfg.hooks.definitions:
+        digest: str | None = None
+        try:
+            digest = hook_digest(hook_root, definition)
+        except (OSError, ValueError):
+            pass
+        trusted = digest is not None and trust_store.is_trusted(
+            owner_type="settings",
+            owner_id="global",
+            hook_id=definition.hook_id,
+            digest=digest,
+            isolation_profile=hook_trust_profile(definition),
+        )
+        statuses.append(
+            SettingsHookStatus(
+                hook_id=definition.hook_id,
+                event=definition.event,
+                command=list(definition.command),
+                runtime=definition.runtime,
+                files=list(definition.files),
+                execution_kind=definition.execution_kind,
+                context_prefix=definition.context_prefix,
+                context_suffix=definition.context_suffix,
+                input_fields=list(definition.input_fields),
+                output_fields=list(definition.output_fields),
+                digest=digest,
+                isolation_profile=hook_trust_profile(definition),
+                trusted=trusted,
+                has_approvals=any(
+                    grant.owner_type == "settings"
+                    and grant.owner_id == "global"
+                    and grant.hook_id == definition.hook_id
+                    for grant in grants
+                ),
+                status=(
+                    "invalid"
+                    if digest is None
+                    else "blocked_isolation_unavailable"
+                    if (
+                        trusted
+                        and definition.execution_kind == "command"
+                        and not isolation_available
+                    )
+                    else "active"
+                    if trusted
+                    else "awaiting_trust"
+                ),
+            )
+        )
+    return HookSettingsResponse(
+        **cfg.hooks.model_dump(mode="python"),
+        execution_state=(
+            "available" if isolation_available else "blocked_isolation_unavailable"
+        ),
+        trust_required=True,
+        hook_statuses=statuses,
+    )
+
+
+@router.get("/hooks")
+async def get_hook_settings() -> HookSettingsResponse:
+    try:
+        return _hook_settings_response()
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+def _write_settings_hook_workflow_content(workflow_id: str, content: str) -> str:
+    """Atomically write Markdown into the fixed Settings-workflow directory."""
+
+    if not _SETTINGS_HOOK_WORKFLOW_ID.fullmatch(workflow_id):
+        raise ValueError("workflow id is invalid")
+    if not content.strip() or "\x00" in content:
+        raise ValueError("workflow content must be non-empty Markdown text")
+    encoded = content.encode("utf-8")
+    if len(encoded) > _SETTINGS_HOOK_WORKFLOW_MAX_BYTES:
+        raise ValueError("workflow content exceeds the 64 KiB limit")
+
+    config_root = Path(settings.EVOFLUX_CONFIG_DIR).expanduser().resolve()
+    config_root.mkdir(parents=True, exist_ok=True)
+    workflow_root = config_root / "settings-workflows"
+    if workflow_root.is_symlink():
+        raise ValueError("workflow content directory must not be a symlink")
+    workflow_root.mkdir(exist_ok=True)
+    resolved_workflow_root = workflow_root.resolve(strict=True)
+    if not resolved_workflow_root.is_relative_to(config_root):
+        raise ValueError("workflow content directory escaped the config root")
+
+    target = resolved_workflow_root / f"{workflow_id}.md"
+    if target.is_symlink():
+        raise ValueError("workflow content file must not be a symlink")
+    if target.exists() and not target.is_file():
+        raise ValueError("workflow content destination is not a regular file")
+    if not target.parent.resolve(strict=True).is_relative_to(config_root):
+        raise ValueError("workflow content destination escaped the config root")
+
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="wb",
+            prefix=f".{workflow_id}-",
+            suffix=".tmp",
+            dir=resolved_workflow_root,
+            delete=False,
+        ) as temporary:
+            temporary_path = Path(temporary.name)
+            temporary.write(encoded)
+            temporary.flush()
+            os.fsync(temporary.fileno())
+
+        # Recheck immediately before replace. os.replace replaces a symlink
+        # itself, but refusing one also surfaces tampering instead of masking it.
+        if workflow_root.is_symlink() or target.is_symlink():
+            raise ValueError("workflow content destination became a symlink")
+        if not resolved_workflow_root.resolve(strict=True).is_relative_to(config_root):
+            raise ValueError("workflow content directory escaped the config root")
+        os.replace(temporary_path, target)
+        temporary_path = None
+    finally:
+        if temporary_path is not None:
+            try:
+                temporary_path.unlink(missing_ok=True)
+            except OSError:
+                logger.warning("Could not remove temporary Settings workflow file")
+
+    return f"./settings-workflows/{workflow_id}.md"
+
+
+@router.put(
+    "/hooks/workflows/{workflow_id}/content",
+    response_model=SettingsHookWorkflowContentResponse,
+)
+async def save_settings_hook_workflow_content(
+    workflow_id: str, body: SettingsHookWorkflowContentRequest
+) -> SettingsHookWorkflowContentResponse:
+    """Save bounded Markdown to a fixed path; this does not define or trust a hook."""
+
+    try:
+        relative_path = _write_settings_hook_workflow_content(workflow_id, body.content)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except OSError as exc:
+        logger.warning("Could not save Settings workflow content: {}", exc)
+        raise HTTPException(
+            status_code=500, detail="Workflow content could not be saved"
+        ) from exc
+    return SettingsHookWorkflowContentResponse(path=relative_path)
+
+
+def _settings_hook_workflow_target(workflow_id: str) -> tuple[Path, Path]:
+    if not _SETTINGS_HOOK_WORKFLOW_ID.fullmatch(workflow_id):
+        raise ValueError("workflow id is invalid")
+    config_root = Path(settings.EVOFLUX_CONFIG_DIR).expanduser().resolve()
+    workflow_root = config_root / "settings-workflows"
+    if workflow_root.is_symlink():
+        raise ValueError("workflow content directory must not be a symlink")
+    if not workflow_root.exists():
+        return config_root, workflow_root / f"{workflow_id}.md"
+    resolved_workflow_root = workflow_root.resolve(strict=True)
+    if not resolved_workflow_root.is_relative_to(config_root):
+        raise ValueError("workflow content directory escaped the config root")
+    target = resolved_workflow_root / f"{workflow_id}.md"
+    if target.is_symlink():
+        raise ValueError("workflow content file must not be a symlink")
+    if target.exists() and not target.is_file():
+        raise ValueError("workflow content destination is not a regular file")
+    return config_root, target
+
+
+@router.get(
+    "/hooks/workflows/{workflow_id}/content",
+    response_model=SettingsHookWorkflowContentDetailResponse,
+)
+async def get_settings_hook_workflow_content(
+    workflow_id: str,
+) -> SettingsHookWorkflowContentDetailResponse:
+    """Read the bounded Markdown file for editing a guided workflow."""
+
+    try:
+        _root, target = _settings_hook_workflow_target(workflow_id)
+        content_bytes = target.read_bytes()
+        if len(content_bytes) > _SETTINGS_HOOK_WORKFLOW_MAX_BYTES:
+            raise ValueError("workflow content exceeds the 64 KiB limit")
+        content = content_bytes.decode("utf-8")
+    except FileNotFoundError as exc:
+        raise HTTPException(
+            status_code=404, detail="Workflow content not found"
+        ) from exc
+    except UnicodeError as exc:
+        raise HTTPException(
+            status_code=422, detail="Workflow content is not valid UTF-8"
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except OSError as exc:
+        raise HTTPException(
+            status_code=500, detail="Workflow content could not be read"
+        ) from exc
+    return SettingsHookWorkflowContentDetailResponse(
+        path=f"./settings-workflows/{workflow_id}.md", content=content
+    )
+
+
+@router.delete(
+    "/hooks/workflows/{workflow_id}/content",
+    response_model=SettingsHookWorkflowContentDeleteResponse,
+)
+async def delete_settings_hook_workflow_content(
+    workflow_id: str,
+) -> SettingsHookWorkflowContentDeleteResponse:
+    """Remove only the exact Markdown file owned by one guided workflow."""
+
+    try:
+        _root, target = _settings_hook_workflow_target(workflow_id)
+        if not target.exists():
+            return SettingsHookWorkflowContentDeleteResponse(deleted=False)
+        target.unlink()
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except OSError as exc:
+        raise HTTPException(
+            status_code=500, detail="Workflow content could not be deleted"
+        ) from exc
+    return SettingsHookWorkflowContentDeleteResponse(deleted=True)
+
+
+@router.put("/hooks")
+async def update_hook_settings(body: HookSettingsBody) -> HookSettingsResponse:
+    """Persist hook definitions without granting executable trust."""
+    try:
+        cfg = load_runtime_settings()
+        cfg.hooks = HookRuntimeSettings.model_validate(body.model_dump(mode="python"))
+    except ValidationError as exc:
+        message = "; ".join(error["msg"] for error in exc.errors())
+        raise HTTPException(status_code=422, detail=message) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    save_runtime_settings(cfg)
+    current_hook_ids = {item.hook_id for item in cfg.hooks.definitions}
+    trust_store = HookTrustStore()
+    removed_hook_ids = {
+        grant.hook_id
+        for grant in trust_store.grants()
+        if grant.owner_type == "settings"
+        and grant.owner_id == "global"
+        and grant.hook_id not in current_hook_ids
+    }
+    for removed_hook_id in removed_hook_ids:
+        trust_store.revoke(
+            owner_type="settings", owner_id="global", hook_id=removed_hook_id
+        )
+    return _hook_settings_response()
+
+
+def _hook_replace_preview(body: HookSettingsBody) -> HookReplacePreviewResponse:
+    from app.agent.plugins.legacy_hook_inspection import (
+        inspect_legacy_hook_subscriptions,
+    )
+    from app.agent.plugins.hook_contract import HookMode, HookSettingsPolicy
+    from app.agent.plugins.hook_resolution import resolve_event_hooks
+    from app.plugin_platform.registry import (
+        list_effective_installations,
+        plugin_data_root,
+    )
+    from app.plugin_platform.validator import inspect_plugin
+    from app.plugin_platform.hook_runtime import registrations_for_plugin
+
+    if body.mode is not HookMode.REPLACE or not body.replace_plugin_events:
+        return HookReplacePreviewResponse()
+
+    policy = HookSettingsPolicy(
+        mode=body.mode,
+        replace_plugin_events=tuple(body.replace_plugin_events),
+        disabled_plugin_hooks=tuple(body.disabled_plugin_hooks),
+    )
+    trust_store = HookTrustStore()
+    registrations: list[HookReplacePreviewRegistration] = []
+    for installation in list_effective_installations():
+        inspection = inspect_plugin(
+            installation.root,
+            data_root=plugin_data_root(installation.id),
+        )
+        if inspection.manifest is None or not inspection.hooks:
+            continue
+        plugin_registrations = registrations_for_plugin(
+            plugin_id=inspection.manifest.name,
+            owner_id=installation.id,
+            components=inspection.hooks,
+            enabled=installation.enabled,
+            trust_store=trust_store,
+        )
+        for event in body.replace_plugin_events:
+            effective = resolve_event_hooks(
+                event,
+                policy,
+                settings_registrations=(),
+                plugin_registrations=plugin_registrations,
+            )
+            for status in effective.statuses:
+                if status.status != "replaced_by_settings":
+                    continue
+                registration = status.registration
+                if registration.plugin_id is None:
+                    continue
+                registrations.append(
+                    HookReplacePreviewRegistration(
+                        event=event,
+                        plugin_id=registration.plugin_id,
+                        hook_id=registration.hook_id,
+                        installation_id=installation.id,
+                        source="managed_plugin",
+                        display_name=installation.name,
+                        certainty="exact",
+                    )
+                )
+    registrations.extend(
+        HookReplacePreviewRegistration.model_validate(item)
+        for item in inspect_legacy_hook_subscriptions(
+            settings.plugin_dirs(), list(body.replace_plugin_events)
+        )
+    )
+    registrations.sort(
+        key=lambda item: (
+            item.event.value,
+            item.source,
+            item.plugin_id,
+            item.hook_id,
+            item.installation_id,
+        )
+    )
+    return HookReplacePreviewResponse(registrations=registrations)
+
+
+@router.post("/hooks/replace-preview")
+async def preview_hook_replacement(
+    body: HookSettingsBody,
+) -> HookReplacePreviewResponse:
+    """Preview exact enabled plugin registrations a Settings replace suppresses."""
+    try:
+        return await asyncio.to_thread(_hook_replace_preview, body)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/hooks/{hook_id}/trust")
+async def trust_settings_hook(
+    hook_id: str, body: SettingsHookTrustRequest
+) -> HookSettingsResponse:
+    """Approve only the current Settings definition and executable digest."""
+    cfg = load_runtime_settings()
+    definition = next(
+        (item for item in cfg.hooks.definitions if item.hook_id == hook_id), None
+    )
+    if definition is None:
+        raise HTTPException(status_code=404, detail="Settings hook not found")
+    try:
+        digest = hook_digest(Path(settings.EVOFLUX_CONFIG_DIR), definition)
+    except (OSError, ValueError) as exc:
+        raise HTTPException(
+            status_code=422, detail="Settings hook executable is invalid or missing"
+        ) from exc
+    if digest.lower() != body.expected_digest.lower():
+        raise HTTPException(
+            status_code=409,
+            detail="Settings hook changed after review; reload and review its new digest",
+        )
+    HookTrustStore().approve(
+        HookTrustGrant(
+            owner_type="settings",
+            owner_id="global",
+            hook_id=definition.hook_id,
+            digest=digest,
+            isolation_profile=hook_trust_profile(definition),
+        )
+    )
+    return _hook_settings_response()
+
+
+@router.delete("/hooks/{hook_id}/trust")
+async def revoke_settings_hook_trust(hook_id: str) -> HookSettingsResponse:
+    """Revoke every digest/profile approval for one Settings hook identity."""
+    cfg = load_runtime_settings()
+    if not any(item.hook_id == hook_id for item in cfg.hooks.definitions):
+        raise HTTPException(status_code=404, detail="Settings hook not found")
+    HookTrustStore().revoke(owner_type="settings", owner_id="global", hook_id=hook_id)
+    return _hook_settings_response()
 
 
 @router.get("/version-control")

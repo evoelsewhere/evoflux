@@ -66,6 +66,7 @@ type SidebarPath =
   | '/settings/agents'
   | '/settings/skills'
   | '/settings/mcp'
+  | '/settings/hooks'
   | '/settings/language-servers'
   | '/settings/memory'
   | '/settings/context'
@@ -255,6 +256,12 @@ export function SettingsSidebar({ currentPath, onNavigate, onBack }: SettingsSid
             icon: Plug,
             matchPrefix: '/settings/mcp',
             count: mcpQ.data?.servers.length ?? null,
+          },
+          {
+            to: '/settings/hooks',
+            label: t('Agent hooks'),
+            icon: Shield,
+            matchPrefix: '/settings/hooks',
           },
           {
             to: '/settings/language-servers',

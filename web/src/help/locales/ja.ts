@@ -1765,7 +1765,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'Work または Coding のサイドバーから Plugins を開きます。一覧は短い概要だけを表示し、詳細は Components、Package files、Technical details から開きます。検索は常に表示され、補助操作は Filters と Manage marketplaces にまとめています。install を妨げるエラーと認証要求は引き続き表示されます。別のツールの最大化状態が記憶されていても、Plugin Center は既定でサイドの workbench にドックして開きます。`.evoplugin`/ZIP は Add plugin → Import package、展開済みディレクトリは Link development folder、読み取り専用検査は Validate folder、scaffold と内蔵 editor は Create plugin を使います。Marketplace から Agent Plugins 1.0.0 または Claude Code source を追加し、sync して plugin を検索します。コンパクトな結果から plugin を選び、互換性と package 詳細を確認してから install preview を開きます。',
     tricks: [
       'ポータブル plugin は `plugin.json`、直下の `skills/*/SKILL.md`、任意の root `mcp.json` からデータとコードを提供し、EvoFlux UI を任意に注入できません。',
-      'Marketplace からの install は trust review まで disabled です。Claude Code から import するのは互換性のある Skills と MCP のみで、commands、agents、hooks は import も実行もしません。部分対応の場合は Plugin Center または `evoflux plugin install <name> --marketplace <id> --allow-partial` で明示的に確認します。',
+      'Marketplace からの install は trust review まで disabled です。Claude Code の互換 Skills と MCP を import します。Superpowers の完全一致する SessionStart hook は、digest で trust された読み取り専用 static context に変換され、Bash launcher は copy/実行されません。それ以外の Claude hook は unsupported です。部分対応の場合は Plugin Center または `evoflux plugin install <name> --marketplace <id> --allow-partial` で明示的に確認します。',
       'Marketplace の install 前に Inspect package を使い、各 Skill、MCP の command/transport/host、環境と header の field 名、validation diagnostics、README と package files を確認します。Viewer は読み取り専用で credentials をマスクし、HTML、script、MCP を実行しません。',
       'Marketplace を source、catalog 宣言の category、component、compatibility で絞り込めます。Not declared/Uncategorized は metadata 不足であり、互換性の保証ではありません。個別に inspect してください。',
       'Installed の origin は marketplace、import archive/directory、development link、built-in、古い記録の unknown を区別します。Local development draft は installation ではありません。Origin/component filter で分類できます。',
@@ -1811,6 +1811,10 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       {
         type: 'p',
         text: 'Runtime: エージェントは有効な plugin Skill の名前と説明を他の Skill と同様に把握し、タスクが合うとき（または `$skill-name` と入力したとき）に SKILL.md を読みます。plugin Skill の SKILL.md が読まれると、同じ installation の ready MCP tools がその run で利用可能になりますが permission は維持されます。Settings → Skills は validation を表示し、plugin Skill を個別にオフにできます。Settings → MCP servers は plugin badge、runtime state、tool names を表示します。runtime name には installation hash があるため、Skill 内では生成 prefix ではなく安定した server/tool suffix を案内します。',
+      },
+      {
+        type: 'p',
+        text: 'Settings → 自動ワークフローでは、各 plugin workflow の実行タイミング、動作、レビュー状態、一時停止状態を確認できます。Review workflow は該当 installation の現在の package digest だけを承認し、plugin の有効化は行いません。static context は承認済み Markdown を 1 つ読み、コードを実行せず、信頼されない session guidance として追加します。コマンド実行にはホストで検証済みの OS isolation が必要です。My workflows では新しい session に追加する名前付き Markdown guidance を作成・編集・削除できます。保存しても承認は付与されず、内容を編集すると再レビューが必要です。plugin workflow と自分の workflow を併用するか、選択したタイミングで置き換えるかを選べます。置き換え前に影響する workflow をプレビューし、何も実行されない場合は警告します。permission と sandbox の安全確認は引き続き適用されます。'
       },
       {
         type: 'p',

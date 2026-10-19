@@ -32,6 +32,7 @@ from app.plugin_platform.models import (
     PortableHttpServer,
     PortableStdioServer,
 )
+from app.plugin_platform.hook_inspection import inspect_plugin_hooks
 from app.plugin_platform.trust import build_trust_review
 
 
@@ -732,6 +733,8 @@ def inspect_plugin(
     diagnostics.extend(skill_diagnostics)
     mcp_servers, mcp_diagnostics = _inspect_mcp(resolved_root, data_root=plugin_data)
     diagnostics.extend(mcp_diagnostics)
+    hook_inspection = inspect_plugin_hooks(resolved_root, manifest)
+    diagnostics.extend(hook_inspection.diagnostics)
     try:
         digest = _package_digest(resolved_root)
     except (OSError, ValueError) as exc:
@@ -749,7 +752,8 @@ def inspect_plugin(
         diagnostics=diagnostics,
         skills=skills,
         mcp_servers=mcp_servers,
-        trust=build_trust_review(manifest, skills, mcp_servers),
+        hooks=hook_inspection.hooks,
+        trust=build_trust_review(manifest, skills, mcp_servers, hook_inspection.hooks),
         extension_namespaces=sorted(manifest.extensions),
         content_sha256=digest,
     )

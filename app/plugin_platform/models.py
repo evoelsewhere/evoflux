@@ -7,6 +7,8 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_validator
 
+from app.agent.plugins.hook_contract import HookDefinition
+
 
 PLUGIN_SCHEMA_ID = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
 MCP_SCHEMA_ID = "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json"
@@ -104,6 +106,44 @@ class PluginMCPComponent(BaseModel):
     diagnostics: list[PluginDiagnostic] = Field(default_factory=list)
 
 
+class PluginHookComponent(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    definition: HookDefinition
+    command_path: str
+    digest: str | None = None
+    valid: bool
+    diagnostics: list[PluginDiagnostic] = Field(default_factory=list)
+
+
+class PluginHookRuntimeStatus(BaseModel):
+    """Effective hook state for a concrete plugin installation."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    hook_id: str
+    event: str
+    digest: str | None = None
+    trusted: bool
+    enabled: bool
+    status: Literal[
+        "active",
+        "disabled",
+        "disabled_by_settings",
+        "replaced_by_settings",
+        "awaiting_trust",
+        "blocked_isolation_unavailable",
+        "shadowed_by_settings",
+    ]
+
+
+class HookInspection(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    hooks: list[PluginHookComponent] = Field(default_factory=list)
+    diagnostics: list[PluginDiagnostic] = Field(default_factory=list)
+
+
 class PluginTrustCommand(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -121,6 +161,29 @@ class PluginTrustRemoteHost(BaseModel):
     url: str
 
 
+class PluginTrustHook(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    hook_id: str
+    event: str
+    command: list[str]
+    command_path: str
+    runtime: Literal["native", "python"] = "native"
+    files: list[str] = Field(default_factory=list)
+    execution_kind: Literal["command", "static_context"] = "command"
+    context_prefix: str = ""
+    context_suffix: str = ""
+    matcher: dict[str, str] | None = None
+    timeout_seconds: int
+    failure_policy: Literal["fail_open", "fail_closed"]
+    input_fields: list[str]
+    output_fields: list[str]
+    environment_fields: list[str] = Field(default_factory=list)
+    isolation_profile: str
+    digest: str | None = None
+    valid: bool
+
+
 class PluginTrustCapability(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -135,6 +198,7 @@ class PluginTrustReview(BaseModel):
     remote_hosts: list[PluginTrustRemoteHost] = Field(default_factory=list)
     environment_fields: list[str] = Field(default_factory=list)
     capabilities: list[PluginTrustCapability] = Field(default_factory=list)
+    hooks: list[PluginTrustHook] = Field(default_factory=list)
 
 
 class PluginInspection(BaseModel):
@@ -146,6 +210,8 @@ class PluginInspection(BaseModel):
     diagnostics: list[PluginDiagnostic] = Field(default_factory=list)
     skills: list[PluginSkillComponent] = Field(default_factory=list)
     mcp_servers: list[PluginMCPComponent] = Field(default_factory=list)
+    hooks: list[PluginHookComponent] = Field(default_factory=list)
+    hook_statuses: list[PluginHookRuntimeStatus] = Field(default_factory=list)
     trust: PluginTrustReview = Field(default_factory=PluginTrustReview)
     extension_namespaces: list[str] = Field(default_factory=list)
     content_sha256: str | None = None
@@ -204,6 +270,9 @@ __all__ = [
     "PluginDiagnostic",
     "PluginInspection",
     "PluginInstallation",
+    "PluginHookComponent",
+    "PluginHookRuntimeStatus",
+    "HookInspection",
     "PluginManifest",
     "PluginMCPComponent",
     "PluginRegistryDocument",
@@ -212,6 +281,7 @@ __all__ = [
     "PluginTrustCommand",
     "PluginTrustRemoteHost",
     "PluginTrustReview",
+    "PluginTrustHook",
     "PortableHttpServer",
     "PortableMCPServer",
     "PortableStdioServer",

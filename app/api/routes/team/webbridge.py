@@ -824,6 +824,7 @@ async def create_browser_session(
         f"evoflux:webbridge-session:{pairing.id}:{idempotency_key}",
     )
     session = await db.get(ChatSession, session_id)
+    created = session is None
     if session is None:
         pairing_tag = pairing_session_tag(pairing.id)
         session = ChatSession(
@@ -839,6 +840,19 @@ async def create_browser_session(
             session = await db.get(ChatSession, session_id)
             if session is None:
                 raise
+            created = False
+    from app.agent.plugins.hook_contract import HookEvent
+    from app.agent.plugins.hook_lifecycle import dispatch_session_event
+
+    if not await dispatch_session_event(
+        HookEvent.SESSION_START,
+        str(session.id),
+        "webbridge_create" if created else "webbridge_resume",
+    ):
+        await db.rollback()
+        raise HTTPException(
+            status_code=403, detail="Session start was blocked by a plugin hook."
+        )
     return BrowserSessionOption(
         id=str(session.id),
         title=session.title or "Untitled session",
@@ -3936,6 +3950,7 @@ async def create_and_bind_browser_session(
         f"evoflux:webbridge-session:{pairing.id}:{idempotency_key}",
     )
     session = await db.get(ChatSession, session_id)
+    created = session is None
     if session is None:
         session = ChatSession(
             id=session_id,
@@ -3949,6 +3964,18 @@ async def create_and_bind_browser_session(
         )
         db.add(session)
         await db.flush()
+    from app.agent.plugins.hook_contract import HookEvent
+    from app.agent.plugins.hook_lifecycle import dispatch_session_event
+
+    if not await dispatch_session_event(
+        HookEvent.SESSION_START,
+        str(session.id),
+        "webbridge_create" if created else "webbridge_resume",
+    ):
+        await db.rollback()
+        raise HTTPException(
+            status_code=403, detail="Session start was blocked by a plugin hook."
+        )
     binding = await upsert_tab_binding(
         db,
         pairing_id=pairing.id,

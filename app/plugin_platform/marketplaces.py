@@ -27,6 +27,8 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app.plugin_platform.extensions import CREDENTIALS_EXTENSION
+from app.plugin_platform.extensions import HOOKS_EXTENSION
+from app.plugin_platform.adapters.claude_hooks import adapt_claude_hooks
 from app.plugin_platform.installer import extract_plugin_archive, install_plugin
 from app.plugin_platform.models import (
     MCP_SCHEMA_ID,
@@ -953,10 +955,21 @@ def normalize_claude_plugin_directory(
         credential_fields = []
         (destination / "mcp.json").unlink(missing_ok=True)
 
+    claude_hooks_present = "hooks" in claude_manifest or (source / "hooks").exists()
+    adapted_hooks = (
+        adapt_claude_hooks(source, destination, claude_manifest)
+        if claude_hooks_present
+        else None
+    )
+    if adapted_hooks is not None and adapted_hooks.hooks:
+        supported.append("hooks")
+    elif claude_hooks_present and adapted_hooks is not None:
+        unsupported.add("hooks")
+        warnings.extend(item.message for item in adapted_hooks.diagnostics)
+
     component_directories = {
         "agents": "agents",
         "commands": "commands",
-        "hooks": "hooks",
         "lspServers": "lsp",
         "outputStyles": "output-styles",
     }
@@ -989,10 +1002,19 @@ def normalize_claude_plugin_directory(
     author = _author(claude_manifest.get("author"))
     if author:
         normalized_manifest["author"] = {"name": author}
+    extensions: dict[str, Any] = {}
     if credential_fields:
-        normalized_manifest["extensions"] = {
-            CREDENTIALS_EXTENSION: {"fields": credential_fields}
+        extensions[CREDENTIALS_EXTENSION] = {"fields": credential_fields}
+    if adapted_hooks is not None and adapted_hooks.hooks:
+        extensions[HOOKS_EXTENSION] = {
+            "version": 1,
+            "hooks": [
+                hook.definition.model_dump(mode="json", exclude_none=True)
+                for hook in adapted_hooks.hooks
+            ],
         }
+    if extensions:
+        normalized_manifest["extensions"] = extensions
     (destination / "plugin.json").write_text(
         json.dumps(normalized_manifest, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",

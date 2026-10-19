@@ -90,8 +90,15 @@ facade for existing integrations.
 ## Agent Plugins
 
 Portable Agent Plugins use a root `plugin.json`, immediate-child `skills/` and
-optional `mcp.json`. Plugin Center and CLI support inspect, scaffold, import,
-install, development-link, update, pack, enable/disable and uninstall.
+optional `mcp.json`. EvoFlux also inspects its `extensions.com.evoflux.hooks`
+declarations and shows each installed hook's trust/effective status in Plugin
+Center. Plugin Center and CLI support inspect, scaffold, import, install,
+development-link, update, pack, enable/disable and uninstall.
+For an installed hook, Plugin Center can open an explicit digest review and
+trust or revoke that hook independently from enabling the package. Trust is
+bound to the installation, hook ID, executable digest, and isolation profile;
+a stale digest is rejected. Approval still does not make the hook executable
+while the native isolation gate is unavailable.
 
 Plugin Center's Create flow defaults a blank starter Skill name to the plugin
 name, so a new scaffold contributes a discoverable workflow instead of only a
@@ -110,6 +117,38 @@ into global `mcp.json`.
 Plugin packages cannot inject frontend code or bypass permissions. Portable
 stdio and Streamable HTTP servers execute; legacy SSE declarations are
 validated/reported but not started by the plugin runtime.
+
+Settings → Hooks stores user-authored definitions and an `augment`/`replace`
+policy for configurable plugin hooks. Replacing an event reports the affected
+plugin hooks as replaced; it cannot override protected EvoFlux runtime checks.
+Before a Settings change first enables or changes `replace` events, EvoFlux
+previews the exact enabled `(plugin_id, hook_id)` registrations and asks for
+confirmation before saving that policy.
+Each Settings hook shows its action, event, declared input/output fields,
+trust profile, and SHA-256 digest. Users must explicitly review the current
+digest to grant trust; editing the definition or referenced file requires
+review again. Settings paths resolve relative to the EvoFlux config directory.
+Revoking trust removes approvals for that hook identity. Saving a Settings
+definition or enabling a plugin does not trust its hook.
+Windows command hooks use an AppContainer without capabilities and a constrained
+Job Object. Windows integration tests verify staged-file access, denial of host
+file and loopback access, child-process limits, CPU/memory, timeout, cancellation,
+and output bounds. Linux/macOS remain blocked until equivalent tests prove their
+platform backends. No platform falls back to an unrestricted subprocess. One
+data-only action, `static_context`, reads one trusted package
+file at `session.start`; it receives no event input, runs no process, has a
+separate trust profile, and injects bounded text as untrusted user context.
+The Claude marketplace adapter maps only the exact Superpowers SessionStart
+pattern to this action. It does not copy or launch the upstream shell wrapper;
+unsupported Claude hook forms remain visible as unsupported while their Skills
+stay available.
+The dispatcher is attached to session start/end, prompt submission,
+agent/member start/stop, model before/after, tool before/after, completion and
+successful compaction boundaries. A lifecycle mapping does not imply that
+arbitrary plugin commands execute.
+Agent and member stop hooks run from a terminal finalizer on success, failure,
+or cancellation and receive a bounded `outcome` value. Stop-hook errors do not
+mask the original agent result.
 
 See [Agent Plugin architecture](../architecture/agent-plugins.md) and the
 [operator guide](../guides/agent-plugins.md).
@@ -175,7 +214,7 @@ disabled until the user explicitly enables them.
 Trusted local Python hook plugins under the configured plugin directories are a
 separate, host-code extension mechanism. They are not portable Agent Plugins
 and have a stronger trust requirement because they execute in the application
-process.
+process. They are not the fallback for managed package hooks or Settings hooks.
 
 ## Source and tests
 

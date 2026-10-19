@@ -161,6 +161,9 @@ export const queryKeys = {
   settings: {
     sandbox: () => ['settings', 'sandbox'] as const,
     context: () => ['settings', 'context'] as const,
+    hooks: () => ['settings', 'hooks'] as const,
+    hookWorkflowContent: (workflowId: string) =>
+      ['settings', 'hooks', 'workflow-content', workflowId] as const,
     versionControl: () => ['settings', 'version-control'] as const,
     webbridge: () => ['settings', 'webbridge'] as const,
     webbridgeAgentBrowsing: () => ['settings', 'webbridge', 'agent-browsing'] as const,

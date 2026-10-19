@@ -10,7 +10,17 @@ import { apiBaseUrl } from '../base-url'
 import { readSSE } from '../sse'
 import type { SSECallbacks } from '../sse'
 import { parseDetailOrThrow } from './_shared'
-import type { ContextOverrides, ContextSettings, ManagedResourceProvider } from '../types'
+import type {
+  ContextOverrides,
+  ContextSettings,
+  HookSettings,
+  HookSettingsResponse,
+  HookReplacePreviewResponse,
+  ManagedResourceProvider,
+  SettingsHookWorkflowContentResponse,
+  SettingsHookWorkflowContentDetailResponse,
+  SettingsHookWorkflowContentDeleteResponse,
+} from '../types'
 
 export type SandboxSettings = {
   denied_patterns: string[]
@@ -79,6 +89,106 @@ export async function updateContextSettings(
     body: JSON.stringify(overrides),
   })
   if (!res.ok) await parseDetailOrThrow(res, 'PUT /settings/context')
+  return res.json()
+}
+
+export async function getHookSettings(): Promise<HookSettingsResponse> {
+  const res = await fetch(`${apiBaseUrl()}/settings/hooks`)
+  if (!res.ok) await parseDetailOrThrow(res, 'GET /settings/hooks')
+  return res.json()
+}
+
+export async function updateHookSettings(
+  body: HookSettings,
+): Promise<HookSettingsResponse> {
+  const res = await fetch(`${apiBaseUrl()}/settings/hooks`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) await parseDetailOrThrow(res, 'PUT /settings/hooks')
+  return res.json()
+}
+
+export async function saveSettingsHookWorkflowContent(
+  workflowId: string,
+  content: string,
+): Promise<SettingsHookWorkflowContentResponse> {
+  const res = await fetch(
+    `${apiBaseUrl()}/settings/hooks/workflows/${encodeURIComponent(workflowId)}/content`,
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content }),
+    },
+  )
+  if (!res.ok) {
+    await parseDetailOrThrow(res, 'PUT /settings/hooks/workflows/:workflow_id/content')
+  }
+  return res.json()
+}
+
+export async function getSettingsHookWorkflowContent(
+  workflowId: string,
+): Promise<SettingsHookWorkflowContentDetailResponse> {
+  const res = await fetch(
+    `${apiBaseUrl()}/settings/hooks/workflows/${encodeURIComponent(workflowId)}/content`,
+  )
+  if (!res.ok) {
+    await parseDetailOrThrow(res, 'GET /settings/hooks/workflows/:workflow_id/content')
+  }
+  return res.json()
+}
+
+export async function deleteSettingsHookWorkflowContent(
+  workflowId: string,
+): Promise<SettingsHookWorkflowContentDeleteResponse> {
+  const res = await fetch(
+    `${apiBaseUrl()}/settings/hooks/workflows/${encodeURIComponent(workflowId)}/content`,
+    { method: 'DELETE' },
+  )
+  if (!res.ok) {
+    await parseDetailOrThrow(res, 'DELETE /settings/hooks/workflows/:workflow_id/content')
+  }
+  return res.json()
+}
+
+export async function previewHookReplacement(
+  body: HookSettings,
+): Promise<HookReplacePreviewResponse> {
+  const res = await fetch(`${apiBaseUrl()}/settings/hooks/replace-preview`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) await parseDetailOrThrow(res, 'POST /settings/hooks/replace-preview')
+  return res.json()
+}
+
+export async function trustSettingsHook(
+  hookId: string,
+  expectedDigest: string,
+): Promise<HookSettingsResponse> {
+  const res = await fetch(
+    `${apiBaseUrl()}/settings/hooks/${encodeURIComponent(hookId)}/trust`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ confirm: true, expected_digest: expectedDigest }),
+    },
+  )
+  if (!res.ok) await parseDetailOrThrow(res, 'POST /settings/hooks/:hook_id/trust')
+  return res.json()
+}
+
+export async function revokeSettingsHookTrust(
+  hookId: string,
+): Promise<HookSettingsResponse> {
+  const res = await fetch(
+    `${apiBaseUrl()}/settings/hooks/${encodeURIComponent(hookId)}/trust`,
+    { method: 'DELETE' },
+  )
+  if (!res.ok) await parseDetailOrThrow(res, 'DELETE /settings/hooks/:hook_id/trust')
   return res.json()
 }
 

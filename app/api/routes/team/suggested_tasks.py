@@ -18,7 +18,9 @@ from app.api.deps import DbSession
 from app.api.routes.team.chat import _register_session_workspace
 from app.api.routes.team.worktrees import (
     WorktreeCreateRequest,
+    WorktreeRemoveRequest,
     create_coding_workspace_worktree,
+    remove_coding_workspace_worktree,
 )
 from app.models.chat import ChatSession
 from app.services import suggested_task_service, team_manager
@@ -179,7 +181,9 @@ async def start_suggested_task(
             ),
         )
 
+    source_workspace = workspace
     worktree_path: str | None = None
+    spawned_session_id: str | None = None
     if body.isolated:
         created = await create_coding_workspace_worktree(
             WorktreeCreateRequest(source_workspace=workspace, name=task.title)
@@ -187,36 +191,69 @@ async def start_suggested_task(
         worktree_path = created.directory
         workspace = created.directory
 
-    async with db.begin():
-        task = await suggested_task_service.require(db, task_id)
-        session = ChatSession(
-            mode="coding",
-            # Top-level: the spawned task is its own entry in the sidebar, not
-            # a subagent of the session that suggested it. The link back lives
-            # on the task row's spawned_session_id.
-            parent_session_id=None,
-            agent_name=agent_name,
-            title=task.title,
-            workspace=workspace,
-            project_id=project_id,
-            model=model,
-            thinking_level=thinking_level,
-        )
-        db.add(session)
-        await _register_session_workspace(db, workspace)
-        await db.flush()
-        await db.refresh(session)
-        try:
-            await suggested_task_service.mark_started(
-                db,
-                task,
-                spawned_session_id=session.id,
-                worktree_path=worktree_path,
+    try:
+        async with db.begin():
+            task = await suggested_task_service.require(db, task_id)
+            session = ChatSession(
+                mode="coding",
+                # Top-level: the spawned task is its own entry in the sidebar, not
+                # a subagent of the session that suggested it. The link back lives
+                # on the task row's spawned_session_id.
+                parent_session_id=None,
+                agent_name=agent_name,
+                title=task.title,
+                workspace=workspace,
+                project_id=project_id,
+                model=model,
+                thinking_level=thinking_level,
             )
-        except SuggestedTaskConflictError as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
-        snapshot = suggested_task_service.snapshot(task)
-        prompt = task.prompt
+            db.add(session)
+            await _register_session_workspace(db, workspace)
+            await db.flush()
+            await db.refresh(session)
+            spawned_session_id = str(session.id)
+            from app.agent.plugins.hook_contract import HookEvent
+            from app.agent.plugins.hook_lifecycle import dispatch_session_event
+
+            if not await dispatch_session_event(
+                HookEvent.SESSION_START, str(session.id), "suggested_task"
+            ):
+                raise HTTPException(
+                    status_code=403,
+                    detail="Session start was blocked by a plugin hook.",
+                )
+            try:
+                await suggested_task_service.mark_started(
+                    db,
+                    task,
+                    spawned_session_id=session.id,
+                    worktree_path=worktree_path,
+                )
+            except SuggestedTaskConflictError as exc:
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
+            snapshot = suggested_task_service.snapshot(task)
+            prompt = task.prompt
+    except Exception:  # noqa: BLE001 - rollback must clean external resources
+        if spawned_session_id is not None:
+            from app.agent.plugins.hook_lifecycle import clear_session_hook_context
+
+            clear_session_hook_context(spawned_session_id)
+        if worktree_path is not None:
+            try:
+                await remove_coding_workspace_worktree(
+                    WorktreeRemoveRequest(
+                        source_workspace=source_workspace,
+                        directory=worktree_path,
+                    )
+                )
+            except Exception:  # noqa: BLE001 - retain the original route failure
+                from loguru import logger
+
+                logger.exception(
+                    "suggested_task_worktree_cleanup_failed directory={}",
+                    worktree_path,
+                )
+        raise
 
     team_manager.prewarm_session_team(
         mode=session.mode,
