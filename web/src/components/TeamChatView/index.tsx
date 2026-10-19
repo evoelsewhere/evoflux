@@ -54,6 +54,7 @@ import {
   useTriggerDreamMutation,
   useUpdateWebBridgeAgentBrowsingMutation,
   useWebBridgeAgentBrowsingQuery,
+  useTeamSessionsQuery,
   useWebBridgeSettingsQuery,
 } from '@/queries'
 import { getSessionWorkspaceRoot, resolveTeamSession, setSessionPermissionMode } from '@/api/client'
@@ -105,8 +106,6 @@ import { useGeneratedDocumentWatcher } from '@/hooks/useGeneratedDocumentWatcher
 import { useSlashCommandRegistry } from './useSlashCommandRegistry'
 import { useMobileEdgeSwipes } from './useMobileEdgeSwipes'
 import { VIEW_MODES, type ViewMode } from './types'
-import { shouldStartAutomaticSplit } from './auto-layout'
-import { AutomaticSplitTransition } from './AutomaticSplitTransition'
 import { CodingStartHero } from './CodingStartHero'
 import { useAdaptiveSidebarOverlay } from './useAdaptiveSidebarOverlay'
 import {
@@ -343,8 +342,6 @@ export function TeamChatView({ sessionId, importedSource, mode = 'work', workspa
   const [showPalette, setShowPalette] = useState(false)
   const [fileRefsEnabled, setFileRefsEnabled] = useState(false)
   const [viewMode, setViewModeState] = useState<ViewMode>('agent')
-  const [automaticSplitTransition, setAutomaticSplitTransition] = useState(false)
-  const previousActiveAgentCountRef = useRef(0)
   const layoutSwitchFrameRef = useRef<number | null>(null)
   const requestedViewModeRef = useRef<ViewMode>('agent')
   const [sideChatQuote, setSideChatQuote] = useState<string | null>(null)
@@ -357,7 +354,6 @@ export function TeamChatView({ sessionId, importedSource, mode = 'work', workspa
   const effectiveViewMode: ViewMode = isMobile ? 'agent' : viewMode
   const displayedViewMode: ViewMode = isMobile ? 'agent' : viewMode
   const setViewMode = useCallback((nextViewMode: ViewMode) => {
-    setAutomaticSplitTransition(false)
     requestedViewModeRef.current = nextViewMode
     if (layoutSwitchFrameRef.current !== null) {
       cancelAnimationFrame(layoutSwitchFrameRef.current)
@@ -371,10 +367,6 @@ export function TeamChatView({ sessionId, importedSource, mode = 'work', workspa
       setViewModeState(nextViewMode)
     })
   }, [])
-  const completeAutomaticSplit = useCallback(() => {
-    setViewMode('split')
-  }, [setViewMode])
-
   useEffect(() => () => {
     if (layoutSwitchFrameRef.current !== null) {
       cancelAnimationFrame(layoutSwitchFrameRef.current)
@@ -442,7 +434,24 @@ export function TeamChatView({ sessionId, importedSource, mode = 'work', workspa
   const isContinuing   = useTeamStore((s) => s.isContinuing)
   const sessionIdState = useTeamStore((s) => s.sessionId)
   const browserPipSessionIds = useUIStore((state) => state.browserPipSessionIds)
-  useDirectBrowserPresence([sessionIdState, ...browserPipSessionIds])
+  // Presence is what lets a session mount the in-app browser, so it may not
+  // belong to the chat on screen alone: a session running in the background
+  // attaches here too, and the agent's browser request opens its preview
+  // wherever that chat is.
+  const workSessionsQuery = useTeamSessionsQuery('work')
+  const codingSessionsQuery = useTeamSessionsQuery('coding')
+  const presenceIds = new Set<string>()
+  for (const id of [sessionIdState, ...browserPipSessionIds]) {
+    if (id) presenceIds.add(id)
+  }
+  for (const query of [workSessionsQuery, codingSessionsQuery]) {
+    for (const page of query.data?.pages ?? []) {
+      for (const session of page.data) {
+        if (session.running) presenceIds.add(session.id)
+      }
+    }
+  }
+  useDirectBrowserPresence([...presenceIds])
   const computerPipSessionIds = useUIStore((state) => state.computerPipSessionIds)
   useComputerAppBridge([sessionIdState, ...computerPipSessionIds])
   useReleaseComputerAppWhenIdle(sessionIdState, isTeamWorking)
@@ -635,25 +644,6 @@ export function TeamChatView({ sessionId, importedSource, mode = 'work', workspa
   const splitAgentNames = useTeamStore(useShallow(
     (s) => s.agentNames.filter((name) => s.agentStreams[name]?.status !== 'offline'),
   ))
-  const activeAgentCount = useTeamStore(
-    (s) => s.agentNames.reduce(
-      (count, name) => count + (s.agentStreams[name]?.status === 'working' ? 1 : 0),
-      0,
-    ),
-  )
-  useEffect(() => {
-    const previousActiveCount = previousActiveAgentCountRef.current
-    previousActiveAgentCountRef.current = activeAgentCount
-    if (!shouldStartAutomaticSplit({
-      previousActiveCount,
-      activeCount: activeAgentCount,
-      viewMode,
-      isMobile,
-    })) return
-
-    const frame = requestAnimationFrame(() => setAutomaticSplitTransition(true))
-    return () => cancelAnimationFrame(frame)
-  }, [activeAgentCount, isMobile, viewMode])
   // Only the split view renders every agent's stream — gate the whole-map
   // subscription on the view mode so the default agent view stops
   // re-rendering this shell on every token of every agent.
@@ -1808,12 +1798,6 @@ export function TeamChatView({ sessionId, importedSource, mode = 'work', workspa
         />
       }
     >
-        {automaticSplitTransition && (
-          <AutomaticSplitTransition
-            activeAgentCount={activeAgentCount}
-            onComplete={completeAutomaticSplit}
-          />
-        )}
         {setupRequired && (
           <div className="mx-3 mt-3 flex flex-col gap-3 rounded-xl border border-(--accent-blue)/40 bg-(--accent-blue-soft) p-3 text-sm text-(--color-text) shadow-sm sm:flex-row sm:items-center sm:justify-between">
             <div className="flex min-w-0 gap-3">

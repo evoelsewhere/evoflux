@@ -272,7 +272,6 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'mailbox',
       'Ctrl+V',
       'context budget',
-      'auto-split',
       'đội',
       'trưởng nhóm',
       'chuyên gia',
@@ -285,7 +284,6 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
     tricks: [
       'Ctrl+V cycles Agent ↔ Split on desktop (disabled while the focused field uses paste).',
       'Command palette has Next / Previous Agent when workers are active — faster than hunting the identity dropdown.',
-      'Auto-split can open when specialists activate so you can watch them work without hunting the view menu.',
       'The context budget bar on the workbench uses the model’s context_length and summary_trigger_tokens — compact early if it climbs.',
       'Configure models, skills, tools, and permissions per agent in Settings → Agents.',
       'Use the topbar Lead selector to choose a Work or Coding lead for the current idle session. Each option lists only that lead’s owned members; switching is disabled during active work.',
@@ -305,11 +303,11 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'View modes: Agent (single focus on one agent) and Split (Lead + workers side by side). Use the workbench identity dropdown to jump between agents, or palette Next/Previous Agent. Ctrl+V toggles Agent ↔ Split on desktop. When auto-split is enabled, activating specialists may open Split automatically.',
+        text: 'View modes: Agent (single focus on one agent) and Split (Lead + workers side by side). Use the workbench identity dropdown to jump between agents, or palette Next/Previous Agent. Ctrl+V toggles Agent ↔ Split on desktop.',
       },
       {
         type: 'p',
-        text: 'Context budget — the bar near the workbench header reflects token usage against the active model’s context window. When usage approaches the summary trigger, run /compact or start a fresh chat rather than waiting for a hard failure. Budget pressure often looks like “the agent forgot earlier files” before it looks like an error.',
+        text: 'Context budget — the bar near the workbench header reflects token usage against the active model’s context window. The popover separates the live prompt from the turn’s billed model calls — which re-send the prompt each call — and names background calls (title, memory, summaries) that are billed to the turn but are not part of the conversation. When usage approaches the summary trigger, run /compact or start a fresh chat rather than waiting for a hard failure. Budget pressure often looks like “the agent forgot earlier files” before it looks like an error.',
       },
       {
         type: 'tips',
@@ -1542,6 +1540,9 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'Built-in: enable under Settings → Browser, then Ctrl+T. WebBridge: install the extension from the Chrome Web Store (Edge installs it from the same listing), enable master policy in Settings → Browser, pair from the desktop status control, and keep WebBridge on in the workbench bar.',
     tricks: [
       'Ctrl+T toggles the built-in browser workbench — this is not WebBridge pairing.',
+      'The floating preview and the browser panel are one browser per chat: they share the same tabs and pages. Opening the panel shows the pages already open in the preview instead of an empty page, and closing the panel brings the preview back while pages are still open.',
+      'The panel lists the shared tabs above the page: click a tab to switch the active page, and close a page from the close button on its tab.',
+      'A task can open the in-app browser even while its chat runs in the background — nothing needs to be on screen first. If EvoFlux Desktop is not running, the agent reports "EvoFlux in-app browser could not open for this session".',
       'While WebBridge is on and the extension is connected, every agent browser action runs in your real browser; otherwise it runs in the in-app browser. The switch is saved, not per chat, and flipping it mid-task applies to the next browser action.',
       'In your browser each chat works in a tab of its own: the agent opens a new tab instead of replacing the page you have open, and keeps working there when you switch to another tab.',
       'The built-in browser-use Skill guides the agent on every site: it checks each step by reading the page back, never types passwords or one-time codes, and asks before submitting, sending, buying or deleting. You can turn it off in Settings → Skills.',

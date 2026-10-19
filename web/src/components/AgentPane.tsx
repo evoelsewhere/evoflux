@@ -330,6 +330,7 @@ export function AgentPane({
              turnCached={stream.usage.turnCachedTokens}
              turnCacheWrite={stream.usage.turnCacheWriteTokens}
              turnCalls={stream.usage.turnCalls}
+             turnPhases={stream.usage.turnPhases}
              cost={stream.usage.turnCost}
              trigger={modelEntry?.summary_trigger_tokens}
              onCompact={isLead ? compactTeam : undefined}

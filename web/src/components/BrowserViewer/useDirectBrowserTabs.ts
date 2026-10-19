@@ -1,12 +1,24 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Webview } from '@tauri-apps/api/webview'
 
+import {
+  claimantForTab,
+  disposeDirectBrowserSessionIfAbandoned,
+  getDirectBrowserSession,
+  notifyDirectBrowserSession,
+  registerDirectBrowserSurfaceSlot,
+  setDirectBrowserActiveTab,
+  subscribeDirectBrowserSession,
+  unregisterDirectBrowserSurfaceSlot,
+  updateDirectBrowserSurfaceSlot,
+} from './directBrowserSessionStore'
+import type { DirectBrowserSurfaceKind } from './directBrowserSessionStore'
+
 import { getPlatform } from '@/hooks/use-platform'
 import {
   nextBrowserSurfaceOrder,
   registerDirectBrowserSurface,
 } from './directBrowserAgentRegistry'
-import { claimBrowserTab, offerBrowserTab } from './browserTabHandoff'
 
 export interface DirectBrowserTab {
   id: string
@@ -110,6 +122,12 @@ export const BROWSER_VIEWPORT_PRESETS: Record<
 interface UseDirectBrowserTabsOptions {
   sessionId: string
   instanceId?: string
+  /**
+   * Which view target this instance is: the floating PiP preview (`pip`) or
+   * a browser tab in the workbench (`panel`). Both show the same session
+   * browser; this only decides whose rect the WebViews follow.
+   */
+  surface?: DirectBrowserSurfaceKind
   viewportRef: React.RefObject<HTMLDivElement | null>
   enabled: boolean
   visible: boolean
@@ -248,6 +266,7 @@ const BROWSER_DATA_STORE_ID = [
 export function useDirectBrowserTabs({
   sessionId,
   instanceId = 'default',
+  surface = 'panel',
   viewportRef,
   enabled,
   visible,
@@ -267,9 +286,76 @@ export function useDirectBrowserTabs({
 }: UseDirectBrowserTabsOptions) {
   const platform = getPlatform()
   const supported = platform.isTauri && platform.os !== 'ios' && platform.os !== 'android'
-  const webviewsRef = useRef(new Map<string, Webview>())
-  const activeIdRef = useRef<string | null>(null)
-  const tabsRef = useRef<DirectBrowserTab[]>([])
+  // The tabs, WebViews and selection belong to the *session*, not to this
+  // surface: the PiP and the browser panel are two views onto one browser,
+  // so handing a page over is re-targeting the rect the viewport sync uses
+  // — nothing is moved, re-parented or recreated. These refs are windows
+  // onto that shared state, which keeps the code below reading the way it
+  // has always read.
+  const sessionRef = useRef(getDirectBrowserSession(sessionId))
+  if (sessionRef.current.sessionId !== sessionId) {
+    sessionRef.current = getDirectBrowserSession(sessionId)
+  }
+  const surfaceKind: DirectBrowserSurfaceKind = surface
+  const surfaceId = surfaceKind === 'pip' ? 'pip' : `panel:${instanceId}`
+  const surfaceKindRef = useRef(surfaceKind)
+  surfaceKindRef.current = surfaceKind
+  const surfaceIdRef = useRef(surfaceId)
+  surfaceIdRef.current = surfaceId
+  // Which page this surface shows. The PiP follows the session's active
+  // tab; a panel remembers the page bound to its workbench tab.
+  const shownTabRef = useRef<string | null>(sessionRef.current.activeTabId)
+  const [tabs, setTabsState] = useState<DirectBrowserTab[]>(
+    sessionRef.current.tabs,
+  )
+  const [activeTabId, setActiveTabIdState] = useState<string | null>(
+    shownTabRef.current,
+  )
+  const setTabs = useCallback(
+    (
+      next:
+        | DirectBrowserTab[]
+        | ((current: DirectBrowserTab[]) => DirectBrowserTab[]),
+    ) => {
+      const session = sessionRef.current
+      session.tabs = typeof next === 'function' ? next(session.tabs) : next
+      notifyDirectBrowserSession(session.sessionId)
+      setTabsState(session.tabs)
+    },
+    [],
+  )
+  const setActiveTabId = useCallback((id: string | null) => {
+    shownTabRef.current = id
+    setActiveTabIdState(id)
+    const session = sessionRef.current
+    setDirectBrowserActiveTab(session.sessionId, id)
+    if (surfaceKindRef.current === 'panel') {
+      updateDirectBrowserSurfaceSlot(session.sessionId, surfaceIdRef.current, {
+        boundTabId: id,
+      })
+    }
+  }, [])
+  const webviewsRef: { readonly current: Map<string, Webview> } = {
+    get current() {
+      return sessionRef.current.webviews
+    },
+  }
+  const activeIdRef: { current: string | null } = {
+    get current() {
+      return shownTabRef.current
+    },
+    set current(id: string | null) {
+      setActiveTabId(id)
+    },
+  }
+  const tabsRef: { current: DirectBrowserTab[] } = {
+    get current() {
+      return sessionRef.current.tabs
+    },
+    set current(next: DirectBrowserTab[]) {
+      sessionRef.current.tabs = next
+    },
+  }
   const agentHandlerRef = useRef<(
     action: string,
     params: Record<string, unknown>,
@@ -294,7 +380,11 @@ export function useDirectBrowserTabs({
   minFitScaleRef.current = minFitScale
   const lastDialogKeyRef = useRef('')
   const seenPopupKeysRef = useRef(new Set<string>())
-  const visibilityRef = useRef(new Map<string, boolean>())
+  const visibilityRef: { readonly current: Map<string, boolean> } = {
+    get current() {
+      return sessionRef.current.visibility
+    },
+  }
   const creatingRef = useRef(false)
   const visibleRef = useRef(visible)
   // Creating a WebView takes up to five seconds. If the panel unmounts
@@ -302,8 +392,9 @@ export function useDirectBrowserTabs({
   // WebView that lands afterwards is a native window with no owner,
   // floating over the app until the process exits.
   const disposedRef = useRef(false)
-  const [tabs, setTabs] = useState<DirectBrowserTab[]>([])
-  const [activeTabId, setActiveTabId] = useState<string | null>(null)
+  // The explicit-address creation is one-shot per surface: the effect
+  // re-runs whenever the shared tab list changes.
+  const openedExplicitUrlRef = useRef(false)
   const [creating, setCreating] = useState(false)
   // Bumping this is what re-runs the auto-create effect. ``tabs.length``
   // cannot: a failed attempt leaves it at zero, which is why one failure
@@ -508,74 +599,8 @@ export function useDirectBrowserTabs({
     return null
   }, [invokeFor, waitForDocumentNavigation])
 
-  /**
-   * Take over a WebView another surface let go of, rather than loading its
-   * address again into a new one. The page keeps everything a reload would
-   * cost: scroll position, form state, whatever it is signed into.
-   */
-  const adoptTab = useCallback(async (): Promise<DirectBrowserTab | null> => {
-    const offer = claimBrowserTab(sessionId, instanceId)
-    if (!offer) return null
-    // Hold the same guard a creation does, so a second call — React runs
-    // mount effects twice in development — cannot start building a WebView
-    // beside the one being adopted.
-    creatingRef.current = true
-    setCreating(true)
-    try {
-      const { Webview } = await import('@tauri-apps/api/webview')
-      const webview = await Webview.getByLabel(offer.label).catch(() => null)
-      // The page can be gone by now — the window closed, the surface that
-      // offered it crashed. Falling through creates a fresh one instead.
-      if (!webview) return null
-      const id = `${Date.now().toString(36)}-${counterRef.current++}`
-      webviewsRef.current.set(id, webview)
-      labelsRef.current.add(offer.label)
-      // Left marked hidden on purpose: the viewport sync only moves a view
-      // it believes is not already showing where it wants it, and this one
-      // is still sitting over the box it came from.
-      visibilityRef.current.set(id, false)
-      boundsRef.current = null
-      lastCreateErrorRef.current = null
-      const tab = { id, label: offer.label, url: offer.url }
-      tabsRef.current = [...tabsRef.current, tab]
-      setTabs(tabsRef.current)
-      activeIdRef.current = id
-      setActiveTabId(id)
-      return tab
-    } finally {
-      creatingRef.current = false
-      setCreating(false)
-    }
-  }, [instanceId, sessionId])
-
-  /**
-   * Stop managing a tab without closing its page, and offer it to the
-   * surface named by *claimant* — a workbench tab id.
-   */
-  const releaseTab = useCallback((id: string, claimant: string): boolean => {
-    const tab = tabsRef.current.find((item) => item.id === id)
-    const webview = webviewsRef.current.get(id)
-    if (!tab || !webview) return false
-    webviewsRef.current.delete(id)
-    visibilityRef.current.delete(id)
-    labelsRef.current.delete(tab.label)
-    requestedUrlRef.current.delete(id)
-    const remaining = tabsRef.current.filter((item) => item.id !== id)
-    tabsRef.current = remaining
-    setTabs(remaining)
-    if (activeIdRef.current === id) {
-      activeIdRef.current = remaining[0]?.id ?? null
-      setActiveTabId(remaining[0]?.id ?? null)
-    }
-    offerBrowserTab(sessionId, claimant, { label: tab.label, url: tab.url })
-    return true
-  }, [sessionId])
-
   const createTab = useCallback(async (initialUrl = NEW_TAB_URL) => {
     if (!supported || !enabled || creatingRef.current) return
-    if (singleTab && tabsRef.current.length > 0) return tabsRef.current[0]
-    const adopted = await adoptTab()
-    if (adopted) return adopted
     const viewport = viewportRef.current
     // A WebView cannot be created without somewhere to put it. Returning
     // here used to be the end of the story: the auto-create effect only
@@ -730,10 +755,17 @@ export function useDirectBrowserTabs({
         setCreating(false)
       }
     }
-  }, [adoptTab, devtools, enabled, instanceId, onError, profileMode, sessionId, singleTab, supported, viewportRef, waitForPageReady, zoom])
+  }, [devtools, enabled, instanceId, onError, profileMode, sessionId, singleTab, supported, viewportRef, waitForPageReady, zoom])
 
   useEffect(() => {
-    if (!supported || !enabled || tabs.length > 0 || creating) return
+    if (!supported || !enabled || creating) return
+    if (tabs.length > 0) {
+      // The session already has pages. A surface opened with an explicit
+      // address (a popup, the PiP's new-tab button) adds one more — once —
+      // but a surface without one adopts the live pages: opening the panel
+      // must never spawn an empty page beside a real one.
+      if (initialUrl === NEW_TAB_URL || openedExplicitUrlRef.current) return
+    }
     if (createAttempt > 0 && createAttempt > CREATE_MAX_ATTEMPTS) return
     let timer = 0
     // The first attempt is immediate; retries back off, because the two
@@ -742,7 +774,13 @@ export function useDirectBrowserTabs({
     const delay = createAttempt === 0
       ? 0
       : Math.min(CREATE_RETRY_BASE_MS * 2 ** (createAttempt - 1), 4_000)
-    timer = window.setTimeout(() => void createTab(initialUrl), delay)
+    timer = window.setTimeout(() => {
+      void createTab(initialUrl).then((created: DirectBrowserTab | undefined) => {
+        if (created && initialUrl !== NEW_TAB_URL) {
+          openedExplicitUrlRef.current = true
+        }
+      })
+    }, delay)
     return () => window.clearTimeout(timer)
   }, [createAttempt, createTab, creating, enabled, initialUrl, supported, tabs.length])
 
@@ -795,6 +833,8 @@ export function useDirectBrowserTabs({
         queueMicrotask(() => void createTab())
       }
     }
+    // The session's browser is done only when its last page is.
+    disposeDirectBrowserSessionIfAbandoned(sessionRef.current.sessionId)
   }, [createTab, enabled, singleTab, tabs])
 
   const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? null
@@ -922,6 +962,8 @@ export function useDirectBrowserTabs({
     activeIdRef.current = null
     setTabs([])
     setActiveTabId(null)
+    // The session's browser is done only when its last page is.
+    disposeDirectBrowserSessionIfAbandoned(sessionRef.current.sessionId)
   }, [])
 
   const applyAgentViewport = useCallback(async (tabId: string) => {
@@ -1317,15 +1359,34 @@ export function useDirectBrowserTabs({
 
   agentHandlerRef.current = executeAgentCommand
 
+  const selectTabRef = useRef(selectTab)
+  selectTabRef.current = selectTab
+  const closeTabRef = useRef(closeTab)
+  closeTabRef.current = closeTab
+
+  // One surface per session, not one per open view: the PiP and the panel
+  // are views onto the same pages, and the agent must see that same list.
   useEffect(() => {
     if (!supported || !enabled) return
     return registerDirectBrowserSurface(
       sessionId,
       {
-        instanceId,
+        instanceId: 'session',
         order: registryOrderRef.current,
         isActive: () => registryActiveRef.current,
         getTab: () => tabsRef.current.find((tab) => tab.id === activeIdRef.current) ?? null,
+        getTabs: () => tabsRef.current.map((tab) => ({
+          url: tab.url,
+          active: tab.id === activeIdRef.current,
+        })),
+        selectTab: (index) => {
+          const tab = tabsRef.current[index]
+          if (tab) selectTabRef.current(tab.id)
+        },
+        closeTab: (index) => {
+          const tab = tabsRef.current[index]
+          if (tab) void Promise.resolve(closeTabRef.current(tab.id)).catch(() => {})
+        },
         unavailableReason: () => unavailableReasonRef.current(),
         execute: (action, params) => agentHandlerRef.current(action, params),
         activate: () => registryActivateRef.current?.(),
@@ -1334,6 +1395,60 @@ export function useDirectBrowserTabs({
       setAgentConnected,
     )
   }, [enabled, instanceId, sessionId, supported])
+
+  // One slot per view target. The panel wins over the PiP while both are
+  // up — that is what makes docking and undocking hand the pages over
+  // instead of two views fighting over the same WebViews.
+  useEffect(() => {
+    if (!supported) return
+    registerDirectBrowserSurfaceSlot(sessionRef.current.sessionId, {
+      id: surfaceIdRef.current,
+      kind: surfaceKindRef.current,
+      visible: visibleRef.current,
+      boundTabId: shownTabRef.current,
+    })
+    return () => {
+      unregisterDirectBrowserSurfaceSlot(
+        sessionRef.current.sessionId,
+        surfaceIdRef.current,
+      )
+      // Unmounting a view hands the browser back, it does not close it: the
+      // session keeps its pages and WebViews for whoever shows them next.
+      // Only a session with no pages left is disposed.
+      disposeDirectBrowserSessionIfAbandoned(sessionRef.current.sessionId)
+    }
+  }, [supported])
+
+  useEffect(() => {
+    updateDirectBrowserSurfaceSlot(sessionId, surfaceId, { visible })
+    // Becoming the view the user is looking at makes *this* view's page the
+    // session's active one, so the PiP follows the panel and vice versa.
+    if (visible && surfaceKind === 'panel') {
+      setDirectBrowserActiveTab(sessionId, shownTabRef.current)
+    }
+  }, [sessionId, surfaceId, surfaceKind, visible])
+
+  // Every view of a session renders the same browser; this is what makes a
+  // change by one view appear in the other. A visible panel follows the
+  // shared selection (an agent tab switch moves what the panel shows); a
+  // hidden panel keeps the page bound to its own workbench tab.
+  useEffect(
+    () =>
+      subscribeDirectBrowserSession(sessionId, () => {
+        const shared = getDirectBrowserSession(sessionId)
+        setTabsState(shared.tabs)
+        if (shared.activeTabId === shownTabRef.current) return
+        if (surfaceKindRef.current === 'panel' && !visibleRef.current) return
+        shownTabRef.current = shared.activeTabId
+        setActiveTabIdState(shared.activeTabId)
+        if (surfaceKindRef.current === 'panel') {
+          updateDirectBrowserSurfaceSlot(sessionId, surfaceIdRef.current, {
+            boundTabId: shared.activeTabId,
+          })
+        }
+      }),
+    [sessionId],
+  )
 
   // Load state belongs to the tab that was loading, not to the panel: leaving
   // one mid-navigation must not spin a progress bar over the next one.
@@ -1612,6 +1727,11 @@ export function useDirectBrowserTabs({
         const changed = !sameBounds(boundsRef.current, bounds)
 
         for (const [id, webview] of webviewsRef.current) {
+          // A page a higher-priority view is showing is not ours to move or
+          // hide — docking and undocking only re-targets this view's rect.
+          // A page nobody shows falls through and is hidden here.
+          const claimant = claimantForTab(sessionRef.current, id)
+          if (claimant && claimant !== surfaceIdRef.current) continue
           const isActive = id === activeIdRef.current
           const show = shouldShow && isActive && !pageDialog && !pagePermission
           const currentlyVisible = visibilityRef.current.get(id) === true
@@ -1720,14 +1840,23 @@ export function useDirectBrowserTabs({
     // read later — and it keeps the exhaustive-deps rule from mistaking
     // them for DOM nodes captured too early.
     const webviews = webviewsRef.current
-    const visibilities = visibilityRef.current
     return () => {
       disposedRef.current = true
-      for (const webview of webviews.values()) {
-        void webview.close().catch(() => {})
+      // Unmounting a view hands the browser back, it does not close it: the
+      // session keeps its pages and WebViews for whoever shows them next —
+      // the panel adopting them, or the PiP coming back. Only the
+      // visibility this view owns is dropped here; a session with no pages
+      // left is disposed.
+      for (const [id, webview] of webviews.entries()) {
+        if (claimantForTab(sessionRef.current, id) === surfaceIdRef.current) {
+          void webview.hide().catch(() => {})
+        }
       }
-      webviews.clear()
-      visibilities.clear()
+      unregisterDirectBrowserSurfaceSlot(
+        sessionRef.current.sessionId,
+        surfaceIdRef.current,
+      )
+      disposeDirectBrowserSessionIfAbandoned(sessionRef.current.sessionId)
     }
   }, [])
 
@@ -1750,7 +1879,6 @@ export function useDirectBrowserTabs({
     pageError,
     dismissPageDialog: () => setPageDialog(null),
     createTab,
-    releaseTab,
     selectTab,
     closeTab,
     navigate,

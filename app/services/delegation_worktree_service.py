@@ -34,6 +34,24 @@ class TaskSandboxBinding:
     write_allowed_paths: list[str]
 
 
+def _commit_title(spec: dict) -> str:
+    """Derive a Git commit subject from the task goal's first line.
+
+    Worktree leftovers are committed without a human message, so the task
+    goal is the best description available; fall back to an empty string and
+    let callers keep the historical task-id wording.
+    """
+    goal = spec.get("goal")
+    if not isinstance(goal, str):
+        return ""
+    line = next((part.strip() for part in goal.splitlines() if part.strip()), "")
+    line = line.rstrip(".")
+    if len(line) > 72:
+        head = line[:69].rsplit(" ", 1)[0].rstrip()
+        line = (head or line[:69]) + "..."
+    return line
+
+
 def resolve_isolation(
     *,
     requested: str,
@@ -174,6 +192,7 @@ async def allocate(
         "version": 1,
         "state": "active",
         "task_id": task_id,
+        "title": _commit_title(spec),
         "recipient": recipient,
         "repositories": created,
     }
@@ -203,7 +222,8 @@ async def snapshot(allocation: dict) -> tuple[dict, dict]:
                 "commit",
                 "--no-verify",
                 "-m",
-                f"chore(evoflux): delegation {allocation.get('task_id', 'task')}",
+                str(updated.get("title") or "").strip()
+                or f"chore(evoflux): delegation {allocation.get('task_id', 'task')}",
             )
         head = (await _git(workspace, "rev-parse", "HEAD")).stdout.strip()
         base = str(item["base_commit"])
@@ -310,6 +330,7 @@ async def merge(allocation: dict) -> tuple[dict, str]:
 
         for item in repositories:
             integration_ws = Path(str(item["integration_workspace"]))
+            merge_ref = snapshot_commits[str(item["source"])]
             result = await _git(
                 integration_ws,
                 "-c",
@@ -317,11 +338,32 @@ async def merge(allocation: dict) -> tuple[dict, str]:
                 "-c",
                 "user.email=evoflux@localhost",
                 "merge",
-                "--no-ff",
+                "--ff-only",
                 "--no-edit",
-                snapshot_commits[str(item["source"])],
+                merge_ref,
                 check=False,
             )
+            if result.returncode != 0:
+                # The integration branch moved since this task was allocated,
+                # so record a real merge with a readable subject instead of
+                # Git's default "Merge commit '<sha>'".
+                title = str(updated.get("title") or "").strip() or str(
+                    updated.get("task_id") or "task"
+                )
+                result = await _git(
+                    integration_ws,
+                    "-c",
+                    "user.name=EvoFlux",
+                    "-c",
+                    "user.email=evoflux@localhost",
+                    "merge",
+                    "--no-ff",
+                    "--no-edit",
+                    "-m",
+                    f"Merge task: {title}",
+                    merge_ref,
+                    check=False,
+                )
             if result.returncode != 0:
                 await _git(integration_ws, "merge", "--abort", check=False)
                 raise DelegationWorktreeError(
@@ -854,7 +896,7 @@ async def _branch_exists(source: Path, branch: str) -> bool:
 def _git_sync(workspace: Path, *args: str) -> subprocess.CompletedProcess[str]:
     try:
         return subprocess.run(
-            ["git", "-C", str(workspace), *args],
+            ["git", "-c", "core.longpaths=true", "-C", str(workspace), *args],
             capture_output=True,
             text=True,
             encoding="utf-8",

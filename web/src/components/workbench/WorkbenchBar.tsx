@@ -1,5 +1,4 @@
 import type { MouseEvent as ReactMouseEvent } from 'react'
-import { motion } from 'framer-motion'
 import {
   Check,
   ChevronDown,
@@ -16,7 +15,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
-import { useMotionPreset } from '@/lib/motion'
 import { usePlatform } from '@/hooks/use-platform'
 import { useTeamStore } from '@/stores/useTeamStore'
 import { useUIStore } from '@/stores/useUIStore'
@@ -89,7 +87,6 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
   )
   const registry = useRegistryQuery()
   const webBridgeSettings = useWebBridgeSettingsQuery()
-  const motionPreset = useMotionPreset()
   const { isTauri, os, isWindowsTitleBar } = usePlatform()
   // The macOS and Windows title bars already carry the sidebar toggle, which
   // opens the drawer in mobile / overlay layouts too.
@@ -127,18 +124,18 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
       )}
     >
       {!titleBarOwnsSidebarToggle && (props.isMobile || props.sidebarOverlay) && (
-        <motion.button
+        <button
           type="button"
           onClick={props.onOpenMobileSidebar}
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.92 }}
-          transition={motionPreset.spring}
+
+
+
           className="flex h-8 w-8 items-center justify-center rounded-xl text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
           aria-label="Open navigation"
           data-no-drag
         >
           <Menu size={16} />
-        </motion.button>
+        </button>
       )}
 
       {/* `overflow-hidden` is load-bearing: this side shrinks to nothing when
@@ -161,7 +158,7 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
             <span className="workbench-identity-label hidden truncate sm:inline">
               {props.leadName ?? 'Choose lead'}
             </span>
-            <ChevronDown size={11} className="hidden shrink-0 text-(--color-text-subtle) transition-transform group-data-[popup-open]:rotate-180 sm:block" />
+            <ChevronDown size={11} className="hidden shrink-0 text-(--color-text-subtle) group-data-[popup-open]:rotate-180 sm:block" />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="w-[min(18rem,calc(100vw-1rem))]">
             <div className="px-2 py-1.5">
@@ -203,12 +200,12 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
           </span>
         )}
         {props.reviewContext && props.onOpenReviewContext && (
-          <motion.button
+          <button
             type="button"
             onClick={props.onOpenReviewContext}
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.96 }}
-            transition={motionPreset.spring}
+
+
+
             className="flex h-7 min-w-0 items-center gap-1.5 rounded-lg border border-(--color-accent)/30 bg-(--color-accent)/8 px-2 text-[11px] font-medium text-(--color-accent) transition-colors hover:border-(--color-accent)/40 hover:bg-(--color-accent)/12"
             aria-label={`Open linked review #${props.reviewContext.number}`}
             title="Open linked PR/MR"
@@ -216,7 +213,7 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
           >
             <GitPullRequest size={13} className="shrink-0" />
             <span className="truncate">Review #{props.reviewContext.number}</span>
-          </motion.button>
+          </button>
         )}
       </div>
 
@@ -260,7 +257,7 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
             </span>
             <ChevronDown
               size={11}
-              className="text-(--color-text-subtle) transition-transform group-data-[popup-open]:rotate-180"
+              className="text-(--color-text-subtle) group-data-[popup-open]:rotate-180"
             />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-44">
@@ -298,6 +295,7 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
             turnOutput={activeUsage.turnCompletionTokens}
             turnCached={activeUsage.turnCachedTokens}
             turnCacheWrite={activeUsage.turnCacheWriteTokens}
+            turnPhases={activeUsage.turnPhases}
             turnCalls={activeUsage.turnCalls}
             cost={activeUsage.turnCost}
             trigger={summaryTrigger}
@@ -327,12 +325,12 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
           </button>
         )}
 
-        <motion.button
+        <button
           type="button"
           onClick={toggleWorkbench}
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.9 }}
-          transition={motionPreset.spring}
+
+
+
           className={cn(
             'relative flex h-7 w-8 shrink-0 items-center justify-center overflow-hidden rounded-lg transition-colors',
             workbenchOpen
@@ -347,14 +345,14 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
               className="absolute inset-0 rounded-lg bg-(--bg-key)"
             />
           )}
-          <motion.span
+          <span
             className="relative z-10"
-            animate={{ scaleX: workbenchOpen ? 1 : 0.92 }}
-            transition={motionPreset.spring}
+
+
           >
             <SidePanelIcon size={15} />
-          </motion.span>
-        </motion.button>
+          </span>
+        </button>
       </div>
     </header>
   )

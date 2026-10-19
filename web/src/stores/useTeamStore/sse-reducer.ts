@@ -169,7 +169,9 @@ function appendStreamingText(
     const newEstimatedVal = Math.round(stream._completionEstimated)
     const currentTurnTokens = Math.max(stream.usage.completionTokens - stream._completionBase, newEstimatedVal)
     stream.usage.completionTokens = stream._completionBase + currentTurnTokens
-    stream.usage.totalTokens = stream.usage.promptTokens + stream.usage.completionTokens
+    // `totalTokens` = prompt + generated so far. The cumulative
+    // `completionTokens` spans earlier turns and must not be folded in.
+    stream.usage.totalTokens = stream.usage.promptTokens + currentTurnTokens
 
     // The authoritative turn total only lands when a model call *finishes*,
     // so without this the live counter froze for the whole of a long call —
@@ -887,7 +889,11 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
           u.completionTokens = stream._completionBase + completionTokens
           u.cachedTokens     = cachedTokens ?? u.cachedTokens
           u.cacheWriteTokens = cacheWriteTokens ?? u.cacheWriteTokens
-          u.totalTokens      = u.promptTokens + u.completionTokens
+          // `totalTokens` = the latest call's prompt plus its output — the
+          // conversation's size as the model sees it. The cumulative
+          // `u.completionTokens` covers every turn; folding it in here made
+          // the number grow without bound as the session went on.
+          u.totalTokens      = u.promptTokens + completionTokens
           stream._completionEstimated = completionTokens
         })
         break

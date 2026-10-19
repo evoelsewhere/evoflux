@@ -80,7 +80,14 @@ export function useAppBackendBootstrap(): AppBackendBootstrap {
       void getAppBackendStatus().then((status) => {
         if (cancelled || finished || !status) return
         if (status.startup) applyStatus(status.startup)
-        if (!status.base_url) return
+        if (!status.base_url) {
+          // No backend is registered yet (sidecar still launching, or none
+          // configured). A terminal startup status means waiting is pointless —
+          // surface the error instead of polling silently until the boot
+          // timeout fires.
+          if (status.startup?.fatal || status.startup?.phase === 'error') finish()
+          return
+        }
         applyBackend(status.base_url, status.token)
         finish()
       })

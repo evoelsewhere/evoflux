@@ -52,4 +52,23 @@ describe('turn usage history restoration', () => {
       },
     })
   })
+
+  it('keeps totalTokens to the latest call instead of summing every turn', () => {
+    const first = assistantMessage('Earlier turn')
+    first.id = 'message-1'
+    first.extra = { usage: { input: 8_000, output: 250, cache: 0 } }
+    const latest = assistantMessage('Done')
+    latest.id = 'message-2'
+    latest.created_at = '2026-08-14T09:00:00Z'
+    latest.extra = { usage: { input: 14_200, output: 17, cache: 2_000 } }
+
+    // Regression: totalTokens used to be the latest prompt plus the sum of
+    // every turn's output (14_467 here), a number that only grows with the
+    // session and reads like a wildly oversized conversation.
+    expect(sumUsageFromMessages([first, latest])).toMatchObject({
+      promptTokens: 14_200,
+      completionTokens: 267,
+      totalTokens: 14_217,
+    })
+  })
 })

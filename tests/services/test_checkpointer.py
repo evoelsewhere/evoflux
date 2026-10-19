@@ -896,3 +896,33 @@ class TestSQLiteCheckpointerStreamCommit:
 
         # Me commit should have been called
         assert call_order == ["commit"]
+
+    @pytest.mark.asyncio
+    async def test_sync_chunks_new_messages_and_retries_pool_timeout(self, monkeypatch):
+        import app.agent.checkpointer as checkpointer_module
+        import app.core.db as _db
+        from sqlalchemy.exc import TimeoutError as SQLAlchemyTimeoutError
+
+        sid = uuid.uuid7()
+        async with _db.async_session_factory() as db:
+            async with db.begin():
+                await _make_session(db, sid)
+
+        monkeypatch.setattr(checkpointer_module, "_SYNC_BATCH_SIZE", 2)
+        factory_calls = 0
+
+        def flaky_factory():
+            nonlocal factory_calls
+            factory_calls += 1
+            if factory_calls == 2:
+                raise SQLAlchemyTimeoutError("writer lane busy")
+            return _db.async_session_factory()
+
+        cp = SQLiteCheckpointer(flaky_factory)
+        messages = [AssistantMessage(content=f"message {index}") for index in range(5)]
+        await cp.sync(_ctx(str(sid)), AgentState(messages=messages))
+
+        # Three committed batches plus one bounded retry of the second batch.
+        assert factory_calls == 4
+        assert all(message.db_id is not None for message in messages)
+        assert len({message.db_id for message in messages}) == len(messages)

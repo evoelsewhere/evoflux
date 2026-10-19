@@ -38,8 +38,14 @@ from app.agent.model_context import (
 )
 from app.agent.state import AgentState, RunContext
 from app.models.chat import SessionMessage
+from app.core.db import retry_on_db_timeout
 from app.services.chat_service import get_messages_for_llm, save_message
 from app.services.prompt_prefix import advance_prefix_snapshot
+
+# Messages committed per write transaction inside ``SQLiteCheckpointer.sync``.
+# Bounding each transaction also leaves room for bounded retries when a writer
+# temporarily cannot acquire the single-writer connection.
+_SYNC_BATCH_SIZE = 50
 
 if TYPE_CHECKING:
     from app.core.db import DbFactory
@@ -307,175 +313,202 @@ class SQLiteCheckpointer(Checkpointer):
         if not new_messages and not seen_messages:
             return
 
-        async with self._session_factory() as db:
-            async with db.begin():
-                # ── Update exclude_from_context on already-persisted messages ─────
-                # Re-read the flag directly — no diff tracking needed.
-                # db_id is set on all messages after first persist, so PK lookup is safe.
-                latest_assistant = next(
-                    (
-                        message
-                        for message in reversed(state.messages)
-                        if isinstance(message, AssistantMessage)
-                    ),
-                    None,
+        latest_assistant = next(
+            (
+                message
+                for message in reversed(state.messages)
+                if isinstance(message, AssistantMessage)
+            ),
+            None,
+        )
+
+        async def persist_message(db, msg: ChatMessage) -> tuple[bool, UUID | None]:
+            if isinstance(msg, AssistantMessage):
+                has_content = bool(
+                    (msg.content and msg.content.strip())
+                    or (msg.reasoning_content and msg.reasoning_content.strip())
+                    or msg.tool_calls
+                    or msg.is_summary
                 )
-                for msg in seen_messages:
-                    if isinstance(msg, SystemMessage):
-                        continue
-                    if msg.db_id is None:
-                        continue
-                    turn_usage = (
-                        (msg.extra or {}).get("turn_usage")
-                        if msg is latest_assistant
-                        else None
-                    )
-                    if not msg.exclude_from_context and not isinstance(
-                        turn_usage, dict
-                    ):
-                        continue
-                    stmt = select(SessionMessage).where(
-                        col(SessionMessage.id) == msg.db_id
-                    )
-                    row = (await db.exec(stmt)).first()
-                    if row is None:
-                        continue
-                    changed = False
-                    if msg.exclude_from_context and not row.exclude_from_context:
-                        row.exclude_from_context = True
-                        changed = True
-                        logger.debug(
-                            "checkpointer_exclude_flag_updated session_id={} db_id={}",
-                            sid,
-                            msg.db_id,
-                        )
-                    if isinstance(turn_usage, dict) and (
-                        (row.extra or {}).get("turn_usage") != turn_usage
-                    ):
-                        row.extra = {**(row.extra or {}), "turn_usage": turn_usage}
-                        changed = True
-                        logger.debug(
-                            "checkpointer_turn_usage_updated session_id={} db_id={}",
-                            sid,
-                            msg.db_id,
-                        )
-                    if changed:
-                        db.add(row)
-
-                # ── Persist new messages ──────────────────────────────────────────
-                for msg in new_messages:
-                    if isinstance(msg, AssistantMessage):
-                        # Skip empty assistant messages (e.g. interrupted before
-                        # any content was generated).
-                        has_content = bool(
-                            (msg.content and msg.content.strip())
-                            or (msg.reasoning_content and msg.reasoning_content.strip())
-                            or msg.tool_calls
-                            or msg.is_summary
-                        )
-                        if not has_content:
-                            logger.debug(
-                                "checkpointer_skip_empty_assistant session_id={}",
-                                sid,
-                            )
-                            continue
-                        row = await save_message(
-                            db,
-                            UUID(sid),
-                            msg,
-                            is_summary=msg.is_summary,
-                            exclude_from_context=msg.exclude_from_context,
-                            extra=msg.extra,
-                        )
-                        msg.db_id = row.id
-                        logger.debug(
-                            "checkpointer_saved_assistant session_id={} db_id={} is_summary={} exclude={}",
-                            sid,
-                            row.id,
-                            msg.is_summary,
-                            msg.exclude_from_context,
-                        )
-                    elif isinstance(msg, ToolMessage):
-                        row = await save_message(db, UUID(sid), msg, extra=msg.extra)
-                        msg.db_id = row.id
-                        logger.debug(
-                            "checkpointer_saved_tool session_id={} db_id={} tool={}",
-                            sid,
-                            row.id,
-                            msg.name,
-                        )
-                    elif isinstance(msg, HumanMessage):
-                        if msg.is_summary:
-                            # Me save summary HumanMessages — route handler only saves real user messages
-                            row = await save_message(
-                                db,
-                                UUID(sid),
-                                msg,
-                                is_summary=True,
-                                exclude_from_context=msg.exclude_from_context,
-                            )
-                            msg.db_id = row.id
-                            logger.debug(
-                                "checkpointer_saved_summary session_id={} db_id={}",
-                                sid,
-                                row.id,
-                            )
-                        elif is_durable_model_context(msg):
-                            row = await save_message(
-                                db,
-                                UUID(sid),
-                                msg,
-                                exclude_from_context=msg.exclude_from_context,
-                                extra=msg.extra,
-                            )
-                            msg.db_id = row.id
-                            logger.debug(
-                                "checkpointer_saved_model_context session_id={} db_id={} kind={}",
-                                sid,
-                                row.id,
-                                (msg.extra or {}).get("evoflux_model_context"),
-                            )
-                        # Me real user messages already saved by route handler — skip
-                    else:
-                        logger.debug(
-                            "checkpointer_skip_role session_id={} role={}",
-                            sid,
-                            msg.role,
-                        )
-                        continue
-
-                    persisted_ids.add(id(msg))
-
-                # Mirror MiMo-Code's completed-step watermark. The prefix
-                # snapshot hook writes its profile key into ephemeral state;
-                # only a message with a durable DB id is eligible to advance it.
-                snapshot_profile_key = state.metadata.get(PREFIX_SNAPSHOT_PROFILE_KEY)
-                latest_assistant_id = next(
-                    (
-                        message.db_id
-                        for message in reversed(state.messages)
-                        if isinstance(message, AssistantMessage)
-                        and message.db_id is not None
-                    ),
-                    None,
+                if not has_content:
+                    logger.debug("checkpointer_skip_empty_assistant session_id={}", sid)
+                    return False, None
+                row = await save_message(
+                    db,
+                    UUID(sid),
+                    msg,
+                    is_summary=msg.is_summary,
+                    exclude_from_context=msg.exclude_from_context,
+                    extra=msg.extra,
                 )
-                if (
-                    isinstance(snapshot_profile_key, str)
-                    and latest_assistant_id is not None
-                ):
-                    try:
+                logger.debug(
+                    "checkpointer_saved_assistant session_id={} db_id={} is_summary={} exclude={}",
+                    sid,
+                    row.id,
+                    msg.is_summary,
+                    msg.exclude_from_context,
+                )
+                return True, row.id
+            if isinstance(msg, ToolMessage):
+                row = await save_message(db, UUID(sid), msg, extra=msg.extra)
+                logger.debug(
+                    "checkpointer_saved_tool session_id={} db_id={} tool={}",
+                    sid,
+                    row.id,
+                    msg.name,
+                )
+                return True, row.id
+            if isinstance(msg, HumanMessage):
+                if msg.is_summary:
+                    row = await save_message(
+                        db,
+                        UUID(sid),
+                        msg,
+                        is_summary=True,
+                        exclude_from_context=msg.exclude_from_context,
+                    )
+                    logger.debug(
+                        "checkpointer_saved_summary session_id={} db_id={}",
+                        sid,
+                        row.id,
+                    )
+                    return True, row.id
+                if is_durable_model_context(msg):
+                    row = await save_message(
+                        db,
+                        UUID(sid),
+                        msg,
+                        exclude_from_context=msg.exclude_from_context,
+                        extra=msg.extra,
+                    )
+                    logger.debug(
+                        "checkpointer_saved_model_context session_id={} db_id={} kind={}",
+                        sid,
+                        row.id,
+                        (msg.extra or {}).get("evoflux_model_context"),
+                    )
+                    return True, row.id
+                # Real user messages were already saved by the route handler.
+                return True, None
+            logger.debug("checkpointer_skip_role session_id={} role={}", sid, msg.role)
+            return False, None
+
+        for start in range(0, len(seen_messages), _SYNC_BATCH_SIZE):
+            batch = seen_messages[start : start + _SYNC_BATCH_SIZE]
+
+            async def update_seen_batch(batch=batch) -> None:
+                async with self._session_factory() as db:
+                    async with db.begin():
+                        for msg in batch:
+                            if isinstance(msg, SystemMessage) or msg.db_id is None:
+                                continue
+                            turn_usage = (
+                                (msg.extra or {}).get("turn_usage")
+                                if msg is latest_assistant
+                                else None
+                            )
+                            if not msg.exclude_from_context and not isinstance(
+                                turn_usage, dict
+                            ):
+                                continue
+                            stmt = select(SessionMessage).where(
+                                col(SessionMessage.id) == msg.db_id
+                            )
+                            row = (await db.exec(stmt)).first()
+                            if row is None:
+                                continue
+                            changed = False
+                            if (
+                                msg.exclude_from_context
+                                and not row.exclude_from_context
+                            ):
+                                row.exclude_from_context = True
+                                changed = True
+                                logger.debug(
+                                    "checkpointer_exclude_flag_updated session_id={} db_id={}",
+                                    sid,
+                                    msg.db_id,
+                                )
+                            if isinstance(turn_usage, dict) and (
+                                (row.extra or {}).get("turn_usage") != turn_usage
+                            ):
+                                row.extra = {
+                                    **(row.extra or {}),
+                                    "turn_usage": turn_usage,
+                                }
+                                changed = True
+                                logger.debug(
+                                    "checkpointer_turn_usage_updated session_id={} db_id={}",
+                                    sid,
+                                    msg.db_id,
+                                )
+                            if changed:
+                                db.add(row)
+
+            await retry_on_db_timeout(
+                update_seen_batch,
+                operation_name="checkpointer.update_seen",
+            )
+
+        for start in range(0, len(new_messages), _SYNC_BATCH_SIZE):
+            batch = new_messages[start : start + _SYNC_BATCH_SIZE]
+
+            async def persist_new_batch(
+                batch=batch,
+            ) -> list[tuple[ChatMessage, UUID | None]]:
+                committed: list[tuple[ChatMessage, UUID | None]] = []
+                async with self._session_factory() as db:
+                    async with db.begin():
+                        for msg in batch:
+                            should_persist, db_id = await persist_message(db, msg)
+                            if should_persist:
+                                committed.append((msg, db_id))
+                return committed
+
+            committed = await retry_on_db_timeout(
+                persist_new_batch,
+                operation_name="checkpointer.persist_new",
+            )
+            for msg, db_id in committed:
+                if db_id is not None:
+                    msg.db_id = db_id
+                persisted_ids.add(id(msg))
+
+        # Mirror MiMo-Code's completed-step watermark. The prefix snapshot hook
+        # writes its profile key into ephemeral state; only a message with a
+        # durable DB id is eligible to advance it.
+        snapshot_profile_key = state.metadata.get(PREFIX_SNAPSHOT_PROFILE_KEY)
+        latest_assistant_id = next(
+            (
+                message.db_id
+                for message in reversed(state.messages)
+                if isinstance(message, AssistantMessage) and message.db_id is not None
+            ),
+            None,
+        )
+        if isinstance(snapshot_profile_key, str) and latest_assistant_id is not None:
+
+            async def advance_watermark() -> None:
+                async with self._session_factory() as db:
+                    async with db.begin():
                         await advance_prefix_snapshot(
                             db,
                             session_id=UUID(sid),
                             profile_key=snapshot_profile_key,
                             watermark_message_id=latest_assistant_id,
                         )
-                    except Exception as exc:  # noqa: BLE001 — watermark is advisory
-                        logger.debug(
-                            "checkpointer_snapshot_watermark_failed session_id={} error={}",
-                            sid,
-                            exc,
-                        )
+
+            try:
+                await retry_on_db_timeout(
+                    advance_watermark,
+                    operation_name="checkpointer.snapshot_watermark",
+                )
+            except Exception as exc:  # noqa: BLE001 — watermark is advisory
+                logger.debug(
+                    "checkpointer_snapshot_watermark_failed session_id={} error={}",
+                    sid,
+                    exc,
+                )
 
         # Me drop this agent's stream buffer — once the assistant text is in
         # the DB, a mid-turn reconnect loading it via loadSession must not

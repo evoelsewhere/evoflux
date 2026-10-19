@@ -16,11 +16,9 @@
  * LongPressButton).
  */
 
-import { AnimatePresence, motion } from 'framer-motion'
 import { Globe2, Loader2, MessageCirclePlus, Pencil, Trash2 } from 'lucide-react'
 import { LongPressButton } from '@/components/ui/long-press-button'
 import { formatRelativeDate, formatShortDate } from '@/utils/format'
-import { useMotionPreset, fadeRise, staggerDelay } from '@/lib/motion'
 import { cn } from '@/lib/utils'
 import { formatImportSource } from '@/lib/import-source'
 import type { SessionResponse } from '@/api/types'
@@ -43,8 +41,6 @@ export interface SessionRowProps {
     session: SessionResponse,
     event: React.MouseEvent,
   ) => void
-  /** When set, plays a fade-rise enter with stagger derived from this index. */
-  enterIndex?: number
   /** Enables HTML5 drag so the row can be dropped onto a sidebar folder. */
   draggable?: boolean
   onDragStart?: (session: SessionResponse, event: React.DragEvent) => void
@@ -70,14 +66,10 @@ export function SessionRow({
   mobileLongPressActions = false,
   onLongPress,
   onContextActions,
-  enterIndex,
   draggable = false,
   onDragStart,
   onDragEnd,
 }: SessionRowProps) {
-  const preset = useMotionPreset()
-  const index = enterIndex
-  const enter = index !== undefined ? fadeRise(preset, 6) : null
   const compact = density === 'compact'
   const dense = density === 'dense'
   const smallActions = compact || dense
@@ -183,7 +175,7 @@ export function SessionRow({
                 aria-label="Created from browser"
               />
             )}
-            <span className="shrink-0 text-[10px] tabular-nums text-(--color-text-subtle) transition-opacity duration-(--motion-fast) group-hover:opacity-0 group-focus-within:opacity-0 pointer-coarse:opacity-0">
+            <span className="shrink-0 text-[10px] tabular-nums text-(--color-text-subtle) group-hover:opacity-0 group-focus-within:opacity-0 pointer-coarse:opacity-0">
               {formatShortDate(session.created_at)}
             </span>
           </div>
@@ -191,17 +183,7 @@ export function SessionRow({
           // One line: the date group header above already says when, so the
           // full stamp (and a scheduled task's name) lives in the tooltip.
           <div className="flex min-w-0 flex-1 items-center gap-1.5">
-            <AnimatePresence mode="wait" initial={false}>
-              <motion.span
-                key={session.title ?? 'untitled'}
-                initial={{ opacity: 0, y: -6 * preset.distance }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: 6 * preset.distance }}
-                className="min-w-0 truncate"
-              >
-                {session.title || 'Untitled'}
-              </motion.span>
-            </AnimatePresence>
+            <span className="min-w-0 truncate">{session.title || 'Untitled'}</span>
             {importedSource && (
               <span
                 role="note"
@@ -242,7 +224,7 @@ export function SessionRow({
         <>
           <div
             className={cn(
-              'absolute top-1/2 z-(--z-panel) flex origin-right -translate-y-1/2 scale-95 items-center gap-0.5 rounded-md border border-(--color-border)/80 bg-(--bg-card)/95 p-0.5 opacity-0 shadow-sm backdrop-blur-sm transition-[opacity,transform] duration-(--motion-fast) group-hover:scale-100 group-hover:opacity-100 group-focus-within:scale-100 group-focus-within:opacity-100 pointer-coarse:scale-100 pointer-coarse:opacity-100',
+              'absolute top-1/2 z-(--z-panel) flex origin-right -translate-y-1/2 scale-95 items-center gap-0.5 rounded-md border border-(--color-border)/80 bg-(--bg-card)/95 p-0.5 opacity-0 shadow-sm backdrop-blur-sm transition-[opacity,transform] group-hover:scale-100 group-hover:opacity-100 group-focus-within:scale-100 group-focus-within:opacity-100 pointer-coarse:scale-100 pointer-coarse:opacity-100',
               compact ? 'right-1' : 'right-1.5',
             )}
           >
@@ -318,15 +300,5 @@ export function SessionRow({
     </div>
   )
 
-  if (!enter || index === undefined) return row
-
-  return (
-    <motion.div
-      initial={enter.initial}
-      animate={enter.animate}
-      transition={{ ...enter.transition, delay: staggerDelay(preset, index) }}
-    >
-      {row}
-    </motion.div>
-  )
+  return row
 }

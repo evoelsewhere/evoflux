@@ -18,7 +18,15 @@ def _state(session_id: str = "desktop-session") -> SimpleNamespace:
 @pytest.mark.asyncio
 async def test_browser_use_requires_evoflux_desktop(monkeypatch) -> None:
     monkeypatch.setattr(direct_browser_bridge, "is_connected", lambda _sid: False)
-    monkeypatch.setattr(direct_browser_bridge, "is_available", lambda _sid: False)
+
+    async def request_mount(_sid: str, **_kwargs) -> bool:
+        return True
+
+    async def wait_connected(_sid: str, **_kwargs) -> bool:
+        return False
+
+    monkeypatch.setattr(direct_browser_bridge, "request_mount", request_mount)
+    monkeypatch.setattr(direct_browser_bridge, "wait_connected", wait_connected)
 
     result = await browser_tool.browser_use.arun(
         _injected={"_state": _state()}, actions=[{"action": "snapshot"}]
@@ -26,6 +34,43 @@ async def test_browser_use_requires_evoflux_desktop(monkeypatch) -> None:
 
     assert isinstance(result, str)
     assert "EvoFlux Desktop" in result
+    assert "could not open for this session" in result
+
+
+@pytest.mark.asyncio
+async def test_browser_use_mounts_background_session(monkeypatch) -> None:
+    """A session running in the background has no presence yet; the mount is
+    still requested and the pending mount opens the browser when presence
+    attaches."""
+    connected = False
+    mounted: list[str] = []
+
+    monkeypatch.setattr(direct_browser_bridge, "is_connected", lambda _sid: connected)
+    monkeypatch.setattr(direct_browser_bridge, "is_available", lambda _sid: False)
+
+    async def request_mount(sid: str, **_kwargs) -> bool:
+        mounted.append(sid)
+        return True
+
+    async def wait_connected(_sid: str, **_kwargs) -> bool:
+        nonlocal connected
+        connected = True
+        return True
+
+    async def request(_sid: str, action: str, _params: dict):
+        return f"direct:{action}"
+
+    monkeypatch.setattr(direct_browser_bridge, "request_mount", request_mount)
+    monkeypatch.setattr(direct_browser_bridge, "wait_connected", wait_connected)
+    monkeypatch.setattr(direct_browser_bridge, "request", request)
+
+    result = await browser_tool.browser_use.arun(
+        _injected={"_state": _state()}, actions=[{"action": "snapshot"}]
+    )
+
+    assert mounted == ["desktop-session"]
+    assert isinstance(result, str)
+    assert "direct:" in result
 
 
 @pytest.mark.asyncio
@@ -532,7 +577,9 @@ async def test_new_tab_forwards_group_label(monkeypatch):
 
     await browser_tool.browser_use.arun(
         _injected={"_state": _state()},
-        actions=[{"action": "new_tab", "url": "https://e.com", "label": "Compare prices"}],
+        actions=[
+            {"action": "new_tab", "url": "https://e.com", "label": "Compare prices"}
+        ],
     )
 
     first = sent[0]
@@ -751,20 +798,40 @@ def test_wait_load_state_accepts_playwright_aliases():
     """Playwright/CDP load-state names normalize to readyState (no tool error)."""
     from app.agent.tools.builtin.browser_use_tool import WaitAction
 
-    assert WaitAction(action="wait", load_state="domcontentloaded").load_state == "interactive"
-    assert WaitAction(action="wait", load_state="load").load_state == "complete"
-    assert WaitAction(action="wait", load_state="networkidle").load_state == "complete"
-    assert WaitAction(action="wait", load_state="commit").load_state == "loading"
+    assert (
+        WaitAction(
+            action="wait",
+            load_state="domcontentloaded",  # ty: ignore[invalid-argument-type]
+        ).load_state
+        == "interactive"
+    )
+    assert (
+        WaitAction(action="wait", load_state="load").load_state  # ty: ignore[invalid-argument-type]
+        == "complete"
+    )
+    assert (
+        WaitAction(action="wait", load_state="networkidle").load_state  # ty: ignore[invalid-argument-type]
+        == "complete"
+    )
+    assert (
+        WaitAction(action="wait", load_state="commit").load_state  # ty: ignore[invalid-argument-type]
+        == "loading"
+    )
     # Canonical readyState values still pass through.
     assert WaitAction(action="wait", load_state="loading").load_state == "loading"
-    assert WaitAction(action="wait", load_state="interactive").load_state == "interactive"
+    assert (
+        WaitAction(action="wait", load_state="interactive").load_state == "interactive"
+    )
     assert WaitAction(action="wait", load_state="complete").load_state == "complete"
     assert WaitAction(action="wait").load_state is None
 
 
 def test_done_browsing_translates_to_release_session():
     """done_browsing rewrites to release_session so teardown is immediate."""
-    from app.agent.tools.builtin.browser_use_tool import DoneBrowsingAction, _to_webbridge_steps
+    from app.agent.tools.builtin.browser_use_tool import (
+        DoneBrowsingAction,
+        _to_webbridge_steps,
+    )
 
     parsed = DoneBrowsingAction.model_validate({"action": "done_browsing"})
     assert parsed.action == "done_browsing"

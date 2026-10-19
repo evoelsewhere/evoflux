@@ -8,6 +8,8 @@ import threading
 import time
 from pathlib import Path
 
+import pytest
+
 
 SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "run_dev.py"
 SPEC = importlib.util.spec_from_file_location("run_dev", SCRIPT)
@@ -24,10 +26,7 @@ def test_build_services_propagates_api_port_to_web_and_desktop() -> None:
     assert services[0].command[-1] == "--no-access-log"
     assert services[0].command[services[0].command.index("--port") + 1] == "8123"
     assert services[1].env["VITE_API_PROXY_TARGET"] == "http://127.0.0.1:8123"
-    assert (
-        services[2].env["EVOFLUX_DESKTOP_DEV_BACKEND_URL"]
-        == "http://127.0.0.1:8123"
-    )
+    assert services[2].env["EVOFLUX_DESKTOP_DEV_BACKEND_URL"] == "http://127.0.0.1:8123"
 
 
 def test_supervisor_stops_siblings_when_a_service_fails(tmp_path: Path) -> None:
@@ -42,6 +41,8 @@ def test_supervisor_stops_siblings_when_a_service_fails(tmp_path: Path) -> None:
                 f"marker = pathlib.Path({str(marker)!r}); "
                 "signal.signal(signal.SIGTERM, "
                 "lambda *_: (marker.write_text('yes'), sys.exit(0))); "
+                "signal.signal(signal.SIGINT, "
+                "lambda *_: (marker.write_text('yes'), sys.exit(0))); "
                 "time.sleep(30)"
             ),
         ],
@@ -50,15 +51,31 @@ def test_supervisor_stops_siblings_when_a_service_fails(tmp_path: Path) -> None:
     )
     failing = run_dev.Service(
         name="fail",
-        command=[sys.executable, "-c", "import time; time.sleep(0.2); raise SystemExit(7)"],
+        command=[
+            sys.executable,
+            "-c",
+            "import time; time.sleep(0.2); raise SystemExit(7)",
+        ],
         cwd=tmp_path,
         env={},
     )
 
     assert run_dev.supervise([long_running, failing]) == 7
-    assert marker.read_text() == "yes"
+    if sys.platform != "win32":
+        # Windows stops a sibling with TerminateProcess, which kills the
+        # interpreter without delivering SIGTERM to Python signal handlers,
+        # so only POSIX can observe the marker the handler writes.
+        assert marker.read_text() == "yes"
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason=(
+        "os.kill(pid, SIGINT) terminates the process unconditionally on Windows "
+        "instead of delivering a real Ctrl-C, so the SIGINT-to-130 mapping cannot "
+        "be observed there."
+    ),
+)
 def test_supervisor_maps_interrupt_to_130(tmp_path: Path) -> None:
     service = run_dev.Service(
         name="long",

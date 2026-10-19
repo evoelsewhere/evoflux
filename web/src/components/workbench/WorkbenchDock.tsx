@@ -7,7 +7,7 @@ import { useResizableWidth } from '@/hooks/use-resizable-width'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { usePlatform } from '@/hooks/use-platform'
 import { useTauriDrag } from '@/hooks/use-tauri-drag'
-import { EASINGS, staggerDelay, useMotionPreset } from '@/lib/motion'
+import { staggerDelay, useMotionPreset } from '@/lib/motion'
 import { STORAGE_KEYS } from '@/lib/storage-keys'
 import { cn } from '@/lib/utils'
 import { formatShortcutLabel } from '@/lib/keyboard-shortcuts'
@@ -72,9 +72,6 @@ export function WorkbenchDock({
   const motionPreset = useMotionPreset()
   const { isMacOverlay, isWindowsTitleBar } = usePlatform()
   const dragHandlers = useTauriDrag()
-  const dockTransition = motionPreset.intensity === 'reduced'
-    ? { duration: 0 }
-    : { duration: 0.14, ease: EASINGS.out }
   const isMobile = useIsMobile()
   const [viewportWidth, setViewportWidth] = useState(() =>
     typeof window === 'undefined' ? 1440 : window.innerWidth,
@@ -118,15 +115,8 @@ export function WorkbenchDock({
   if (!open) return null
 
   return (
-    <motion.aside
-      key="workbench-dock"
-      initial={{
-        opacity: 0,
-      }}
-      animate={{
-        opacity: 1,
-      }}
-      transition={dockTransition}
+    <aside
+
       style={{
         width: maximized || isMobile ? '100%' : resizable.width,
       }}
@@ -290,7 +280,7 @@ export function WorkbenchDock({
         </AnimatePresence>
         {children}
       </div>
-    </motion.aside>
+    </aside>
   )
 }
 

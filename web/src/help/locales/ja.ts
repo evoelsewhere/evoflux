@@ -261,7 +261,6 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'mailbox',
       'Ctrl+V',
       'context budget',
-      'auto-split',
       'エージェント',
       'リード',
       'スプリット',
@@ -273,7 +272,6 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
     tricks: [
       'Ctrl+V はデスクトップで Agent ↔ Split を循環（フォーカス中フィールドがペーストを使う間は無効）。',
       'コマンドパレットの Next / Previous Agent は worker が活きているとき便利 — identity ドロップダウンを探すより速い。',
-      'auto-split が有効だと specialist 起動時に Split が開き、表示メニューを探さずに作業を眺められます。',
       'workbench のコンテキスト予算バーはモデルの context_length と summary_trigger_tokens を使います — 上がったら早めに compact。',
       'モデル、スキル、ツール、権限は Settings → Agents でエージェントごとに設定。',
       'topbar の Lead selector で idle session の Work/Coding lead を選択します。各 option はその lead 所有 member だけを表示し、active work 中は switch できません。',
@@ -293,11 +291,11 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: '表示モード: Agent（1 エージェントに集中）と Split（Lead + worker を並べる）。workbench の identity ドロップダウン、またはパレットの Next/Previous Agent で移動。デスクトップでは Ctrl+V が Agent ↔ Split。auto-split 有効時は specialist 起動で Split が自動で開くことがあります。',
+        text: '表示モード: Agent（1 エージェントに集中）と Split（Lead + worker を並べる）。workbench の identity ドロップダウン、またはパレットの Next/Previous Agent で移動。デスクトップでは Ctrl+V が Agent ↔ Split。',
       },
       {
         type: 'p',
-        text: 'コンテキスト予算 — workbench ヘッダ付近のバーは、有効モデルのコンテキスト窓に対するトークン使用を反映します。summary trigger に近づいたら /compact するか新しいチャットを始めてください。ハード失敗の前に「エージェントが前のファイルを忘れた」ように見えることが多いです。',
+        text: 'コンテキスト予算 — workbench ヘッダ付近のバーは、有効モデルのコンテキスト窓に対するトークン使用を反映します。ポップアップはライブプロンプトとターンの課金呼び出し（各呼び出しでプロンプトを再送）を分離し、ターンに課金されるが会話の一部ではないバックグラウンド呼び出し（タイトル、メモリ、要約）を明示します。summary trigger に近づいたら /compact するか新しいチャットを始めてください。ハード失敗の前に「エージェントが前のファイルを忘れた」ように見えることが多いです。',
       },
       {
         type: 'tips',
@@ -1501,6 +1499,9 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       '内蔵: Settings → Browser で有効化し Ctrl+T。WebBridge: Chrome ウェブストアから拡張をインストールし（Edge も同じページから入れられます）、Settings → Browser でマスターポリシーを有効化、デスクトップのステータスコントロールからペアし、workbench バーで WebBridge をオンにしておく。',
     tricks: [
       'Ctrl+T は内蔵ブラウザ workbench をトグル — WebBridge ペアリングではありません。',
+      'フローティングのプレビューとブラウザパネルはチャットごとに 1 つのブラウザです。タブとページを共有するため、パネルを開くとプレビューで開いていたページがそのまま表示され（空のページは開きません）、パネルを閉じるとページが残っている限りプレビューが再表示されます。',
+      'パネルのページ上部に共有タブが表示されます。タブをクリックすると表示中のページが切り替わり、タブの閉じるボタンでページを閉じます。',
+      'チャットがバックグラウンドで実行中でもタスクはアプリ内ブラウザを開けます。EvoFlux Desktop が起動していない場合、エージェントは「EvoFlux in-app browser could not open for this session」と報告します。',
       'WebBridge がオンで拡張が接続中なら、エージェントのブラウザ操作はすべて実ブラウザで行われ、それ以外はアプリ内ブラウザで行われます。スイッチはチャット単位ではなく保存され、作業中に切り替えても次のブラウザ操作から反映されます。',
       'あなたのブラウザでは各チャットが専用のタブで作業します。開いているページを置き換えず新しいタブを開き、あなたが別のタブに切り替えてもそのタブで作業を続けます。',
       '組み込みの browser-use Skill はどのサイトでもエージェントを導きます。各ステップをページの読み戻しで確認し、パスワードやワンタイムコードは入力せず、送信・購入・投稿・削除の前に確認します。Settings → Skills でオフにできます。',
