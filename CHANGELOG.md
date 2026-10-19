@@ -10,6 +10,7 @@ All notable changes to EvoFlux are documented in this file.
 - A startup failure no longer drops you into an empty app: the launch screen stays up with its error and **Retry** button.
 - Suggested next messages no longer ask for tool permission in ask mode, and only the lead agent can suggest them.
 - Reopening a session whose widget was replaced and then re-created with the same `block_id` now shows the latest version instead of a stale one.
+- Saving a long turn in batches never separates a tool call from its results, so a failed write cannot leave a call without answers.
 - Stopping the dev launcher on Windows now ends the whole process tree, and port detection works on non-English Windows.
 - Timed-out commands on Windows are stopped with the System32 `taskkill`, and cancelling mid-kill no longer leaves the command running.
 - `web_search` gets 15 more seconds before it is cut off, so a slow but successful search is no longer lost at the limit.
