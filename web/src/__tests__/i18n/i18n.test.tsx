@@ -27,10 +27,26 @@ describe('i18n catalogs', () => {
       expect(vi[key]).not.toBe(key)
       expect(ja[key]).not.toBe(key)
     }
-    expect(vi['Agent hooks']).toBe('Agent hooks')
+    expect(vi['Agent hooks']).toBe('Tác vụ tự động của Agent')
     expect(ja['Agent hooks']).toBe('エージェントフック')
+    expect(vi['These plugin hooks will be suppressed at the selected moments:']).toBe(
+      'Các tác vụ tự động của plugin sẽ bị bỏ qua tại những thời điểm đã chọn:',
+    )
+    expect(
+      vi[
+        'Enabling the plugin does not approve its hooks. Hook approval is a separate choice in Agent hooks. Commands run only when the host verifies isolation.'
+      ],
+    ).not.toMatch(/\bhooks?\b|\bworkflow\b/i)
+    expect(ja['This trusted local Python hook runs inside EvoFlux; the preview only read its source.']).not.toMatch(/\bhook\b/i)
+    expect(ja['These workflows will stop or may be affected:']).not.toMatch(/\bworkflow\b/i)
     expect(vi['Allow this workflow']).toBe('Cho phép quy trình này')
     expect(ja['Allow this workflow']).toBe('このワークフローを許可')
+
+    const hookCopyKeys = Object.keys(en).filter((key) => /\b(?:hooks?|workflows?)\b/i.test(key)) as Array<keyof typeof en>
+    for (const key of hookCopyKeys) {
+      expect(vi[key]).not.toMatch(/\b(?:hooks?|workflows?)\b/i)
+      expect(ja[key]).not.toMatch(/\b(?:hooks?|workflows?)\b/i)
+    }
   })
 
   it('ships complete Vietnamese and Japanese catalogs', () => {
