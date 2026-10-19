@@ -9,6 +9,7 @@ import { useEffect, useRef, useCallback, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import morphdom from 'morphdom'
 import { cn } from '@/lib/utils'
+import { applyWidgetTheme, buildWidgetThemeCss, readWidgetTheme } from '@/lib/widgetTheme'
 import { useTeamStore } from '@/stores/useTeamStore'
 
 interface WidgetRendererProps {
@@ -63,9 +64,20 @@ function buildCsp(): string {
 }
 
 // Wrap HTML in a full document with CSP, storage shim, and sendPrompt
+function currentWidgetTheme() {
+  return readWidgetTheme(window.getComputedStyle(document.documentElement))
+}
+
+function syncWidgetTheme(iframe: HTMLIFrameElement | null) {
+  const frameRoot = iframe?.contentDocument?.documentElement
+  if (frameRoot) applyWidgetTheme(frameRoot, currentWidgetTheme())
+}
+
 function wrapHtml(html: string): string {
   const csp = buildCsp()
   const cspMeta = `<meta http-equiv="Content-Security-Policy" content="${csp.replaceAll('"', '&quot;')}">`
+  const themeCss = buildWidgetThemeCss(currentWidgetTheme())
+  const themeStyle = themeCss ? `<style id="evoflux-widget-theme">${themeCss}</style>` : ''
   
   // Storage shim for iframe isolation
   const storageShim = `<script>(function(){function createStorage(){var data=new Map();return{get length(){return data.size},key:function(index){return Array.from(data.keys())[index]||null},getItem:function(key){key=String(key);return data.has(key)?data.get(key):null},setItem:function(key,value){data.set(String(key),String(value));},removeItem:function(key){data.delete(key);},clear:function(){data.clear()}}}['localStorage','sessionStorage'].forEach(function(name){try{void window[name]}catch{Object.defineProperty(window,name,{value:createStorage(),configurable:true})}})})();</script>`
@@ -106,9 +118,9 @@ function wrapHtml(html: string): string {
   })();</script>`
 
   if (/<head\b[^>]*>/i.test(html)) {
-    return html.replace(/<head\b[^>]*>/i, (match) => `${match}${cspMeta}${storageShim}${sendPromptScript}${resizeScript}`)
+    return html.replace(/<head\b[^>]*>/i, (match) => `${match}${cspMeta}${themeStyle}${storageShim}${sendPromptScript}${resizeScript}`)
   }
-  return `<!doctype html><html><head>${cspMeta}${storageShim}${sendPromptScript}${resizeScript}</head><body>${html}</body></html>`
+  return `<!doctype html><html><head>${cspMeta}${themeStyle}${storageShim}${sendPromptScript}${resizeScript}</head><body>${html}</body></html>`
 }
 
 // Morphdom update with smooth diffing
@@ -237,10 +249,25 @@ export function WidgetRenderer({
       }
     }
   }, [html, isInitialized])
+
+  // srcdoc is an isolated document, so CSS custom properties do not inherit
+  // from the app shell. Seed it in wrapHtml and keep the seed in sync when a
+  // user changes appearance or the app accent while the widget is open.
+  useEffect(() => {
+    const sync = () => syncWidgetTheme(iframeRef.current)
+    sync()
+    const observer = new MutationObserver(sync)
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'style'] })
+    if (document.body) {
+      observer.observe(document.body, { attributes: true, attributeFilter: ['class', 'style'] })
+    }
+    return () => observer.disconnect()
+  }, [])
   
   // Handle iframe load
   const handleLoad = useCallback(() => {
-    // Scripts execute automatically
+    // Scripts execute automatically. Refresh theme tokens after srcdoc loads.
+    syncWidgetTheme(iframeRef.current)
   }, [])
   
   // Handle errors

@@ -727,3 +727,39 @@ class TestUiBlock:
         assert "not from keywords" in description
         assert "Use prose or markdown when that communicates" in description
         assert "Call it whenever your answer" not in description
+    @pytest.mark.asyncio
+    async def test_invalid_diagram_geometry_is_returned_for_correction_before_render(
+        self,
+    ):
+        html = """<svg viewBox="0 0 240 100" role="img">
+          <path class="edge" d="M80 40 H150"/>
+          <rect class="node" x="20" y="20" width="60" height="40"/>
+          <rect class="node" x="160" y="20" width="60" height="40"/>
+        </svg>"""
+        result = await show_widget(
+            title="bad_diagram",
+            loading_messages=["Checking layout..."],
+            widget_code=html,
+            i_have_seen_read_me=True,
+        )
+        assert result["success"] is False
+        assert "correct" in result["error"].lower()
+        assert any(
+            "target boundary" in error for error in result["layout_check"]["errors"]
+        )
+
+    @pytest.mark.asyncio
+    async def test_reports_clean_geometry_with_rendered_diagram(self):
+        html = """<svg viewBox="0 0 240 100" role="img">
+          <path class="edge" d="M80 40 H160"/>
+          <rect class="node" x="20" y="20" width="60" height="40"/>
+          <rect class="node" x="160" y="20" width="60" height="40"/>
+        </svg>"""
+        result = await show_widget(
+            title="good_diagram",
+            loading_messages=["Checking layout..."],
+            widget_code=html,
+            i_have_seen_read_me=True,
+        )
+        assert result["success"] is True
+        assert result["layout_check"]["errors"] == []

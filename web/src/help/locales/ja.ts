@@ -2124,6 +2124,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
     tricks: [
       'エージェントは YAML frontmatter 付き .md — diff 可能でバージョン管理しやすい。',
       'スキルは SKILL.md を持つフォルダです。エージェントは有効なスキルの名前と説明を把握し、タスクが合うと自分で SKILL.md を読みます。',
+      '組み込みの diagram-design Skill は、アーキテクチャ、シーケンス、状態、プロセス図の作成や描き直しに使えます。Work では現在のライト/ダークテーマとアクセント色に合わせ、visualize_read_me と show_widget を使い、プレビュー前後にレイアウトを確認します。$diagram-design と入力すると明示的に呼び出せます。',
       'メッセージのどこかに $skill-name と書くとスキルを明示的に使えます。複数指定も可能です。',
       'Settings → Skills ではユーザーのスキルフォルダにスキルを作成・編集でき、組み込み・plugin・project を含むすべてのスキルにオン/オフのスイッチがあります。',
       'エージェントの Skills フィールドはそのスキルをエージェントに事前読み込みし、最初から指示を持った状態で始めさせます。',

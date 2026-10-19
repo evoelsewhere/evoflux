@@ -2169,6 +2169,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
     tricks: [
       'Agents are .md files with YAML frontmatter — diffable and versionable.',
       'A Skill is a folder with a SKILL.md. The agent sees each enabled skill\'s name and description and reads SKILL.md itself when a task matches.',
+      'The built-in diagram-design skill can be read for architecture, sequence, state, and process diagrams; in Work it pairs with visualize_read_me and show_widget, follows the current light/dark and accent theme, and checks diagram layout before and after preview. Type $diagram-design to invoke it explicitly.',
       'Type $skill-name anywhere in a message to use a skill explicitly; you can name several.',
       'Settings → Skills creates and edits skills in your user skills folder and has an on/off switch for every skill, including built-in, plugin, and project ones.',
       'An agent\'s Skills field preloads those skills into that agent, so it starts with their instructions.',
