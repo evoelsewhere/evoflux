@@ -259,6 +259,7 @@ export function useSideChat(mainSessionId: string | null): UseSideChatReturn {
             break
           case 'error':
             setError((d.message as string) ?? 'Stream error')
+            pendingSuggestionRef.current = null
             setIsWorking(false)
             break
         }

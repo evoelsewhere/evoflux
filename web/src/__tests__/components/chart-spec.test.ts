@@ -118,6 +118,10 @@ describe('parseChartSpec lenient tabular form', () => {
     ])
   })
 
+  it('does not read a bare comma as a number', () => {
+    expect(parseChartSpec(['bar', 'A ,', 'B 2'].join('\n'))).toBeNull()
+  })
+
   it('handles quoted labels, thousands separators, decimals and a % marker', () => {
     const parsed = parseChartSpec(
       ['line', '"North region" 1,250', 'South 8.5%', 'West -3'].join('\n'),

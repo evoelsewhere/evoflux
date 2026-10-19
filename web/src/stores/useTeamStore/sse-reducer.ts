@@ -1184,6 +1184,9 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
       case 'error': {
         set((draft) => {
           draft.error = d.message as string
+          // An interrupted turn must not leave its suggestion to be promoted
+          // by a later turn's ``done``.
+          draft._pendingNextMessageSuggestion = null
           draft.isTeamWorking = false
           draft.isContinuing = false
           draft.askUserQuestion = null
