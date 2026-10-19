@@ -591,10 +591,13 @@ async def test_registry_returns_catalog(
     body = res.json()
     assert "tools" in body and "skills" in body and "models" in body
     tool_names = {t["name"] for t in body["tools"]}
+    from app.agent.loader import _default_tool_registry
+
+    assert tool_names == set(_default_tool_registry())
     # A few builtins we know must exist.
     assert {"read", "write", "shell", "date"}.issubset(tool_names)
-    assert "terminal_run" not in tool_names
-    assert {"skill", "todo_manage", "schedule_task", "note"}.isdisjoint(tool_names)
+    assert {"todo_manage", "schedule_task", "note"}.issubset(tool_names)
+    assert {"skill", "terminal_run"}.isdisjoint(tool_names)
     assert isinstance(body["providers"], list) and body["providers"]
 
     # Tier metadata so UIs can annotate/hide tools per role and mode.
