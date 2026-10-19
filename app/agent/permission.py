@@ -189,6 +189,8 @@ _SAFE_TOOLS: frozenset[str] = frozenset(
         # parks a suggestion for the user; starting it is the user's click
         "spawn_task",
         "dismiss_task",
+        # publishes a ghost-text hint for the composer; nothing runs
+        "suggest_next_message",
         # user interaction (already blocks on the user)
         "ask_user",
         # team coordination (no system side effects)
