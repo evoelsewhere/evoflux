@@ -11,7 +11,12 @@ import json
 import pytest
 
 from app.services import memory_stream_store as store
-from app.services.memory_stream_store import _turns, _SENTINEL
+from app.services.memory_stream_store import (
+    _AGENT_CONTENT_EVENT_TYPES,
+    _NON_REPLAYABLE_EVENT_TYPES,
+    _SENTINEL,
+    _turns,
+)
 from app.services.stream_envelope import StreamEnvelope
 
 
@@ -1401,3 +1406,138 @@ class TestClose:
         await store.init_turn("sid-2")
         await store.close()
         assert len(_turns) == 0
+
+
+# ---------------------------------------------------------------------------
+# ui_block classification (Feature B/C — §5.3 lists 3)
+# ---------------------------------------------------------------------------
+
+
+class TestUiBlockClassification:
+    def test_ui_block_is_agent_content_and_replayable(self):
+        """ui_block journals like widget_delta: agent content, replay on
+        reconnect, never classified as non-replayable side-channel."""
+        assert "ui_block" in _AGENT_CONTENT_EVENT_TYPES
+        assert "ui_block" not in _NON_REPLAYABLE_EVENT_TYPES
+        # Same class as its streaming sibling — keep the pair aligned.
+        assert "widget_delta" in _AGENT_CONTENT_EVENT_TYPES
+        assert "widget_delta" not in _NON_REPLAYABLE_EVENT_TYPES
+
+    def test_visual_artifact_is_agent_content_and_replayable(self):
+        assert "visual_artifact" in _AGENT_CONTENT_EVENT_TYPES
+        assert "visual_artifact" not in _NON_REPLAYABLE_EVENT_TYPES
+
+    @pytest.mark.asyncio
+    async def test_motion_progress_replay_coalesces_by_job_but_live_fanout_keeps_order(
+        self,
+    ):
+        from app.agent.schemas.events import MotionProgressEvent
+
+        await store.init_turn("sid-motion-progress")
+        state = _turns["sid-motion-progress"]
+        live = asyncio.Queue()
+        state.subscribers.append(live)
+
+        async def push(job_id: str, sequence: int, phase: str = "storyboard") -> None:
+            event = MotionProgressEvent(
+                agent="lead",
+                job_id=job_id,
+                sequence=sequence,
+                artifact_id="rainfall-story",
+                artifact_revision=1,
+                status="running",
+                phase=phase,
+            )
+            await store.push_event(
+                "sid-motion-progress", StreamEnvelope.from_event(event)
+            )
+
+        await push("motion-" + "a" * 32, 1)
+        await push("motion-" + "a" * 32, 2, "composing")
+        await push("motion-" + "b" * 32, 1)
+        await push("motion-" + "a" * 32, 3, "rendering_samples")
+
+        live_frames = [live.get_nowait() for _ in range(4)]
+        assert [json.loads(frame["data"])["sequence"] for frame in live_frames] == [
+            1,
+            2,
+            1,
+            3,
+        ]
+        assert len(state.replay_events) == 2
+        assert [
+            json.loads(frame.data)["sequence"] for frame in state.replay_events
+        ] == [3, 1]
+
+        replay = store.attach("sid-motion-progress")
+        first = await anext(replay)
+        second = await anext(replay)
+        await replay.aclose()
+        assert [
+            json.loads(first["data"])["sequence"],
+            json.loads(second["data"])["sequence"],
+        ] == [3, 1]
+
+    @pytest.mark.asyncio
+    async def test_ui_block_envelope_is_pushed_and_replayed(self):
+        from app.agent.schemas.events import UiBlockEvent, UiProgressBlock
+
+        await store.init_turn("sid-ui")
+        event = UiBlockEvent(
+            agent="lead",
+            tool_call_id="call-ui",
+            blocks=[UiProgressBlock(label="Run", value=1, max=3)],
+            metadata={"title": "Metrics"},
+            block_id="metrics",
+            replace_id="old-metrics",
+        )
+        await store.push_event("sid-ui", StreamEnvelope.from_event(event))
+
+        events = []
+        async for frame in store.attach("sid-ui"):
+            events.append(frame)
+            break
+
+        assert events, "ui_block frame must be journaled for replay"
+        assert events[0]["event"] == "ui_block"
+        data = json.loads(events[0]["data"])
+        assert data["type"] == "ui_block"
+        assert data["tool_call_id"] == "call-ui"
+        assert data["is_final"] is True
+        assert data["metadata"]["title"] == "Metrics"
+        assert data["blocks"][0]["type"] == "progress"
+        # Stream 1 (§1.3): identity fields replay with the frame so reconnect
+        # dedupe keeps working after a reload.
+        assert data["block_id"] == "metrics"
+        assert data["replace_id"] == "old-metrics"
+
+    @pytest.mark.asyncio
+    async def test_visual_artifact_envelope_is_pushed_and_replayed(self):
+        from app.agent.schemas.events import VisualArtifactEvent
+
+        await store.init_turn("sid-visual-artifact")
+        event = VisualArtifactEvent(
+            agent="lead",
+            tool_call_id="call-artifact",
+            artifact_id="sales-dashboard",
+            kind="dashboard",
+            title="Sales dashboard",
+            summary="Current pipeline",
+            source_html="<main>Pipeline</main>",
+            sources=[],
+            is_final=True,
+        )
+        await store.push_event("sid-visual-artifact", StreamEnvelope.from_event(event))
+
+        frames = []
+        async for frame in store.attach("sid-visual-artifact"):
+            frames.append(frame)
+            break
+
+        assert frames, "visual artifact frame must be journaled for replay"
+        assert frames[0]["event"] == "visual_artifact"
+        data = json.loads(frames[0]["data"])
+        assert data["type"] == "visual_artifact"
+        assert data["tool_call_id"] == "call-artifact"
+        assert data["artifact_id"] == "sales-dashboard"
+        assert data["is_final"] is True

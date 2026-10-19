@@ -203,6 +203,14 @@ def test_workspace_outside_a_repository_scans_only_itself(tmp_path, monkeypatch)
     workspace = tmp_path / "loose"
     workspace.mkdir()
     monkeypatch.setattr("app.plugin_platform.skills.plugin_skill_roots", lambda: [])
+    path_exists = Path.exists
+
+    def outside_git_repository(path: Path) -> bool:
+        if path.name == ".git":
+            return False
+        return path_exists(path)
+
+    monkeypatch.setattr(Path, "exists", outside_git_repository)
 
     project_roots = [
         root.path for root in skill_roots([workspace]) if root.source == "project"

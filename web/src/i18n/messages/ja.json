@@ -5085,5 +5085,13 @@
   "You reached 2048 — start a new game to play again": "2048 に到達しました — 新しいゲームを始めましょう",
   "You win": "あなたの勝ちです",
   "Your move is answered by a local deterministic opponent.": "ローカルの固定ルールの対戦相手が応手します。",
-  "Your turn — you are X": "あなたの番です — X を使います"
+  "Your turn — you are X": "あなたの番です — X を使います",
+  "Biểu đồ và sơ đồ": "Biểu đồ và sơ đồ",
+  "Charts and diagrams": "Charts and diagrams",
+  "Mermaid diagram failed to render": "Mermaid diagram failed to render",
+  "Replies default to plain prose — headings, tables and lists only on request.": "Replies default to plain prose — headings, tables and lists only on request.",
+  "Replies may use headings, lists, tables and code blocks when they help scanning.": "Replies may use headings, lists, tables and code blocks when they help scanning.",
+  "Response style": "Response style",
+  "Simple": "Simple",
+  "Visual": "Visual"
 }

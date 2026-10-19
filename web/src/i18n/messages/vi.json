@@ -5085,5 +5085,13 @@
   "You reached 2048 — start a new game to play again": "Bạn đã đạt 2048 — bắt đầu ván mới để chơi tiếp",
   "You win": "Bạn thắng",
   "Your move is answered by a local deterministic opponent.": "Đối thủ cục bộ sẽ phản hồi nước đi của bạn.",
-  "Your turn — you are X": "Đến lượt bạn — bạn là X"
+  "Your turn — you are X": "Đến lượt bạn — bạn là X",
+  "Biểu đồ và sơ đồ": "Biểu đồ và sơ đồ",
+  "Charts and diagrams": "Charts and diagrams",
+  "Mermaid diagram failed to render": "Mermaid diagram failed to render",
+  "Replies default to plain prose — headings, tables and lists only on request.": "Replies default to plain prose — headings, tables and lists only on request.",
+  "Replies may use headings, lists, tables and code blocks when they help scanning.": "Replies may use headings, lists, tables and code blocks when they help scanning.",
+  "Response style": "Response style",
+  "Simple": "Simple",
+  "Visual": "Visual"
 }

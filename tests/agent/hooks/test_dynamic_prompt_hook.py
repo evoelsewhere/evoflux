@@ -10,6 +10,7 @@ from app.agent.hooks.dynamic_prompt import (
     dynamic_prompt,
     inject_current_date,
 )
+from app.agent.hooks.response_style import inject_response_style
 from app.agent.schemas.chat import AssistantMessage, HumanMessage
 
 
@@ -276,3 +277,107 @@ async def test_multiple_hooks_chain_correctly():
 
     await first.wrap_model_call(ctx, state, request, second_handler)
     assert received[0] == "A ->first ->second"
+
+
+# ---------------------------------------------------------------------------
+# inject_response_style (Intelligent UI feature A: Simple/Visual)
+# ---------------------------------------------------------------------------
+
+
+def _set_style(monkeypatch: pytest.MonkeyPatch, style: str) -> None:
+    from app.agent.hooks import response_style as response_style_module
+
+    monkeypatch.setattr(response_style_module, "response_style_default", lambda: style)
+
+
+@pytest.mark.asyncio
+async def test_inject_response_style_visual_keeps_the_base_prompt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Visual asks the model to judge goal and utility, not prompt keywords."""
+    _set_style(monkeypatch, "visual")
+
+    result = await _call_wrap(inject_response_style, "You are a helpful assistant.")
+
+    assert result.startswith("You are a helpful assistant.")
+    assert "Response style: visual." in result
+    assert "prose, structured" in result
+    assert "user is trying to accomplish" in result
+    assert "not words that happen to appear" in result
+    assert "controls add no practical value" in result
+    assert "ui_block" not in result
+
+
+@pytest.mark.asyncio
+async def test_visual_names_ui_tool_only_when_the_agent_has_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _set_style(monkeypatch, "visual")
+    state = make_state()
+    state.tool_names = ["ui_block"]
+
+    result = await _call_wrap(inject_response_style, "Base.", state)
+
+    assert "The ui_block tool is available" in result
+    assert "do not add UI for decoration" in result
+    assert "Inspect the tool schema" in result
+
+
+@pytest.mark.asyncio
+async def test_inject_response_style_simple_flips_the_wording(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Simple flips the directive to plain prose, nothing else."""
+    _set_style(monkeypatch, "simple")
+
+    result = await _call_wrap(inject_response_style, "Base.")
+
+    assert "Response style: simple." in result
+    assert "plain prose" in result
+    assert "Skip markdown headings" in result
+    assert "interactive UI blocks" in result
+    assert "Response style: visual." not in result
+
+
+@pytest.mark.asyncio
+async def test_inject_response_style_appends_without_replacing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The hook returns a full new base prompt: original + two newlines + line."""
+    _set_style(monkeypatch, "simple")
+
+    base = "You are a helpful assistant. Always cite sources."
+    result = await _call_wrap(inject_response_style, base)
+
+    assert result.startswith(base + "\n\nResponse style: simple.")
+    assert result.count(base) == 1
+
+
+def test_response_style_default_degrades_to_visual_on_corrupt_file(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An unreadable settings.yaml answers visual, never an exception."""
+    from app.core.runtime_settings import response_style_default
+
+    corrupt = tmp_path / "settings.yaml"
+    corrupt.write_text("response_style: {style: [broken", encoding="utf-8")
+    monkeypatch.setattr(
+        "app.core.runtime_settings.runtime_settings_path", lambda: corrupt
+    )
+
+    assert response_style_default() == "visual"
+
+
+def test_inject_response_style_is_registered_next_to_the_clock() -> None:
+    """member.py must register the hook at BASE_CONTEXT after inject_current_date."""
+    from pathlib import Path
+
+    import app.agent.mode.team.member as member_module
+
+    source = Path(member_module.__file__).read_text(encoding="utf-8")
+    clock = 'pipeline.add(HookStage.BASE_CONTEXT, "clock", inject_current_date)'
+    style = 'HookStage.BASE_CONTEXT, "response-style", inject_response_style'
+
+    assert clock in source
+    assert style in source
+    assert source.index(clock) < source.index(style)

@@ -25,6 +25,15 @@ tools expose only compact catalogue metadata until selected. Tool execution
 passes through argument validation, observation policy, permission/sandbox
 checks, output bounding and streaming telemetry.
 
+### ui_block — native structured UI
+
+The ui_block tool renders validated declarative controls in chat; it complements
+show_widget, which remains the escape hatch for arbitrary sandboxed HTML.
+The [Intelligent UI feature guide](intelligent-ui.md) is the
+single reference for block types, limits, updates, persistence, examples, and
+task-aware selection. Primary implementation: app/agent/tools/builtin/visualize/ui_block.py,
+app/agent/schemas/events.py, and web/src/components/ui/.
+
 ## Agent Skills
 
 EvoFlux follows Anthropic's Agent Skills architecture; the full contract is

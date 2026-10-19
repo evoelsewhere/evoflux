@@ -1931,6 +1931,8 @@ _BROWSER_PANEL_STREAM_EVENT_TYPES = frozenset(
         "tool_start",
         "tool_output_delta",
         "widget_delta",
+        "ui_block",
+        "visual_artifact",
         "tool_end",
         "rate_limit",
         "provider_status",
@@ -2073,6 +2075,38 @@ def _browser_panel_stream_event(event: dict[str, Any]) -> dict[str, str] | None:
             title = metadata.get("title")
             if isinstance(title, str):
                 projected["title"] = title
+    elif event_type == "ui_block":
+        # Model-generated payload (validated UiBlockEvent) — not raw HTML.
+        identifier = data.get("id") or data.get("tool_call_id")
+        if isinstance(identifier, str):
+            projected["id"] = identifier
+        copy_strings("agent", "block_id", "replace_id")
+        copy_bools("is_final")
+        blocks = data.get("blocks")
+        if isinstance(blocks, list):
+            projected["blocks"] = blocks
+    elif event_type == "visual_artifact":
+        # Rich artifact HTML is schema-validated; the frontend hosts it in a
+        # dedicated opaque-origin sandbox with a narrow MessageChannel bridge.
+        copy_strings(
+            "agent",
+            "tool_call_id",
+            "artifact_id",
+            "kind",
+            "title",
+            "summary",
+            "source_html",
+        )
+        copy_bools("is_final")
+        scene = data.get("scene")
+        if isinstance(scene, dict):
+            projected["scene"] = scene
+        sources = data.get("sources")
+        if isinstance(sources, list):
+            projected["sources"] = sources
+        duration_ms = data.get("duration_ms")
+        if isinstance(duration_ms, int) and not isinstance(duration_ms, bool):
+            projected["duration_ms"] = duration_ms
     elif event_type == "rate_limit":
         copy_numbers("retry_after", "attempt", "max_attempts")
     elif event_type == "provider_status":

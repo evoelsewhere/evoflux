@@ -477,6 +477,7 @@ class Agent(Generic[TContext]):
         # without needing direct access to RunContext.
         if ctx.session_id is not None:
             state.metadata["session_id"] = ctx.session_id
+        state.metadata["run_id"] = ctx.run_id
         state.metadata["agent_name"] = ctx.agent_name
         # Keep pre-model stages aligned with per-run provider overrides.
         # The value is ephemeral and is never persisted or model-visible.
@@ -1245,7 +1246,9 @@ class Agent(Generic[TContext]):
         try:
             from app.services.webbridge_service import webbridge_manager
 
-            _turn_session = (config.session_id if config is not None else None) or getattr(ctx, "session_id", None)
+            _turn_session = (
+                config.session_id if config is not None else None
+            ) or getattr(ctx, "session_id", None)
             await webbridge_manager.release_browsing(_turn_session)
         except Exception:  # pragma: no cover - teardown must never break a turn
             logger.debug("webbridge_turn_release_failed", exc_info=True)

@@ -21,7 +21,10 @@ import {
 } from './helpers'
 import { isBackgroundCompletion, sendDesktopNotification } from '@/lib/desktop-notifications'
 import { createNotificationActivation } from '@/lib/notification-activation'
-import type { GoalResponse, SuggestedTask, TurnCost, TurnUsage, TurnUsageBreakdown } from '@/api/types'
+import { useUIStore } from '@/stores/useUIStore'
+import type { ContentBlock, GoalResponse, MotionProgressPayload, SuggestedTask, TurnCost, TurnUsage, TurnUsageBreakdown } from '@/api/types'
+import type { UiBlockNode } from '@/components/ui/ui-block-types'
+import { parseVisualArtifactMessage } from '@/lib/visual-artifact-bridge'
 import { parseTurnChanges } from '@/utils/turn-changes'
 import type { ActivityItem, CacheInvalidation, TeamStore } from './types'
 
@@ -184,6 +187,237 @@ function appendStreamingText(
   }
 }
 
+// ─── ui_block shared apply algorithm (§1.4/§1.6) ────────────────────────────
+// One implementation feeds the live `ui_block` SSE event, the `tool_end`
+// fallback, and — mirrored — history reconstruction in `@/utils/messages`, so
+// replay and reload stay idempotent (§1.7). Identity = block_id ?? tool_call_id;
+// a set replace_id matches the group carrying that identity instead. Hits
+// update in place (identity/id/position immutable); misses append with
+// identity = replace_id ?? block_id ?? tool_call_id.
+
+type UiBlockScope = Pick<TeamStore['agentStreams'][string], 'blocks' | 'currentBlocks'>
+
+interface UiBlockApplyCtx {
+  toolCallId: string
+  blockId?: string | null
+  replaceId?: string | null
+  blocks: UiBlockNode[]
+  title?: string
+  /** Append-only fallback title when the call supplies none (tool_end's legacy "UI Block"). */
+  defaultTitle?: string
+}
+
+function uiBlockTarget(scope: UiBlockScope, ctx: UiBlockApplyCtx): ContentBlock | undefined {
+  const key = ctx.replaceId ?? ctx.blockId ?? ctx.toolCallId
+  // §1.5: a flush moves groups into stream.blocks — both count as scope.
+  return [...scope.blocks, ...scope.currentBlocks].find(
+    (b) => b.type === 'ui_block' && b.uiBlockIdentity === key,
+  )
+}
+
+function applyUiBlock(scope: UiBlockScope, ctx: UiBlockApplyCtx): ContentBlock {
+  const target = uiBlockTarget(scope, ctx)
+  if (target) {
+    // Hit — update in place; identity, id and position stay put, title only
+    // when a later call supplies one.
+    target.uiBlocks = ctx.blocks
+    if (ctx.title) target.title = ctx.title
+    target.toolCallId = ctx.toolCallId // latest writer
+    return target
+  }
+  const title = ctx.title ?? ctx.defaultTitle
+  const group: ContentBlock = {
+    id: generateBlockId(),
+    type: 'ui_block',
+    content: '',
+    uiBlocks: ctx.blocks,
+    uiBlockIdentity: ctx.replaceId ?? ctx.blockId ?? ctx.toolCallId,
+    toolCallId: ctx.toolCallId,
+    isStreaming: false,
+    ...(title ? { title } : {}),
+  }
+  scope.currentBlocks.push(group)
+  return group
+}
+
+const MOTION_PHASES = ['planning', 'storyboard', 'style_samples', 'composing', 'rendering_samples', 'reviewing', 'revising', 'final_render', 'encoding', 'audio'] as const
+const MOTION_STATUSES = ['running', 'complete', 'cancelled', 'failed', 'interrupted'] as const
+const MOTION_SAMPLE_ROLES = ['style', 'key_state', 'before_transition', 'after_transition', 'impact'] as const
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value))
+}
+
+function isBoundedId(value: unknown, max: number): value is string {
+  return typeof value === 'string' && value.length <= max && /^[a-z0-9][a-z0-9_-]*$/.test(value)
+}
+
+function parseMotionProgress(raw: unknown): MotionProgressPayload | null {
+  if (!isRecord(raw)) return null
+  const value = raw
+  if (
+    typeof value.job_id !== 'string' || !/^motion-[a-f0-9]{32}$/.test(value.job_id)
+    || !Number.isSafeInteger(value.sequence) || (value.sequence as number) < 1
+    || !isBoundedId(value.artifact_id, 80)
+    || !Number.isSafeInteger(value.artifact_revision) || (value.artifact_revision as number) < 1
+    || !MOTION_STATUSES.includes(value.status as typeof MOTION_STATUSES[number])
+    || !MOTION_PHASES.includes(value.phase as typeof MOTION_PHASES[number])
+  ) return null
+
+  let beat: MotionProgressPayload['beat']
+  if (value.beat !== undefined && value.beat !== null) {
+    if (!isRecord(value.beat)) return null
+    const candidate = value.beat
+    if (
+      !isBoundedId(candidate.id, 64)
+      || !Number.isSafeInteger(candidate.index) || (candidate.index as number) < 0
+      || !Number.isSafeInteger(candidate.total) || (candidate.total as number) < 1 || (candidate.total as number) > 64
+      || (candidate.index as number) >= (candidate.total as number)
+      || typeof candidate.title !== 'string' || candidate.title.length < 1 || candidate.title.length > 120
+    ) return null
+    beat = { id: candidate.id, index: candidate.index as number, total: candidate.total as number, title: candidate.title }
+  }
+
+  let frames: MotionProgressPayload['frames']
+  if (value.frames !== undefined && value.frames !== null) {
+    if (!isRecord(value.frames)) return null
+    const candidate = value.frames
+    if (
+      !['review_samples', 'final_output'].includes(String(candidate.scope))
+      || !Number.isSafeInteger(candidate.completed) || (candidate.completed as number) < 0
+      || !(candidate.total === null || candidate.total === undefined || (Number.isSafeInteger(candidate.total) && (candidate.total as number) >= 1))
+      || (typeof candidate.total === 'number' && (candidate.completed as number) > candidate.total)
+      || !(candidate.fps === null || candidate.fps === undefined || (typeof candidate.fps === 'number' && Number.isFinite(candidate.fps) && candidate.fps >= 1 && candidate.fps <= 240))
+      || !(candidate.last_completed_index === null || candidate.last_completed_index === undefined || (Number.isSafeInteger(candidate.last_completed_index) && (candidate.last_completed_index as number) >= 0))
+      || (typeof candidate.total === 'number' && typeof candidate.last_completed_index === 'number' && candidate.last_completed_index >= candidate.total)
+      || ((candidate.completed as number) === 0 && typeof candidate.last_completed_index === 'number')
+      || ((candidate.completed as number) > 0 && !Number.isSafeInteger(candidate.last_completed_index))
+    ) return null
+    frames = {
+      scope: candidate.scope as 'review_samples' | 'final_output',
+      completed: candidate.completed as number,
+      total: typeof candidate.total === 'number' ? candidate.total : null,
+      fps: typeof candidate.fps === 'number' ? candidate.fps : null,
+      lastCompletedIndex: typeof candidate.last_completed_index === 'number' ? candidate.last_completed_index : null,
+    }
+  }
+
+  let iteration: MotionProgressPayload['iteration']
+  if (value.iteration !== undefined && value.iteration !== null) {
+    if (!isRecord(value.iteration)) return null
+    const current = value.iteration.current
+    const budget = value.iteration.budget
+    if (!Number.isSafeInteger(current) || (current as number) < 1 || !Number.isSafeInteger(budget) || (budget as number) < 1 || (budget as number) > 20 || (current as number) > (budget as number)) return null
+    iteration = { current: current as number, budget: budget as number }
+  }
+
+  const rawSamples = value.selected_samples ?? []
+  if (!Array.isArray(rawSamples) || rawSamples.length > 12) return null
+  const selectedSamples: MotionProgressPayload['selectedSamples'] = []
+  for (const rawSample of rawSamples) {
+    if (!isRecord(rawSample)) return null
+    if (
+      !isBoundedId(rawSample.sample_id, 64) || !isBoundedId(rawSample.beat_id, 64)
+      || !Number.isSafeInteger(rawSample.frame_index) || (rawSample.frame_index as number) < 0
+      || !Number.isSafeInteger(rawSample.timestamp_ms) || (rawSample.timestamp_ms as number) < 0 || (rawSample.timestamp_ms as number) > 120_000
+      || !MOTION_SAMPLE_ROLES.includes(rawSample.role as typeof MOTION_SAMPLE_ROLES[number])
+    ) return null
+    selectedSamples.push({
+      sampleId: rawSample.sample_id,
+      beatId: rawSample.beat_id,
+      frameIndex: rawSample.frame_index as number,
+      timestampMs: rawSample.timestamp_ms as number,
+      role: rawSample.role as MotionProgressPayload['selectedSamples'][number]['role'],
+    })
+  }
+
+  const audioStatus = value.audio_status ?? 'not_requested'
+  if (!['not_requested', 'unavailable', 'pending', 'rendering', 'included'].includes(String(audioStatus))) return null
+  const sampleRequestId = value.sample_request_id
+  if (sampleRequestId !== undefined && (typeof sampleRequestId !== 'string' || sampleRequestId.length < 1 || sampleRequestId.length > 120 || selectedSamples.length === 0)) return null
+  if (value.status === 'complete' && !['final_render', 'encoding', 'audio'].includes(String(value.phase))) return null
+
+  return {
+    jobId: value.job_id,
+    sequence: value.sequence as number,
+    artifactId: value.artifact_id,
+    artifactRevision: value.artifact_revision as number,
+    status: value.status as MotionProgressPayload['status'],
+    phase: value.phase as MotionProgressPayload['phase'],
+    ...(beat ? { beat } : {}),
+    ...(frames ? { frames } : {}),
+    ...(iteration ? { iteration } : {}),
+    ...(typeof sampleRequestId === 'string' ? { sampleRequestId } : {}),
+    selectedSamples,
+    audioStatus: audioStatus as MotionProgressPayload['audioStatus'],
+  }
+}
+
+function applyMotionProgress(scope: UiBlockScope, progress: MotionProgressPayload, toolCallId?: string): ContentBlock | undefined {
+  const all = [...scope.blocks, ...scope.currentBlocks]
+  const target = all.find((block) => block.motionProgress?.jobId === progress.jobId)
+  const existing = target?.motionProgress
+  if (existing && (progress.artifactRevision < existing.artifactRevision || progress.sequence <= existing.sequence)) return target
+  if (target?.visualArtifact && progress.artifactRevision < target.visualArtifact.revision) return target
+  if (target) {
+    target.motionProgress = progress
+    target.toolCallId = toolCallId ?? target.toolCallId
+    target.title = target.visualArtifact?.title ?? progress.beat?.title ?? target.title ?? 'Motion explainer'
+    target.isStreaming = progress.status === 'running'
+    return target
+  }
+  const block: ContentBlock = {
+    id: progress.jobId,
+    type: 'motion_progress',
+    content: '',
+    title: progress.beat?.title ?? 'Motion explainer',
+    ...(toolCallId ? { toolCallId } : {}),
+    motionProgress: progress,
+    isStreaming: progress.status === 'running',
+  }
+  scope.currentBlocks.push(block)
+  return block
+}
+
+function applyVisualArtifact(
+  scope: UiBlockScope,
+  artifact: NonNullable<ContentBlock['visualArtifact']>,
+  toolCallId: string,
+  explicitRevision?: number,
+): ContentBlock {
+  const target = [...scope.currentBlocks].reverse().find(
+    (block) => block.motionProgress?.artifactId === artifact.artifactId,
+  ) ?? [...scope.blocks].reverse().find(
+    (block) => block.motionProgress?.artifactId === artifact.artifactId,
+  ) ?? [...scope.blocks, ...scope.currentBlocks].find(
+    (block) => block.visualArtifact?.artifactId === artifact.artifactId,
+  )
+  if (target?.motionProgress && explicitRevision !== undefined && explicitRevision < target.motionProgress.artifactRevision) return target
+  const revision = explicitRevision
+    ?? target?.motionProgress?.artifactRevision
+    ?? (target?.visualArtifact?.revision ? target.visualArtifact.revision + 1 : 1)
+  if (target?.motionProgress && revision < target.motionProgress.artifactRevision) return target
+  artifact.revision = revision
+  if (target) {
+    target.type = 'visual_artifact'
+    target.visualArtifact = artifact
+    target.title = artifact.title
+    target.toolCallId = toolCallId
+    return target
+  }
+  const block: ContentBlock = {
+    id: artifact.artifactId,
+    type: 'visual_artifact',
+    content: '',
+    title: artifact.title,
+    toolCallId,
+    visualArtifact: artifact,
+    isStreaming: false,
+  }
+  scope.currentBlocks.push(block)
+  return block
+}
+
 export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
   return (type: string, data: unknown) => {
     const d = data as Record<string, unknown>
@@ -299,6 +533,89 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
         break
       }
 
+      case 'ui_block': {
+        const agent = d.agent as string
+        const toolCallId = d.tool_call_id as string
+        const blocks = d.blocks
+        if (!Array.isArray(blocks)) break
+        const metadata = d.metadata as Record<string, unknown> | undefined
+        const title = (d.title as string | undefined)
+          ?? (metadata?.title as string | undefined)
+        const blockId = typeof d.block_id === 'string' ? d.block_id : undefined
+        const replaceId = typeof d.replace_id === 'string' ? d.replace_id : undefined
+        set((draft) => {
+          ensureAgent(draft, agent)
+          // Shared apply (§1.4/§1.6): first arrival creates the group,
+          // later same-identity/replace arrivals refresh it in place — over
+          // stream.blocks too, so flushed replays never duplicate (§1.7).
+          applyUiBlock(draft.agentStreams[agent], {
+            toolCallId,
+            blockId,
+            replaceId,
+            blocks: blocks as UiBlockNode[],
+            title,
+          })
+        })
+        break
+      }
+
+      case 'visual_artifact': {
+        const agent = typeof d.agent === 'string' ? d.agent : ''
+        const toolCallId = typeof d.tool_call_id === 'string' ? d.tool_call_id : ''
+        const parsed = parseVisualArtifactMessage(d)
+        if (!agent || !toolCallId || !parsed) break
+        let acceptedArtifact: NonNullable<ContentBlock['visualArtifact']> | undefined
+        set((draft) => {
+          ensureAgent(draft, agent)
+          const stream = draft.agentStreams[agent]
+          const history = [...stream.blocks, ...stream.currentBlocks]
+          parsed.sources = parsed.sources.map((source) => {
+            const call = history.find((block) => block.type === 'tool' && block.toolCallId === source.toolCallId)
+            if (!call?.toolDone || !call.toolResult || call.toolResult.trim().toLowerCase().startsWith('error:')) return source
+            let verified = true
+            try {
+              const result: unknown = JSON.parse(call.toolResult)
+              if (result && typeof result === 'object' && !Array.isArray(result)) {
+                const data = result as Record<string, unknown>
+                verified = data.success !== false && !data.error
+              }
+            } catch {
+              // Plain-text successful tool results remain verifiable.
+            }
+            return verified ? {
+              ...source,
+              verified: true,
+              toolName: call.toolName,
+              arguments: call.toolArgs,
+              result: call.toolResult,
+            } : source
+          })
+          const explicitRevision = Number.isInteger(d.artifact_revision) && (d.artifact_revision as number) >= 1
+            ? d.artifact_revision as number
+            : undefined
+          const merged = applyVisualArtifact(stream, parsed, toolCallId, explicitRevision)
+          if (merged.visualArtifact === parsed) acceptedArtifact = parsed
+        })
+        if (!acceptedArtifact) break
+        const ui = useUIStore.getState()
+        const activeSessionId = get().sessionId
+        if (activeSessionId && ui.workbenchSessionId === activeSessionId) {
+          ui.openWorkbenchTool('visual-artifact', { title: acceptedArtifact.title, artifact: acceptedArtifact })
+        }
+        break
+      }
+
+      case 'motion_progress': {
+        const agent = typeof d.agent === 'string' ? d.agent : ''
+        const parsed = parseMotionProgress(d)
+        if (!agent || !parsed) break
+        set((draft) => {
+          ensureAgent(draft, agent)
+          applyMotionProgress(draft.agentStreams[agent], parsed)
+        })
+        break
+      }
+
       case 'tool_end': {
         const agent = d.agent as string
         const toolName = d.name as string
@@ -360,6 +677,86 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
                     isStreaming: false,
                     title: (parsedArgs?.title as string) || 'Widget',
                   })
+                }
+              }
+            }
+
+            // Fallback: when the ui_block event never arrived (e.g. backend
+            // push failure), reconstruct the block from the persisted
+            // tool-call arguments at tool_end time (Feature C, §6.2).
+            // block_id/replace_id in the args run through the same
+            // applyUiBlock as the event (§1.6), so a replace upserts the
+            // existing group instead of appending a duplicate.
+            if (toolName === 'ui_block' && toolCallId) {
+              const stream = draft.agentStreams[agent]
+              const hasUiBlock = [...stream.blocks, ...stream.currentBlocks].some(
+                (b) => b.type === 'ui_block' && b.toolCallId === toolCallId,
+              )
+              if (!hasUiBlock) {
+                const toolBlock = stream.currentBlocks.find(
+                  (b) => b.type === 'tool' && b.toolCallId === toolCallId,
+                )
+                let parsedArgs: Record<string, unknown> | undefined
+                try {
+                  parsedArgs =
+                    typeof toolBlock?.toolArgs === 'string'
+                      ? JSON.parse(toolBlock.toolArgs)
+                      : (toolBlock?.toolArgs as Record<string, unknown> | undefined)
+                } catch {
+                  // malformed args — skip
+                }
+                if (Array.isArray(parsedArgs?.blocks)) {
+                  applyUiBlock(stream, {
+                    toolCallId,
+                    blockId:
+                      typeof parsedArgs.block_id === 'string'
+                        ? parsedArgs.block_id
+                        : undefined,
+                    replaceId:
+                      typeof parsedArgs.replace_id === 'string'
+                        ? parsedArgs.replace_id
+                        : undefined,
+                    blocks: parsedArgs.blocks as UiBlockNode[],
+                    title:
+                      typeof parsedArgs.title === 'string'
+                        ? parsedArgs.title
+                        : undefined,
+                    defaultTitle: 'UI Block',
+                  })
+                }
+              }
+            }
+
+            if (toolName === 'visual_artifact' && toolCallId) {
+              const stream = draft.agentStreams[agent]
+              const exists = [...stream.blocks, ...stream.currentBlocks].some(
+                (block) => block.type === 'visual_artifact' && block.toolCallId === toolCallId,
+              )
+              if (!exists) {
+                const toolBlock = stream.currentBlocks.find(
+                  (block) => block.type === 'tool' && block.toolCallId === toolCallId,
+                )
+                try {
+                  const rawArgs = typeof toolBlock?.toolArgs === 'string'
+                    ? JSON.parse(toolBlock.toolArgs)
+                    : toolBlock?.toolArgs
+                  const parsed = parseVisualArtifactMessage({
+                    ...(rawArgs as Record<string, unknown>),
+                    type: 'visual_artifact',
+                    agent,
+                    tool_call_id: toolCallId,
+                    is_final: true,
+                  })
+                  if (parsed) {
+                    const explicitRevision = isRecord(rawArgs)
+                      && Number.isInteger(rawArgs.artifact_revision)
+                      && (rawArgs.artifact_revision as number) >= 1
+                      ? rawArgs.artifact_revision as number
+                      : undefined
+                    applyVisualArtifact(stream, parsed, toolCallId, explicitRevision)
+                  }
+                } catch {
+                  // Invalid or partial tool args are not rendered as artifacts.
                 }
               }
             }

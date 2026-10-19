@@ -233,6 +233,30 @@ export async function updateFollowUpSettings(
   return res.json()
 }
 
+// Response style (what the assistant's default wording looks like)
+
+export type ResponseStyleSettings = {
+  style: 'simple' | 'visual'
+}
+
+export async function getResponseStyleSettings(): Promise<ResponseStyleSettings> {
+  const res = await fetch(`${apiBaseUrl()}/settings/response-style`)
+  if (!res.ok) await parseDetailOrThrow(res, 'GET /settings/response-style')
+  return res.json()
+}
+
+export async function updateResponseStyleSettings(
+  body: ResponseStyleSettings,
+): Promise<ResponseStyleSettings> {
+  const res = await fetch(`${apiBaseUrl()}/settings/response-style`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) await parseDetailOrThrow(res, 'PUT /settings/response-style')
+  return res.json()
+}
+
 export type ConductorSettings = {
   enabled: boolean
   url: string

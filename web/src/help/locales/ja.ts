@@ -2539,13 +2539,17 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       },
       {
         type: 'p',
+        text: 'Intelligent UI はタスクへの有用性に応じて、文章、ネイティブ操作 UI、ダッシュボード、モーション解説、3D 表示を選びます。リッチ表示は Workbench タブで開き、チャットには再表示用の簡潔なカードが残ります。生成ソースはセッション履歴に保存され、プレビューだけではプロジェクトにファイルを作成しません。ダウンロードするか、Desktop の Coding モードで明示的にプロジェクトへ保存すれば、レビューしてコミットできます。ダッシュボードには検証済みソースが表示され、未検証データは例示として示されます。テーマと reduced motion に従います。新しいモーションはキャンバスをローカルで MP4/WebM に書き出し、フレームごとの進捗とキャンセルに対応します。チャットカードには代表フレームが表示され、Workbench のタイムラインから全体を確認・シークできます。エージェントによる代表フレームの視覚確認は、現在のモデルが画像入力に対応する場合だけ行います。未対応ならサンプルを確認できないと明示します。Balanced（最大 720p）または High（最大 1080p）を選べます。小さいキャンバスは拡大されません。書き出しは artifact の revision に固定され、途中で revision が変わるとキャンセルされます。モーションには最大 64 個の制限付き音響効果をローカル合成して追加できます。Workbench はサウンドトラックを含むか、音声を生成できなかったかを表示します。音楽、音声、外部音源の読み込みには対応しません。完成した動画は Workbench で確認してからダウンロードできます。以前のモーションはブラウザーのリアルタイム録画を使い、音声は含みません。Intelligent UI Skill には、ストーリーボード作成と scene 単位の修正を支援する必要時のガイドがあります。タイトルや字幕も指定キャンバス内に描画してください。WebGL が使えない場合はラベル付き静的 3D プレビューを表示します。',
+      },
+      {
+        type: 'p',
         text: 'どのページがどの関心事を持つか知ると探し回りを避けられます: モデル vs エージェント vs sandbox vs ブラウザポリシーは意図的に分離され、リスクのあるトグルが意図的なままです。テーマ変更はメンタルモデルで force-with-lease の隣に置かないでください。',
       },
       {
         type: 'tips',
         items: [
           'Providers — API キー、OAuth、ローカルデーモン、モデルレジストリ',
-          'Agents — チームメンバーごとのモデル、ツール、システムプロンプト',
+          'Agents — チームメンバーごとのモデル、ツール、システムプロンプト、Response style（Simple / Visual）',
           'Skills — SKILL.md フォルダの作成/編集、各スキルのオン/オフ',
           'MCP servers — stdio / HTTP / SSE 外部ツール',
           'Memory — 長期 wiki + Dream スケジュール',
@@ -2574,7 +2578,8 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
         items: [
           '横断: 主要な Guidelines 記事は利用可能なとき openAction で正しいページへディープリンク。',
           '横断: ロケール変更は UI クロムのみ — チャット本文は書いたまま。',
-          '横断: 空の telemetry はしばしば extras 無効を意味し、チャット障害ではない。'
+          '横断: 空の telemetry はしばしば extras 無効を意味し、チャット障害ではない。',
+          'Settings → Agents の Response style は新しい返信の提示方法を決めます: Simple はプレーンテキストを優先し、Visual はユーザーの目的と操作の実用性に基づいて文章、構造化 Markdown、対話型 UI を選びます。ui_block が利用可能な場合、判断と利用のガイダンスがエージェントの context に含まれます。次のメッセージから適用され、過去の返信は書き換えません。'
 ],
       }
 ],
@@ -2786,5 +2791,40 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
         { type: 'p', text: 'Snake の矢印キーと WASD は盤面にフォーカスがあるときだけ有効です。Space で一時停止・再開できます。視差効果を減らす設定では Snake の速度が下がり、2048 のタイルアニメーションは無効になります。Minesweeper Mini、Tic-tac-toe、Memory Pairs は矢印キーでマスを移動し、Enter または Space で操作します。Mini Breakout は左右の矢印キーまたは A/D でパドルを動かし、Space で開始・一時停止します。2048 は盤面にフォーカスしてから矢印キーを使います。Close、Escape、またはパネル外のクリックで閉じられます。' },
     ],
     related: ['chat', 'composer-power', 'troubleshooting'],
+  },
+  {
+    id: 'chat-charts',
+    category: 'chat',
+    title: 'チャートとダイアグラム',
+    summary:
+      '```chart と ```mermaid のコードフェンスで、返信内にチャートや Mermaid ダイアグラムを描画できます。',
+    keywords: [
+      'chart',
+      'mermaid',
+      'diagram',
+      'graph',
+      'inline',
+      'fence',
+      'bar chart',
+      'line chart',
+      'pie',
+      'flowchart',
+      'biểu đồ',
+      'sơ đồ',
+      'lưu đồ',
+      'チャート',
+      '図表',
+      'ダイアグラム',
+    ],
+    blocks: [
+      { type: 'p', text: '```chart フェンスに小さな JSON spec を書くと、line / bar / area / pie のネイティブ図がアプリのテーマ色で描画されます。spec には type、xKey、series、data 配列が必要で、title、yLabel、unit、bar 用の stacked は任意です。' },
+      { type: 'p', text: '```mermaid フェンスは securityLevel: strict の Mermaid ランタイムで描画されるため、図のテキストがスクリプトを実行することはありません。フローチャート、シーケンス図など Mermaid の全文法が使えます。' },
+      { type: 'p', text: 'エージェントのストリーミング中は、未完成のフェンスをプレースホルダーで表示します。フェンスが閉じた後に spec や図が不正だった場合は、1 行の通知付きでコピー可能なコードブロックにフォールバックします — データは失われません。' },
+      { type: 'p', text: '両レンダラーはオンデマンドロードなので、チャートライブラリを使わないチャットの初回描画が遅くなることはありません。' },
+    ],
+    tricks: [
+      '不正なフェンスもコピーできます — フォールバックのコードブロックから元の spec や図のソースを取り出し、次のメッセージで直せます。',
+    ],
+    related: ['chat', 'chat-team', 'composer-power'],
   }
 ]

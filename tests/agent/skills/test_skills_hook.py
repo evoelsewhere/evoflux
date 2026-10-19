@@ -191,6 +191,55 @@ async def test_preloaded_skills_are_inlined_and_left_out_of_the_catalog(workspac
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("tools", "expected"),
+    [
+        (["ui_block"], True),
+        (["visual_artifact"], True),
+        ([], False),
+        (["shell"], False),
+    ],
+)
+async def test_runtime_skill_preload_uses_capability_not_prompt_or_response_style(
+    workspace, tools, expected
+):
+    skill_file = workspace / ".agents" / "skills" / "alpha" / "SKILL.md"
+    skill_file.write_text(
+        "---\nname: alpha\ndescription: Alpha work.\n"
+        "metadata:\n  runtime-preload-tools: ui_block,visual_artifact\n---\n"
+        "Judge the user's goal, not words in the prompt.\n",
+        encoding="utf-8",
+    )
+    hook = SkillsHook()
+    state = _state("hello")
+    state.tool_names = tools
+
+    await hook.before_agent(_ctx(), state)
+    prompt = await _prompt(hook, state)
+
+    assert ('<skill_content name="alpha"' in prompt) is expected
+
+
+@pytest.mark.asyncio
+async def test_intelligent_ui_preloads_when_visual_tool_is_available_in_default_style(
+    workspace, monkeypatch
+):
+    from app.agent.hooks import skills as skills_module
+
+    monkeypatch.setattr(
+        skills_module, "response_style_default", lambda: "simple", raising=False
+    )
+    hook = SkillsHook()
+    state = _state("Explain this process visually.")
+    state.tool_names = ["visual_artifact"]
+
+    await hook.before_agent(_ctx(), state)
+    prompt = await _prompt(hook, state)
+
+    assert '<skill_content name="intelligent-ui"' in prompt
+
+
+@pytest.mark.asyncio
 async def test_frozen_prefix_and_finalizer_leave_prompt_to_the_right_owner(workspace):
     hook = SkillsHook()
     finalizer = SkillsPromptFinalizerHook()

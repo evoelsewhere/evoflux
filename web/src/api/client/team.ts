@@ -701,6 +701,47 @@ export async function listWorkspaceFiles(sessionId: string): Promise<WorkspaceFi
   return res.json()
 }
 
+export interface MotionReviewSamplePost {
+  sampleId: string
+  frameIndex: number
+  timestampMs: number
+  mimeType: 'image/jpeg' | 'image/webp'
+  imageBase64: string
+}
+
+/** Send bounded rendered frames to the matching in-memory agent review request. */
+export async function postMotionReviewSamples(
+  sessionId: string,
+  jobId: string,
+  payload: {
+    sampleRequestId: string
+    artifactId: string
+    artifactRevision: number
+    samples: MotionReviewSamplePost[]
+  },
+): Promise<void> {
+  const res = await fetch(
+    `${apiBaseUrl()}/team/${encodeURIComponent(sessionId)}/motion-review/${encodeURIComponent(jobId)}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sample_request_id: payload.sampleRequestId,
+        artifact_id: payload.artifactId,
+        artifact_revision: payload.artifactRevision,
+        samples: payload.samples.map((sample) => ({
+          sample_id: sample.sampleId,
+          frame_index: sample.frameIndex,
+          timestamp_ms: sample.timestampMs,
+          mime_type: sample.mimeType,
+          image_base64: sample.imageBase64,
+        })),
+      }),
+    },
+  )
+  if (!res.ok) await parseDetailOrThrow(res, 'postMotionReviewSamples')
+}
+
 /** Resolve a session workspace root without recursively listing its files. */
 export async function getSessionWorkspaceRoot(sessionId: string): Promise<WorkspaceRootResponse> {
   const res = await fetch(`${apiBaseUrl()}/team/${encodeURIComponent(sessionId)}/workspace`)

@@ -38,6 +38,7 @@ from app.agent.hooks.folder_context import FolderContextHook
 from app.agent.hooks.goal import GoalContextHook, GoalUsageHook
 from app.agent.hooks.dynamic_prompt import inject_current_date
 from app.agent.hooks.prefix_snapshot import SessionPrefixSnapshotHook
+from app.agent.hooks.response_style import inject_response_style
 from app.agent.hooks.memory_context import (
     MemoryContextHook,
     default_memory_context_hook,
@@ -102,6 +103,7 @@ from app.agent.providers.model_metadata import (
 from app.agent.providers.thinking import honoured_levels_for
 from app.agent.providers.model_discovery import ensure_runtime_model_metadata
 from app.services.chat_service import get_messages_for_llm, save_message
+from app.core.runtime_settings import response_style_default
 
 MAX_OPEN_TASK_NUDGES = 3
 MAX_LEAD_WAIT_NUDGES = 3
@@ -1450,6 +1452,7 @@ class TeamMemberBase(abc.ABC):
 
         pipeline = HookPipeline()
         pipeline.add(HookStage.BASE_CONTEXT, "clock", inject_current_date)
+        pipeline.add(HookStage.BASE_CONTEXT, "response-style", inject_response_style)
         pipeline.add(
             HookStage.BASE_CONTEXT, "wiki-context", default_wiki_injection_hook
         )
@@ -1637,6 +1640,13 @@ class TeamMemberBase(abc.ABC):
                     else task_workspace.workspace,
                     "goal": goal_profile,
                     "system_prompt": self.agent.system_prompt,
+                    # Response style changes the model-visible prompt. Include
+                    # it in the snapshot identity so an existing session picks
+                    # up the new Visual/Simple guidance on its next activation.
+                    "response_style": response_style_default(),
+                    # Bump when response-style decision guidance changes so
+                    # sessions do not keep a stale Intelligent UI rubric.
+                    "response_style_context_version": 3,
                     "team_blueprints": team_blueprints,
                 },
             )

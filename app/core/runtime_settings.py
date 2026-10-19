@@ -77,6 +77,19 @@ class FollowUpSettings(BaseModel):
     delivery: Literal["steer", "queue"] = "queue"
 
 
+class ResponseStyleSettings(BaseModel):
+    """Default response style injected into the system prompt.
+
+    ``"visual"`` (default) lets the model use headings, lists, tables and
+    code freely; ``"simple"`` asks for plain prose without markdown
+    structure.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    style: Literal["simple", "visual"] = "visual"
+
+
 class GitSettings(BaseModel):
     """Operational and safety defaults for local/remote Git commands."""
 
@@ -338,6 +351,7 @@ class RuntimeSettings(BaseModel):
     conductor: ConductorSettings = Field(default_factory=ConductorSettings)
     team_spawn: TeamSpawnModeSettings = Field(default_factory=TeamSpawnModeSettings)
     follow_up: FollowUpSettings = Field(default_factory=FollowUpSettings)
+    response_style: ResponseStyleSettings = Field(default_factory=ResponseStyleSettings)
 
 
 def follow_up_delivery_default() -> str:
@@ -351,6 +365,19 @@ def follow_up_delivery_default() -> str:
         return load_runtime_settings().follow_up.delivery
     except Exception:  # noqa: BLE001 - ingress must not fail on settings
         return "queue"
+
+
+def response_style_default() -> str:
+    """Configured default response style (``"visual"`` when unreadable).
+
+    ``"visual"`` is the safe answer on a corrupt file: it imposes no
+    wording constraints, so degrading cannot silently strip structure a
+    user's workflow depends on.
+    """
+    try:
+        return load_runtime_settings().response_style.style
+    except Exception:  # noqa: BLE001 - prompt build must not fail on settings
+        return "visual"
 
 
 def provider_visible_models(provider_id: str) -> list[str]:

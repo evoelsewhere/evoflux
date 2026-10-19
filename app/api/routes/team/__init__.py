@@ -41,6 +41,7 @@ from app.api.routes.team import (
     git,
     git_ai,
     language_servers,
+    motion_review,
     office_runtime,
     permissions,
     preview,
@@ -76,6 +77,7 @@ router.include_router(app_search.router)
 # Literal /office-runtime/*, same reason.
 router.include_router(office_runtime.router)
 router.include_router(chat.router)
+router.include_router(motion_review.router)
 router.include_router(files.router)
 router.include_router(document_versions.router)
 router.include_router(change_sets.router)

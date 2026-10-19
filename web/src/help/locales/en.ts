@@ -2580,12 +2580,17 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'Diagnostics is for live subsystem checks — complementary to HealthDot’s binary signal.',
       'Intelligence vs System vs Application groupings keep risky toggles from mixing with theme picks.',
       'Notifications include a test ping — use it before trusting unfocused alerts. Unread alerts count on the app icon and request taskbar or Dock attention; returning to EvoFlux clears them. Windows question alerts support quick choices and a reply field.',
-      'Open the command palette if you forget which settings page owns a toggle.'
+      'Open the command palette if you forget which settings page owns a toggle.',
+      'Response style on Settings → Agents controls how new replies are presented: Simple favors plain prose; Visual lets the model choose prose, structured markdown, or interactive UI based on the user’s goal and whether controls add practical value. When ui_block is available, its decision guidance is included for the agent. Changes apply from the next message onward and never rewrite earlier replies.'
 ],
     blocks: [
       {
         type: 'p',
         text: 'Settings is grouped into Intelligence (Providers, Agents, Skills, MCP), Knowledge (Memory / Dream), System (Connection, Git & reviews, Sandbox, Browser, Notifications), and Application (Appearance, Telemetry, Diagnostics), plus About. Use this map when you know the concern but not the page name.',
+      },
+      {
+        type: 'p',
+        text: 'Intelligent UI chooses between prose, native controls, and richer dashboards, motion explainers, or 3D views based on task utility. Rich views open in a Workbench tab; the chat keeps a compact card to reopen them. Generated source stays in session history until you download it or, in Desktop Coding mode, explicitly save it into the project to review and commit. Dashboards show verified source calls and query summaries; unverified data is labeled illustrative. Rich views inherit the light, dark, or system theme and reduced-motion setting. New motion explainers can render exact canvas frames locally to MP4 or WebM with per-frame progress and cancel; the chat card keeps representative frame previews, and the Workbench timeline lets you inspect and seek the composition. An agent can visually review selected frames only when its active provider accepts images; otherwise the review tool reports samples unavailable. Choose Balanced (up to 720p) or High (up to 1080p); rendering is capped to the selected size without enlarging smaller canvases. A render is tied to its artifact revision and is cancelled if that revision changes. A motion artifact may add up to 64 bounded, locally synthesized sound-effect cues; the Workbench reports whether the soundtrack is included or unavailable. These cues do not provide music, speech, or imported audio. Preview the finished video in Workbench before downloading; older explainers use real-time browser recording and remain silent. The Intelligent UI Skill provides on-demand storyboard and focused scene-revision guidance for motion requests. The complete composition, including captions, must be drawn inside the marked canvas. 3D shows a labeled static preview when WebGL is unavailable.',
       },
       {
         type: 'p',
@@ -2595,7 +2600,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
         type: 'tips',
         items: [
           'Providers — API keys, OAuth, local daemons, model registry',
-          'Agents — model, tools, system prompt per team member',
+          'Agents — model, tools, system prompt, and Response style (Simple/Visual) per team member',
           'Skills — create/edit SKILL.md folders, turn any skill on or off',
           'MCP servers — stdio / HTTP / SSE external tools',
           'Memory — long-term wiki + Dream schedule',
@@ -2837,5 +2842,40 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
         { type: 'p', text: 'Snake responds to arrow keys or WASD only when its board has keyboard focus; Space pauses or resumes it. With reduced motion enabled, Snake moves more slowly and 2048 tile animations are disabled. Use arrow keys to move through Minesweeper Mini, Tic-tac-toe, and Memory Pairs cells, then Enter or Space to act. Mini Breakout uses left/right arrows or A/D for the paddle; Space launches or pauses. For 2048, focus its board before using arrow keys. Use the close button, Escape, or an outside click to dismiss the panel.' },
     ],
     related: ['chat', 'composer-power', 'troubleshooting'],
+  },
+  {
+    id: 'chat-charts',
+    category: 'chat',
+    title: 'Charts and diagrams',
+    summary:
+      'Replies can render charts and Mermaid diagrams inline from ```chart and ```mermaid code fences.',
+    keywords: [
+      'chart',
+      'mermaid',
+      'diagram',
+      'graph',
+      'inline',
+      'fence',
+      'bar chart',
+      'line chart',
+      'pie',
+      'flowchart',
+      'biểu đồ',
+      'sơ đồ',
+      'lưu đồ',
+      'チャート',
+      '図表',
+      'ダイアグラム',
+    ],
+    blocks: [
+      { type: 'p', text: 'A ```chart fence with a small JSON spec renders a native figure — line, bar, area, or pie — using the app’s theme colors. The spec needs a type, an xKey, a series list, and a data array; optional fields are title, yLabel, unit, and stacked for bars.' },
+      { type: 'p', text: 'A ```mermaid fence renders the diagram through the Mermaid runtime with securityLevel: strict, so diagram text cannot run scripts. Flowcharts, sequence diagrams, and the rest of the Mermaid grammar work.' },
+      { type: 'p', text: 'While an agent is still streaming, a half-finished fence shows a placeholder instead of code. If a fence finishes but its spec or diagram is invalid, the reply falls back to a copyable code block with a one-line notice — nothing is lost.' },
+      { type: 'p', text: 'Both renderers load on demand, so chat never waits on chart libraries it is not using.' },
+    ],
+    tricks: [
+      'Invalid fences stay copyable — grab the raw spec or diagram source from the fallback code block and fix it in your next message.',
+    ],
+    related: ['chat', 'chat-team', 'composer-power'],
   }
 ]

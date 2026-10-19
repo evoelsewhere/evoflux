@@ -127,9 +127,9 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
         <button
           type="button"
           onClick={props.onOpenMobileSidebar}
-          
-          
-          
+
+
+
           className="flex h-8 w-8 items-center justify-center rounded-xl text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
           aria-label="Open navigation"
           data-no-drag
@@ -203,9 +203,9 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
           <button
             type="button"
             onClick={props.onOpenReviewContext}
-            
-            
-            
+
+
+
             className="flex h-7 min-w-0 items-center gap-1.5 rounded-lg border border-(--color-accent)/30 bg-(--color-accent)/8 px-2 text-[11px] font-medium text-(--color-accent) transition-colors hover:border-(--color-accent)/40 hover:bg-(--color-accent)/12"
             aria-label={`Open linked review #${props.reviewContext.number}`}
             title="Open linked PR/MR"
@@ -328,9 +328,9 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
         <button
           type="button"
           onClick={toggleWorkbench}
-          
-          
-          
+
+
+
           className={cn(
             'relative flex h-7 w-8 shrink-0 items-center justify-center overflow-hidden rounded-lg transition-colors',
             workbenchOpen
@@ -347,8 +347,8 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
           )}
           <span
             className="relative z-10"
-            
-            
+
+
           >
             <SidePanelIcon size={15} />
           </span>

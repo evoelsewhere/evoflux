@@ -24,6 +24,14 @@ class FollowUpSettingsBody(BaseModel):
     delivery: Literal["steer", "queue"] = "queue"
 
 
+class ResponseStyleSettingsBody(BaseModel):
+    """Default response style for the ``/settings/response-style`` route."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    style: Literal["simple", "visual"] = "visual"
+
+
 class SandboxSettingsBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
