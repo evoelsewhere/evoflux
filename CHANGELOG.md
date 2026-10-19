@@ -16,7 +16,7 @@ All notable changes to EvoFlux are documented in this file.
 
 - Chart fences accept label/value rows as well as JSON, Recharts resolves decimal.js-light to its ESM build under Vite 8, and Mermaid failures clean up temporary render nodes.
 - The agent tool catalog now includes `todo_manage`, `schedule_task`, and `note`, so lead-managed tools are represented instead of silently omitted.
-- Shell process waits are clamped to 60 seconds, and tracked command trees are force-terminated after a 30-minute maximum lifetime.
+- Shell process waits are clamped to 60 seconds, and tracked command trees are force-terminated after a 30-minute maximum lifetime. Stopping a command now always returns: the post-kill wait and the output reader are bounded, and a command that survives force-kill is logged instead of blocking the session.
 - Transient provider retries now use exponential backoff with jitter, a 60-second deadline, and per-attempt elapsed-time and usage logging.
 - WebBridge artifact-retention cleanup uses a partial SQLite index to avoid scanning metadata for every session message.
 - Web and image searches now bound DuckDuckGo requests, and network tools have shorter individual limits so a stalled provider cannot hold an agent turn indefinitely.
