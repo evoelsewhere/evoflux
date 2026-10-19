@@ -139,6 +139,21 @@ class SuggestedTaskEvent(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class NextMessageSuggestionEvent(BaseModel):
+    """A suggested next user message shown as ghost text in the chat composer.
+
+    Ephemeral per-turn UI state: the user accepts the message with Tab,
+    replaces it by typing, or lets it lapse — it is never persisted or
+    replayed.
+    """
+
+    type: Literal["next_message_suggestion"] = "next_message_suggestion"
+    session_id: str
+    message: str
+    reason: str = ""
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class DoneEvent(BaseModel):
     """Stream complete."""
 
