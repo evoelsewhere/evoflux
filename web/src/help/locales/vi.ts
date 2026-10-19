@@ -2115,6 +2115,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
     tricks: [
       'Agent là file .md với YAML frontmatter — diff và version được.',
       'Skill là thư mục có SKILL.md. Agent thấy tên và mô tả của mọi skill đang bật và tự đọc SKILL.md khi việc khớp.',
+      'Skill diagram-design tích hợp giúp vẽ hoặc làm lại sơ đồ kiến trúc, sequence, trạng thái và quy trình; trong Work, sơ đồ theo theme sáng/tối và màu nhấn hiện tại, dùng visualize_read_me cùng show_widget, đồng thời kiểm tra bố cục trước và sau preview. Gõ $diagram-design để gọi trực tiếp.',
       'Gõ $tên-skill ở bất kỳ đâu trong tin để dùng skill một cách rõ ràng; có thể ghi nhiều skill.',
       'Settings → Skills tạo và sửa skill trong thư mục skill của người dùng, và có công tắc bật/tắt cho mọi skill, kể cả built-in, plugin và project.',
       'Trường Skills của một agent preload các skill đó vào agent, nên agent bắt đầu với sẵn hướng dẫn của chúng.',

@@ -10,12 +10,17 @@ from typing import Annotated, Any
 from pydantic import Field
 
 from app.agent.tools import tool
+from app.agent.tools.builtin.visualize.geometry import check_svg_layout
 
 
 @tool(
     name="show_widget",
     tiers=("work",),
-    description="Render an interactive HTML widget inline in the conversation. Call visualize_read_me first to load design guidelines.",
+    description=(
+        "Render an interactive HTML widget inline in the conversation. "
+        "Call visualize_read_me first. Diagram SVGs receive a geometry preflight; "
+        "correct returned layout errors and retry before the widget is shown."
+    ),
     concurrency_safe=False,
     read_only=True,
     deferred=True,
@@ -72,7 +77,8 @@ async def show_widget(
     """Render an interactive HTML widget inline in the conversation.
 
     This tool renders HTML content as an interactive widget. The HTML
-    streams progressively for smooth rendering.
+    streams progressively for smooth rendering. SVG diagram layout errors are
+    returned before rendering so the caller can correct and retry.
 
     Requirements:
     1. Call visualize_read_me first to load design guidelines
@@ -96,6 +102,23 @@ async def show_widget(
             "error": "You must call visualize_read_me before using show_widget",
             "success": False,
         }
+
+    layout_check: dict[str, object] = {
+        "status": "skipped",
+        "errors": [],
+        "warnings": [],
+    }
+    if "<svg" in widget_code.lower():
+        layout_check = check_svg_layout(widget_code)
+        if layout_check["errors"]:
+            return {
+                "error": "Diagram layout preflight found issues. Correct the reported geometry and call show_widget again.",
+                "success": False,
+                "layout_check": layout_check,
+            }
+        layout_check["status"] = (
+            "passed" if not layout_check["warnings"] else "manual_review"
+        )
 
     # Get the agent and tool_call_id from injected state
     agent = ""
@@ -139,8 +162,10 @@ async def show_widget(
     except Exception:
         # Log but don't fail — widget will render on final result
         import logging
+
         logging.getLogger(__name__).warning(
-            "show_widget: failed to push widget_delta events", exc_info=True,
+            "show_widget: failed to push widget_delta events",
+            exc_info=True,
         )
 
     return {
@@ -150,5 +175,6 @@ async def show_widget(
         "height": height,
         "widget_code": widget_code,
         "loading_messages": loading_messages,
+        "layout_check": layout_check,
         "message": f"Widget '{title}' rendered successfully",
     }
