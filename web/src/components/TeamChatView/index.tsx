@@ -433,6 +433,8 @@ export function TeamChatView({ sessionId, importedSource, mode = 'work', workspa
   const askUserQuestion = useTeamStore((s) => s.askUserQuestion)
   const isContinuing   = useTeamStore((s) => s.isContinuing)
   const sessionIdState = useTeamStore((s) => s.sessionId)
+  const nextMessageSuggestion = useTeamStore((s) => s.nextMessageSuggestion)
+  const clearNextMessageSuggestion = useTeamStore((s) => s.clearNextMessageSuggestion)
   const browserPipSessionIds = useUIStore((state) => state.browserPipSessionIds)
   // Presence is what lets a session mount the in-app browser, so it may not
   // belong to the chat on screen alone: a session running in the background
@@ -1614,6 +1616,8 @@ export function TeamChatView({ sessionId, importedSource, mode = 'work', workspa
               sideChatId={sideChat.sideChatId}
               onSend={sideChat.sendMessage}
               onStop={() => void sideChat.stopGeneration()}
+              suggestion={sideChat.nextMessageSuggestion}
+              onSuggestionDismiss={sideChat.clearNextMessageSuggestion}
             />
           </WorkbenchSurface>
         )}
@@ -1934,6 +1938,8 @@ export function TeamChatView({ sessionId, importedSource, mode = 'work', workspa
             boundsRef={mainColumnRef}
             onSubmit={handleComposerSubmit}
             followUpLane={followUpLane}
+            suggestion={nextMessageSuggestion}
+            onSuggestionDismiss={clearNextMessageSuggestion}
             onStop={() => useTeamStore.getState().stopTeam()}
             goal={activeGoal}
             onGoalCommand={(command) => { void runGoalCommand(command) }}

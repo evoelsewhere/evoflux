@@ -38,6 +38,10 @@ interface SideChatPanelProps {
   sideChatId: string | null
   onSend: (content: string) => Promise<SideChatSendResult>
   onStop: () => void
+  /** Agent-proposed next message shown as ghost text in the composer. */
+  suggestion?: { message: string; reason?: string } | null
+  /** Dismiss the current suggestion (Esc). */
+  onSuggestionDismiss?: () => void
   embedded?: boolean
 }
 
@@ -53,6 +57,8 @@ export function SideChatPanel({
   sideChatId,
   onSend,
   onStop,
+  suggestion = null,
+  onSuggestionDismiss,
   embedded = false,
 }: SideChatPanelProps) {
   const inputRef = useRef<InputBarHandle>(null)
@@ -202,6 +208,8 @@ export function SideChatPanel({
             ref={inputRef}
             onSubmit={(message) => void handleSend(message)}
             onStop={onStop}
+            suggestion={suggestion}
+            onSuggestionDismiss={onSuggestionDismiss}
             isStreaming={isWorking}
             attachmentsEnabled={false}
             placeholder="Ask a question about the main session…"

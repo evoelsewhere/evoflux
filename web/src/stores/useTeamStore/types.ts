@@ -90,6 +90,12 @@ export interface BrowserSessionInfo {
   lastAction: string | null
 }
 
+/** Agent-proposed next user message, shown as ghost text in the composer. */
+export interface NextMessageSuggestion {
+  message: string
+  reason: string
+}
+
 export interface TeamStoreState {
   agentStreams: Record<string, AgentStream>
   activeAgent: string | null
@@ -129,6 +135,10 @@ export interface TeamStoreState {
   activeGoal: GoalResponse | null
   /** Open suggestion chips for this session, oldest first. */
   suggestedTasks: SuggestedTask[]
+  /** Ghost-text suggestion for the composer, published at turn ``done``. */
+  nextMessageSuggestion: NextMessageSuggestion | null
+  /** Suggestion received mid-turn; promoted (or cleared) at ``done``. */
+  _pendingNextMessageSuggestion: NextMessageSuggestion | null
   setupRequired: SetupRequiredNotice | null
   browserSession: BrowserSessionInfo | null
   turnChanges: TurnChangesPending | null
@@ -210,6 +220,8 @@ export interface TeamStoreActions {
   setPendingMessageDelivery: (id: string, delivery: 'steer' | 'queue') => void
   /** Replace a queued message's text without losing its queue position. */
   editPendingMessage: (id: string, content: string) => void
+  /** Dismiss the composer's ghost-text suggestion (Esc). */
+  clearNextMessageSuggestion: () => void
   _handleSSEEvent: (type: string, data: unknown) => void
   _drainCacheInvalidations: () => CacheInvalidation[]
   _abortController: AbortController | null
