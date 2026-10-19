@@ -78,9 +78,9 @@ def test_intelligent_ui_links_runtime_accurate_motion_authoring_guidance():
 
 
 def test_intelligent_ui_skill_covers_video_as_a_deliverable_and_in_app_view():
-    skill_text = (BUILTIN / "intelligent-ui" / "SKILL.md").read_text(
-        encoding="utf-8"
-    ).lower()
+    skill_text = (
+        (BUILTIN / "intelligent-ui" / "SKILL.md").read_text(encoding="utf-8").lower()
+    )
 
     assert "video or code-authored animation" in skill_text
     assert "requested deliverable" in skill_text

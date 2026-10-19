@@ -65,9 +65,7 @@ def response_style_directive(style: str, tool_names: set[str]) -> str:
         return line
     available = [name for name in ("ui_block", "visual_artifact") if name in tool_names]
     line = _VISUAL_LINE
-    artifact_line = (
-        _VIDEO_ARTIFACT_LINE if "visual_artifact" in tool_names else ""
-    )
+    artifact_line = _VIDEO_ARTIFACT_LINE if "visual_artifact" in tool_names else ""
     motion_progress_line = (
         " For a genuinely multi-stage motion explainer, use motion_progress at "
         "storyboard, sample review/revision, and final-render milestones so the "
