@@ -441,6 +441,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'Focus composer (Ctrl+I). Attachment phải được bật cho session. Ở Work, WorkFolderSelector nằm gần composer để đổi session folder. Ở Coding, # snippet cần định nghĩa workspace hoặc global.',
     tricks: [
       'Bắt đầu tin bằng ! để chạy shell (hoặc chọn /shell để prefill bang mode).',
+      'Khi agent kết thúc lượt mà có gợi ý bước tiếp theo hữu ích, gợi ý hiện dạng chữ mờ trong composer trống — nhấn Tab để nhận, gõ tiếp để thay bằng nội dung của bạn, hoặc Esc để bỏ.',
       'Gõ @ để chèn path file/folder xếp hạng từ workspace đang active.',
       'Ở Coding, gõ # để bung workspace hoặc global snippet vào composer.',
       'Gõ $ để chọn skill; $tên-skill đặt ở vị trí nào trong tin cũng được và có thể ghi nhiều skill (trừ dòng quote > và code block).',
@@ -2634,6 +2635,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
           { keys: 'Ctrl+G', action: 'Source Control (Coding)' },
           { keys: 'Ctrl+`', action: 'Terminal' },
           { keys: 'Ctrl+I', action: 'Focus chat input' },
+          { keys: 'Tab', action: 'Nhận tin nhắn gợi ý tiếp theo (composer trống, agent rảnh)' },
           { keys: 'Ctrl+;', action: 'Side chat (label có thể hiện ⌥⌘S)' },
           { keys: 'Ctrl+R', action: 'Refresh Work sessions' },
           { keys: '1–3', action: 'Permission modes khi menu permission đang mở' }

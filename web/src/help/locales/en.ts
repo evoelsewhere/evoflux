@@ -456,6 +456,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'Focus the composer (Ctrl+I). Attachments must be enabled for the session. In Work, WorkFolderSelector sits near the composer to retarget the session folder. In Coding, # snippets require workspace or global snippet definitions.',
     tricks: [
       'Start a message with ! to run a shell command (or pick /shell to prefill bang mode).',
+      'When the agent finishes a turn with a useful follow-up in mind, its suggestion appears as ghost text in an empty composer — press Tab to accept it, keep typing to write your own, or Esc to dismiss.',
       'Type @ to insert ranked file/folder path references from the active workspace.',
       'In Coding, type # to expand workspace or global snippets into the composer.',
       'Type $ to pick a skill; $skill-name works anywhere in the message and you can name several (not inside > quote lines or code blocks).',
@@ -2698,6 +2699,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           { keys: 'Ctrl+G', action: 'Source Control (Coding)' },
           { keys: 'Ctrl+`', action: 'Terminal' },
           { keys: 'Ctrl+I', action: 'Focus chat input' },
+          { keys: 'Tab', action: 'Accept suggested next message (composer empty, agent idle)' },
           { keys: 'Ctrl+;', action: 'Side chat (label may show ⌥⌘S)' },
           { keys: 'Ctrl+R', action: 'Refresh Work sessions' },
           { keys: '1–3', action: 'Permission modes when the permission menu is open' }

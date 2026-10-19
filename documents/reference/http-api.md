@@ -139,7 +139,7 @@ stream endpoints.
 
 The SSE `data` payload is a structured envelope. Event types include content
 deltas, tool/activity blocks, member status, permissions,
-questions, queues, usage, goal updates, errors and completion. Clients
+questions, queues, usage, goal updates, next-message suggestions, errors and completion. Clients
 must tolerate additional event fields/types and reconnect using durable history
 rather than assuming one uninterrupted socket.
 

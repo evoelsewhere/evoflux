@@ -11,6 +11,7 @@ All notable changes to EvoFlux are documented in this file.
 - Dashboards, motion explainers, and bounded 3D scenes open in the EvoFlux Workbench, inherit app theme and reduced-motion settings, and can be saved to a project explicitly.
 - Motion artifacts support beat timelines, deterministic local MP4 / WebM export, per-frame progress, cancellation, bounded review, and optional synthesized sound effects.
 - A built-in diagram-design Skill helps create and redraw focused, accessible architecture, sequence and process diagrams. In Work it follows the existing diagram widget workflow and adapts to the app theme; short diagrams maintained in Markdown can stay Mermaid.
+- Suggested next messages in the chat composer: when an agent ends a turn with a useful follow-up in mind — tests after a change, a build check after an edit — it offers the next prompt as ghost text in an empty composer. Press **Tab** to accept it, keep typing to replace it, or **Esc** to dismiss. The suggestion is agent-judged (`suggest_next_message`), appears only when there is a real next step, and is not replayed after a reconnect.
 
 ### Fixed
 
