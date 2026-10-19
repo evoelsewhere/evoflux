@@ -341,7 +341,6 @@ async def get_registry(
     from app.api.routes.skills import _workspace_paths
 
     tool_registry = _default_tool_registry()
-    hidden_tools = {"load_tool", "todo_manage", "schedule_task", "note"}
     tools = sorted(
         (
             ToolCatalogEntry(
@@ -351,7 +350,6 @@ async def get_registry(
                 lead_only=getattr(t, "lead_only", False),
             )
             for t in tool_registry.values()
-            if t.name not in hidden_tools
         ),
         key=lambda t: t.name,
     )
@@ -615,8 +613,7 @@ async def bulk_update_model(body: AgentBulkModelRequest) -> AgentBulkModelRespon
                         name=name,
                         ok=False,
                         error=(
-                            f"Model '{body.model}' is not configured "
-                            "or selectable."
+                            f"Model '{body.model}' is not configured or selectable."
                         ),
                     )
                 )
@@ -812,7 +809,9 @@ def _read_agent_detail(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     owner = (
-        provider if provider is not None else managed_resource_provider("agent_team", name)
+        provider
+        if provider is not None
+        else managed_resource_provider("agent_team", name)
     )
     config: dict[str, Any] | None = None
     bundle_model: str | None = None
