@@ -69,7 +69,6 @@ from app.agent.mode.team.shared_state import format_state_snapshot
 from app.agent.mode.team.tier_policy import (
     SIDE_CHAT_SESSION_TAG,
     WEBBRIDGE_OFF_DENIED_TOOLS,
-    deferred_tools_for_run,
     denied_tools_for_tier,
     resolve_member_tier,
     side_chat_session_excluded_tools,
@@ -202,24 +201,13 @@ SIDE_CHAT_SESSION_PROMPT = """\
 ## Side Chat session
 You are in a side chat with read-only access to the main conversation's recent context (included above, for reference only). You CANNOT modify files, execute commands, delegate to team members, or make any changes — write/edit/shell/python/team coordination tools are unavailable. Answer questions and provide information; if asked to perform an action, explain that side chat is read-only and the user should ask in the main conversation instead."""
 
-DEFERRED_TOOL_PROTOCOL = """\
-## Deferred tool activation
-The tool schemas visible in this turn are the source of truth for what can be called immediately. Other granted capabilities may be deferred: their schemas stay hidden until activated. If these instructions name a tool that is not visible, search the deferred catalog before concluding that the capability is unavailable.
-
-To use one:
-1. `load_tool(query='<capability in plain words>')` — search, or call `load_tool()` with no arguments to list every deferred name available to you.
-2. `load_tool(tool_names=['<exact name>', ...])` — activate. Batch everything you expect to need in one call; each activation round costs a turn.
-3. Full schemas appear on your **next** turn; call the tool then.
-
-Search matches keywords against short capability summaries, so it is literal: if the first query returns nothing useful, retry once with different nouns (a synonym, the file format, the underlying technology), then list the catalog with `load_tool()` and pick by name. Report a capability as unavailable only when that listing lacks it. Activation never overrides role, tier, or session restrictions — a tool genuinely denied to you will not appear."""
-
 MEMBER_COMMUNICATION_RULES = """\
 ## Communication protocol
 - **Do not use plain text output for responses/results.** Plain text is discarded. Deliver work — research findings, analysis, proposals, completed changes — with `team_handoff`, whose structured fields (summary, findings, evidence, confidence, next_actions) let recipients act without re-parsing. Use `team_message` for short questions, clarifications, or status, and `team_state` for persistent key-value data (URLs, config, discoveries) visible to all team members.
 - **Talk to peers directly for questions and unsolicited context — you are not limited to the lead.** A task-linked final `team_handoff` must go to the task's delegator so the durable task can complete; the runtime injects its artifact into dependent task briefs automatically. Do not manually relay dependency results that already use `depends_on`.
 - Message the lead specifically only when you owe *them* your final deliverable, or you are blocked and need a decision; otherwise prefer peer-to-peer.
 - **Idle, waiting, or done? Call `sleep`** instead of writing text — including social messages such as "got it", "working on it", or "standing by".
-- **Missing a capability?** Follow the deferred-tool activation protocol first. Only when its catalog genuinely lacks the capability, describe **what you're trying to do** in plain language to the lead via `team_message` (e.g. "I need to write files to disk", "I need shadcn component examples") rather than guessing at tool/skill/MCP names the lead would have to decode. The lead grants the capability and you'll see it on your next turn.
+- **Missing a capability?** Describe **what you're trying to do** in plain language to the lead via `team_message` (e.g. "I need to write files to disk", "I need shadcn component examples") rather than guessing at tool/skill/MCP names the lead would have to decode. The lead grants the capability and you'll see it on your next turn.
 - **Work only in the assigned workspace.** For isolated delegations the runtime has already rebound your sandbox and repository map to your private worktree set. Do not create, merge, delete, or switch Git worktrees/branches yourself. Commit/snapshot and integration are runtime/lead responsibilities.
 - **Match the depth of your work to the task.** The delegation's Goal and Expected output define done: meet them fully, then stop.
   - Research: use sources that fit the question — one authoritative source for a narrow fact, several independent ones for broad or contested claims — and cite what you rely on.
@@ -1713,7 +1701,6 @@ class TeamMemberBase(abc.ABC):
         # Resolve tier-based tool restrictions for non-lead members.
         tier_excluded: frozenset[str] | None = None
         granted_tools = (*self.agent._tools.values(), *injected)
-        deferred = deferred_tools_for_run(granted_tools)
         if self._role_label == "member":
             member_tier = resolve_member_tier(self.name)
             tier_excluded = (
@@ -1810,7 +1797,6 @@ class TeamMemberBase(abc.ABC):
                 hooks=hooks,
                 injected_tools=injected,
                 excluded_tools=tier_excluded,
-                deferred_tools=deferred,
                 interrupt_event=self._cancel_event,
                 checkpointer=checkpointer,
                 llm_provider=runtime_provider,
@@ -2172,9 +2158,6 @@ class TeamLead(TeamMemberBase):
             "{{ROUTING_GUIDE}}", "\n".join(roster_lines)
         )
         sections: list[str] = [rules, LEAD_MESSAGE_FORMAT]
-        # Keep the activation contract ahead of instructions that may name
-        # deferred capabilities.
-        sections.append(DEFERRED_TOOL_PROTOCOL)
         sections.append(LEAD_PROTOCOL)
         if SIDE_CHAT_SESSION_TAG in team.session_tags:
             # Tagged session (a Side Chat panel): tools are already scoped
@@ -2329,7 +2312,6 @@ class TeamMember(TeamMemberBase):
             ),
             MEMBER_COMMUNICATION_RULES,
             MEMBER_MESSAGE_FORMAT.format(lead_name=lead_name),
-            DEFERRED_TOOL_PROTOCOL,
             MEMBER_PROTOCOL.format(lead_name=lead_name),
         ]
 

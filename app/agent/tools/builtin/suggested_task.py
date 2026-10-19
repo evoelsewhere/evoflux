@@ -198,7 +198,5 @@ dismiss_task = Tool(
     lead_only=True,
     # Deferred: only reachable after a spawn_task in the same session, so it
     # does not belong in the eager payload every coding turn pays for.
-    deferred=True,
-    deferred_summary="Withdraw a suggestion chip that has gone stale.",
     description="Withdraw a suggestion chip created earlier with spawn_task.",
 )

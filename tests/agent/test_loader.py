@@ -602,7 +602,6 @@ def test_code_owned_role_prompts_do_not_name_optional_tool_schemas():
         "lsp_semantic",
         "preview",
         "web_search",
-        "load_tool",
         ".evoflux/launch.json",
     ):
         assert optional_schema not in prompt_text

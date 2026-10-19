@@ -508,8 +508,6 @@ worktree_start = Tool(
     name="worktree_start",
     tiers=("coding",),
     lead_only=True,
-    deferred=True,
-    deferred_summary="Create an isolated git worktree for parallel or experimental work.",
     description=(
         "Create an isolated git worktree + branch and switch the agent's workspace "
         "to it. All file/shell tools will operate in the worktree until worktree_finish."
@@ -521,8 +519,6 @@ worktree_finish = Tool(
     name="worktree_finish",
     tiers=("coding",),
     lead_only=True,
-    deferred=True,
-    deferred_summary="Review or snapshot a worktree before safe cleanup.",
     description=(
         "Review changes without cleanup, or preserve every change in a snapshot "
         "commit before removing the worktree. Destructive discard requires confirmation."

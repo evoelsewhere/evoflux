@@ -1,7 +1,7 @@
 from app.agent.loader import _default_tool_registry
 
 
-def test_code_review_api_tools_are_coding_only_and_deferred():
+def test_code_review_api_tools_are_coding_only():
     registry = _default_tool_registry()
 
     names = (
@@ -22,8 +22,6 @@ def test_code_review_api_tools_are_coding_only_and_deferred():
     )
     for name in names:
         tool = registry[name]
-        assert tool.deferred is True
-        assert tool.deferred_summary
         assert tool.tiers == frozenset({"coding"})
 
     assert registry["get_code_review"].read_only is True

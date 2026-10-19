@@ -32,7 +32,6 @@ LLM-compatible metadata via ``.name``, ``.description``, and ``.definition``.
 from __future__ import annotations
 
 import inspect
-from dataclasses import dataclass
 from typing import (
     Annotated,
     Any,
@@ -195,9 +194,6 @@ class Tool:
         read_only: bool = False,
         tiers: tuple[str, ...] | None = None,
         lead_only: bool = False,
-        deferred: bool = False,
-        deferred_summary: str | None = None,
-        search_aliases: tuple[str, ...] = (),
         capabilities: tuple[str, ...] = (),
         max_calls_per_batch: int | None = None,
         deduplicate_in_batch: bool = False,
@@ -231,19 +227,6 @@ class Tool:
         # Tools that talk to the user or restructure the session (ask_user,
         # worktree, ...) are lead-only: team members never get them.
         self.lead_only = lead_only
-        # Deferred tools remain executable by this agent but omit their full
-        # schema until the model explicitly activates them via load_tool.
-        self.deferred = deferred
-        self.deferred_summary = deferred_summary
-        # Extra vocabulary for load_tool's keyword search only — never shown to
-        # the model. ``deferred_summary`` doubles as the search haystack, and it
-        # is written for a human reader, so the words a model actually queries
-        # with ("lint", "chart", "screenshot") are often absent from it. List
-        # those synonyms, file formats, and underlying technologies here rather
-        # than distorting the summary into keyword soup.
-        self.search_aliases = tuple(
-            alias.casefold() for alias in search_aliases if alias.strip()
-        )
         # Runtime policies consume explicit capabilities, never inferred names.
         self.capabilities = frozenset(
             capability.casefold() for capability in capabilities
@@ -433,44 +416,6 @@ class Tool:
 
 
 # ---------------------------------------------------------------------------
-# Deferred-tool catalog
-# ---------------------------------------------------------------------------
-
-#: Longest ``deferred_summary`` derived from a description before truncation.
-_MAX_DERIVED_SUMMARY_CHARS = 200
-
-
-@dataclass(frozen=True, slots=True)
-class DeferredToolEntry:
-    """One deferred tool as ``load_tool`` offers it to the model.
-
-    ``summary`` is the only field the model ever sees. ``aliases`` widens what
-    a search matches without turning the summary into keyword soup, so the two
-    are kept apart rather than concatenated.
-    """
-
-    summary: str
-    aliases: tuple[str, ...] = ()
-
-
-def deferred_catalog_entry(tool: Tool) -> DeferredToolEntry:
-    """Describe *tool* for the run-local deferred catalog.
-
-    Tools that declare no ``deferred_summary`` fall back to a compacted,
-    truncated description so every deferred tool stays discoverable.
-    """
-    summary = tool.deferred_summary
-    if not summary:
-        compact = " ".join(tool.description.split())
-        summary = (
-            compact[: _MAX_DERIVED_SUMMARY_CHARS - 3] + "..."
-            if len(compact) > _MAX_DERIVED_SUMMARY_CHARS
-            else compact
-        )
-    return DeferredToolEntry(summary=summary, aliases=tool.search_aliases)
-
-
-# ---------------------------------------------------------------------------
 # @tool decorator
 # ---------------------------------------------------------------------------
 
@@ -489,9 +434,6 @@ def tool(
     read_only: bool = False,
     tiers: tuple[str, ...] | None = None,
     lead_only: bool = False,
-    deferred: bool = False,
-    deferred_summary: str | None = None,
-    search_aliases: tuple[str, ...] = (),
     capabilities: tuple[str, ...] = (),
     max_calls_per_batch: int | None = None,
     deduplicate_in_batch: bool = False,
@@ -511,9 +453,6 @@ def tool(
     read_only: bool = False,
     tiers: tuple[str, ...] | None = None,
     lead_only: bool = False,
-    deferred: bool = False,
-    deferred_summary: str | None = None,
-    search_aliases: tuple[str, ...] = (),
     capabilities: tuple[str, ...] = (),
     max_calls_per_batch: int | None = None,
     deduplicate_in_batch: bool = False,
@@ -562,9 +501,6 @@ def tool(
             read_only=read_only,
             tiers=tiers,
             lead_only=lead_only,
-            deferred=deferred,
-            deferred_summary=deferred_summary,
-            search_aliases=search_aliases,
             capabilities=capabilities,
             max_calls_per_batch=max_calls_per_batch,
             deduplicate_in_batch=deduplicate_in_batch,

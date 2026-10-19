@@ -57,7 +57,7 @@ from app.agent.state import (
     build_model_chain,
     build_tool_chain,
 )
-from app.agent.tools.registry import Tool, deferred_catalog_entry
+from app.agent.tools.registry import Tool
 from app.agent.turn_usage import current_turn_usage_snapshot
 
 MAX_AGENT_ITERATIONS = 5000
@@ -336,7 +336,6 @@ class Agent(Generic[TContext]):
         hooks: Sequence[BaseAgentHook] | None = None,
         injected_tools: list[Tool] | None = None,
         excluded_tools: frozenset[str] | None = None,
-        deferred_tools: frozenset[str] | None = None,
         interrupt_event: asyncio.Event | None = None,
         checkpointer: Checkpointer | None = None,
         llm_provider: LLMProviderBase | None = None,
@@ -359,17 +358,6 @@ class Agent(Generic[TContext]):
         from the run-local tool lookup after merging constructor + injected
         tools.  Used by team tier policies to restrict heavy tools for
         lower-tier tasks.
-
-        ``deferred_tools`` optionally overrides the tool metadata that marks
-        which names stay callable but start hidden from ``tool_defs`` — unlike
-        ``excluded_tools`` they are never popped from the run-local lookup.
-        When omitted, every run-local tool with ``deferred=True`` is hidden.
-        The ``load_tool`` tool reveals one for the rest of this run by adding
-        its name to ``state.metadata["activated_deferred_tools"]``; the loop
-        recomputes ``tool_defs`` each iteration so an activation takes effect
-        starting the very next model call. Cuts baseline per-call token cost
-        for heavy/narrow tools (browser automation, LSP, ...) that most
-        turns never touch.
 
         ``checkpointer`` is an optional :class:`~app.agent.checkpointer.Checkpointer`
         that the loop calls at defined sync points to persist state.  When
@@ -412,28 +400,6 @@ class Agent(Generic[TContext]):
             for name in excluded_tools:
                 run_tools.pop(name, None)
 
-        # Deferred tools stay in run_tools (so they remain callable once
-        # unlocked) but are left out of tool_defs until activated. Intersect
-        # with what's actually present so a name already removed by
-        # excluded_tools above is simply a no-op here, never re-added.
-        requested_deferred = (
-            set(deferred_tools)
-            if deferred_tools is not None
-            else {
-                name
-                for name, run_tool in run_tools.items()
-                if getattr(run_tool, "deferred", False)
-            }
-            if "load_tool" in run_tools
-            else set()
-        )
-        deferred_names = requested_deferred & run_tools.keys()
-
-        deferred_catalog = {
-            name: deferred_catalog_entry(run_tools[name])
-            for name in sorted(deferred_names)
-        }
-
         # Work on a local copy, strip any SystemMessage — system prompt lives
         # in state.system_prompt and is prepended per-call by the loop.
         messages = [m for m in messages if not isinstance(m, SystemMessage)]
@@ -446,27 +412,12 @@ class Agent(Generic[TContext]):
             session_created_at=config.session_created_at if config else None,
         )
 
-        # Always-visible tools' definitions never change mid-run — compute once.
-        # Some tools (skill, load_tool) have a callable description factory that
-        # does real work (filesystem scans, string building); recomputing this
-        # list every iteration would redo that work for nothing on every turn
-        # of every team run, since deferred_tools is set on virtually all of
-        # them. Only the (typically 0-2) activated deferred tools' definitions
-        # need to be (re)looked up as activation changes.
-        static_tool_defs = [
-            t.definition for name, t in run_tools.items() if name not in deferred_names
-        ]
-
-        def _compute_tool_defs(activated: frozenset[str]) -> list[dict[str, Any]]:
-            if not activated:
-                return static_tool_defs
-            return static_tool_defs + [
-                run_tools[name].definition
-                for name in sorted(activated)
-                if name in deferred_names
-            ]
-
-        tool_defs = _compute_tool_defs(frozenset())
+        # Every tool is always eager in tool_defs. The definitions are
+        # computed once per run in a stable order: some tools (skill) have a
+        # callable description factory that does real work (filesystem scans,
+        # string building); recomputing this list every iteration would redo
+        # that work for nothing on every turn of every team run.
+        tool_defs = [t.definition for t in run_tools.values()]
 
         # Build per-run AgentState — passed to all hooks throughout the loop
         state = AgentState(
@@ -502,55 +453,43 @@ class Agent(Generic[TContext]):
             for key, value in config.metadata.items():
                 state.metadata.setdefault(key, value)
 
-        # Runtime-owned metadata: the loader can only discover tools granted
-        # after hard exclusions. Callers may pre-activate deferred tools via
-        # config.metadata.
-        state.metadata["deferred_tool_catalog"] = deferred_catalog
-        existing_activated = state.metadata.get("activated_deferred_tools")
-        if existing_activated:
-            state.metadata["activated_deferred_tools"] = set(existing_activated)
-        else:
-            state.metadata["activated_deferred_tools"] = set()
+        def _merge_dynamic_tools(candidates: list[Tool]) -> tuple[str, ...]:
+            """Add newly-available runtime MCP tools to this run's eager set.
 
-        def _merge_dynamic_deferred_tools(
-            candidates: list[Tool],
-        ) -> tuple[str, ...]:
-            """Add permitted runtime MCP tools to this run-local catalog."""
+            Only names this run does not already expose are appended, keeping
+            the computed-once tool_defs list in a stable order.
+            """
 
             added: list[str] = []
             side_chat_session = bool(state.metadata.get("side_chat_session"))
             for run_tool in candidates:
-                if not getattr(run_tool, "deferred", False):
-                    continue
                 if excluded_tools and run_tool.name in excluded_tools:
                     continue
                 if side_chat_session and not getattr(run_tool, "read_only", False):
                     continue
-                changed = False
-                if run_tools.get(run_tool.name) is not run_tool:
-                    run_tools[run_tool.name] = run_tool
-                    changed = True
-                if run_tool.name not in deferred_names:
-                    deferred_names.add(run_tool.name)
-                    changed = True
-                entry = deferred_catalog_entry(run_tool)
-                if deferred_catalog.get(run_tool.name) != entry:
-                    deferred_catalog[run_tool.name] = entry
-                    changed = True
-                if changed:
-                    added.append(run_tool.name)
+                if run_tool.name in run_tools:
+                    continue
+                run_tools[run_tool.name] = run_tool
+                # Rebind instead of mutating so every already-sent model call
+                # keeps the exact tool_defs snapshot it was given.
+                state.tool_defs = [*state.tool_defs, run_tool.definition]
+                added.append(run_tool.name)
             if added:
                 state.tool_names = sorted(run_tools)
             return tuple(added)
 
         def _grant_plugin_mcp_tools(installation_id: str) -> tuple[str, ...]:
-            """Grant tools belonging to the plugin Skill being activated."""
+            """Grant tools belonging to the plugin Skill being activated.
+
+            Skill activation is an explicit grant: the plugin's MCP tools join
+            the eager tool set and are callable from the next model call.
+            """
 
             from app.plugin_platform.runtime import plugin_mcp_runtime
 
             state.metadata.setdefault("plugin_mcp_grants", set()).add(installation_id)
             tools = plugin_mcp_runtime.get_tools_for_installation(installation_id)
-            added = _merge_dynamic_deferred_tools(tools)
+            added = _merge_dynamic_tools(tools)
             if added:
                 logger.debug(
                     "plugin_skill_mcp_tools_granted agent={} installation={} tools={}",
@@ -558,78 +497,8 @@ class Agent(Generic[TContext]):
                     installation_id,
                     list(added),
                 )
-            return tuple(tool.name for tool in tools if tool.name in deferred_names)
+            return added
 
-        def _refresh_deferred_tool_catalog() -> None:
-            """Merge newly-ready, newly-granted MCP tools into this live run.
-
-            An agent can register an MCP server and wire it into its own
-            frontmatter during a tool round. Rebuilding only on the next user
-            turn leaves the current run's ``load_tool`` catalog stale. Refresh
-            just before ``load_tool`` searches, while preserving per-agent MCP
-            grants and all caller-provided hard exclusions.
-            """
-            from app.plugin_platform.runtime import plugin_mcp_runtime
-
-            for installation_id in state.metadata.get("plugin_mcp_grants", set()):
-                _merge_dynamic_deferred_tools(
-                    plugin_mcp_runtime.get_tools_for_installation(installation_id)
-                )
-
-            if role == "member":
-                return
-
-            configured_servers = list(self.mcp_servers)
-            if self.source_path is not None:
-                try:
-                    from app.agent.config import parse_agent_md
-                    from app.conductor.agent_runtime import (
-                        apply_managed_agent_runtime_model,
-                    )
-
-                    # Re-reading the file drops the installation's additive
-                    # MCP layer for a managed Agent; union it back on.
-                    live_config = apply_managed_agent_runtime_model(
-                        parse_agent_md(self.source_path), source_path=self.source_path
-                    )
-                    if live_config.role == "member":
-                        return
-                    configured_servers = live_config.mcp
-                except Exception as exc:  # noqa: BLE001 - keep last valid grant
-                    logger.warning(
-                        "dynamic_mcp_grant_refresh_failed agent={} error={}",
-                        self.name,
-                        exc,
-                    )
-            if not configured_servers:
-                return
-
-            from app.plugin_platform.runtime import get_mcp_tools_for_server
-
-            changed = False
-            for server_name in dict.fromkeys(configured_servers):
-                server_tools = get_mcp_tools_for_server(server_name)
-                if not server_tools:
-                    continue
-                if _merge_dynamic_deferred_tools(server_tools):
-                    changed = True
-
-            if changed:
-                state.tool_names = sorted(run_tools)
-                logger.debug(
-                    "dynamic_mcp_tools_refreshed agent={} servers={} tools={}",
-                    self.name,
-                    configured_servers,
-                    sorted(
-                        name
-                        for name in deferred_names
-                        if getattr(run_tools.get(name), "origin", None) == "mcp"
-                    ),
-                )
-
-        state.metadata["_refresh_deferred_tool_catalog"] = (
-            _refresh_deferred_tool_catalog
-        )
         state.metadata["_grant_plugin_mcp_tools"] = _grant_plugin_mcp_tools
 
         # Me seed last_prompt_tokens from checkpointer so SummarizationHook
@@ -653,33 +522,11 @@ class Agent(Generic[TContext]):
 
         last_assistant_msg: AssistantMessage | None = None
 
-        # Build the hook chain around the executor, then put the deferred gate
-        # outside it. A hidden tool named directly by the model must not reach
-        # permission prompts, telemetry, or plugin hooks before activation.
-        hooked_tool_chain: ToolCallHandler = build_tool_chain(
+        # Build the hook chain around the executor.
+        tool_chain: ToolCallHandler = build_tool_chain(
             combined_hooks,
-            make_tool_executor(run_tools, self.name, deferred_names),
+            make_tool_executor(run_tools, self.name),
         )
-
-        async def tool_chain(
-            tool_ctx: RunContext,
-            tool_state: AgentState,
-            tool_call,
-        ) -> str:
-            tool_name = tool_call.function.name
-            activated = tool_state.metadata.get("activated_deferred_tools") or ()
-            if tool_name in deferred_names and tool_name not in activated:
-                logger.info(
-                    "tool_call_blocked_before_hooks agent={} tool={}",
-                    self.name,
-                    tool_name,
-                )
-                return (
-                    f"'{tool_name}' is not yet available — call "
-                    f"load_tool(tool_name='{tool_name}') first, then "
-                    f"call '{tool_name}' again on your next turn."
-                )
-            return await hooked_tool_chain(tool_ctx, tool_state, tool_call)
 
         iteration = 0
         total_tokens = 0
@@ -693,7 +540,6 @@ class Agent(Generic[TContext]):
         # Set while the next model call is the one retry after a context
         # overflow; a second overflow before any call succeeds is surfaced.
         overflow_compaction_pending = False
-        last_activated_deferred: frozenset[str] = frozenset()
 
         while iteration < self.max_iterations:
             # Top-of-iteration interrupt check.  Without this, an interrupt
@@ -718,22 +564,6 @@ class Agent(Generic[TContext]):
                 self.max_iterations,
                 len(messages),
             )
-
-            # Refresh tool_defs before anything this iteration reads it (hooks
-            # included) so a load_tool activation from the previous iteration's
-            # tool execution is visible starting this model call. Skipped
-            # entirely when the activated set hasn't changed — the common case
-            # for every iteration where the agent never calls load_tool — so
-            # this never redoes the (potentially non-trivial) work in
-            # ``static_tool_defs``, only the small activated-tools lookup.
-            if deferred_names:
-                activated = frozenset(
-                    state.metadata.get("activated_deferred_tools") or ()
-                )
-                if activated != last_activated_deferred:
-                    tool_defs = _compute_tool_defs(activated)
-                    state.tool_defs = tool_defs
-                    last_activated_deferred = activated
 
             # Build per-iteration ModelRequest — immutable view of what LLM sees.
             # messages_for_llm excludes SystemMessage + excluded messages.
@@ -802,7 +632,7 @@ class Agent(Generic[TContext]):
                     state=state,
                     hooks=combined_hooks,
                     interrupt_event=interrupt_event,
-                    tool_defs=tool_defs,
+                    tool_defs=state.tool_defs,
                     primary_provider=active_provider,
                     primary_label=active_model_id or "primary",
                     fallback_provider=self.fallback_provider,

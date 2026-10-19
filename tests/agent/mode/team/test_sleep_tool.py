@@ -43,10 +43,6 @@ class TestSleepTool:
         assert "Takes no arguments" in description
         assert "Never write text" in description
 
-    def test_is_not_deferred(self):
-        """A waiting agent must be able to call it without a load_tool round."""
-        assert make_sleep_tool().deferred is False
-
 
 class TestSleepGuard:
     """The optional team-owned guard that refuses an early yield.

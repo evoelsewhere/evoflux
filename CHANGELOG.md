@@ -39,7 +39,12 @@ All notable changes to EvoFlux are documented in this file.
 
 ### Removed
 
+- The `load_tool` deferred-tool activation round-trip is gone. Every tool granted to an agent is now visible in the model's tool definitions from the start of a run, so agents call browser, LSP, worktree, visualization, code-review, and MCP tools directly instead of searching a catalog and loading them first. Tool permission and sandbox behavior is unchanged; `skill` and MCP tools keep working as before.
 - Team chat no longer switches to **Split** on its own when three or more agents start working; open Split from the view menu or with `Ctrl+V` whenever you want it.
+
+### Upgrade notes
+
+- Remove `load_tool` from any `tools:` list in your agent `.md` files; the tool no longer exists and every other tool is available without activation.
 
 ## [3.0.7] - 2026-10-14
 

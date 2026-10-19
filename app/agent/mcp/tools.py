@@ -127,17 +127,6 @@ class MCPTool(Tool):
         )
         self.tiers = None
         self.lead_only = False
-        self.deferred = True
-        compact_description = " ".join(description.split())
-        self.deferred_summary = (
-            compact_description[:157] + "..."
-            if len(compact_description) > 160
-            else compact_description
-        )
-        # Keep the base Tool metadata contract complete. MCPTool builds its
-        # provider schema directly instead of calling Tool.__init__, so every
-        # newly introduced runtime metadata field needs an explicit default.
-        self.search_aliases: tuple[str, ...] = ()
         self.capabilities = _get_capabilities(mcp_tool) | frozenset(
             capability.strip().casefold()
             for capability in server_capabilities

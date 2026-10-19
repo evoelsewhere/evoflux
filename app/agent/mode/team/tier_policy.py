@@ -83,26 +83,11 @@ def denied_tools_for_tier(
     return denied
 
 
-def deferred_tools_for_run(tools: Iterable[Tool]) -> frozenset[str]:
-    """Resolve metadata-driven deferred names for one team-agent run.
-
-    Deferred tools remain hidden until the model activates them through
-    ``load_tool``. Hard exclusions are applied separately and still win after
-    this step.
-    """
-    tool_list = tuple(tools)
-    if not any(tool.name == "load_tool" for tool in tool_list):
-        return frozenset()
-    return frozenset(
-        tool.name for tool in tool_list if getattr(tool, "deferred", False)
-    )
-
-
 # ── WebBridge availability ────────────────────────────────────────────────
 # Where an agent browses is live state, never a session tag: browser_use runs
 # through WebBridge whenever it is ready (enabled, composer toggle on, an
 # extension connected) and in the in-app browser otherwise. While WebBridge is
-# not ready the webbridge tool is hidden, so load_tool cannot offer a backend
+# not ready the webbridge tool is hidden, so the model cannot pick a backend
 # that would only fail.
 WEBBRIDGE_OFF_DENIED_TOOLS: frozenset[str] = frozenset({"webbridge"})
 

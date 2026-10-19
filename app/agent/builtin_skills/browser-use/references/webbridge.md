@@ -80,8 +80,8 @@ it works in the in-app browser, where their logins are not available.
 
 ## The webbridge tool
 
-While WebBridge is ready, the `webbridge` tool is also offered (load it with
-`load_tool`). It drives the same browser with its own action names and adds
+While WebBridge is ready, the `webbridge` tool is also offered. It drives the
+same browser with its own action names and adds
 what `browser_use` does not cover:
 
 - `crawl`: many URLs at once in background tabs, with `extract_elements`

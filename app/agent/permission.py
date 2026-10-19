@@ -202,8 +202,6 @@ _SAFE_TOOLS: frozenset[str] = frozenset(
         "sleep",
         # background-task introspection (start stays gated through shell)
         "process",
-        # schema loading only; real execution stays permission-gated
-        "load_tool",
     }
 )
 

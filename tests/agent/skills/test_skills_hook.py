@@ -312,7 +312,6 @@ async def test_reading_a_plugin_skill_grants_its_mcp_tools(tmp_path):
     assert granted == []
     await hook.wrap_tool_call(_ctx(), state, _read("c2", str(skill.location)), handler)
     assert granted == ["install-1"]
-    assert state.metadata["activated_deferred_tools"] == {"mcp_plugin_tool"}
 
 
 def test_activated_skills_requires_a_complete_successful_read(tmp_path):

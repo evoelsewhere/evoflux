@@ -17,13 +17,12 @@ The built-in registry covers:
 - LSP, diagnostics, and code-review actions;
 - todos, notes, memory, goals, plans, scheduling and user questions;
 - worktrees and team delegation/message/handoff/rework/state;
-- deferred-tool loading;
 - visualization/widget output and multimodal reads.
 
-Each tool declares a JSON-like argument schema and an async handler. Deferred
-tools expose only compact catalogue metadata until selected. Tool execution
-passes through argument validation, observation policy, permission/sandbox
-checks, output bounding and streaming telemetry.
+Each tool declares a JSON-like argument schema and an async handler. Every tool
+granted to an agent is visible in its tool definitions from the start of a run.
+Tool execution passes through argument validation, observation policy,
+permission/sandbox checks, output bounding and streaming telemetry.
 
 ### ui_block — native structured UI
 
