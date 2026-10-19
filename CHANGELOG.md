@@ -4,7 +4,9 @@ All notable changes to EvoFlux are documented in this file.
 
 ## [Unreleased]
 
-No changes yet.
+### Fixed
+
+- Opening the built-in browser no longer fails with "Something went wrong" (React error #301).
 
 ## [3.0.10] - 2026-10-19
 
