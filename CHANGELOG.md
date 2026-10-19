@@ -4,6 +4,10 @@ All notable changes to EvoFlux are documented in this file.
 
 ## [Unreleased]
 
+No changes yet.
+
+## [3.0.10] - 2026-10-19
+
 ### Added
 
 - Settings → Agents now offers Simple / Visual response style, letting the assistant choose prose, native controls, or a richer artifact based on the task.
@@ -32,7 +36,7 @@ All notable changes to EvoFlux are documented in this file.
 ### Changed
 
 - Visual routing weighs task utility and temporal value instead of relying on prompt length or isolated keywords; matching visual skill guidance loads only when the active run has the required tool.
-- Bump EvoFlux package and desktop application versions to 3.0.9.
+- Bump EvoFlux package and desktop application versions to 3.0.10.
 - Coding agents read, search, list, and edit files with the built-in file tools (`read`, `grep`, `glob`, `ls`, `edit`, `write`, `patch`) and keep the **shell** for repository commands such as tests, linters, builds, and git. The built-in prompts and tool descriptions now say so, and the truncation notice on large files points to `grep` instead of shell text utilities.
 - The agent runtime no longer writes an internal tool-capability map into session state that nothing read; sessions run slightly leaner with no behavior change.
 - The desktop boot splash shows a real error instead of hanging forever when no backend is available; the dev tooling no longer requires `lsof` on Windows.
@@ -1287,6 +1291,7 @@ For the curated release overview, see
 [2.0.9]: https://github.com/evoelsewhere/evoflux/compare/v2.0.8...v2.0.9
 [3.0.0]: https://github.com/evoelsewhere/evoflux/compare/v2.0.9...v3.0.0
 [3.0.1]: https://github.com/evoelsewhere/evoflux/compare/v3.0.0...v3.0.1
+[3.0.10]: https://github.com/evoelsewhere/evoflux/compare/v3.0.9...v3.0.10
 [3.0.2]: https://github.com/evoelsewhere/evoflux/compare/v3.0.1...v3.0.2
 [2.0.8]: https://github.com/evoelsewhere/evoflux/compare/v2.0.7...v2.0.8
 [2.0.7]: https://github.com/evoelsewhere/evoflux/compare/v2.0.6...v2.0.7
