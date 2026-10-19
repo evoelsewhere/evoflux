@@ -367,8 +367,22 @@ class TrackedProcess:
                 await asyncio.wait_for(self.proc.wait(), timeout=5)
             except asyncio.TimeoutError:
                 await _kill_process_group(self.proc, _FORCE_KILL)
-                await self.proc.wait()
-        await self._reader_task
+                try:
+                    await asyncio.wait_for(self.proc.wait(), timeout=5)
+                except asyncio.TimeoutError:
+                    logger.error(
+                        "command_process_terminate_kill_failed process_id={} pid={}",
+                        self.process_id,
+                        self.proc.pid,
+                    )
+        try:
+            await asyncio.wait_for(self._reader_task, timeout=5)
+        except asyncio.TimeoutError:
+            self._reader_task.cancel()
+            try:
+                await self._reader_task
+            except asyncio.CancelledError:
+                pass
         await self._cancel_timeout_task()
 
     def read_output(self, *, last_n: int | None = None) -> str:

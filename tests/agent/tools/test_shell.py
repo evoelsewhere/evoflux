@@ -637,16 +637,19 @@ async def test_shell_permission_error_reraises(sandbox):
 
 def test_kill_process_group_handles_missing_pid():
     """_kill_process_group does not raise when pid is None."""
+    import asyncio
+
     from app.agent.tools.builtin.shell import _kill_process_group
 
     mock_proc = MagicMock()
     mock_proc.pid = None
-    _kill_process_group(mock_proc, signal.SIGTERM)
+    asyncio.run(_kill_process_group(mock_proc, signal.SIGTERM))
 
 
 @_posix_only
 def test_kill_process_group_falls_back_to_direct_signal():
     """When os.killpg fails, falls back to proc.send_signal."""
+    import asyncio
     import os as _os
 
     from app.agent.tools.builtin.shell import _kill_process_group
@@ -655,7 +658,7 @@ def test_kill_process_group_falls_back_to_direct_signal():
     mock_proc.pid = 12345
 
     with patch.object(_os, "getpgid", side_effect=ProcessLookupError):
-        _kill_process_group(mock_proc, signal.SIGTERM)
+        asyncio.run(_kill_process_group(mock_proc, signal.SIGTERM))
 
     mock_proc.send_signal.assert_called_once_with(signal.SIGTERM)
 
