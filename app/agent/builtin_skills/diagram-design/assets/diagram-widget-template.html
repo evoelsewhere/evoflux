@@ -1,0 +1,35 @@
+<style>
+.dd-diagram { color: var(--color-text); background: var(--bg-page); border: 1px solid var(--color-border); padding: 16px; font: 400 14px/1.45 var(--font-sans, system-ui, sans-serif); }
+.dd-diagram__eyebrow { margin: 0 0 4px; color: var(--color-text-muted); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; }
+.dd-diagram__title { margin: 0 0 12px; font-size: 18px; font-weight: 500; }
+.dd-diagram__scroll { width: 100%; overflow-x: auto; }
+.dd-diagram svg { display: block; width: 100%; min-width: 800px; height: auto; }
+.dd-diagram .node-label { fill: var(--color-text); font: 500 14px var(--font-sans, system-ui, sans-serif); }
+.dd-diagram .node-detail, .dd-diagram .edge-label { fill: var(--color-text-2); font: 400 11px var(--font-sans, system-ui, sans-serif); }
+.dd-diagram .node { fill: var(--bg-card); stroke: var(--color-border); stroke-width: 1; }
+.dd-diagram .node--focus { fill: var(--color-accent-soft); stroke: var(--color-accent); }
+.dd-diagram .edge { fill: none; stroke: var(--color-text-muted); stroke-width: 1.5; }
+.dd-diagram .edge--focus { stroke: var(--color-accent); stroke-width: 2; }
+</style>
+<section class="dd-diagram" aria-label="Diagram: [short subject]">
+  <p class="dd-diagram__eyebrow">[System area]</p>
+  <h2 class="dd-diagram__title">[Diagram title]</h2>
+  <div class="dd-diagram__scroll">
+    <svg viewBox="0 0 800 360" role="img" aria-labelledby="[diagram-slug]-title [diagram-slug]-desc" xmlns="http://www.w3.org/2000/svg">
+      <title id="[diagram-slug]-title">[Short diagram title]</title>
+      <desc id="[diagram-slug]-desc">[One sentence describing the components and relationship shown.]</desc>
+      <defs>
+        <marker id="[diagram-slug]-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+          <path d="M0 0 L8 4 L0 8 Z" fill="var(--color-text-muted)"/>
+        </marker>
+      </defs>
+      <path class="edge" d="M220 112 H340 V248 H460" marker-end="url(#[diagram-slug]-arrow)"/>
+      <rect class="node" x="40" y="72" width="180" height="80" rx="6"/>
+      <text class="node-label" x="130" y="106" text-anchor="middle">[Component A]</text>
+      <text class="node-detail" x="130" y="128" text-anchor="middle">[Role or boundary]</text>
+      <rect class="node node--focus" x="460" y="208" width="220" height="80" rx="6"/>
+      <text class="node-label" x="570" y="242" text-anchor="middle">[Component B]</text>
+      <text class="node-detail" x="570" y="264" text-anchor="middle">[Verified relationship]</text>
+    </svg>
+  </div>
+</section>
