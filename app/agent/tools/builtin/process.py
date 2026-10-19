@@ -42,6 +42,13 @@ def command_process_scope(session_id: str | None, workspace: Path) -> str:
     return f"session:{session_id}" if session_id else f"workspace:{workspace.resolve()}"
 
 
+def _taskkill_path() -> str:
+    """Resolve taskkill from System32 so a PATH entry cannot shadow it."""
+
+    root = os.environ.get("SystemRoot")
+    return str(Path(root) / "System32" / "taskkill.exe") if root else "taskkill.exe"
+
+
 async def _kill_process_group(proc: asyncio.subprocess.Process, sig: int) -> None:
     """Signal a spawned command's process group, falling back to the process."""
 
@@ -51,27 +58,34 @@ async def _kill_process_group(proc: asyncio.subprocess.Process, sig: int) -> Non
     if os.name == "nt":
         killer: asyncio.subprocess.Process | None = None
         try:
-            killer = await asyncio.create_subprocess_exec(
-                "taskkill.exe",
-                "/PID",
-                str(pid),
-                "/T",
-                "/F",
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                creationflags=subprocess.CREATE_NO_WINDOW,
-            )
-            await asyncio.wait_for(killer.wait(), timeout=5)
-        except (OSError, asyncio.TimeoutError):
-            if killer is not None and killer.returncode is None:
-                killer.kill()
-                await killer.wait()
-        if proc.returncode is None:
             try:
-                proc.kill()
-            except (ProcessLookupError, OSError):
-                pass
+                killer = await asyncio.create_subprocess_exec(
+                    _taskkill_path(),
+                    "/PID",
+                    str(pid),
+                    "/T",
+                    "/F",
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    creationflags=subprocess.CREATE_NO_WINDOW,
+                )
+                await asyncio.wait_for(killer.wait(), timeout=5)
+            except (OSError, asyncio.TimeoutError):
+                if killer is not None and killer.returncode is None:
+                    try:
+                        killer.kill()
+                    except (ProcessLookupError, OSError):
+                        pass
+                    await killer.wait()
+        finally:
+            # Also reached when the caller is cancelled mid-taskkill, so the
+            # command is never left running.
+            if proc.returncode is None:
+                try:
+                    proc.kill()
+                except (ProcessLookupError, OSError):
+                    pass
         return
     try:
         os.killpg(os.getpgid(pid), sig)

@@ -94,3 +94,41 @@ def test_supervisor_maps_interrupt_to_130(tmp_path: Path) -> None:
         assert run_dev.supervise([service]) == 130
     finally:
         thread.join(timeout=1)
+
+
+def test_listening_pids_ignores_the_localized_state_column(monkeypatch) -> None:
+    netstat = (
+        "  Proto  Local Address          Foreign Address        State           PID\n"
+        "  TCP    0.0.0.0:8000           0.0.0.0:0              ABHÖREN         111\n"
+        "  TCP    [::]:8000              [::]:0                 ABHÖREN         222\n"
+        "  TCP    127.0.0.1:8000         127.0.0.1:51000        HERGESTELLT     333\n"
+        "  TCP    0.0.0.0:9000           0.0.0.0:0              ABHÖREN         444\n"
+    )
+
+    class _Result:
+        returncode = 0
+        stdout = netstat
+        stderr = ""
+
+    monkeypatch.setattr(run_dev.sys, "platform", "win32")
+    monkeypatch.setattr(run_dev.subprocess, "run", lambda *a, **k: _Result())
+    assert run_dev.listening_pids(8000) == [111, 222]
+
+
+def test_windows_stop_kills_the_whole_tree(monkeypatch) -> None:
+    calls: list[list[str]] = []
+
+    class _Proc:
+        pid = 4242
+
+        def poll(self):
+            return None
+
+        def terminate(self):  # pragma: no cover - must not be used
+            raise AssertionError("terminate() only reaches the direct child")
+
+    monkeypatch.setattr(run_dev.sys, "platform", "win32")
+    monkeypatch.setattr(run_dev.subprocess, "run", lambda cmd, **k: calls.append(cmd))
+    run_dev.signal_process_group(_Proc(), signal.SIGTERM)
+    run_dev.signal_process_group(_Proc(), getattr(signal, "SIGKILL", signal.SIGTERM))
+    assert calls and all("/T" in call and "4242" in call for call in calls)
