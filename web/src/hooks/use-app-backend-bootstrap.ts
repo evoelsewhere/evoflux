@@ -82,10 +82,9 @@ export function useAppBackendBootstrap(): AppBackendBootstrap {
         if (status.startup) applyStatus(status.startup)
         if (!status.base_url) {
           // No backend is registered yet (sidecar still launching, or none
-          // configured). A terminal startup status means waiting is pointless —
-          // surface the error instead of polling silently until the boot
-          // timeout fires.
-          if (status.startup?.fatal || status.startup?.phase === 'error') finish()
+          // configured). The startup status applied above is what the splash
+          // shows, including its error and Retry; finishing here would mount
+          // the app with no backend URL instead.
           return
         }
         applyBackend(status.base_url, status.token)
