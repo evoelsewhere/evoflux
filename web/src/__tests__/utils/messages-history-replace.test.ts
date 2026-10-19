@@ -46,3 +46,34 @@ describe('ui_block history reconstruction (real demo payload)', () => {
     expect((group?.uiBlocks ?? []).map((n) => n.type)).toEqual(['layout'])
   })
 })
+
+describe('ui_block replace-seeded group', () => {
+  const call = (id: string, args: Record<string, unknown>, order: number): MessageResponse =>
+    ({
+      id: `m${order}`,
+      role: 'assistant',
+      content: '',
+      created_at: '2026-01-01T00:00:00Z',
+      tool_calls: [{ id, type: 'function', function: { name: 'ui_block', arguments: JSON.stringify(args) } }],
+    }) as unknown as MessageResponse
+  const text = (blocks: unknown) => JSON.stringify(blocks)
+  const node = (label: string) => [{ type: 'text', text: label }]
+
+  it('keeps the replace over the one late original, then lets a later upsert win', () => {
+    const group = parseTeamBlocks([
+      call('c-replace', { replace_id: 'g', blocks: node('REPLACED') }, 1),
+      call('c-original', { block_id: 'g', blocks: node('ORIGINAL') }, 2),
+      call('c-restart', { block_id: 'g', blocks: node('RESTARTED') }, 3),
+    ]).find((b) => b.type === 'ui_block')
+    expect(text(group?.uiBlocks)).toContain('RESTARTED')
+  })
+
+  it('ignores only the late original', () => {
+    const group = parseTeamBlocks([
+      call('c-replace', { replace_id: 'g', blocks: node('REPLACED') }, 1),
+      call('c-original', { block_id: 'g', blocks: node('ORIGINAL') }, 2),
+    ]).find((b) => b.type === 'ui_block')
+    expect(text(group?.uiBlocks)).toContain('REPLACED')
+    expect(text(group?.uiBlocks)).not.toContain('ORIGINAL')
+  })
+})

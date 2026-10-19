@@ -301,10 +301,13 @@ function assistantBlocks(
         // group, so the create re-finding it here is the ORIGINAL arriving
         // late — letting it overwrite would clobber the replace's content and
         // render stale blocks with the replace's tool result. Keep the
-        // seeded content; a replace or a later block_id upsert (unseeded
-        // group) still replaces wholesale (§1.4 rule 3).
+        // seeded content for that ONE late create, then drop the flag: a
+        // replace, or any block_id upsert after it, replaces wholesale
+        // (§1.4 rule 3).
         const seededByReplace = target.extra?.ui_block_replace_seeded === true
-        if (!(replaceId === undefined && seededByReplace)) {
+        if (replaceId === undefined && seededByReplace) {
+          target.extra = undefined
+        } else {
           target.uiBlocks = parsedArgs.blocks
         }
         const laterTitle = typeof parsedArgs.title === 'string' ? parsedArgs.title : undefined
