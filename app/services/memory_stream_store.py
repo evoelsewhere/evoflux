@@ -49,6 +49,9 @@ _NON_REPLAYABLE_EVENT_TYPES = frozenset(
         "summarization_content",
         # Reconnect must not repeat an operating-system side effect.
         "desktop_notification",
+        # Per-turn composer hint: replaying it would re-offer a stale
+        # next message after a reconnect.
+        "next_message_suggestion",
     }
 )
 _GATE_REPLY_TO_REQUEST = {
