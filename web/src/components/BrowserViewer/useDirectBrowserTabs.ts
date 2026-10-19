@@ -474,7 +474,7 @@ export function useDirectBrowserTabs({
       : committed
   ), [])
 
-  activeIdRef.current = activeTabId
+  shownTabRef.current = activeTabId
   visibleRef.current = visible
   registryActiveRef.current = bridgeEnabled
   registryActivateRef.current = onActivate
