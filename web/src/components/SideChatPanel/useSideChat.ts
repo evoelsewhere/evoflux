@@ -47,6 +47,12 @@ import type { ContentBlock, MessageResponse } from '@/api/types'
 
 export type SideChatSendResult = 'sent' | 'failed' | 'stale'
 
+/** Agent-proposed next message for the side composer's ghost text. */
+interface SideChatSuggestion {
+  message: string
+  reason: string
+}
+
 interface UseSideChatReturn {
   /** Finalized blocks from the persisted history. */
   blocks: ContentBlock[]
@@ -57,6 +63,10 @@ interface UseSideChatReturn {
   sideChatId: string | null
   sendMessage: (content: string) => Promise<SideChatSendResult>
   stopGeneration: () => Promise<void>
+  /** Ghost-text suggestion for the composer, published at turn ``done``. */
+  nextMessageSuggestion: SideChatSuggestion | null
+  /** Dismiss the current suggestion (Esc). */
+  clearNextMessageSuggestion: () => void
   /** Lazily create the side chat session (opens history + stream). */
   openSideChat: () => void
 }
@@ -69,8 +79,10 @@ export function useSideChat(mainSessionId: string | null): UseSideChatReturn {
   } | null>(null)
   const [isWorking, setIsWorking] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [nextMessageSuggestion, setNextMessageSuggestion] = useState<SideChatSuggestion | null>(null)
   const [currentBlocks, setCurrentBlocks] = useState<ContentBlock[]>([])
   const activeMainSessionRef = useRef(mainSessionId)
+  const pendingSuggestionRef = useRef<SideChatSuggestion | null>(null)
   const sideChatIdsRef = useRef(new Map<string, string>())
   const creatingRef = useRef(new Map<string, Promise<string | null>>())
   const streamAbortRef = useRef<AbortController | null>(null)
@@ -87,6 +99,8 @@ export function useSideChat(mainSessionId: string | null): UseSideChatReturn {
     setIsWorking(false)
     setError(null)
     setCurrentBlocks([])
+    setNextMessageSuggestion(null)
+    pendingSuggestionRef.current = null
   }, [mainSessionId])
 
   // Create side chat session (lazily, deduplicated across concurrent callers)
@@ -220,9 +234,25 @@ export function useSideChat(mainSessionId: string | null): UseSideChatReturn {
             )
             break
           }
+          case 'next_message_suggestion': {
+            const message = typeof d.message === 'string' ? d.message : ''
+            if (message.trim().length > 0) {
+              // Mid-turn: keep pending until ``done`` promotes it (same
+              // two-slot handoff as the main chat's sse-reducer).
+              pendingSuggestionRef.current = {
+                message,
+                reason: typeof d.reason === 'string' ? d.reason : '',
+              }
+            }
+            break
+          }
           case 'done':
             // Finalize: history refetch replaces the live tail with the
             // persisted blocks.
+            // Promote the mid-turn suggestion, or clear a stale one when
+            // this turn produced none.
+            setNextMessageSuggestion(pendingSuggestionRef.current)
+            pendingSuggestionRef.current = null
             setIsWorking(false)
             setCurrentBlocks([])
             void queryClient.invalidateQueries({ queryKey: ['sideChatMessages', sideId] })
@@ -275,6 +305,9 @@ export function useSideChat(mainSessionId: string | null): UseSideChatReturn {
   const sendMessage = useCallback(
     async (content: string) => {
       if (!mainSessionId || !content.trim()) return 'failed'
+      // Sending anything consumes the ghost-text suggestion.
+      setNextMessageSuggestion(null)
+      pendingSuggestionRef.current = null
       const sendMainSessionId = mainSessionId
 
       const currentSideChatId = await ensureSideChat()
@@ -354,6 +387,11 @@ export function useSideChat(mainSessionId: string | null): UseSideChatReturn {
     }
   }, [mainSessionId, sideChatId, queryClient])
 
+  const clearNextMessageSuggestion = useCallback(() => {
+    setNextMessageSuggestion(null)
+    pendingSuggestionRef.current = null
+  }, [])
+
   const openSideChat = useCallback(() => {
     void ensureSideChat()
   }, [ensureSideChat])
@@ -366,6 +404,8 @@ export function useSideChat(mainSessionId: string | null): UseSideChatReturn {
     sideChatId,
     sendMessage,
     stopGeneration,
+    nextMessageSuggestion,
+    clearNextMessageSuggestion,
     openSideChat,
   }
 }

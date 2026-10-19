@@ -1060,6 +1060,20 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
         break
       }
 
+      case 'next_message_suggestion': {
+        const message = d.message as string | undefined
+        if (typeof message === 'string' && message.trim().length > 0) {
+          const reason = typeof d.reason === 'string' ? d.reason : ''
+          set((draft) => {
+            // The tool fires mid-turn, so this event lands before ``done``:
+            // keep it pending and let ``done`` publish it. Last write wins
+            // if the turn suggests more than once.
+            draft._pendingNextMessageSuggestion = { message, reason }
+          })
+        }
+        break
+      }
+
       case 'desktop_notification': {
         const kind = d.kind as string
         if (kind !== 'assistant_done' && kind !== 'background_done' && kind !== 'reminder_fired') break
@@ -1126,6 +1140,11 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
 
       case 'done': {
         set((draft) => {
+          // Promote the mid-turn suggestion, or clear a stale one when this
+          // turn produced none, so only the finished turn's suggestion
+          // survives the teardown below.
+          draft.nextMessageSuggestion = draft._pendingNextMessageSuggestion
+          draft._pendingNextMessageSuggestion = null
           draft.isTeamWorking = false
           draft.isContinuing = false
           // Safety net: live question_replied / permission_replied normally
