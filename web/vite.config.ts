@@ -10,11 +10,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
-      // decimal.js-light's package.json prefers its CJS build for browsers
-      // ("browser": "decimal.js" beats "module": "decimal.mjs"), and its UMD
-      // wrapper resolves to an exports object without a constructor under
-      // Vite 8's dep pre-bundling — Recharts then crashes with
-      // "import_decimal.default is not a constructor". Pin the ESM build.
+      // Recharts needs decimal.js-light's ESM build under Vite 8.
       "decimal.js-light": path.resolve(
         __dirname,
         "./node_modules/decimal.js-light/decimal.mjs",
