@@ -265,7 +265,6 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'mailbox',
       'Ctrl+V',
       'context budget',
-      'auto-split',
       'đội',
       'Lead',
       'specialist'
@@ -275,7 +274,6 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
     tricks: [
       'Ctrl+V xoay Agent ↔ Split trên desktop (tắt khi field đang focus dùng paste).',
       'Command palette có Next / Previous Agent khi worker đang chạy — nhanh hơn lục identity dropdown.',
-      'Auto-split có thể mở khi specialist activate để bạn theo dõi mà không tìm view menu.',
       'Context budget bar trên workbench dùng context_length và summary_trigger_tokens của model — /compact sớm nếu thanh leo.',
       'Cấu hình model, skill, tool, permission từng agent trong Settings → Agents.',
       'Dùng Lead selector trên topbar để chọn Work hoặc Coding lead cho session đang idle. Mỗi option chỉ liệt kê member thuộc lead đó; không thể switch khi team đang chạy.',
@@ -295,11 +293,11 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'View: Agent (focus một agent) và Split (Lead + worker cạnh nhau). Dùng identity dropdown trên workbench để nhảy agent, hoặc palette Next/Previous Agent. Ctrl+V toggle Agent ↔ Split trên desktop. Bật auto-split thì khi specialist activate có thể tự mở Split.',
+        text: 'View: Agent (focus một agent) và Split (Lead + worker cạnh nhau). Dùng identity dropdown trên workbench để nhảy agent, hoặc palette Next/Previous Agent. Ctrl+V toggle Agent ↔ Split trên desktop.',
       },
       {
         type: 'p',
-        text: 'Context budget — thanh gần header workbench phản ánh token so với context window của model đang dùng. Gần summary trigger thì /compact hoặc chat mới, đừng chờ hard failure. Áp lực budget thường hiện như “agent quên file trước đó” trước khi hiện lỗi rõ.',
+        text: 'Context budget — thanh gần header workbench phản ánh token so với context window của model đang dùng. Popover tách prompt đang sống khỏi các model call được tính của turn — mỗi call gửi lại prompt — và gọi tên các call nền (title, memory, summary) được tính vào turn nhưng không thuộc cuộc hội thoại. Gần summary trigger thì /compact hoặc chat mới, đừng chờ hard failure. Áp lực budget thường hiện như “agent quên file trước đó” trước khi hiện lỗi rõ.',
       },
       {
         type: 'tips',
@@ -1491,6 +1489,9 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'Built-in: bật trong Settings → Browser, rồi Ctrl+T. WebBridge: cài extension từ Chrome Web Store (Edge cài từ cùng trang đó), bật master policy trong Settings → Browser, pair từ desktop status control, và để WebBridge bật trên workbench bar.',
     tricks: [
       'Ctrl+T toggle built-in browser workbench — không phải WebBridge pairing.',
+      'Xem trước trình duyệt nổi và bảng trình duyệt là MỘT trình duyệt cho mỗi chat: hai bên dùng chung tab và trang. Mở bảng sẽ hiện đúng các trang đang mở trong khung xem trước (không mở trang trống), và đóng bảng sẽ đưa khung xem trước trở lại khi vẫn còn trang đang mở.',
+      'Bảng liệt kê các tab dùng chung phía trên trang: bấm vào tab để chuyển trang đang xem, đóng trang bằng nút đóng trên tab đó.',
+      'Tác vụ có thể mở trình duyệt trong ứng dụng ngay cả khi chat chạy ở chế độ nền — không cần mở chat lên màn hình trước. Nếu EvoFlux Desktop không chạy, agent sẽ báo "EvoFlux in-app browser could not open for this session".',
       'Khi WebBridge bật và extension đã kết nối, mọi thao tác trình duyệt của agent chạy trên trình duyệt thật của bạn; không thì chạy trong browser trong app. Công tắc được lưu lại, không theo từng chat, và bật/tắt giữa chừng sẽ áp dụng ngay từ thao tác trình duyệt kế tiếp.',
       'Trên trình duyệt của bạn, mỗi chat làm việc trong một tab riêng: agent mở tab mới thay vì ghi đè trang bạn đang mở, và vẫn làm tiếp ở tab đó khi bạn chuyển sang tab khác.',
       'Skill tích hợp browser-use hướng dẫn agent trên mọi trang: kiểm tra từng bước bằng cách đọc lại trang, không bao giờ nhập mật khẩu hay mã một lần, và hỏi trước khi gửi, mua, đăng hoặc xóa. Có thể tắt trong Settings → Skills.',

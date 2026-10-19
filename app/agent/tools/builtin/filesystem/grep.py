@@ -34,6 +34,7 @@ from app.agent.tools.builtin.filesystem._ignore import (
     is_gitignored,
     load_gitignore_rules,
 )
+from app.agent.tools.builtin.filesystem._search_root import validate_search_root
 from app.agent.tools.registry import Tool
 
 OutputMode = Literal["content", "files_with_matches", "count"]
@@ -706,9 +707,7 @@ async def _grep_files(
 ) -> str:
     """Search file contents by regex. Returns 'file:line: content'."""
     sandbox = get_sandbox()
-    resolved = sandbox.validate_path(directory)
-    if not resolved.is_dir():
-        raise NotADirectoryError(f"Not a directory: {sandbox.display_path(resolved)}")
+    resolved = validate_search_root(sandbox, directory, tool_name="grep")
 
     # Me reject patterns that are too long — prevents crafted ReDoS payloads
     if len(pattern) > _MAX_PATTERN_LEN:
@@ -804,7 +803,8 @@ grep_files = Tool(
         "paths, newest first — start there to locate code; 'count' returns "
         "matching lines per file plus a total. Filter with include (filename "
         "glob) or type (e.g. 'py'). A partial page ends with a notice giving "
-        "the offset for the next page."
+        "the offset for the next page. Preferred over shell grep or rg for "
+        "searching file contents."
     ),
     concurrency_safe=True,
     read_only=True,

@@ -4,13 +4,26 @@ import { withTokenParam } from '@/api/auth'
 export interface DirectBrowserSurfaceTab {
   url: string
   title?: string
+  /** The page of this session's browser the user is looking at. */
+  active?: boolean
 }
 
 export interface DirectBrowserSurfaceRegistration {
+  /**
+   * One surface per chat session — `'session'` — so the agent sees the
+   * shared tab list the PiP and the panel both show, not one entry per
+   * open view.
+   */
   instanceId: string
   order: number
   isActive: () => boolean
   getTab: () => DirectBrowserSurfaceTab | null
+  /** Every page of this session's browser, in tab order. */
+  getTabs: () => DirectBrowserSurfaceTab[]
+  /** Bring one of `getTabs()`'s pages to the front. */
+  selectTab: (index: number) => Promise<void> | void
+  /** Close one of `getTabs()`'s pages. */
+  closeTab: (index: number) => Promise<void> | void
   /**
    * Why this surface has no tab, in a form worth showing the agent.
    *
@@ -28,6 +41,8 @@ export interface DirectBrowserSurfaceRegistration {
 interface BrowserSessionRegistry {
   sessionId: string
   surfaces: Map<string, DirectBrowserSurfaceRegistration>
+  /** Live registrations per surface key — one surface per session. */
+  refCounts: Map<string, number>
   listeners: Set<(connected: boolean) => void>
   socket: WebSocket | null
   reconnectTimer: ReturnType<typeof setTimeout> | null
@@ -89,18 +104,36 @@ export function registerDirectBrowserSurface(
   onConnectionChange: (connected: boolean) => void,
 ): () => void {
   const registry = getOrCreateRegistry(sessionId)
-  registry.surfaces.set(surface.instanceId, surface)
+  // One surface per session: every view of the session's browser registers
+  // the same session surface against the shared tab list, so the agent
+  // never sees a page once per open view. Later registrations stand in for
+  // earlier ones — their handlers all read the same shared state.
+  const key = surface.instanceId
+  registry.refCounts.set(key, (registry.refCounts.get(key) ?? 0) + 1)
+  registry.surfaces.set(key, surface)
   registry.listeners.add(onConnectionChange)
   onConnectionChange(registry.connected)
   connectRegistry(registry)
 
   return () => {
     registry.listeners.delete(onConnectionChange)
-    if (registry.surfaces.get(surface.instanceId) === surface) {
-      registry.surfaces.delete(surface.instanceId)
+    const remaining = (registry.refCounts.get(key) ?? 1) - 1
+    registry.refCounts.set(key, remaining)
+    if (remaining <= 0) {
+      registry.refCounts.delete(key)
+      if (registry.surfaces.get(key) === surface) {
+        registry.surfaces.delete(key)
+      }
     }
     if (registry.surfaces.size === 0) disposeRegistry(registry)
   }
+}
+
+/** The surfaces registered for a session — one per session by design. */
+export function directBrowserSessionSurfaces(
+  sessionId: string,
+): DirectBrowserSurfaceRegistration[] {
+  return [...(registries.get(sessionId)?.surfaces.values() ?? [])]
 }
 
 export async function runDirectBrowserSessionCommand(
@@ -109,31 +142,36 @@ export async function runDirectBrowserSessionCommand(
   params: Record<string, unknown>,
 ): Promise<unknown> {
   const available = surfaces
-    .filter((surface) => surface.getTab() !== null)
+    .filter((surface) => surface.getTabs().length > 0)
     .sort((left, right) => left.order - right.order)
   const selected = available.find((surface) => surface.isActive())
   const active = selected ?? available[0]
+  // One surface per session, so its tab list is the session's pages — the
+  // same list the PiP cards and the panel both show.
+  const tabs = active?.getTabs() ?? []
+  const activeIndex = Math.max(
+    0,
+    tabs.findIndex((tab) => tab.active),
+  )
 
   if (action === 'get_tabs') {
-    return available.length
-      ? available.map((surface, index) => {
-          const tab = surface.getTab()
-          return `[${index}]${surface === active ? '*' : ''} ${tab?.url ?? ''}`
+    return tabs.length
+      ? tabs.map((tab, index) => {
+          return `[${index}]${index === activeIndex ? '*' : ''} ${tab.url}`
         }).join('\n')
       : 'No tabs open.'
   }
   if (action === 'switch_tab' || action === 'close_tab') {
     const index = Number(params.index)
-    const target = available[index]
-    if (!target) throw new Error(`Invalid tab index ${params.index}`)
-    const tab = target.getTab()
+    const tab = tabs[index]
+    if (!active || !tab) throw new Error(`Invalid tab index ${params.index}`)
     if (action === 'switch_tab') {
-      await target.activate()
-      return `Switched to tab ${index}: ${tab?.url ?? ''}`
+      await active.selectTab(index)
+      return `Switched to tab ${index}: ${tab.url}`
     }
-    await target.execute('stop', {})
-    target.close()
-    return `Closed tab ${index}: ${tab?.url ?? ''}`
+    await active.execute('stop', {})
+    await active.closeTab(index)
+    return `Closed tab ${index}: ${tab.url}`
   }
   if (!active) {
     const reasons = [...new Set(surfaces.map((surface) => surface.unavailableReason()))]
@@ -148,11 +186,11 @@ export async function runDirectBrowserSessionCommand(
     const status = await active.execute(action, params)
     return {
       ...(status && typeof status === 'object' ? status : {}),
-      tabs: available.map((surface, index) => ({
+      tabs: tabs.map((tab, index) => ({
         index,
-        url: surface.getTab()?.url ?? '',
-        title: surface.getTab()?.title ?? '',
-        active: surface === active,
+        url: tab.url,
+        title: tab.title ?? '',
+        active: index === activeIndex,
       })),
     }
   }
@@ -171,6 +209,7 @@ function getOrCreateRegistry(sessionId: string): BrowserSessionRegistry {
   const registry: BrowserSessionRegistry = {
     sessionId,
     surfaces: new Map(),
+    refCounts: new Map(),
     listeners: new Set(),
     socket: null,
     reconnectTimer: null,

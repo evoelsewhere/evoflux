@@ -35,7 +35,6 @@ import {
 import { HelpCircle, Search, Settings } from 'lucide-react'
 import { usePlatform } from '@/hooks/use-platform'
 import { useNativeSidebarGlass } from '@/hooks/use-native-sidebar-glass'
-import { DURATIONS, useMotionPreset } from '@/lib/motion'
 import { SIDEBAR_WIDTH, useUIStore } from '@/stores/useUIStore'
 import { ThemeToggle } from '@/components/ThemeToggle'
 import { HealthDot } from '@/components/HealthDot'
@@ -61,7 +60,6 @@ export function SidebarShell({
   const { isTauri, os } = usePlatform()
   const isDesktopShell = isTauri && os !== 'ios' && os !== 'android'
   useNativeSidebarGlass()
-  const motionPreset = useMotionPreset()
   const sidebarWidth = useUIStore((state) => state.sidebarWidth)
   const setSidebarResizing = useUIStore((state) => state.setSidebarResizing)
   const setSidebarWidth = useUIStore((state) => state.setSidebarWidth)
@@ -92,12 +90,8 @@ export function SidebarShell({
     const toggle = document.querySelector<HTMLElement>(
       '[data-sidebar-toggle-follower]',
     )
-    const shellTransition = shell.style.transition
-    const navigationTransition = navigation?.style.transition ?? ''
-    const toggleTransition = toggle?.style.transition ?? ''
     const startX = event.clientX
-    // Read the rendered width so grabbing the handle also cancels an
-    // in-flight expand animation at its current position.
+    // Start resizing from the rendered width to avoid a visible jump.
     const startWidth = Math.min(
       SIDEBAR_WIDTH.max,
       Math.max(SIDEBAR_WIDTH.min, shell.getBoundingClientRect().width),
@@ -112,12 +106,7 @@ export function SidebarShell({
       if (toggle) toggle.style.left = `${width + 4}px`
     }
 
-    // CSS owns the collapse/expand transition, but pointer movement must be
-    // direct. Pin the currently rendered size before disabling transitions
-    // so an unfinished expand cannot keep tweening underneath the drag.
-    shell.style.transition = 'none'
-    if (navigation) navigation.style.transition = 'none'
-    if (toggle) toggle.style.transition = 'none'
+    // Pin the measured width so dragging starts from the current rendered size.
     applyLiveWidth(startWidth)
     setSidebarResizing(true)
 
@@ -152,11 +141,6 @@ export function SidebarShell({
       if (useUIStore.getState().sidebarCollapsed) {
         applyLiveWidth(0)
       }
-      window.requestAnimationFrame(() => {
-        shell.style.transition = shellTransition
-        if (navigation) navigation.style.transition = navigationTransition
-        if (toggle) toggle.style.transition = toggleTransition
-      })
     }
     const handleUp = () => finish(true)
 
@@ -169,7 +153,6 @@ export function SidebarShell({
   }, [collapsed, setSidebarResizing, setSidebarWidth])
 
   const width = collapsed ? 0 : sidebarWidth
-  const transitionDuration = DURATIONS.base * motionPreset.scale
 
   return (
     <aside
@@ -180,10 +163,7 @@ export function SidebarShell({
       style={{
         width,
         minWidth: width,
-        transition: [
-          `width ${transitionDuration}ms var(--ease-out)`,
-          `min-width ${transitionDuration}ms var(--ease-out)`,
-        ].join(', '),
+
       }}
     >
       {!collapsed && (

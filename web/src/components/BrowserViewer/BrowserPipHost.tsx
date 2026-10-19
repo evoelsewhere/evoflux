@@ -48,6 +48,7 @@ import {
   savePreviewPlacement,
   type PreviewPlacement,
 } from './browserPreviewPlacement'
+import { disposeDirectBrowserSessionIfUnused } from './directBrowserSessionStore'
 import { isBrowserNewTab, useDirectBrowserTabs } from './useDirectBrowserTabs'
 
 interface BrowserPipHostProps {
@@ -71,6 +72,12 @@ export function BrowserPipHost({ sessionId, stackDepth, stackOrder }: BrowserPip
     () => closePipForSession(sessionId),
     [closePipForSession, sessionId],
   )
+  // Dismissing the preview is the one user action that may end the
+  // session's browser — and only while no panel is still showing it.
+  const dismissPip = useCallback(() => {
+    disposeDirectBrowserSessionIfUnused(sessionId)
+    closePip()
+  }, [closePip, sessionId])
   // A new tab every time, not the last browser tab reused: the pages this
   // opens are a popup and a handed-over page, and both are specific pages
   // that would be silently dropped by activating a tab already showing
@@ -87,6 +94,7 @@ export function BrowserPipHost({ sessionId, stackDepth, stackOrder }: BrowserPip
   const browser = useDirectBrowserTabs({
     sessionId,
     instanceId: 'preview',
+    surface: 'pip',
     viewportRef,
     enabled: preferences.enabled,
     // A hidden page is how the card says anything: an overlay is DOM, and
@@ -140,25 +148,16 @@ export function BrowserPipHost({ sessionId, stackDepth, stackOrder }: BrowserPip
   if ((overlay !== null) !== pageHidden) setPageHidden(overlay !== null)
 
   /**
-   * Move this page into the workbench — the page, not its address. The
-   * panel tab is created with an id chosen here so the WebView being let go
-   * of can be offered to that tab and no other; the panel then adopts it
-   * instead of loading the same URL into a WebView of its own, which is
-   * what used to happen and what cost the page everything it had.
+   * Dock: hand the view to the workbench panel. The preview and the panel
+   * are two views onto the same session browser — its pages and WebViews
+   * stay exactly where they are, and the panel adopts them — so this is
+   * hiding the preview, not moving a page out of it. No page is reloaded,
+   * recreated or lost.
    */
   const openInPanel = useCallback(() => {
-    const claimant = `browser-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
-    const moved = browser.activeTabId
-      ? browser.releaseTab(browser.activeTabId, claimant)
-      : false
-    createWorkbenchTab('browser', {
-      id: claimant,
-      // Only a fallback: an adopted page is already showing this.
-      initialUrl: url || undefined,
-      title: moved ? undefined : 'New tab',
-    })
+    createWorkbenchTab('browser', {})
     closePip()
-  }, [browser, closePip, createWorkbenchTab, url])
+  }, [closePip, createWorkbenchTab])
 
   const place = useCallback((next: PreviewPlacement, persist = false) => {
     const clamped = clampPreviewPlacement(next)
@@ -280,7 +279,7 @@ export function BrowserPipHost({ sessionId, stackDepth, stackOrder }: BrowserPip
           >
             {growing ? <Maximize2 /> : <Minimize2 />}
           </PreviewButton>
-          <PreviewButton label="Close the preview" onClick={closePip}>
+          <PreviewButton label="Close the preview" onClick={dismissPip}>
             <X />
           </PreviewButton>
         </div>

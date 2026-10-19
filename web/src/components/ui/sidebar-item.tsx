@@ -13,8 +13,6 @@
  * fills `--bg-key`, active adds the accent and 600. The kbd hint appears on
  * hover/focus only.
  */
-import { motion, AnimatePresence } from 'framer-motion'
-import { useMotionPreset } from '@/lib/motion'
 import { cn } from '@/lib/utils'
 import type { ComponentType, MouseEventHandler, ReactNode } from 'react'
 import { formatShortcutLabel } from '@/lib/keyboard-shortcuts'
@@ -58,7 +56,6 @@ export function SidebarItem({
   rightSlot,
   className,
 }: SidebarItemProps) {
-  const preset = useMotionPreset()
   const tooltip = title ?? (kbd ? `${label} (${formatShortcutLabel(kbd)})` : label)
 
   if (tile && !collapsed) {
@@ -109,20 +106,9 @@ export function SidebarItem({
       )}
     >
       <Icon size={compact ? 14 : 16} className="shrink-0" />
-      <AnimatePresence initial={false}>
-        {!collapsed && (
-          <motion.span
-            key="label"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={preset.transition}
-            className="flex-1 truncate text-left whitespace-nowrap"
-          >
-            {label}
-          </motion.span>
-        )}
-      </AnimatePresence>
+      {!collapsed && (
+        <span className="flex-1 truncate text-left whitespace-nowrap">{label}</span>
+      )}
       {!collapsed &&
         (rightSlot !== undefined ? (
           rightSlot
@@ -132,7 +118,7 @@ export function SidebarItem({
           <kbd
             className={cn(
               'shrink-0 rounded border border-(--color-border) bg-(--bg-page) px-1.5 font-sans font-medium leading-none tracking-normal text-(--color-text-muted)',
-              'opacity-0 transition-opacity duration-(--motion-fast) group-hover/sidebar-item:opacity-100 group-focus-visible/sidebar-item:opacity-100 pointer-coarse:hidden',
+              'opacity-0 group-hover/sidebar-item:opacity-100 group-focus-visible/sidebar-item:opacity-100 pointer-coarse:hidden',
               compact ? 'py-0.5 text-[10px]' : 'py-1 text-[11px]',
             )}
           >

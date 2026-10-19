@@ -21,6 +21,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -39,6 +40,7 @@ from app.agent.mode.team.member import (
     TeamLead,
     TeamMember,
     TeamMemberBase,
+    worktree_obligation_text,
 )
 from app.agent.mode.team.delegate import make_team_delegate_tool
 from app.agent.mode.team.handoff import make_team_handoff_tool
@@ -2896,6 +2898,38 @@ class AgentTeam:
     # Tool injection
     # ------------------------------------------------------------------
 
+    def _worktree_yield_guard(
+        self, role: str
+    ) -> Callable[[], Awaitable[str | None]] | None:
+        """Return the ``sleep`` guard that keeps a lead from yielding early.
+
+        A lead that stops while an isolated delegation's worktree is unresolved
+        ends its turn with the member's work unmerged and nothing to show the
+        user.  The guard refuses that yield, handing the outstanding tasks back
+        to the model as the tool result; ``sleep`` caps the refusals so the turn
+        still ends.  Members keep an unconditional yield.
+        """
+        if role != "lead":
+            return None
+        lead_session_id = UUID(self.lead.session_id)
+
+        async def guard() -> str | None:
+            from app.agent.mode.team import delegation_ledger
+
+            try:
+                async with resolve_db_factory(self._db_factory)() as db:
+                    unresolved, merged = await delegation_ledger.worktree_obligations(
+                        db, lead_session_id=lead_session_id
+                    )
+            except Exception as exc:
+                logger.warning("sleep_guard_worktree_lookup_failed error={}", exc)
+                return None
+            if not unresolved and not merged:
+                return None
+            return worktree_obligation_text(unresolved, merged)
+
+        return guard
+
     def get_injected_tools(self, agent_name: str) -> list[Tool]:
         """Return runtime tools to inject into agent.run() for the given agent.
 
@@ -2915,7 +2949,7 @@ class AgentTeam:
             ),
             make_todo_manage_tool(role),
             make_team_state_tool(agent_name),
-            make_sleep_tool(),
+            make_sleep_tool(guard=self._worktree_yield_guard(role)),
         ]
         if agent_name == self.lead.name:
             tools.append(make_team_manage_tool(self))

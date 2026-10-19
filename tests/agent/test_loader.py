@@ -1875,3 +1875,20 @@ def test_backfill_writes_nothing_when_no_model_is_known(tmp_path):
 
     assert backfill_placeholder_agent_models(d) == []
     assert parse_agent_md(d / "unset.md").model == PROVIDER_MODEL_TOKEN
+
+
+def test_builtin_prompts_route_file_reads_away_from_shell():
+    from app.agent.builtin_prompts import (
+        BUILTIN_MEMBER_PROFILES,
+        CODING_EVOFLUX_PROMPT,
+    )
+
+    assert "dedicated file capabilities" in CODING_EVOFLUX_PROMPT
+    assert (
+        "not to read or search source files"
+        in (BUILTIN_MEMBER_PROFILES["coding"]["coder"]["prompt"])
+    )
+    assert (
+        "dedicated file capabilities"
+        in (BUILTIN_MEMBER_PROFILES["coding"]["explorer"]["prompt"])
+    )

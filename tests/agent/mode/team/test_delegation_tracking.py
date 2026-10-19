@@ -7,18 +7,24 @@ Covers:
 - TeamMemberBase._maybe_inject_delegation_wait_nudge: the system-level backstop
   that catches a lead answering before a delegated handoff arrives and forces
   a `sleep`-and-wait correction on the next wake.
+- TeamMemberBase._maybe_inject_worktree_obligation_nudge: the backstop that
+  catches a lead stopping while an isolated delegation's worktree is still
+  unresolved (not reviewed/merged/rejected, or merged but not finalized).
 """
 
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
-from unittest.mock import AsyncMock, MagicMock
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
 
+from app.agent.mode.team import delegation_ledger
 from app.agent.mode.team.delegate import make_team_delegate_tool
 from app.agent.mode.team.handoff import make_team_handoff_tool
 from app.agent.mode.team.mailbox import TeamMailbox
 from app.agent.mode.team.member import (
     MAX_LEAD_WAIT_NUDGES,
+    MAX_WORKTREE_OBLIGATION_NUDGES,
     TeamLead,
     TeamMember,
     _lead_wait_nudge_content,
@@ -337,4 +343,117 @@ class TestLeadWaitNudge:
             )  # drain so inbox_empty reflects new sends
 
         await team.lead._maybe_inject_delegation_wait_nudge()
+        assert team.mailbox.inbox_empty("lead")
+
+
+# =============================================================================
+# TeamMemberBase._maybe_inject_worktree_obligation_nudge
+# =============================================================================
+
+
+def _worktree_task(task_id: str, status: str, state: str):
+    """A delegation task carrying an isolated worktree allocation."""
+    return SimpleNamespace(
+        id=task_id,
+        status=status,
+        spec={"worktree_allocation": {"source": "kintsugi", "state": state}},
+    )
+
+
+def _tool_row(name: str, content: str = "ran"):
+    """A persisted tool result row (``MagicMock(name=...)`` would not set the
+    attribute that identifies the tool, so set it explicitly)."""
+    row = MagicMock(role="tool", content=content, tool_calls=None)
+    row.name = name
+    return row
+
+
+def _patch_obligations(unresolved: list, merged: list):
+    """Patch the ledger lookup the nudge consults, keeping the DB mock simple."""
+    return patch.object(
+        delegation_ledger,
+        "worktree_obligations",
+        AsyncMock(return_value=(unresolved, merged)),
+    )
+
+
+class TestWorktreeObligationNudge:
+    async def test_noop_when_nothing_owed(self):
+        team = await _make_team(rows=[_row("assistant", "Done.", None)])
+
+        with _patch_obligations([], []):
+            await team.lead._maybe_inject_worktree_obligation_nudge()
+
+        assert team.mailbox.inbox_empty("lead")
+
+    async def test_noop_when_last_message_has_tool_calls(self):
+        team = await _make_team(rows=[_row("assistant", None, [{"id": "call_1"}])])
+
+        with _patch_obligations([_worktree_task("t-1", "review", "review")], []):
+            await team.lead._maybe_inject_worktree_obligation_nudge()
+
+        assert team.mailbox.inbox_empty("lead")
+
+    async def test_fires_when_lead_yielded_with_sleep(self):
+        team = await _make_team(
+            rows=[_tool_row("sleep", "Sleeping until the next message.")]
+        )
+
+        with _patch_obligations([_worktree_task("t-1", "review", "review")], []):
+            await team.lead._maybe_inject_worktree_obligation_nudge()
+
+        assert not team.mailbox.inbox_empty("lead")
+        assert "t-1" in team.mailbox.receive_nowait("lead").content
+
+    async def test_noop_when_last_message_is_another_tool_result(self):
+        team = await _make_team(rows=[_tool_row("shell")])
+
+        with _patch_obligations([_worktree_task("t-1", "review", "review")], []):
+            await team.lead._maybe_inject_worktree_obligation_nudge()
+
+        assert team.mailbox.inbox_empty("lead")
+
+    async def test_noop_for_member_role(self):
+        team = await _make_team(rows=[_row("assistant", "Done.", None)])
+
+        with _patch_obligations([_worktree_task("t-1", "review", "review")], []):
+            await team.members["worker"]._maybe_inject_worktree_obligation_nudge()
+
+        assert team.mailbox.inbox_empty("worker")
+
+    async def test_fires_when_lead_answered_with_unresolved_worktree(self):
+        team = await _make_team(rows=[_row("assistant", "Đã xong.", None)])
+
+        with _patch_obligations([_worktree_task("t-1", "review", "review")], []):
+            await team.lead._maybe_inject_worktree_obligation_nudge()
+
+        assert not team.mailbox.inbox_empty("lead")
+        message = team.mailbox.receive_nowait("lead")
+        assert "t-1" in message.content
+        assert "team_worktree" in message.content
+        assert "team_reject" in message.content
+
+    async def test_reports_merged_worktrees_for_finalize(self):
+        team = await _make_team(rows=[_row("assistant", "Đã xong.", None)])
+
+        with _patch_obligations([], [_worktree_task("t-2", "completed", "merged")]):
+            await team.lead._maybe_inject_worktree_obligation_nudge()
+
+        message = team.mailbox.receive_nowait("lead")
+        assert "t-2" in message.content
+        assert "finalize" in message.content
+
+    async def test_nudge_is_rate_limited(self):
+        team = await _make_team(rows=[_row("assistant", "Đã xong.", None)])
+        task = _worktree_task("t-1", "review", "review")
+
+        with _patch_obligations([task], []):
+            for _ in range(MAX_WORKTREE_OBLIGATION_NUDGES):
+                await team.lead._maybe_inject_worktree_obligation_nudge()
+                team.mailbox.receive_nowait(
+                    "lead"
+                )  # drain so inbox_empty reflects new sends
+
+            await team.lead._maybe_inject_worktree_obligation_nudge()
+
         assert team.mailbox.inbox_empty("lead")

@@ -22,6 +22,7 @@ from app.agent.schemas.chat import (
     HumanMessage,
     ToolMessage,
 )
+from app.core.db import retry_on_db_timeout
 from app.core.paths import session_workspace_dir
 from app.models.chat import ChatSession, SessionMessage
 from app.services import snapshot_service
@@ -298,7 +299,11 @@ async def save_message(
             kwargs["created_at"] = created_at
         db_message = SessionMessage(**kwargs)
         db.add(db_message)
-        await db.flush()
+        await retry_on_db_timeout(
+            db.flush,
+            operation_name="save_message.flush",
+            attempts=2,
+        )
         logger.debug(
             "message_saved session_id={} message_id={} role={}",
             session_id,

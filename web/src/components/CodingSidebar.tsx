@@ -27,7 +27,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useModalFocus } from "@/hooks/useModalFocus";
 import { usePlatform } from "@/hooks/use-platform";
-import { useMotionPreset, useListEnterIndex } from "@/lib/motion";
+import { useMotionPreset } from "@/lib/motion";
 import { STORAGE_KEYS } from "@/lib/storage-keys";
 import {
   AlertTriangle,
@@ -310,7 +310,7 @@ function SessionListPanel({
     .sort(
       (a, b) => Number(pinnedIdSet.has(b.id)) - Number(pinnedIdSet.has(a.id)),
     );
-  const sessionEnterIndex = useListEnterIndex(projectSessions.map((s) => s.id));
+
 
   // Lazy-load the next page as the list's end nears, instead of a
   // "Load more" button. The root is the card's own scroller, so the margin
@@ -365,7 +365,7 @@ function SessionListPanel({
             key={session.id}
             session={session}
             isActive={session.id === currentSessionId}
-            enterIndex={sessionEnterIndex(session.id)}
+
             density="compact"
             onSelect={onSessionSelect}
             onOpenSideChat={onSessionSideChat}

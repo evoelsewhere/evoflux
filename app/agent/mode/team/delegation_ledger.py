@@ -13,6 +13,18 @@ from app.models.team import DelegationTask
 
 OPEN_STATUSES = ("blocked", "pending", "review")
 
+# ``spec["worktree_allocation"]["state"]`` values that still leave the lead
+# owing an action.  An isolated delegation's worktree must be reviewed and
+# merged (or rejected) and then finalized; only ``discarded`` and ``finalized``
+# settle it.  ``merged`` is settled for the member but still owes
+# ``team_worktree(action='finalize')``.
+UNRESOLVED_WORKTREE_STATES = ("active", "conflict", "review")
+SETTLED_WORKTREE_STATES = ("discarded", "finalized")
+# Delegation statuses whose member is still running or parked.  While a task is
+# in flight its unresolved worktree belongs to the member, not to the lead, so
+# a lead that yields on it is legitimately waiting rather than dodging work.
+IN_FLIGHT_TASK_STATUSES = ("blocked", "pending")
+
 
 def parse_task_id(task_id: str) -> UUID:
     try:
@@ -388,6 +400,46 @@ async def tasks_with_worktrees(
     return [
         row for row in rows if isinstance(row.spec.get("worktree_allocation"), dict)
     ]
+
+
+async def worktree_obligations(
+    db: AsyncSession,
+    *,
+    lead_session_id: UUID,
+) -> tuple[list[DelegationTask], list[DelegationTask]]:
+    """Return the isolated worktrees the lead still owes action on.
+
+    The first list holds tasks whose member is no longer working and whose
+    worktree is unresolved: the lead owes a terminal decision — review/merge via
+    ``team_worktree`` or ``team_reject``.  The second holds tasks whose worktree
+    is already merged but not yet finalized, because ``finalize`` is what
+    fast-forwards the source repositories and is therefore still owed.  The
+    second list is only reported once the first is empty, since finalize
+    refuses to run while any allocation is unresolved.
+
+    A task still ``pending``/``blocked`` is skipped: its member owns the
+    worktree, so a lead that yields while waiting for it is not dodging work.
+    """
+    rows = await tasks_with_worktrees(db, lead_session_id=lead_session_id)
+    unresolved: list[DelegationTask] = []
+    merged: list[DelegationTask] = []
+    for row in rows:
+        allocation = row.spec.get("worktree_allocation") or {}
+        state = allocation.get("state")
+        if state == "merged":
+            merged.append(row)
+            continue
+        if state in SETTLED_WORKTREE_STATES:
+            continue
+        if state not in UNRESOLVED_WORKTREE_STATES:
+            # A state this version does not recognise: nothing to act on here.
+            continue
+        if row.status in IN_FLIGHT_TASK_STATUSES:
+            # The member is still working or parked on it, so its worktree
+            # belongs to the member: a lead that yields now is waiting.
+            continue
+        unresolved.append(row)
+    return unresolved, ([] if unresolved else merged)
 
 
 async def completed_tasks_for_pair(

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import re
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -51,7 +52,7 @@ def process_sandbox(tmp_path):
 async def test_shell_yields_process_and_activates_continuation(process_sandbox):
     state = AgentState(messages=[])
     result = await shell_tool.arun(
-        command=f"{sys.executable} -c \"import time; print('ready', flush=True); time.sleep(30)\"",
+        command=f"{Path(sys.executable).as_posix()} -c \"import time; print('ready', flush=True); time.sleep(30)\"",
         yield_time_ms=250,
         timeout_seconds=60,
         _injected={"_state": state, "tool_call_id": "call-shell"},

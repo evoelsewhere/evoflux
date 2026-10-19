@@ -153,4 +153,28 @@ describe('ContextBudgetBar manual compaction', () => {
     fireEvent.click(compactButton)
     expect(onCompact).not.toHaveBeenCalled()
   })
+
+  it('names background model calls so the turn total is not read as chat usage', async () => {
+    renderBar(
+      <ContextBudgetBar
+        used={12_100}
+        max={272_000}
+        input={12_100}
+        turnInput={17_000}
+        turnOutput={968}
+        turnCalls={3}
+        turnPhases={{
+          main: { input: 14_200, output: 17 },
+          title: { input: 2_800, output: 12 },
+        }}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: /Context 4% used/ }))
+
+    const turn = await screen.findByRole('heading', { name: /This turn/ })
+    const turnSection = turn.closest('section') as HTMLElement
+    // The title call is billed to the turn but is not the conversation.
+    expect(within(turnSection).getByText(/from background calls \(title\)/)).toBeInTheDocument()
+  })
 })

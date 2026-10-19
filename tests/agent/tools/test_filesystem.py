@@ -349,13 +349,49 @@ async def test_sandbox_validation(sandbox_workspace, tmp_path):
 # ---------------------------------------------------------------------------
 
 
+_SEARCH_TOOLS = [
+    pytest.param(_search_files, {"pattern": "*.txt", "match": "name"}, id="glob"),
+    pytest.param(_grep_files, {"pattern": "needle"}, id="grep"),
+]
+
+
 @pytest.mark.asyncio
-async def test_glob_name_not_a_directory_raises(sandbox):
-    sb, tmp_path = sandbox
-    f = tmp_path / "not_a_dir.txt"
-    f.write_text("content")
-    with pytest.raises(NotADirectoryError, match="Not a directory"):
-        await _search_files("*.txt", directory="not_a_dir.txt", match="name")
+@pytest.mark.parametrize(("search_tool", "arguments"), _SEARCH_TOOLS)
+async def test_search_root_file_error_is_actionable(sandbox, search_tool, arguments):
+    _, tmp_path = sandbox
+    (tmp_path / "not_a_dir.txt").write_text("content")
+
+    with pytest.raises(NotADirectoryError) as exc_info:
+        await search_tool(**arguments, directory="not_a_dir.txt")
+
+    message = str(exc_info.value)
+    assert "search root is a file" in message
+    assert "not_a_dir.txt" in message
+    assert "read" in message
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("search_tool", "arguments"), _SEARCH_TOOLS)
+async def test_search_root_missing_directory_is_distinct(
+    sandbox, search_tool, arguments
+):
+    with pytest.raises(FileNotFoundError, match="search directory does not exist"):
+        await search_tool(**arguments, directory="missing/subdir")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("search_tool", "arguments"), _SEARCH_TOOLS)
+async def test_search_root_file_component_is_distinct(sandbox, search_tool, arguments):
+    _, tmp_path = sandbox
+    (tmp_path / "component.txt").write_text("content")
+
+    with pytest.raises(NotADirectoryError) as exc_info:
+        await search_tool(**arguments, directory="component.txt/child")
+
+    message = str(exc_info.value)
+    assert "file as a directory component" in message
+    assert "component.txt" in message
+    assert "parent directory" in message
 
 
 @pytest.mark.asyncio
@@ -1054,3 +1090,19 @@ async def test_glob_newest_file_survives_the_page_cut(sandbox, match):
 
     result = await _search_files(pattern="*.py", match=match, max_results=2)
     assert result.split("\n")[0] == "z_newest.py"
+
+
+@pytest.mark.asyncio
+async def test_read_truncation_notice_points_to_grep_not_shell(
+    sandbox_workspace, monkeypatch
+):
+    read_file_module = importlib.import_module(
+        "app.agent.tools.builtin.filesystem.read"
+    )
+    monkeypatch.setattr(read_file_module, "_MAX_CONTEXT_CHARS", 10)
+    (sandbox_workspace / "big.txt").write_text("A" * 50)
+
+    result = await read_file.arun(path="big.txt")
+
+    assert "the grep tool" in result
+    assert "shell" not in result.lower()
