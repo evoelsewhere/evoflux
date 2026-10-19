@@ -34,6 +34,8 @@ export interface DirectBrowserSession {
   visibility: Map<string, boolean>
   surfaces: Map<string, DirectBrowserSurfaceSlot>
   listeners: Set<() => void>
+  /** Surface currently opening a page, so two views never both do. */
+  creatingBy: string | null
 }
 
 const sessions = new Map<string, DirectBrowserSession>()
@@ -49,6 +51,7 @@ export function getDirectBrowserSession(sessionId: string): DirectBrowserSession
       visibility: new Map(),
       surfaces: new Map(),
       listeners: new Set(),
+      creatingBy: null,
     }
     sessions.set(sessionId, session)
   }
