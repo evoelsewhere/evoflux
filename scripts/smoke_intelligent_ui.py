@@ -137,10 +137,23 @@ def _loopback_api_root(raw: str) -> str:
 
 
 def _request(
-    url: str, *, data: bytes | None = None, headers: dict[str, str] | None = None
+    url: str,
+    *,
+    data: bytes | None = None,
+    headers: dict[str, str] | None = None,
+    timeout: float = 300,
 ) -> Any:
     request = Request(url, data=data, headers=headers or {})
-    return urlopen(request, timeout=300)
+    return urlopen(request, timeout=timeout)
+
+
+def _stream_lines(response: Any) -> Any:
+    """Yield stream lines, ending quietly when the socket read times out."""
+
+    try:
+        yield from response
+    except TimeoutError:
+        return
 
 
 def _run_case(
@@ -171,7 +184,9 @@ def _run_case(
         "status": "incomplete",
         "error_category": None,
     }
-    with _request(f"{api_root}/chat", data=form, headers=headers) as response:
+    with _request(
+        f"{api_root}/chat", data=form, headers=headers, timeout=timeout_seconds
+    ) as response:
         session = json.loads(response.read().decode("utf-8"))
     session_id = session.get("session_id") if isinstance(session, dict) else None
     if not isinstance(session_id, str) or not session_id:
@@ -179,8 +194,10 @@ def _run_case(
         return outcome
     deadline = monotonic() + timeout_seconds
     event_name = ""
-    with _request(f"{api_root}/{session_id}/stream", headers=headers) as response:
-        for raw_line in response:
+    with _request(
+        f"{api_root}/{session_id}/stream", headers=headers, timeout=timeout_seconds
+    ) as response:
+        for raw_line in _stream_lines(response):
             if monotonic() >= deadline:
                 outcome["status"] = "timeout"
                 outcome["error_category"] = "timeout"
@@ -240,6 +257,9 @@ def _run_case(
                     else "agent_error"
                 )
                 break
+    if outcome["status"] == "incomplete" and monotonic() >= deadline:
+        outcome["status"] = "timeout"
+        outcome["error_category"] = "timeout"
     return outcome
 
 

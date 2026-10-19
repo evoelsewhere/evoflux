@@ -331,3 +331,41 @@ def test_live_smoke_marks_a_stream_that_exceeds_its_deadline(monkeypatch) -> Non
     )
 
     assert outcome["status"] == "timeout"
+
+
+def test_live_smoke_marks_a_stalled_stream_as_timeout_and_bounds_reads(
+    monkeypatch,
+) -> None:
+    seen: list[tuple[str, float]] = []
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def read(self):
+            return b'{"session_id":"00000000-0000-4000-8000-000000000001"}'
+
+        def __iter__(self):
+            raise TimeoutError("read timed out")
+            yield b""  # pragma: no cover
+
+    def request(url, **kwargs):
+        seen.append((url, kwargs["timeout"]))
+        return Response()
+
+    monkeypatch.setattr("scripts.smoke_intelligent_ui._request", request)
+    ticks = iter([0.0, 5.0])
+    monkeypatch.setattr("scripts.smoke_intelligent_ui.monotonic", lambda: next(ticks))
+
+    outcome = _run_case(
+        "http://127.0.0.1:8000/api/team",
+        "xiaomi:mimo-v2.6-flash",
+        {"id": "motion", "prompt": "Show a short process over time."},
+        timeout_seconds=3,
+    )
+
+    assert outcome["status"] == "timeout"
+    assert [timeout for _url, timeout in seen] == [3, 3]
