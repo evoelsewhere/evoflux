@@ -70,7 +70,7 @@ suggest_next_message = Tool(
     _suggest_next_message,
     name="suggest_next_message",
     tiers=("coding",),
-    lead_only=False,
+    lead_only=True,
     description=(
         "Suggest the user's next message as ghost text in the chat input. "
         "Call near the end of a turn only when a genuinely useful next step "

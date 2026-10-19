@@ -112,7 +112,7 @@ def test_tool_metadata():
     assert tool.name == "suggest_next_message"
     assert tool.tiers is not None
     assert set(tool.tiers) == {"coding"}
-    assert tool.lead_only is False
+    assert tool.lead_only is True
     assert tool.description
 
 
@@ -125,3 +125,10 @@ def test_registered_in_default_tool_registry():
 
 def test_event_is_non_replayable():
     assert "next_message_suggestion" in stream_store._NON_REPLAYABLE_EVENT_TYPES
+
+
+def test_suggest_next_message_is_allowed_without_prompting() -> None:
+    from app.agent.permission import _DEFAULT_BASE_RULESET, evaluate
+
+    rule = evaluate("suggest_next_message", "*", _DEFAULT_BASE_RULESET)
+    assert rule.action == "allow"
