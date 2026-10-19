@@ -28,10 +28,10 @@ if TYPE_CHECKING:
 # request forever (observed: DDGS with no client timeout froze the sidecar for
 # minutes).  Bound them well below the 300s batch default so one dead
 # connection can never pin a tool wave.  ``web_search`` allows four 15s
-# backend attempts plus the 30s Exa fallback; ``image_search`` is one bounded
-# call; ``web_fetch`` needs headroom above its own 120s fetch-timeout clamp.
+# backend attempts plus the 30s Exa fallback, with 15s of headroom;
+# ``image_search`` is one bounded call; ``web_fetch`` needs headroom above its own 120s fetch-timeout clamp.
 NETWORK_TOOL_TIMEOUTS: dict[str, float] = {
-    "web_search": 90.0,
+    "web_search": 105.0,
     "image_search": 30.0,
     "web_fetch": 150.0,
 }

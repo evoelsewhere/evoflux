@@ -104,7 +104,9 @@ def listening_pids(port: int) -> list[int]:
             if len(parts) < 5 or ":" not in parts[1]:
                 continue
             local_port = parts[1].rsplit(":", 1)[1]
-            if parts[3].upper() != "LISTENING" or local_port != str(port):
+            # The state column is localized ("LISTENING" is not English-only);
+            # a listening socket is the one whose foreign address is port 0.
+            if not parts[2].endswith(":0") or local_port != str(port):
                 continue
             try:
                 pids.add(int(parts[4]))
@@ -148,13 +150,18 @@ def stop_dev_ports(ports: list[int]) -> None:
                 _force_kill(pid)
 
 
+def _taskkill_tree(pid: int, *, force: bool) -> None:
+    """Stop *pid* and its children; Windows has no process groups to signal."""
+
+    command = ["taskkill", "/T", "/PID", str(pid)]
+    if force:
+        command.insert(1, "/F")
+    subprocess.run(command, capture_output=True, check=False)
+
+
 def _force_kill(pid: int) -> None:
     if sys.platform == "win32":
-        subprocess.run(
-            ["taskkill", "/F", "/PID", str(pid)],
-            capture_output=True,
-            check=False,
-        )
+        _taskkill_tree(pid, force=True)
         return
     try:
         os.kill(pid, signal.SIGKILL)
@@ -224,7 +231,7 @@ def signal_process_group(process: subprocess.Popen[bytes], sig: signal.Signals) 
         if sig == getattr(signal, "SIGKILL", signal.SIGTERM):
             _force_kill(process.pid)
         else:
-            process.terminate()
+            _taskkill_tree(process.pid, force=False)
         return
     try:
         os.killpg(process.pid, sig)
