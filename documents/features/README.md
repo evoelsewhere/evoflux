@@ -8,3 +8,4 @@ proposals and not evidence that an unimplemented Spec has shipped.
 |---|---|
 | Import conversations and agent resources from other AI tools | [Multi-source import](multi-source-import.md) |
 | Task-aware prose and native UI, sourced dashboards, motion chosen for temporal value, 3D scenes, and chart/Mermaid/table rendering | [Intelligent UI](intelligent-ui.md) |
+| Create editorial, accessible diagrams in Work and Coding | [Diagram design](diagram-design.md) |
