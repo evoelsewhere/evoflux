@@ -53,6 +53,11 @@ def test_alembic_upgrade_head_adds_latest_schema(tmp_path, monkeypatch):
         assert "session_type" in columns
         assert "source_session_id" in columns
         assert "source_session_ref" in columns
+        message_indexes = {
+            index["name"]
+            for index in sa.inspect(engine).get_indexes("session_messages")
+        }
+        assert "ix_session_messages_webbridge_artifact" in message_indexes
         fk_columns = {
             col
             for fk in sa.inspect(engine).get_foreign_keys("chat_sessions")

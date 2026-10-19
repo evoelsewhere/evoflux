@@ -361,6 +361,15 @@ class SessionMessage(SQLModel, table=True):
             "created_at",
             "id",
         ),
+        sa.Index(
+            "ix_session_messages_webbridge_artifact",
+            "id",
+            "session_id",
+            "extra",
+            sqlite_where=sa.text(
+                """instr(CAST(extra AS TEXT), '"webbridge_artifact"') > 0"""
+            ),
+        ).ddl_if(dialect="sqlite"),
     )
 
     id: UUID = Field(default_factory=uuid7, primary_key=True)

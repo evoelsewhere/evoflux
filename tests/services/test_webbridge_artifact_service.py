@@ -155,7 +155,7 @@ def test_candidate_query_asks_the_database_for_artifact_rows_only():
     )
 
     assert "IS NOT NULL" not in sql.upper()
-    assert "LIKE" in sql.upper()
+    assert "INSTR(" in sql.upper()
     assert "webbridge_artifact" in sql
 
 
@@ -207,7 +207,18 @@ async def test_only_rows_with_an_artifact_window_are_materialized(
         capture_id = capture.id
 
     async with db_module.read_session_factory() as db:
-        candidates = (await db.exec(_candidate_rows_statement())).all()
+        from sqlalchemy import text
+
+        statement = _candidate_rows_statement()
+        compiled = statement.compile(
+            db.get_bind(), compile_kwargs={"literal_binds": True}
+        )
+        query_plan = (await db.exec(text(f"EXPLAIN QUERY PLAN {compiled}"))).all()
+        assert any(
+            "ix_session_messages_webbridge_artifact" in str(row[-1])
+            for row in query_plan
+        )
+        candidates = (await db.exec(statement)).all()
         plan = await _plan_expired_artifact_cleanup(db)
 
     assert [row[0] for row in candidates] == [capture_id]
