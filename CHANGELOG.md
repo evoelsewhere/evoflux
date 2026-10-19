@@ -4,6 +4,39 @@ All notable changes to EvoFlux are documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Plugin packages can declare bounded lifecycle hooks for inspection, and users
+  can configure global hook definitions and `augment`/`replace` precedence in
+  **Settings → Agent hooks**. Plugin Center shows each installed hook's trust and
+  effective status. Package and Settings hooks show their current executable
+  digest and require an explicit trust review; approvals can be revoked.
+  Plugin enablement and saving a Settings hook do not grant execution trust. Switching to
+  `replace` previews affected plugin registrations and requires confirmation.
+  The runtime dispatcher is wired to session, prompt, agent, model, tool,
+  completion, compaction, and member-agent boundaries, with hook text confined
+  to an untrusted context field and tool rewrites schema-validated. Agent and
+  member stop hooks receive a bounded terminal outcome and run after success,
+  failure, or cancellation once the matching start event has completed.
+  Claude marketplace installs adapt only the exact Superpowers session-start
+  bootstrap into a digest-trusted, read-only Skill context action. The upstream
+  shell launcher is not copied or executed; all other Claude hook forms remain
+  unsupported. The imported context is bounded and marked untrusted.
+- Added **Settings → Agent hooks** with plain-language plugin workflow
+  status, per-workflow review and pause controls, simple add/edit/remove for
+  personal session guidance, and explicit `alongside` / `use mine instead`
+  choices with a preview before replacing plugin workflows. Advanced hook JSON
+  remains available for technical users. Plugin enablement stays separate from
+  digest-bound workflow approval.
+
+### Security
+
+- Command lifecycle hooks remain blocked unless an operating-system isolation
+  backend enforces the required profile. The runtime has no unrestricted
+  subprocess fallback. The Superpowers static context action reads only its
+  digest-trusted Skill file; its text cannot authorize tools or change system
+  policy.
+
 ### Fixed
 
 - Web and image searches now bound DuckDuckGo requests, and network tools have shorter individual limits so a stalled provider cannot hold an agent turn indefinitely.

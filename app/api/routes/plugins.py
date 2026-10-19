@@ -6,6 +6,7 @@ import asyncio
 import shutil
 import tempfile
 from pathlib import Path
+from typing import Literal
 
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 
@@ -20,6 +21,7 @@ from app.api.schemas.plugins import (
     PluginCreateRequest,
     PluginCredentialUpdateRequest,
     PluginEnabledRequest,
+    PluginHookTrustRequest,
     PluginInstallRequest,
     PluginListItem,
     PluginLifecycleCapabilities,
@@ -55,7 +57,11 @@ from app.plugin_platform.credentials import (
     credential_state,
     save_credentials,
 )
-from app.plugin_platform.models import PluginInspection, PluginInstallation
+from app.plugin_platform.models import (
+    PluginHookRuntimeStatus,
+    PluginInspection,
+    PluginInstallation,
+)
 from app.plugin_platform.marketplaces import (
     MarketplaceKind,
     MarketplacePlugin,
@@ -80,11 +86,51 @@ from app.plugin_platform.workspace import (
     write_workspace_file,
 )
 from app.services import team_manager
+from app.agent.plugins.hook_runner import hook_isolation_available
 from app.conductor.provenance import managed_resource_provider_by_id
 from app.conductor.models import ManagedResourceProvider
 
 
 router = APIRouter()
+
+
+def _plugin_hook_status(
+    value: str,
+    *,
+    execution_kind: str = "command",
+    isolation_available: bool | None = None,
+) -> Literal[
+    "active",
+    "disabled",
+    "disabled_by_settings",
+    "replaced_by_settings",
+    "awaiting_trust",
+    "blocked_isolation_unavailable",
+    "shadowed_by_settings",
+]:
+    if value == "active":
+        if execution_kind == "static_context":
+            return "active"
+        return (
+            "active"
+            if (
+                hook_isolation_available()
+                if isolation_available is None
+                else isolation_available
+            )
+            else "blocked_isolation_unavailable"
+        )
+    if value == "disabled":
+        return "disabled"
+    if value == "disabled_by_settings":
+        return "disabled_by_settings"
+    if value == "replaced_by_settings":
+        return "replaced_by_settings"
+    if value == "awaiting_trust":
+        return "awaiting_trust"
+    if value == "shadowed_by_settings":
+        return "shadowed_by_settings"
+    raise ValueError(f"Unsupported plugin hook status: {value}")
 
 
 @router.get(
@@ -171,12 +217,98 @@ def _require_mutable_path(path: str) -> None:
 
 
 def _inspection_for(installation: PluginInstallation) -> PluginInspection:
-    return redact_inspection(
+    inspection = redact_inspection(
         inspect_plugin(
             installation.root,
             data_root=plugin_data_root(installation.id),
         )
     )
+    if inspection.manifest is None or not inspection.hooks:
+        return inspection
+
+    from app.agent.plugins.hook_contract import (
+        HookRegistration,
+        HookSettingsPolicy,
+        HookSource,
+    )
+    from app.agent.plugins.hook_resolution import resolve_event_hooks
+    from app.core.runtime_settings import load_runtime_settings
+    from app.core.config import settings
+    from app.plugin_platform.hook_inspection import hook_digest
+    from app.agent.plugins.hook_runner import hook_trust_profile
+    from app.plugin_platform.hook_runtime import registrations_for_plugin
+    from app.plugin_platform.hook_trust_store import HookTrustStore
+
+    hook_settings = load_runtime_settings().hooks
+    policy = HookSettingsPolicy(
+        mode=hook_settings.mode,
+        replace_plugin_events=hook_settings.replace_plugin_events,
+        disabled_plugin_hooks=hook_settings.disabled_plugin_hooks,
+    )
+    registrations = registrations_for_plugin(
+        plugin_id=inspection.manifest.name,
+        owner_id=installation.id,
+        components=inspection.hooks,
+        enabled=installation.enabled,
+        trust_store=HookTrustStore(),
+    )
+    trust_store = HookTrustStore()
+    settings_root = Path(settings.EVOFLUX_CONFIG_DIR).resolve()
+    settings_registrations: list[HookRegistration] = []
+    for definition in hook_settings.definitions:
+        try:
+            digest = hook_digest(settings_root, definition)
+        except (OSError, ValueError):
+            continue
+        settings_registrations.append(
+            HookRegistration(
+                hook_id=definition.hook_id,
+                event=definition.event,
+                source=HookSource.SETTINGS,
+                definition=definition,
+                digest=digest,
+                trusted=trust_store.is_trusted(
+                    owner_type="settings",
+                    owner_id="global",
+                    hook_id=definition.hook_id,
+                    digest=digest,
+                    isolation_profile=hook_trust_profile(definition),
+                ),
+            )
+        )
+    statuses: list[PluginHookRuntimeStatus] = []
+    for registration in registrations:
+        effective = resolve_event_hooks(
+            registration.event,
+            policy,
+            settings_registrations=settings_registrations,
+            plugin_registrations=(registration,),
+        )
+        resolved = next(
+            item
+            for item in effective.statuses
+            if item.registration.hook_id == registration.hook_id
+        )
+        statuses.append(
+            PluginHookRuntimeStatus(
+                hook_id=registration.hook_id,
+                event=registration.event.value,
+                digest=registration.digest,
+                trusted=registration.trusted,
+                enabled=registration.enabled,
+                status=_plugin_hook_status(
+                    resolved.status,
+                    execution_kind=(
+                        registration.definition.execution_kind
+                        if registration.definition is not None
+                        else "command"
+                    ),
+                    isolation_available=hook_isolation_available(),
+                ),
+            )
+        )
+
+    return inspection.model_copy(update={"hook_statuses": statuses})
 
 
 def _credential_state_for(
@@ -705,6 +837,87 @@ async def get_plugin(installation_id: str) -> PluginOperationResponse:
     installation = await asyncio.to_thread(get_installation, installation_id)
     if installation is None:
         raise HTTPException(status_code=404, detail="Plugin installation not found.")
+    return PluginOperationResponse(
+        installation=installation,
+        inspection=await asyncio.to_thread(_inspection_for, installation),
+    )
+
+
+def _current_plugin_hook(installation: PluginInstallation, hook_id: str):
+    inspection = inspect_plugin(
+        installation.root,
+        data_root=plugin_data_root(installation.id),
+    )
+    matches = [hook for hook in inspection.hooks if hook.definition.hook_id == hook_id]
+    if len(matches) != 1 or not matches[0].valid or not matches[0].digest:
+        raise HTTPException(
+            status_code=409,
+            detail="Hook is missing, invalid, or has no reviewable executable digest.",
+        )
+    return matches[0]
+
+
+@router.post(
+    "/{installation_id}/hooks/{hook_id}/trust",
+    response_model=PluginOperationResponse,
+)
+async def trust_plugin_hook(
+    installation_id: str,
+    hook_id: str,
+    body: PluginHookTrustRequest,
+) -> PluginOperationResponse:
+    installation = await asyncio.to_thread(get_installation, installation_id)
+    if installation is None:
+        raise HTTPException(status_code=404, detail="Plugin installation not found.")
+    if not _capabilities_for(installation).can_enable:
+        raise HTTPException(
+            status_code=409,
+            detail="Hooks in this managed or bundled installation cannot be trusted here.",
+        )
+    hook = await asyncio.to_thread(_current_plugin_hook, installation, hook_id)
+    if hook.digest.lower() != body.digest.lower():
+        raise HTTPException(
+            status_code=409,
+            detail="Hook content changed; review the current digest before trusting it.",
+        )
+    from app.agent.plugins.hook_runner import hook_trust_profile
+    from app.plugin_platform.hook_trust_store import HookTrustGrant, HookTrustStore
+
+    await asyncio.to_thread(
+        HookTrustStore().approve,
+        HookTrustGrant(
+            owner_type="plugin",
+            owner_id=installation.id,
+            hook_id=hook_id,
+            digest=hook.digest,
+            isolation_profile=hook_trust_profile(hook.definition),
+        ),
+    )
+    return PluginOperationResponse(
+        installation=installation,
+        inspection=await asyncio.to_thread(_inspection_for, installation),
+    )
+
+
+@router.delete(
+    "/{installation_id}/hooks/{hook_id}/trust",
+    response_model=PluginOperationResponse,
+)
+async def revoke_plugin_hook_trust(
+    installation_id: str,
+    hook_id: str,
+) -> PluginOperationResponse:
+    installation = await asyncio.to_thread(get_installation, installation_id)
+    if installation is None:
+        raise HTTPException(status_code=404, detail="Plugin installation not found.")
+    from app.plugin_platform.hook_trust_store import HookTrustStore
+
+    await asyncio.to_thread(
+        HookTrustStore().revoke,
+        owner_type="plugin",
+        owner_id=installation.id,
+        hook_id=hook_id,
+    )
     return PluginOperationResponse(
         installation=installation,
         inspection=await asyncio.to_thread(_inspection_for, installation),

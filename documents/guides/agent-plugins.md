@@ -55,6 +55,99 @@ The older `evoflux.credentials` alias remains readable for existing packages. Ne
 
 Plugin MCP configuration is adapted in memory. EvoFlux never copies it into the user's global MCP configuration.
 
+## Plugin lifecycle hooks
+
+EvoFlux accepts the `com.evoflux.hooks` extension for static inspection and
+Settings precedence. A version 1 declaration has this shape:
+
+```json
+{
+  "extensions": {
+    "com.evoflux.hooks": {
+      "version": 1,
+      "hooks": [
+        {
+          "hook_id": "session-bootstrap",
+          "event": "session.start",
+          "runtime": "python",
+          "command": ["./hooks/bootstrap.py"],
+          "files": ["./hooks/helper.py"],
+          "timeout_seconds": 10,
+          "input_fields": ["session_id", "source"],
+          "output_fields": ["context"],
+          "failure_policy": "fail_open"
+        }
+      ]
+    }
+  }
+}
+```
+
+The supported event names are `session.start`, `session.end`, `prompt.submit`,
+`agent.start`, `agent.stop`, `model.before`, `model.after`, `tool.before`,
+`tool.after`, `completion.before`, `compact.before`, `compact.after`,
+`subagent.start` and `subagent.stop`. Each event has its own input/output
+allowlist; `input_fields` and `output_fields` must be explicit. Commands must
+begin with a package-relative `./` path. Settings-owned commands resolve under
+the EvoFlux config directory.
+
+Plugin enablement and digest-bound hook trust are separate decisions. The
+dispatcher is connected to the session, prompt, agent, model, tool, completion,
+compaction and member-agent boundaries. The runtime is explicit (`native` or
+`python`); the entrypoint and each declared `files` path are hash-bound. Only
+those files and the isolated Python standard library are staged for a run. The
+Settings config directory is never exposed wholesale. Windows AppContainer +
+Windows is the first executable-hook target. Hooks run in an AppContainer with
+no capabilities and a constrained Job Object; adversarial smoke coverage checks
+filesystem and network denial, staged-file reads, child-process restrictions,
+resource limits, cancellation, and output bounds. Linux and macOS remain
+fail-closed until equivalent platform tests pass. Saving a definition or
+approving a digest cannot bypass that gate. Hook-provided context is passed as
+untrusted user context, never system policy.
+
+The Claude marketplace adapter supports one narrow exception: Superpowers'
+exact `SessionStart` bootstrap is normalized to a `static_context` action that
+reads only `skills/using-superpowers/SKILL.md`. EvoFlux does not copy or execute
+Superpowers' Bash/polyglot launcher. Review and trust this static file action
+separately; its bounded contents are added once at session start as untrusted
+context. Other Claude hook declarations remain unsupported and are reported in
+the marketplace preview. The Skill itself stays available when the hook shape
+is unsupported, oversized, disabled, or untrusted.
+
+Before trusting a command hook, review its matcher, exact argv and package
+path, input/output fields, timeout, failure policy, fixed environment allowlist,
+isolation profile, and digest. Static context review instead shows the single
+read-only source path, context wrapper, and its separate trust profile. A
+`fail_open` declaration does not allow a command hook to bypass the mandatory
+isolation gate; if containment is unavailable, dispatch denies the affected
+operation.
+Agent and subagent stop events include `outcome: completed|cancelled|failed`
+and are attempted in a terminal finalizer, including when the run raises.
+
+### Use Agent hooks without editing JSON
+
+Open **Settings → Agent hooks** to see what each installed plugin
+workflow does, when it runs, whether it needs review, and whether it is paused
+or blocked on this device. **Review workflow** approves one package hook for
+its current digest; it does not enable the plugin. You can pause a single
+plugin workflow without changing other workflows.
+
+Under **My workflows**, choose **Create workflow**, give your guidance a name,
+and write the Markdown you want added when a new session starts. This guided
+workflow reads no session data and cannot run commands. Saving it does not
+approve it; choose **Review and allow** separately. Editing its content changes
+the digest, so the updated version needs review again. Remove deletes that
+workflow and its owned guidance file.
+
+Under **Choose when plugin workflows run**, choose whether plugin workflows run
+alongside your own, or whether your workflows replace them at selected moments.
+Common moments appear first; less common agent and context events are under
+**Other moments**. Replacement shows an affected-workflow preview and requires
+confirmation. A personal workflow must be approved and active to replace a
+plugin workflow; otherwise EvoFlux warns that nothing will run at that moment.
+Core permissions and safety checks continue to apply. Technical users can still
+open **Advanced: edit hook settings JSON**.
+
 ## Develop and debug
 
 Use **Add plugin → Create plugin** to scaffold a package, then edit `plugin.json`, `SKILL.md`, and optional resources in the built-in editor. Enter optional version, author, license, and Skill values; a blank Skill name defaults to the plugin name. EvoFlux does not generate MCP code or install its dependencies. Add `mcp.json` deliberately only after supplying and testing a portable executable or remote endpoint. A linked development directory refreshes in place.

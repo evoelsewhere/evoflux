@@ -27,6 +27,7 @@ import {
   Server,
   Shield,
   Sparkles,
+  Workflow,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -181,6 +182,12 @@ export function SettingsHubPage() {
           description: 'External tools over Model Context Protocol',
           count: mcpCount,
           countLabel: mcpCount === 1 ? 'server' : 'servers',
+        },
+        {
+          to: '/settings/hooks',
+          icon: Workflow,
+          title: 'Agent hooks',
+          description: 'Choose what plugins do at key moments in a chat',
         },
         {
           to: '/settings/language-servers',

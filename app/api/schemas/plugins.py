@@ -51,6 +51,12 @@ class PluginEnabledRequest(BaseModel):
     enabled: bool
 
 
+class PluginHookTrustRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    digest: str = Field(pattern=r"^[a-fA-F0-9]{64}$")
+
+
 class PluginOperationResponse(BaseModel):
     installation: PluginInstallation
     inspection: PluginInspection

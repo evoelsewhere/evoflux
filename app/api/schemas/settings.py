@@ -6,6 +6,13 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.agent.plugins.hook_contract import (
+    HookDefinition,
+    HookEvent,
+    HookMode,
+    HookTarget,
+)
+
 
 class TeamSpawnSettingsBody(BaseModel):
     """Per-team spawn confirmation mode (ask / auto)."""
@@ -81,6 +88,102 @@ class ContextSettingsBody(BaseModel):
     #: clamped to, so a caller can name a model's own ceiling without
     #: restating the rule.
     context_ratio: float = Field(default=0.0, ge=0.0, le=1.0)
+
+
+class HookSettingsBody(BaseModel):
+    """Editable hook policy and Settings-owned definitions."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    mode: HookMode = HookMode.AUGMENT
+    replace_plugin_events: list[HookEvent] = Field(default_factory=list)
+    disabled_plugin_hooks: list[HookTarget] = Field(default_factory=list)
+    definitions: list[HookDefinition] = Field(default_factory=list)
+
+
+class SettingsHookWorkflowContentRequest(BaseModel):
+    """Markdown for a guided Settings-owned session workflow."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    content: str = Field(min_length=1)
+
+
+class SettingsHookWorkflowContentResponse(BaseModel):
+    """Fixed config-root-relative path used by a static-context definition."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    path: str
+
+
+class SettingsHookWorkflowContentDetailResponse(SettingsHookWorkflowContentResponse):
+    content: str
+
+
+class SettingsHookWorkflowContentDeleteResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    deleted: bool
+
+
+class SettingsHookStatus(BaseModel):
+    """Reviewable Settings hook identity, data boundary, and trust state."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    hook_id: str
+    event: HookEvent
+    command: list[str]
+    runtime: Literal["native", "python"] = "native"
+    files: list[str] = Field(default_factory=list)
+    execution_kind: Literal["command", "static_context"] = "command"
+    context_prefix: str = ""
+    context_suffix: str = ""
+    input_fields: list[str]
+    output_fields: list[str]
+    digest: str | None = None
+    isolation_profile: str
+    trusted: bool
+    has_approvals: bool
+    status: Literal[
+        "invalid", "awaiting_trust", "blocked_isolation_unavailable", "active"
+    ]
+
+
+class SettingsHookTrustRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    confirm: Literal[True]
+    expected_digest: str = Field(pattern=r"^[a-fA-F0-9]{64}$")
+
+
+class HookReplacePreviewRegistration(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    event: HookEvent
+    plugin_id: str
+    hook_id: str
+    installation_id: str
+    source: Literal["managed_plugin", "legacy_python"]
+    display_name: str
+    certainty: Literal["exact", "possible"]
+
+
+class HookReplacePreviewResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    registrations: list[HookReplacePreviewRegistration] = Field(default_factory=list)
+
+
+class HookSettingsResponse(HookSettingsBody):
+    """Hook Settings plus the host's current execution gate."""
+
+    execution_state: Literal["available", "blocked_isolation_unavailable"] = (
+        "blocked_isolation_unavailable"
+    )
+    trust_required: bool = True
+    hook_statuses: list[SettingsHookStatus] = Field(default_factory=list)
 
 
 # ── Providers (Settings → Providers tab) ────────────────────────────────────

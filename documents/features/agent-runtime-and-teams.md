@@ -44,6 +44,22 @@ Hooks add bounded behavior around the model and tools:
 - streaming, session JSONL and OpenTelemetry events;
 - post-edit diagnostics and Problems capture;
 - usage accounting, Goal state and background memory extraction.
+
+Portable plugin lifecycle declarations map session creation/resume/end,
+prompt submission, agent/member start/stop, model request/response, tool
+before/after, completion checks, and successful context compaction to their
+owning boundaries. Hook input is projected to declared fields. Context returned
+by a hook is tagged as untrusted user context; it cannot edit the system prompt
+or grant tool permissions. Rewritten tool arguments pass the tool schema and
+then the tool's normal execution checks. Windows command hooks run inside an
+AppContainer without capabilities and a constrained Job Object; Linux/macOS
+remain fail-closed until equivalent containment passes their own tests. There
+is no unrestricted subprocess fallback. The data-only `static_context` action reads
+one digest-trusted package file at session start without starting a process;
+its bounded text is still untrusted context.
+Agent and member stop hooks run from the terminal finalizer on success, failure,
+or cancellation and receive a bounded `outcome` value. A stop-hook failure is
+logged without masking the original run result.
   mission owns.
 
 Tool results are normalized and large outputs are offloaded. Provider-specific
@@ -191,6 +207,12 @@ sending it, so the client posts it through the ordinary chat path and the
 spawned session inherits the normal permissions, tools and streaming. A
 started suggestion can no longer be dismissed: the spawned session owns the
 work.
+
+Creating that top-level session also dispatches `session.start` with source
+`suggested_task`. A hook veto leaves the suggestion pending and, when an
+isolated worktree was just created, removes that managed worktree. Historical
+session imports do not represent a new interactive session; internal member
+rows use `subagent.start/stop` instead of duplicate session events.
 
 The chip's **Run** button starts a new session; its arrow menu also offers
 **Run in current session**, which marks the suggestion started with

@@ -65,9 +65,11 @@ class TestScriptSyntax:
 
     def test_script_exists_and_is_readable(self):
         assert SCRIPT.is_file(), f"install.sh missing at {SCRIPT}"
-        # Should be executable (chmod +x in CI/dev).
-        st = SCRIPT.stat()
-        assert st.st_mode & stat.S_IXUSR, "install.sh must be executable"
+        # Windows does not preserve POSIX executable bits in the checkout;
+        # the script is invoked explicitly through Bash in this test.
+        if os.name != "nt":
+            st = SCRIPT.stat()
+            assert st.st_mode & stat.S_IXUSR, "install.sh must be executable"
 
     def test_bash_syntax_check_passes(self):
         proc = subprocess.run(

@@ -25,6 +25,7 @@ import { McpServerDetailPage } from '@/routes/settings.mcp.$name'
 import { NewMcpServerPage } from '@/routes/settings.mcp.new'
 import { McpListPage } from '@/routes/settings.mcp'
 import { ContextSettingsPage } from '@/routes/settings.context'
+import { HookSettingsPage } from '@/routes/settings.hooks'
 import { MemorySettingsPage } from '@/routes/settings.memory'
 import { NotificationSettingsPage } from '@/routes/settings.notifications'
 import { ProvidersSettingsPage } from '@/routes/settings.providers'
@@ -50,6 +51,7 @@ const LIST_SECTIONS: Readonly<Record<string, string>> = {
 const LEAF_SECTIONS: Readonly<Record<string, string>> = {
   providers: 'Providers',
   'language-servers': 'Language servers',
+  hooks: 'Agent hooks',
   connection: 'Connection',
   'remote-use': 'Remote Control',
   'version-control': 'Git & reviews',
@@ -111,6 +113,7 @@ function SettingsContent({ path }: { path: string }) {
   if (section === 'mcp') return <McpListPage />
   if (section === 'memory') return <MemorySettingsPage />
   if (section === 'context') return <ContextSettingsPage />
+  if (section === 'hooks') return <HookSettingsPage />
   if (section === 'connection') return <BackendConnectionPage />
   if (section === 'remote-use') return <RemoteUseSettingsPage />
   if (section === 'version-control') return <VersionControlSettingsPage />

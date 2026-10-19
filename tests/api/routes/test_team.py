@@ -272,6 +272,65 @@ class TestTeamChatRoute:
         assert response.json()["session_id"] == sid
         assert dispatch.await_args.kwargs["defer"] is True
 
+    def test_team_chat_dispatches_session_start_for_a_new_draft_before_first_turn(
+        self, app_with_team
+    ):
+        from app.agent.plugins.hook_contract import HookEvent
+
+        order: list[tuple[str, str]] = []
+
+        async def dispatch_hook(event, session_id, source):
+            assert event is HookEvent.SESSION_START
+            assert source == "create"
+            order.append(("hook", session_id))
+            return True
+
+        async def dispatch_message(_team, *, session_id, **_kwargs):
+            order.append(("message", session_id))
+            return session_id, 0
+
+        with (
+            patch(
+                "app.agent.plugins.hook_lifecycle.dispatch_session_event",
+                new=AsyncMock(side_effect=dispatch_hook),
+            ) as dispatch_hook_mock,
+            patch(
+                "app.api.routes.team.chat.agent_service.dispatch_user_message",
+                new=AsyncMock(side_effect=dispatch_message),
+            ),
+        ):
+            response = TestClient(app_with_team).post(
+                "/api/team/chat", data={"message": "Start a new smoke session"}
+            )
+
+        assert response.status_code == 202
+        session_id = response.json()["session_id"]
+        dispatch_hook_mock.assert_awaited_once_with(
+            HookEvent.SESSION_START, session_id, "create"
+        )
+        assert order == [("hook", session_id), ("message", session_id)]
+
+    def test_team_chat_does_not_dispatch_when_session_start_hook_denies(
+        self, app_with_team
+    ):
+        with (
+            patch(
+                "app.agent.plugins.hook_lifecycle.dispatch_session_event",
+                new=AsyncMock(return_value=False),
+            ) as dispatch_hook_mock,
+            patch(
+                "app.api.routes.team.chat.agent_service.dispatch_user_message",
+                new=AsyncMock(),
+            ) as dispatch_message_mock,
+        ):
+            response = TestClient(app_with_team).post(
+                "/api/team/chat", data={"message": "This must be blocked"}
+            )
+
+        assert response.status_code == 403
+        dispatch_hook_mock.assert_awaited_once()
+        dispatch_message_mock.assert_not_awaited()
+
     def test_team_chat_ignores_the_retired_webbridge_fields(
         self, app_with_team, test_team
     ):

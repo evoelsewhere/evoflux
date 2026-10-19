@@ -16,6 +16,7 @@ import asyncio
 import inspect
 import json
 import time
+from contextvars import ContextVar
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, Generic, TypeVar
@@ -58,6 +59,10 @@ from app.agent.state import (
 )
 from app.agent.tools.registry import Tool, deferred_catalog_entry
 from app.agent.turn_usage import current_turn_usage_snapshot
+
+_RUN_TERMINAL_LIFECYCLE: ContextVar[tuple[Any, RunContext, AgentState] | None] = (
+    ContextVar("agent_run_terminal_lifecycle", default=None)
+)
 
 MAX_AGENT_ITERATIONS = 5000
 MAX_CONCURRENT_TOOLS = 10
@@ -339,6 +344,59 @@ class Agent(Generic[TContext]):
         final_model_hooks: Sequence[BaseAgentHook] | None = None,
         **kwargs,
     ) -> list[ChatMessage]:
+        """Run one turn and deliver lifecycle stop events on every terminal path."""
+        token = _RUN_TERMINAL_LIFECYCLE.set(None)
+        succeeded = False
+        try:
+            result = await self._run_impl(
+                messages,
+                config,
+                hooks=hooks,
+                injected_tools=injected_tools,
+                excluded_tools=excluded_tools,
+                deferred_tools=deferred_tools,
+                interrupt_event=interrupt_event,
+                checkpointer=checkpointer,
+                llm_provider=llm_provider,
+                model_id=model_id,
+                final_model_hooks=final_model_hooks,
+                **kwargs,
+            )
+            succeeded = True
+            return result
+        finally:
+            terminal = _RUN_TERMINAL_LIFECYCLE.get()
+            _RUN_TERMINAL_LIFECYCLE.reset(token)
+            if (
+                terminal is not None
+                and terminal[2].metadata.get("_plugin_agent_started") is True
+            ):
+                lifecycle_hook, ctx, state = terminal
+                outcome = (
+                    "cancelled"
+                    if interrupt_event is not None and interrupt_event.is_set()
+                    else "completed"
+                    if succeeded
+                    else "failed"
+                )
+                await lifecycle_hook.agent_terminal(ctx, state, outcome)
+
+    async def _run_impl(
+        self,
+        messages: list[ChatMessage],
+        config: RunConfig | None = None,
+        *,
+        hooks: Sequence[BaseAgentHook] | None = None,
+        injected_tools: list[Tool] | None = None,
+        excluded_tools: frozenset[str] | None = None,
+        deferred_tools: frozenset[str] | None = None,
+        interrupt_event: asyncio.Event | None = None,
+        checkpointer: Checkpointer | None = None,
+        llm_provider: LLMProviderBase | None = None,
+        model_id: str | None = None,
+        final_model_hooks: Sequence[BaseAgentHook] | None = None,
+        **kwargs,
+    ) -> list[ChatMessage]:
         """Runs the agent loop for a single turn.
 
         Returns the full list of messages produced.
@@ -384,6 +442,23 @@ class Agent(Generic[TContext]):
         role = current_role()
         self.run_config = config
         plugin_hooks = await self._load_plugin_hooks(role)
+        from app.agent.plugins.hook_lifecycle import build_agent_lifecycle_hook
+
+        lifecycle_hook = build_agent_lifecycle_hook(
+            cancellation_token=interrupt_event,
+            parent_agent_name=(
+                config.metadata.get("parent_agent_name")
+                if config is not None
+                and isinstance(config.metadata.get("parent_agent_name"), str)
+                else None
+            ),
+        )
+        if lifecycle_hook is not None:
+            from app.agent.plugins.hook_lifecycle import apply_legacy_plugin_policy
+
+            plugin_hooks = apply_legacy_plugin_policy(
+                plugin_hooks, lifecycle_hook.settings_policy
+            )
         # ``final_model_hooks`` run after plugin hooks. They are reserved for
         # runtime-owned terminal request invariants, such as a frozen session
         # prefix, which must be the last authority before provider serialization.
@@ -391,6 +466,7 @@ class Agent(Generic[TContext]):
             list(self.hooks)
             + list(hooks or [])
             + plugin_hooks
+            + ([lifecycle_hook] if lifecycle_hook is not None else [])
             + list(final_model_hooks or [])
         )
         active_provider = llm_provider or self.llm_provider
@@ -472,6 +548,8 @@ class Agent(Generic[TContext]):
             tool_names=sorted(run_tools.keys()),
             tool_defs=tool_defs,
         )
+        if lifecycle_hook is not None:
+            _RUN_TERMINAL_LIFECYCLE.set((lifecycle_hook, ctx, state))
 
         # Expose session_id in state.metadata so tools (e.g. note) can read it
         # without needing direct access to RunContext.
@@ -625,6 +703,9 @@ class Agent(Generic[TContext]):
             _refresh_deferred_tool_catalog
         )
         state.metadata["_grant_plugin_mcp_tools"] = _grant_plugin_mcp_tools
+        if lifecycle_hook is not None:
+            lifecycle_hook.bind_tool_registry(run_tools)
+            state.metadata["_plugin_hook_compact"] = lifecycle_hook.compact
 
         # Me seed last_prompt_tokens from checkpointer so SummarizationHook
         # fires on session resume without call-site workaround
@@ -641,6 +722,14 @@ class Agent(Generic[TContext]):
             len(tool_defs),
             ctx.session_id,
         )
+
+        if lifecycle_hook is not None:
+            prompt_source = "agent.run"
+            if config is not None:
+                candidate_source = config.metadata.get("source")
+                if isinstance(candidate_source, str):
+                    prompt_source = candidate_source
+            await lifecycle_hook.prompt_submit(ctx, messages, prompt_source)
 
         for hook in combined_hooks:
             await hook.before_agent(ctx, state)
@@ -1245,7 +1334,9 @@ class Agent(Generic[TContext]):
         try:
             from app.services.webbridge_service import webbridge_manager
 
-            _turn_session = (config.session_id if config is not None else None) or getattr(ctx, "session_id", None)
+            _turn_session = (
+                config.session_id if config is not None else None
+            ) or getattr(ctx, "session_id", None)
             await webbridge_manager.release_browsing(_turn_session)
         except Exception:  # pragma: no cover - teardown must never break a turn
             logger.debug("webbridge_turn_release_failed", exc_info=True)

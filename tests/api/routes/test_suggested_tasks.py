@@ -130,12 +130,17 @@ async def test_list_returns_pending_chips(app_with_team, tmp_path):
 
 @pytest.mark.asyncio
 async def test_start_creates_a_top_level_session_and_returns_the_prompt(
-    app_with_team, tmp_path
+    app_with_team, tmp_path, monkeypatch
 ):
     import app.core.db as _db
+    from unittest.mock import AsyncMock
 
     session_id, task_id, workspace = await _seed(tmp_path)
     project_id = await _project_of(session_id)
+    dispatch = AsyncMock(return_value=True)
+    monkeypatch.setattr(
+        "app.agent.plugins.hook_lifecycle.dispatch_session_event", dispatch
+    )
 
     response = TestClient(app_with_team).post(
         f"/api/team/suggested-tasks/{task_id}/start", json={"isolated": False}
@@ -150,6 +155,9 @@ async def test_start_creates_a_top_level_session_and_returns_the_prompt(
     # The client posts this itself; the route must not have sent it.
     assert body["prompt"] == PROMPT
     assert body["task"]["status"] == "started"
+    assert dispatch.await_args.args[0].value == "session.start"
+    assert dispatch.await_args.args[1] == body["session_id"]
+    assert dispatch.await_args.args[2] == "suggested_task"
 
     async with _db.async_session_factory() as db:
         spawned = await db.get(ChatSession, uuid.UUID(body["session_id"]))
@@ -162,6 +170,86 @@ async def test_start_creates_a_top_level_session_and_returns_the_prompt(
         task = await svc.get(db, task_id)
         assert task is not None
         assert task.spawned_session_id == spawned.id
+
+
+@pytest.mark.asyncio
+async def test_suggested_task_session_start_hook_can_veto_creation(
+    app_with_team, tmp_path, monkeypatch
+):
+    import sqlalchemy as sa
+    import app.core.db as _db
+
+    _session_id, task_id, _workspace = await _seed(tmp_path)
+    dispatch = __import__("unittest.mock", fromlist=["AsyncMock"]).AsyncMock(
+        return_value=False
+    )
+    monkeypatch.setattr(
+        "app.agent.plugins.hook_lifecycle.dispatch_session_event", dispatch
+    )
+
+    response = TestClient(app_with_team).post(
+        f"/api/team/suggested-tasks/{task_id}/start", json={"isolated": False}
+    )
+
+    assert response.status_code == 403
+    dispatch.assert_awaited_once()
+    assert dispatch.await_args.args[0].value == "session.start"
+    assert dispatch.await_args.args[2] == "suggested_task"
+    async with _db.async_session_factory() as db:
+        task = await svc.get(db, task_id)
+        assert task is not None
+        assert task.status == "pending"
+        spawned = await db.scalar(
+            sa.select(ChatSession).where(
+                ChatSession.title == "Fix swallowed retry exception"
+            )
+        )
+        assert spawned is None
+
+
+@pytest.mark.asyncio
+async def test_suggested_task_hook_veto_removes_created_worktree(
+    app_with_team, tmp_path, monkeypatch
+):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+    import sqlalchemy as sa
+    import app.core.db as _db
+
+    _session_id, task_id, _workspace = await _seed(tmp_path)
+    worktree = tmp_path / "repo" / ".evoflux" / "worktrees" / "suggested"
+    create_worktree = AsyncMock(return_value=SimpleNamespace(directory=str(worktree)))
+    remove_worktree = AsyncMock(return_value={"removed": True})
+    dispatch = AsyncMock(return_value=False)
+    monkeypatch.setattr(
+        "app.api.routes.team.suggested_tasks.create_coding_workspace_worktree",
+        create_worktree,
+    )
+    monkeypatch.setattr(
+        "app.api.routes.team.suggested_tasks.remove_coding_workspace_worktree",
+        remove_worktree,
+    )
+    monkeypatch.setattr(
+        "app.agent.plugins.hook_lifecycle.dispatch_session_event", dispatch
+    )
+
+    response = TestClient(app_with_team).post(
+        f"/api/team/suggested-tasks/{task_id}/start", json={"isolated": True}
+    )
+
+    assert response.status_code == 403
+    remove_worktree.assert_awaited_once()
+    assert remove_worktree.await_args.args[0].directory == str(worktree)
+    async with _db.async_session_factory() as db:
+        task = await svc.get(db, task_id)
+        assert task is not None
+        assert task.status == "pending"
+        spawned = await db.scalar(
+            sa.select(ChatSession).where(
+                ChatSession.title == "Fix swallowed retry exception"
+            )
+        )
+        assert spawned is None
 
 
 @pytest.mark.asyncio

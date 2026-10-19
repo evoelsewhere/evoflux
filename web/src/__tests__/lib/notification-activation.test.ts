@@ -153,9 +153,8 @@ describe('notification activation URLs', () => {
     const url = `evoflux://notification?v=1&mode=coding&session_id=${sessionId}&focus_id=${focusId}&event_kind=question_asked&request_id=${requestId}`
 
     mocks.handler?.([url, url])
-    await Promise.resolve()
+    await vi.waitFor(() => expect(navigate).toHaveBeenCalledTimes(1))
 
-    expect(navigate).toHaveBeenCalledTimes(1)
     expect(navigate).toHaveBeenCalledWith({
       to: '/coding/$focusId/$sessionId',
       params: { focusId, sessionId },

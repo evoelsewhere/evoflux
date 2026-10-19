@@ -10,6 +10,29 @@ import vi from '@/i18n/messages/vi.json'
 import { STORAGE_KEYS } from '@/lib/storage-keys'
 
 describe('i18n catalogs', () => {
+  it('includes localized Agent hooks labels and trust boundaries', () => {
+    const workflowKeys = [
+      'At the start of a chat',
+      'Use my workflows at selected moments',
+      'Review workflow',
+      'Allow this workflow',
+      'Revoke workflow approval',
+      'These plugin hooks will be suppressed at the selected moments:',
+      'When a new session starts',
+      'Runs this plugin’s command at this moment.',
+      'Adds this plugin’s guidance to a new session. It does not run code.',
+      'Enabling the plugin does not approve its hooks. Hook approval is a separate choice in Agent hooks. Commands run only when the host verifies isolation.',
+    ] as const
+    for (const key of workflowKeys) {
+      expect(vi[key]).not.toBe(key)
+      expect(ja[key]).not.toBe(key)
+    }
+    expect(vi['Agent hooks']).toBe('Agent hooks')
+    expect(ja['Agent hooks']).toBe('エージェントフック')
+    expect(vi['Allow this workflow']).toBe('Cho phép quy trình này')
+    expect(ja['Allow this workflow']).toBe('このワークフローを許可')
+  })
+
   it('ships complete Vietnamese and Japanese catalogs', () => {
     expect(Object.keys(vi)).toEqual(Object.keys(en))
     expect(Object.keys(ja)).toEqual(Object.keys(en))

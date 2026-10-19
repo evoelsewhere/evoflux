@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from urllib.parse import urlsplit
 
+from app.agent.plugins.hook_runner import hook_trust_profile
 from app.plugin_platform.extensions import (
     CREDENTIALS_EXTENSION,
     LEGACY_CREDENTIALS_EXTENSIONS,
@@ -19,6 +20,8 @@ from app.plugin_platform.models import (
     PluginTrustCommand,
     PluginTrustRemoteHost,
     PluginTrustReview,
+    PluginTrustHook,
+    PluginHookComponent,
 )
 
 
@@ -71,6 +74,7 @@ def build_trust_review(
     manifest: PluginManifest,
     skills: list[PluginSkillComponent],
     mcp_servers: list[PluginMCPComponent],
+    hooks: list[PluginHookComponent] | None = None,
 ) -> PluginTrustReview:
     """Describe code and network access without executing plugin content."""
 
@@ -119,11 +123,47 @@ def build_trust_review(
                         )
                     )
     capabilities.extend(_declared_capabilities(manifest))
+    hook_disclosures = [
+        PluginTrustHook(
+            hook_id=hook.definition.hook_id,
+            event=hook.definition.event.value,
+            command=list(hook.definition.command),
+            command_path=hook.command_path,
+            runtime=hook.definition.runtime,
+            files=list(hook.definition.files),
+            execution_kind=hook.definition.execution_kind,
+            context_prefix=hook.definition.context_prefix,
+            context_suffix=hook.definition.context_suffix,
+            matcher=(
+                hook.definition.matcher.model_dump(exclude_none=True)
+                if hook.definition.matcher is not None
+                else None
+            ),
+            timeout_seconds=hook.definition.timeout_seconds,
+            failure_policy=hook.definition.failure_policy.value,
+            input_fields=list(hook.definition.input_fields),
+            output_fields=list(hook.definition.output_fields),
+            environment_fields=(
+                ["EVOFLUX_HOOK_PROTOCOL"]
+                if hook.definition.execution_kind == "command"
+                else []
+            ),
+            isolation_profile=hook_trust_profile(hook.definition),
+            digest=hook.digest,
+            valid=hook.valid,
+        )
+        for hook in hooks or []
+    ]
+    capabilities.extend(
+        PluginTrustCapability(name="lifecycle-hook", source=hook.hook_id)
+        for hook in hook_disclosures
+    )
     return PluginTrustReview(
         executable_commands=commands,
         remote_hosts=remote_hosts,
         environment_fields=sorted(environment_fields),
         capabilities=capabilities,
+        hooks=hook_disclosures,
     )
 
 

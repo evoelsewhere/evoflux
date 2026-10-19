@@ -984,6 +984,102 @@ export interface ContextSettings extends ContextOverrides {
   context_ratio: number
 }
 
+export type HookEventName =
+  | 'session.start'
+  | 'session.end'
+  | 'prompt.submit'
+  | 'agent.start'
+  | 'agent.stop'
+  | 'model.before'
+  | 'model.after'
+  | 'tool.before'
+  | 'tool.after'
+  | 'completion.before'
+  | 'compact.before'
+  | 'compact.after'
+  | 'subagent.start'
+  | 'subagent.stop'
+
+export interface HookDefinition {
+  hook_id: string
+  event: HookEventName
+  matcher?: {
+    source?: string | null
+    agent_name?: string | null
+    role?: string | null
+    model?: string | null
+    tool_name?: string | null
+  } | null
+  command: string[]
+  runtime?: 'native' | 'python'
+  files?: string[]
+  execution_kind?: 'command' | 'static_context'
+  context_prefix?: string
+  context_suffix?: string
+  timeout_seconds: number
+  input_fields: string[]
+  output_fields: string[]
+  failure_policy: 'fail_open' | 'fail_closed'
+  overrides: { plugin_id: string; hook_id: string }[]
+}
+
+export interface HookSettings {
+  mode: 'augment' | 'replace'
+  replace_plugin_events: HookEventName[]
+  disabled_plugin_hooks: { plugin_id: string; hook_id: string }[]
+  definitions: HookDefinition[]
+}
+
+export interface SettingsHookWorkflowContentResponse {
+  path: string
+}
+
+export interface SettingsHookWorkflowContentDetailResponse extends SettingsHookWorkflowContentResponse {
+  content: string
+}
+
+export interface SettingsHookWorkflowContentDeleteResponse {
+  deleted: boolean
+}
+
+export interface HookSettingsResponse extends HookSettings {
+  execution_state: 'available' | 'blocked_isolation_unavailable'
+  trust_required: boolean
+  hook_statuses: SettingsHookStatus[]
+}
+
+export interface HookReplacePreviewRegistration {
+  event: HookEventName
+  plugin_id: string
+  hook_id: string
+  installation_id: string
+  source: 'managed_plugin' | 'legacy_python'
+  display_name: string
+  certainty: 'exact' | 'possible'
+}
+
+export interface HookReplacePreviewResponse {
+  registrations: HookReplacePreviewRegistration[]
+}
+
+export interface SettingsHookStatus {
+  hook_id: string
+  event: HookEventName
+  command: string[]
+  runtime: 'native' | 'python'
+  files: string[]
+  execution_kind: 'command' | 'static_context'
+  context_prefix: string
+  context_suffix: string
+  input_fields: string[]
+  output_fields: string[]
+  digest: string | null
+  isolation_profile: string
+  trusted: boolean
+  has_approvals: boolean
+  status: 'invalid' | 'awaiting_trust' | 'blocked_isolation_unavailable' | 'active'
+}
+
 // ── Wiki ─────────────────────────────────────────────────────────────────────
 
 /** One row in the wiki tree — surfaced from YAML frontmatter. */
@@ -2038,11 +2134,33 @@ export interface PluginTrustCapability {
   source: string
 }
 
+export interface PluginTrustHook {
+  hook_id: string
+  event: string
+  command: string[]
+  command_path: string
+  runtime: 'native' | 'python'
+  files: string[]
+  execution_kind: 'command' | 'static_context'
+  context_prefix: string
+  context_suffix: string
+  matcher: Record<string, string> | null
+  timeout_seconds: number
+  failure_policy: 'fail_open' | 'fail_closed'
+  input_fields: string[]
+  output_fields: string[]
+  environment_fields: string[]
+  isolation_profile: string
+  digest: string | null
+  valid: boolean
+}
+
 export interface PluginTrustReview {
   executable_commands: PluginTrustCommand[]
   remote_hosts: PluginTrustRemoteHost[]
   environment_fields: string[]
   capabilities: PluginTrustCapability[]
+  hooks?: PluginTrustHook[]
 }
 
 export interface PluginManifest {
@@ -2065,6 +2183,28 @@ export interface PluginInspection {
   diagnostics: PluginDiagnostic[]
   skills: PluginSkillComponent[]
   mcp_servers: PluginMcpComponent[]
+  hooks?: {
+    definition: HookDefinition
+    command_path: string
+    digest: string | null
+    valid: boolean
+    diagnostics: PluginDiagnostic[]
+  }[]
+  hook_statuses?: {
+    hook_id: string
+    event: string
+    digest: string | null
+    trusted: boolean
+    enabled: boolean
+    status:
+      | 'active'
+      | 'disabled'
+      | 'disabled_by_settings'
+      | 'replaced_by_settings'
+      | 'awaiting_trust'
+      | 'blocked_isolation_unavailable'
+      | 'shadowed_by_settings'
+  }[]
   trust: PluginTrustReview
   extension_namespaces: string[]
   content_sha256: string | null
