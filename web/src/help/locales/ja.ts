@@ -439,6 +439,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'composer にフォーカス（Ctrl+I）。セッションで添付が有効である必要があります。Work では WorkFolderSelector が composer 近くにあり session folder を付け替えます。Coding では # スニペットにワークスペースまたはグローバル定義が必要です。',
     tricks: [
       'メッセージを ! で始めるとシェルコマンドを実行（または /shell で bang モードを事前入力）。',
+      'エージェントがターン終了時に有用な次のステップを思いつくと、その提案が空の composer にゴーストテキストで表示されます。Tab で確定、入力を続ければ自分のメッセージに置き換え、Esc で消します。',
       '@ でアクティブワークスペースからランク付きファイル/フォルダパス参照を挿入。',
       'Coding では # でワークスペースまたはグローバルスニペットを composer に展開。',
       '$ を打つとスキルを選べます。$skill-name はメッセージのどこに書いてもよく、複数指定できます（> 引用行とコードブロック内は除く）。',
@@ -2648,6 +2649,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           { keys: 'Ctrl+G', action: 'Source Control（Coding）' },
           { keys: 'Ctrl+`', action: 'Terminal' },
           { keys: 'Ctrl+I', action: 'チャット入力にフォーカス' },
+          { keys: 'Tab', action: '提案された次メッセージを確定（composer が空・エージェント待機時）' },
           { keys: 'Ctrl+;', action: 'Side chat（ラベルは ⌥⌘S の場合あり）' },
           { keys: 'Ctrl+R', action: 'Work セッションを更新' },
           { keys: '1–3', action: '権限メニューが開いているときの権限モード' }

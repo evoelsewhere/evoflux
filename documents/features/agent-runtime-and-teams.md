@@ -198,6 +198,22 @@ The chip's **Run** button starts a new session; its arrow menu also offers
 prompt for the client to queue there. That path is refused for a suggestion
 whose `cwd` targets another project, and cannot be combined with a worktree.
 
+## Suggested next message
+
+When an agent reaches the end of a turn and sees a genuinely useful follow-up —
+tests after a change, a build check after an edit — it can call
+`suggest_next_message` instead of only describing the step in prose. The call
+is non-blocking: it publishes a `next_message_suggestion` event carrying the
+short user-style message plus an optional one-line reason, and the turn
+continues. The event is ephemeral per-turn UI state — never stored, never
+replayed on reconnect — and one suggestion survives per turn (later calls in
+the same turn overwrite earlier ones).
+
+The suggestion renders as ghost text in an empty composer once the turn
+completes. **Tab** accepts it into the input, typing replaces it, and **Esc**
+dismisses it; sending a message clears it. It appears only when the agent
+judges a next step is warranted — never as a standing nudge on every turn.
+
 ## Concurrency and lifecycle
 
 One member executes one turn at a time. Safe model-emitted tool calls may run in
