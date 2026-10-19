@@ -47,6 +47,26 @@ from app.services.prompt_prefix import advance_prefix_snapshot
 # temporarily cannot acquire the single-writer connection.
 _SYNC_BATCH_SIZE = 50
 
+
+def _message_batches(messages: list[ChatMessage]) -> list[list[ChatMessage]]:
+    """Split *messages* into write batches of about ``_SYNC_BATCH_SIZE``.
+
+    A batch never ends between an assistant tool-call message and its tool
+    results, so a failure in a later batch cannot leave a persisted tool call
+    with no results (which providers reject on the next turn).
+    """
+
+    batches: list[list[ChatMessage]] = []
+    start = 0
+    while start < len(messages):
+        end = min(start + _SYNC_BATCH_SIZE, len(messages))
+        while end < len(messages) and isinstance(messages[end], ToolMessage):
+            end += 1
+        batches.append(messages[start:end])
+        start = end
+    return batches
+
+
 if TYPE_CHECKING:
     from app.core.db import DbFactory
 
@@ -393,8 +413,7 @@ class SQLiteCheckpointer(Checkpointer):
             logger.debug("checkpointer_skip_role session_id={} role={}", sid, msg.role)
             return False, None
 
-        for start in range(0, len(seen_messages), _SYNC_BATCH_SIZE):
-            batch = seen_messages[start : start + _SYNC_BATCH_SIZE]
+        for batch in _message_batches(seen_messages):
 
             async def update_seen_batch(batch=batch) -> None:
                 async with self._session_factory() as db:
@@ -450,8 +469,7 @@ class SQLiteCheckpointer(Checkpointer):
                 operation_name="checkpointer.update_seen",
             )
 
-        for start in range(0, len(new_messages), _SYNC_BATCH_SIZE):
-            batch = new_messages[start : start + _SYNC_BATCH_SIZE]
+        for batch in _message_batches(new_messages):
 
             async def persist_new_batch(
                 batch=batch,
