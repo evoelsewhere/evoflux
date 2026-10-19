@@ -224,11 +224,10 @@ async def test_runtime_skill_preload_uses_capability_not_prompt_or_response_styl
 async def test_intelligent_ui_preloads_when_visual_tool_is_available_in_default_style(
     workspace, monkeypatch
 ):
-    from app.agent.hooks import skills as skills_module
+    from app.core import runtime_settings
 
-    monkeypatch.setattr(
-        skills_module, "response_style_default", lambda: "simple", raising=False
-    )
+    # The real style source: the preload must not depend on it.
+    monkeypatch.setattr(runtime_settings, "response_style_default", lambda: "simple")
     hook = SkillsHook()
     state = _state("Explain this process visually.")
     state.tool_names = ["visual_artifact"]

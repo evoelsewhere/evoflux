@@ -10,6 +10,8 @@ All notable changes to EvoFlux are documented in this file.
 - A startup failure no longer drops you into an empty app: the launch screen stays up with its error and **Retry** button.
 - Suggested next messages no longer ask for tool permission in ask mode, and only the lead agent can suggest them.
 - Reopening a session whose widget was replaced and then re-created with the same `block_id` now shows the latest version instead of a stale one.
+- Motion artifacts are asked for a single 1920x1080 canvas, which serves both export qualities.
+- The live smoke script for Intelligent UI now honours `--timeout-seconds` for a stalled stream.
 - Saving a long turn in batches never separates a tool call from its results, so a failed write cannot leave a call without answers.
 - Stopping the dev launcher on Windows now ends the whole process tree, and port detection works on non-English Windows.
 - Timed-out commands on Windows are stopped with the System32 `taskkill`, and cancelling mid-kill no longer leaves the command running.
@@ -54,7 +56,7 @@ All notable changes to EvoFlux are documented in this file.
 
 ### Removed
 
-- The `load_tool` deferred-tool activation round-trip is gone. Every tool granted to an agent is now visible in the model's tool definitions from the start of a run, so agents call browser, LSP, worktree, visualization, code-review, and MCP tools directly instead of searching a catalog and loading them first. Tool permission and sandbox behavior is unchanged; `skill` and MCP tools keep working as before.
+- The `load_tool` deferred-tool activation round-trip is gone. Every tool granted to an agent is now visible in the model's tool definitions from the start of a run, so agents call browser, LSP, worktree, visualization, code-review, and MCP tools directly instead of searching a catalog and loading them first. Tool permission and sandbox behavior is unchanged; `skill` and MCP tools keep working, except that MCP tools registered by an agent mid-run now become available from the next turn rather than immediately.
 - Team chat no longer switches to **Split** on its own when three or more agents start working; open Split from the view menu or with `Ctrl+V` whenever you want it.
 
 ### Upgrade notes

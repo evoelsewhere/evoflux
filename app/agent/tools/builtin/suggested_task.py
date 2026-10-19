@@ -196,7 +196,5 @@ dismiss_task = Tool(
     name="dismiss_task",
     tiers=("coding",),
     lead_only=True,
-    # Deferred: only reachable after a spawn_task in the same session, so it
-    # does not belong in the eager payload every coding turn pays for.
     description="Withdraw a suggestion chip created earlier with spawn_task.",
 )
