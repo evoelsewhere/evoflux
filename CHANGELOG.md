@@ -7,6 +7,7 @@ All notable changes to EvoFlux are documented in this file.
 ### Fixed
 
 - Opening the built-in browser no longer fails with "Something went wrong" (React error #301).
+- A startup failure no longer drops you into an empty app: the launch screen stays up with its error and **Retry** button.
 
 ## [3.0.10] - 2026-10-19
 
