@@ -6,7 +6,7 @@
  * pulling Recharts into any of them.
  *
  * Stream 2's `UiChart` re-uses this parser for the `ui_block` event's
- * `spec` field — see §8.3 of documents/plans/2026-10-13-intelligent-ui.md.
+ * `spec` field; see documents/features/intelligent-ui.md for the contract.
  */
 
 export interface ChartSeries {
