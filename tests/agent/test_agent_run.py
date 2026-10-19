@@ -720,11 +720,55 @@ async def test_agent_run_provider_resume_budget_exhausted_raises():
     with (
         patch("app.agent.agent_loop.retry.asyncio.sleep", new_callable=AsyncMock),
         patch("app.agent.agent_loop.core.asyncio.sleep", new_callable=AsyncMock),
+        patch("app.agent.agent_loop.core.random.uniform", return_value=1.0) as jitter,
+        patch("app.agent.agent_loop.core.logger.warning") as resume_log,
     ):
         with pytest.raises(ProviderConnectionError) as excinfo:
             await agent.run([HumanMessage(content="hi")])
     assert excinfo.value.error_type == "ReadTimeout"
     assert isinstance(excinfo.value.__cause__, httpx.ReadTimeout)
+    assert jitter.call_count == 5
+    attempt_logs = [
+        call.args
+        for call in resume_log.call_args_list
+        if call.args and "agent_provider_resume_attempt" in call.args[0]
+    ]
+    assert len(attempt_logs) == 6
+    assert [call[9] for call in attempt_logs] == [1.0, 2.0, 4.0, 8.0, 12.0, 0.0]
+    assert all("turn_usage_delta={}" in call[0] for call in attempt_logs)
+
+
+async def test_provider_resume_deadline_cancels_a_stalled_retry():
+    import asyncio
+    import httpx
+    from unittest.mock import AsyncMock, patch
+
+    from app.agent.errors import ProviderConnectionError
+
+    calls = 0
+
+    async def stall_after_first_failure(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls <= 5:
+            raise httpx.ReadTimeout("initial provider timeout")
+        await asyncio.Event().wait()
+        yield  # pragma: no cover - the resume deadline must cancel this stream
+
+    provider = MockProvider([[]])
+    provider.stream = stall_after_first_failure  # type: ignore[method-assign]
+    agent = Agent(name="bot", llm_provider=provider)
+
+    with (
+        patch("app.agent.agent_loop.core.PROVIDER_RESUME_MAX_DURATION_SECONDS", 0.05),
+        patch("app.agent.agent_loop.retry.asyncio.sleep", new_callable=AsyncMock),
+        patch("app.agent.agent_loop.core.asyncio.sleep", new_callable=AsyncMock),
+        patch("app.agent.agent_loop.core.random.uniform", return_value=1.0),
+    ):
+        with pytest.raises(ProviderConnectionError):
+            await agent.run([HumanMessage(content="hi")])
+
+    assert calls == 6
 
 
 async def test_stream_with_retry_resets_partial_on_mid_stream_retry():

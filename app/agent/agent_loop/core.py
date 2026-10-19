@@ -13,6 +13,7 @@ substantial piece of work is delegated to a sibling module:
 from __future__ import annotations
 
 import asyncio
+import random
 import inspect
 import json
 import time
@@ -67,8 +68,12 @@ MAX_CONCURRENT_TOOLS = 10
 # Without this, such an exhaustion raises straight out of ``run()`` and abandons all
 # completed tool work mid-task — the "agent stopped after a tool call" symptom.
 MAX_PROVIDER_RESUME_ATTEMPTS = 5
-# Base backoff (seconds) between in-loop resume attempts; grows linearly.
-PROVIDER_RESUME_BASE_DELAY = 3.0
+# In-loop provider resume uses bounded exponential backoff with jitter.
+PROVIDER_RESUME_BASE_DELAY = 1.0
+PROVIDER_RESUME_MAX_DELAY = 12.0
+PROVIDER_RESUME_MAX_DURATION_SECONDS = 60.0
+PROVIDER_RESUME_JITTER_LOW = 0.8
+PROVIDER_RESUME_JITTER_HIGH = 1.2
 
 EMPTY_AFTER_TOOL_RECOVERY_PROMPT = (
     "Your previous response after the tool results was empty. Continue the task now. "
@@ -684,6 +689,7 @@ class Agent(Generic[TContext]):
         empty_after_tool_continuations = 0
         max_empty_after_tool_continuations = 3
         provider_resume_attempts = 0
+        provider_resume_started_at: float | None = None
         # Set while the next model call is the one retry after a context
         # overflow; a second overflow before any call succeeds is surfaced.
         overflow_compaction_pending = False
@@ -818,8 +824,21 @@ class Agent(Generic[TContext]):
                 )
                 break
 
+            model_attempt_started_at = time.monotonic()
+            usage_before = current_turn_usage_snapshot() or {}
+            resume_timeout = None
+            if provider_resume_started_at is not None:
+                resume_remaining = PROVIDER_RESUME_MAX_DURATION_SECONDS - (
+                    time.monotonic() - provider_resume_started_at
+                )
+                resume_timeout = asyncio.timeout(max(0.0, resume_remaining))
+
             try:
-                assistant_msg = await model_chain(model_request)
+                if resume_timeout is None:
+                    assistant_msg = await model_chain(model_request)
+                else:
+                    async with resume_timeout:
+                        assistant_msg = await model_chain(model_request)
             except ContextOverflowError as exc:
                 # The prompt outgrew the window before the usage-based
                 # threshold caught it (a large tool result, a stale
@@ -839,47 +858,97 @@ class Agent(Generic[TContext]):
                 )
                 iteration -= 1  # this iteration produced no assistant message
                 continue
-            except TRANSIENT_TRANSPORT_ERRORS as exc:
-                # The provider (and any fallback) exhausted its retry budget on
-                # a transient connectivity failure.  Rather than letting this
-                # kill the whole turn mid-task — abandoning the tool work
-                # already done — resume the same turn a bounded number of
-                # times.  The next model call replays the identical message
-                # history, so the model continues from exactly where it left
-                # off.  Persisted work-so-far is already synced after each
-                # prior iteration's tool execution.
+            except Exception as exc:
+                resume_timed_out = (
+                    resume_timeout is not None and resume_timeout.expired()
+                )
+                if (
+                    not isinstance(exc, TRANSIENT_TRANSPORT_ERRORS)
+                    and not resume_timed_out
+                ):
+                    raise
+
+                # Resume a failed provider call within one wall-clock budget.
+                # This keeps a stream that stalls during a resumed attempt from
+                # restarting the full retry allowance indefinitely.
+                now = time.monotonic()
+                if provider_resume_started_at is None:
+                    provider_resume_started_at = now
+                resume_elapsed = now - provider_resume_started_at
+                resume_remaining = PROVIDER_RESUME_MAX_DURATION_SECONDS - resume_elapsed
                 provider_resume_attempts += 1
-                if provider_resume_attempts > MAX_PROVIDER_RESUME_ATTEMPTS:
+                exhausted = (
+                    provider_resume_attempts > MAX_PROVIDER_RESUME_ATTEMPTS
+                    or resume_remaining <= 0
+                    or resume_timed_out
+                )
+                exponential_delay = min(
+                    PROVIDER_RESUME_MAX_DELAY,
+                    PROVIDER_RESUME_BASE_DELAY * (2 ** (provider_resume_attempts - 1)),
+                )
+                delay = (
+                    min(
+                        exponential_delay
+                        * random.uniform(
+                            PROVIDER_RESUME_JITTER_LOW,
+                            PROVIDER_RESUME_JITTER_HIGH,
+                        ),
+                        max(0.0, resume_remaining),
+                    )
+                    if not exhausted
+                    else 0.0
+                )
+                usage_after = current_turn_usage_snapshot() or {}
+                usage_delta = {
+                    key: value - usage_before.get(key, 0)
+                    for key, value in usage_after.items()
+                    if isinstance(value, (int, float))
+                    and isinstance(usage_before.get(key, 0), (int, float))
+                }
+                logger.warning(
+                    "agent_provider_resume_attempt agent={} iteration={} "
+                    "attempt={}/{} error={} call_elapsed={:.2f}s "
+                    "resume_elapsed={:.2f}s remaining={:.2f}s delay={:.2f}s "
+                    "turn_usage_delta={}",
+                    self.name,
+                    iteration,
+                    provider_resume_attempts,
+                    MAX_PROVIDER_RESUME_ATTEMPTS,
+                    type(exc).__name__,
+                    now - model_attempt_started_at,
+                    resume_elapsed,
+                    max(0.0, resume_remaining),
+                    delay,
+                    usage_delta,
+                )
+                if exhausted:
+                    reason = (
+                        "duration"
+                        if resume_remaining <= 0 or resume_timed_out
+                        else "attempt_limit"
+                    )
                     logger.error(
                         "agent_provider_resume_exhausted agent={} iteration={} "
-                        "attempts={} error={}",
+                        "attempts={} elapsed={:.2f}s reason={} error={}",
                         self.name,
                         iteration,
-                        provider_resume_attempts - 1,
+                        max(0, provider_resume_attempts - 1),
+                        resume_elapsed,
+                        reason,
                         type(exc).__name__,
                     )
                     from app.agent.errors import ProviderConnectionError
 
                     raise ProviderConnectionError(
                         f"Could not reach the LLM provider — exhausted "
-                        f"{MAX_PROVIDER_RESUME_ATTEMPTS} resume attempts after a "
-                        f"transient connectivity failure ({type(exc).__name__}). "
-                        f"Check your network connection and the provider's base URL "
-                        f"in Settings → Providers.",
+                        f"{max(0, provider_resume_attempts - 1)} resume attempts "
+                        f"within a {PROVIDER_RESUME_MAX_DURATION_SECONDS:.0f}s "
+                        f"retry budget after a transient connectivity failure "
+                        f"({type(exc).__name__}). Check your network connection and "
+                        f"the provider's base URL in Settings → Providers.",
                         error_type=type(exc).__name__,
                         provider=active_model_id or "primary",
                     ) from exc
-                delay = PROVIDER_RESUME_BASE_DELAY * provider_resume_attempts
-                logger.warning(
-                    "agent_provider_resume agent={} iteration={} attempt={}/{} "
-                    "error={} delay={:.1f}s",
-                    self.name,
-                    iteration,
-                    provider_resume_attempts,
-                    MAX_PROVIDER_RESUME_ATTEMPTS,
-                    type(exc).__name__,
-                    delay,
-                )
                 if interrupt_event is not None:
                     try:
                         await asyncio.wait_for(interrupt_event.wait(), timeout=delay)
@@ -894,6 +963,7 @@ class Agent(Generic[TContext]):
             # A successful model call clears the transient-failure budget so a
             # later, unrelated hiccup gets the full resume allowance again.
             provider_resume_attempts = 0
+            provider_resume_started_at = None
             if overflow_compaction_pending:
                 overflow_compaction_pending = False
                 state.metadata.pop("force_summarization", None)
