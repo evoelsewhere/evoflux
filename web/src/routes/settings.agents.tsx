@@ -48,9 +48,11 @@ import {
   useAgentFilesQuery,
   useBulkUpdateAgentModelMutation,
   useRegistryQuery,
+  useBackgroundTaskSettingsQuery,
   useFollowUpSettingsQuery,
   useResponseStyleSettingsQuery,
   useTeamSpawnSettingsQuery,
+  useUpdateBackgroundTaskSettingsMutation,
   useUpdateFollowUpSettingsMutation,
   useUpdateResponseStyleSettingsMutation,
   useUpdateTeamSpawnSettingsMutation,
@@ -217,6 +219,8 @@ export function AgentsListPage() {
             <AgentRosterSummary agents={agents} teams={teams} />
 
             <FollowUpBehaviorCard />
+
+            <BackgroundTaskCard />
 
             <ResponseStyleCard />
 
@@ -404,6 +408,45 @@ function FollowUpBehaviorCard() {
         ]}
         layoutId="follow-up-delivery"
         ariaLabel="Default follow-up behavior while an agent is working"
+        className="shrink-0"
+      />
+    </section>
+  )
+}
+
+/**
+ * What a finished background command does when the agent is idle.
+ *
+ * On (default): the exit starts a new turn, so a build that finishes after the
+ * agent stopped talking still reaches it. Off: the notice waits and joins the
+ * next turn. A working agent is told about the exit either way.
+ *
+ * Exported for its focused component test.
+ */
+export function BackgroundTaskCard() {
+  const { data: settings } = useBackgroundTaskSettingsQuery()
+  const update = useUpdateBackgroundTaskSettingsMutation()
+  const wakeIdle = settings?.wake_idle ?? true
+
+  return (
+    <section className="flex flex-col gap-3 rounded-2xl border border-(--color-border) bg-(--bg-card) p-3 sm:flex-row sm:items-center sm:justify-between sm:p-4">
+      <div className="min-w-0">
+        <h2 className="text-sm font-medium text-(--color-text)">Background tasks</h2>
+        <p className="mt-0.5 text-[11px] text-(--color-text-muted)">
+          {wakeIdle
+            ? 'When a background command finishes and the agent is idle, it starts a new turn to handle the result.'
+            : 'When a background command finishes and the agent is idle, the result waits and joins your next message.'}
+        </p>
+      </div>
+      <SegmentedControl
+        value={wakeIdle ? 'on' : 'off'}
+        onChange={(val) => update.mutate({ wake_idle: val === 'on' })}
+        options={[
+          { label: 'Wake agent', value: 'on' },
+          { label: 'Wait', value: 'off' },
+        ]}
+        layoutId="background-task-wake"
+        ariaLabel="What a finished background task does when the agent is idle"
         className="shrink-0"
       />
     </section>

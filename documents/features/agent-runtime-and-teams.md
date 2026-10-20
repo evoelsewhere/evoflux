@@ -129,6 +129,21 @@ The lead verifies handoffs before synthesizing the user-facing result. The
 Split view exposes member state, activity and transcript without merging all
 specialist context into the lead's model request.
 
+## Background commands
+
+`shell(background=true)` starts a command and returns at once; the task then
+reports for itself, so the agent never polls. See
+[application harness](../architecture/application-harness.md) for the
+mechanism. A task's exit (and, with `notify_on`, a matching output line)
+reaches a working lead before its next model call. For an idle lead,
+`Settings → Agents → Background tasks` chooses between **Wake agent**
+(default: the exit starts a new turn) and **Wait** (the notice is held and
+read with the user's next message). The choice is stored in `settings.yaml`
+under `background_tasks.wake_idle` and served by
+`GET/PUT /api/settings/background-tasks`. Code:
+`app/agent/background_tasks.py`, `AgentTeam.deliver_background_task_event`,
+`web/src/components/BackgroundTaskNotice.tsx`.
+
 ## Follow-up messages while a turn runs
 
 A message sent to a lead that is already working is persisted as a queued row

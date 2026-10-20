@@ -1507,6 +1507,7 @@ class AgentTeam:
         """
 
         from app.agent.background_tasks import TASK_EVENT_SENDER
+        from app.core.runtime_settings import background_task_wake_idle
 
         session_id = self.lead.session_id
         message = Message(
@@ -1517,6 +1518,11 @@ class AgentTeam:
         )
         async with self._user_message_lock:
             if not self.has_active_user_turn():
+                if not background_task_wake_idle():
+                    # Held, not dropped: the lead reads it with the user's next
+                    # message instead of getting a turn of its own.
+                    self.mailbox.requeue(self.lead.name, [message])
+                    return
                 await stream_store.init_turn(session_id, keep_subscribers=True)
                 self._has_active_turn = True
             await self.mailbox.send(to=self.lead.name, message=message)

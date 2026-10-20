@@ -175,6 +175,7 @@ export const queryKeys = {
     conductorStatus: () => ['settings', 'conductor', 'status'] as const,
     teamSpawn: () => ['settings', 'team-spawn'] as const,
     followUp: () => ['settings', 'follow-up'] as const,
+    backgroundTasks: () => ['settings', 'background-tasks'] as const,
     responseStyle: () => ['settings', 'response-style'] as const,
   },
 }

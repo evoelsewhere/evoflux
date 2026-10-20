@@ -209,6 +209,30 @@ export async function updateTeamSpawnSettings(
   return res.json()
 }
 
+// Background tasks (whether a finished command may wake an idle agent)
+
+export type BackgroundTaskSettings = {
+  wake_idle: boolean
+}
+
+export async function getBackgroundTaskSettings(): Promise<BackgroundTaskSettings> {
+  const res = await fetch(`${apiBaseUrl()}/settings/background-tasks`)
+  if (!res.ok) await parseDetailOrThrow(res, 'GET /settings/background-tasks')
+  return res.json()
+}
+
+export async function updateBackgroundTaskSettings(
+  body: BackgroundTaskSettings,
+): Promise<BackgroundTaskSettings> {
+  const res = await fetch(`${apiBaseUrl()}/settings/background-tasks`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) await parseDetailOrThrow(res, 'PUT /settings/background-tasks')
+  return res.json()
+}
+
 // Follow-up behavior (what a message sent to a working lead does by default)
 
 export type FollowUpSettings = {

@@ -142,6 +142,10 @@ export {
   useUpdateTeamSpawnSettingsMutation,
 } from './useTeamSpawnSettingsQuery'
 export {
+  useBackgroundTaskSettingsQuery,
+  useUpdateBackgroundTaskSettingsMutation,
+} from './useBackgroundTaskSettingsQuery'
+export {
   useFollowUpSettingsQuery,
   useUpdateFollowUpSettingsMutation,
 } from './useFollowUpSettingsQuery'
