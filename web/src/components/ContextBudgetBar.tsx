@@ -214,11 +214,14 @@ function UsageSection({
       <div className="mb-1.5 flex items-baseline justify-between gap-2">
         <h3
           id={`${id}-heading`}
-          className="flex min-w-0 items-baseline gap-1.5 text-[11px] font-medium text-(--color-text-2)"
+          className="flex min-w-0 flex-1 items-baseline gap-1.5 text-[11px] font-medium text-(--color-text-2)"
         >
-          <span className="truncate">{title}</span>
+          <span className="shrink-0">{title}</span>
           {meta && (
-            <span className="shrink-0 text-[10px] font-normal text-(--color-text-subtle)">
+            <span
+              className="min-w-0 truncate text-[10px] font-normal text-(--color-text-subtle)"
+              title={meta}
+            >
               {meta}
             </span>
           )}
