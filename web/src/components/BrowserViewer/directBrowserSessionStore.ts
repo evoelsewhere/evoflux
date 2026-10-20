@@ -36,7 +36,17 @@ export interface DirectBrowserSession {
   listeners: Set<() => void>
   /** Surface currently opening a page, so two views never both do. */
   creatingBy: string | null
+  /** When the last view of this session went away; null while one is shown. */
+  detachedAt: number | null
 }
+
+/**
+ * Sessions that keep live WebViews with no view showing them. Their pages
+ * cannot be restored once closed, so a few are kept for coming back to; past
+ * this the longest-detached ones are closed so a long day of chats does not
+ * leave an engine process per chat running.
+ */
+export const MAX_DETACHED_BROWSER_SESSIONS = 3
 
 const sessions = new Map<string, DirectBrowserSession>()
 
@@ -52,6 +62,7 @@ export function getDirectBrowserSession(sessionId: string): DirectBrowserSession
       surfaces: new Map(),
       listeners: new Set(),
       creatingBy: null,
+      detachedAt: null,
     }
     sessions.set(sessionId, session)
   }
@@ -92,6 +103,7 @@ export function registerDirectBrowserSurfaceSlot(
 ): void {
   const session = getDirectBrowserSession(sessionId)
   session.surfaces.set(slot.id, { ...slot })
+  session.detachedAt = null
   notifyDirectBrowserSession(sessionId)
 }
 
@@ -114,7 +126,30 @@ export function unregisterDirectBrowserSurfaceSlot(
   const session = sessions.get(sessionId)
   if (!session) return
   session.surfaces.delete(id)
+  if (session.surfaces.size === 0) {
+    session.detachedAt = Date.now()
+    trimDetachedDirectBrowserSessions()
+  }
   notifyDirectBrowserSession(sessionId)
+}
+
+/** Close the longest-detached sessions beyond the cap. */
+export function trimDetachedDirectBrowserSessions(
+  keep = MAX_DETACHED_BROWSER_SESSIONS,
+): void {
+  const detached = [...sessions.values()]
+    .filter(
+      (session) =>
+        session.detachedAt !== null
+        && session.surfaces.size === 0
+        && session.creatingBy === null
+        && session.webviews.size > 0,
+    )
+    .sort((a, b) => (b.detachedAt ?? 0) - (a.detachedAt ?? 0))
+  for (const session of detached.slice(keep)) {
+    closeSessionWebviews(session)
+    notifyDirectBrowserSession(session.sessionId)
+  }
 }
 
 /**

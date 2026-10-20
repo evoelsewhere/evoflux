@@ -1,4 +1,5 @@
 import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { disposeDirectBrowserSession } from '@/components/BrowserViewer/directBrowserSessionStore'
 import { listTeamSessions, deleteTeamSession, duplicateTeamSession, updateTeamSessionTitle } from '@/api/client'
 import type { SessionPageResponse, SessionResponse } from '@/api/types'
 import { queryKeys } from './keys'
@@ -82,6 +83,9 @@ export function useDeleteTeamSessionMutation() {
       // to one paints instantly. A deleted session must not be one of
       // them, or reopening its id would show a transcript that is gone.
       forgetSessionSnapshot(sessionId)
+      // Its browser has no chat left to belong to: close the pages now
+      // instead of leaving the WebViews running until the app exits.
+      disposeDirectBrowserSession(sessionId)
       queryClient.invalidateQueries({ queryKey: queryKeys.team.sessions.all() })
       // A deleted session may have been filed in a sidebar folder, whose
       // sessions live in their own cache entry.
