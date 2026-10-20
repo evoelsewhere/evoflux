@@ -350,7 +350,7 @@ type SessionSnapshot = Pick<TeamStoreState, (typeof SESSION_OWNED_KEYS)[number]>
  * oldest is dropped and that session pays the original full-load cost
  * once.
  */
-const SESSION_SNAPSHOT_LIMIT = 6
+const SESSION_SNAPSHOT_LIMIT = 12
 const sessionSnapshots = new Map<string, SessionSnapshot>()
 
 function stashSession(state: TeamStore): void {
@@ -1439,7 +1439,10 @@ export const useTeamStore = create<TeamStore>()(
 
       const loadPromise = (async () => {
         set((draft) => {
-          draft.isTeamWorking = false
+          // A session restored from its snapshot is already on screen with
+          // its working state; dropping it here made a running chat flash
+          // idle until the reconcile landed.
+          if (!draft._restoredFromCache) draft.isTeamWorking = false
           draft.isContinuing = false
           draft.isSessionLoading = true
           draft.historyLoadError = null

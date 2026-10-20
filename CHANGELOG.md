@@ -10,7 +10,7 @@ All notable changes to EvoFlux are documented in this file.
 - A startup failure no longer drops you into an empty app: the launch screen stays up with its error and **Retry** button.
 - Suggested next messages no longer ask for tool permission in ask mode, and only the lead agent can suggest them.
 - Reopening a session whose widget was replaced and then re-created with the same `block_id` now shows the latest version instead of a stale one.
-- Browser pages of chats you are no longer looking at are now released: deleting a chat closes its pages, and only the three most recently used background chats keep theirs open.
+- Browser pages of chats you are no longer looking at are now released: deleting a chat closes its pages, and the twelve most recently used background chats keep theirs open, so switching between chats does not reload their pages.
 - Opening the built-in browser from the workbench and from the preview at the same time no longer risks two blank pages, and a view that changes session releases its old slot.
 - Mermaid diagrams rendering at the same time no longer interfere with the editor's loader.
 - A chart row with a bare comma (`A ,`) is no longer drawn as `A = 0`, and `1,2,3` is no longer read as 123.

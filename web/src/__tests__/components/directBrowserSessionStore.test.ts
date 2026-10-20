@@ -8,6 +8,7 @@ import {
   disposeDirectBrowserSessionIfUnused,
   getDirectBrowserSession,
   hasLiveBrowserTabs,
+  MAX_DETACHED_BROWSER_SESSIONS,
   registerDirectBrowserSurfaceSlot,
   setDirectBrowserActiveTab,
   subscribeDirectBrowserSession,
@@ -181,22 +182,22 @@ describe('detached browser sessions', () => {
 
   it('closes the longest-detached sessions beyond the cap, keeping the newest', () => {
     vi.useFakeTimers()
+    const ids = Array.from(
+      { length: MAX_DETACHED_BROWSER_SESSIONS + 1 },
+      (_unused, index) => `detached-${index}`,
+    )
     try {
-      const oldest = detach('detached-1', 1_000)
-      const second = detach('detached-2', 2_000)
-      const third = detach('detached-3', 3_000)
-      const fourth = detach('detached-4', 4_000)
+      const detached = ids.map((id, index) => detach(id, 1_000 * (index + 1)))
+      const [oldest, ...kept] = detached
 
       expect(oldest.close).toHaveBeenCalled()
-      expect(hasLiveBrowserTabs('detached-1')).toBe(false)
-      for (const kept of [second, third, fourth]) {
-        expect(kept.close).not.toHaveBeenCalled()
-        expect(kept.session.webviews.size).toBe(1)
+      expect(hasLiveBrowserTabs(ids[0])).toBe(false)
+      for (const entry of kept) {
+        expect(entry.close).not.toHaveBeenCalled()
+        expect(entry.session.webviews.size).toBe(1)
       }
     } finally {
-      for (const id of ['detached-1', 'detached-2', 'detached-3', 'detached-4']) {
-        disposeDirectBrowserSession(id)
-      }
+      for (const id of ids) disposeDirectBrowserSession(id)
       vi.useRealTimers()
     }
   })
@@ -211,7 +212,9 @@ describe('detached browser sessions', () => {
         visible: true,
         boundTabId: 'tab-1',
       })
-      for (let i = 0; i < 5; i += 1) detach(`shown-other-${i}`, 200 + i)
+      for (let i = 0; i < MAX_DETACHED_BROWSER_SESSIONS + 2; i += 1) {
+        detach(`shown-other-${i}`, 200 + i)
+      }
 
       expect(shown.close).not.toHaveBeenCalled()
     } finally {

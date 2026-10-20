@@ -16,7 +16,7 @@ and fail pending requests when the panel reconnects or closes.
 
 Each chat session owns one set of browser pages. Closing a view hands the pages
 back rather than closing them, so a chat you return to still has its page. To
-keep a long day of chats from leaving a WebView process per chat, at most three
+keep a long day of chats from leaving a WebView process per chat, at most twelve
 chats keep pages while no view shows them; the longest-detached ones are closed
 beyond that. Deleting a chat closes its pages immediately.
 
