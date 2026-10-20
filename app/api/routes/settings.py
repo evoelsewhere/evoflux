@@ -53,6 +53,7 @@ from app.api.schemas.settings import (
     ProviderTestResponse,
     ProviderUsageResponse,
     ProviderVisibleModelsRequest,
+    BackgroundTaskSettingsBody,
     FollowUpSettingsBody,
     TeamSpawnSettingsBody,
     ProviderVisibleModelsResponse,
@@ -722,6 +723,25 @@ async def save_follow_up_settings(body: FollowUpSettingsBody) -> FollowUpSetting
     cfg.follow_up.delivery = body.delivery
     save_runtime_settings(cfg)
     return FollowUpSettingsBody(delivery=cfg.follow_up.delivery)
+
+
+@router.get("/background-tasks")
+async def get_background_task_settings() -> BackgroundTaskSettingsBody:
+    cfg = load_runtime_settings()
+    return BackgroundTaskSettingsBody(wake_idle=cfg.background_tasks.wake_idle)
+
+
+@router.put("/background-tasks")
+async def save_background_task_settings(
+    body: BackgroundTaskSettingsBody,
+) -> BackgroundTaskSettingsBody:
+    try:
+        cfg = load_runtime_settings()
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    cfg.background_tasks.wake_idle = body.wake_idle
+    save_runtime_settings(cfg)
+    return BackgroundTaskSettingsBody(wake_idle=cfg.background_tasks.wake_idle)
 
 
 @router.get("/response-style")

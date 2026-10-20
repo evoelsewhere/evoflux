@@ -2331,3 +2331,47 @@ def test_response_style_reads_a_hand_edited_yaml(
     client = TestClient(_make_app())
 
     assert client.get("/api/settings/response-style").json() == {"style": "simple"}
+
+
+# ---------------------------------------------------------------------------
+# Background tasks (Settings -> Agents)
+# ---------------------------------------------------------------------------
+
+
+def test_background_tasks_default_to_waking_an_idle_agent(
+    isolated_runtime_settings: Path,
+) -> None:
+    client = TestClient(_make_app())
+    response = client.get("/api/settings/background-tasks")
+
+    assert response.status_code == 200
+    assert response.json() == {"wake_idle": True}
+
+
+def test_put_background_tasks_persists_and_reads_back(
+    isolated_runtime_settings: Path,
+) -> None:
+    client = TestClient(_make_app())
+    saved = client.put("/api/settings/background-tasks", json={"wake_idle": False})
+
+    assert saved.status_code == 200
+    assert saved.json() == {"wake_idle": False}
+    persisted = isolated_runtime_settings.read_text(encoding="utf-8")
+    assert "background_tasks:" in persisted
+    assert "wake_idle: false" in persisted
+    assert client.get("/api/settings/background-tasks").json() == {"wake_idle": False}
+
+    from app.core.runtime_settings import background_task_wake_idle
+
+    assert background_task_wake_idle() is False
+
+
+def test_put_background_tasks_rejects_unknown_fields(
+    isolated_runtime_settings: Path,
+) -> None:
+    client = TestClient(_make_app())
+    response = client.put(
+        "/api/settings/background-tasks", json={"wake_idle": True, "poll": 5}
+    )
+
+    assert response.status_code == 422

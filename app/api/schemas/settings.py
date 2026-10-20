@@ -24,6 +24,14 @@ class FollowUpSettingsBody(BaseModel):
     delivery: Literal["steer", "queue"] = "queue"
 
 
+class BackgroundTaskSettingsBody(BaseModel):
+    """Whether a finished background task may wake an idle agent."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    wake_idle: bool = True
+
+
 class ResponseStyleSettingsBody(BaseModel):
     """Default response style for the ``/settings/response-style`` route."""
 

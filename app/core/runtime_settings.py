@@ -77,6 +77,20 @@ class FollowUpSettings(BaseModel):
     delivery: Literal["steer", "queue"] = "queue"
 
 
+class BackgroundTaskSettings(BaseModel):
+    """What a finished background command does when the agent is idle.
+
+    With ``wake_idle`` on (default) the task's exit starts a new agent turn, so
+    a build that finishes after the agent stopped talking still reaches it.
+    Off, the notice waits and joins the agent's next turn instead. A running
+    agent is told about a task's exit either way.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    wake_idle: bool = True
+
+
 class ResponseStyleSettings(BaseModel):
     """Default response style injected into the system prompt.
 
@@ -351,6 +365,9 @@ class RuntimeSettings(BaseModel):
     conductor: ConductorSettings = Field(default_factory=ConductorSettings)
     team_spawn: TeamSpawnModeSettings = Field(default_factory=TeamSpawnModeSettings)
     follow_up: FollowUpSettings = Field(default_factory=FollowUpSettings)
+    background_tasks: BackgroundTaskSettings = Field(
+        default_factory=BackgroundTaskSettings
+    )
     response_style: ResponseStyleSettings = Field(default_factory=ResponseStyleSettings)
 
 
@@ -365,6 +382,18 @@ def follow_up_delivery_default() -> str:
         return load_runtime_settings().follow_up.delivery
     except Exception:  # noqa: BLE001 - ingress must not fail on settings
         return "queue"
+
+
+def background_task_wake_idle() -> bool:
+    """Whether a finished background task may start a turn for an idle agent.
+
+    ``True`` when the settings file cannot be read: the default is the
+    behaviour that makes a result reach the agent at all.
+    """
+    try:
+        return load_runtime_settings().background_tasks.wake_idle
+    except Exception:  # noqa: BLE001 - delivery must not fail on settings
+        return True
 
 
 def response_style_default() -> str:

@@ -2115,6 +2115,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
     setup:
       'Settings → Agents cho thành viên team; Settings → Skills để tạo, sửa skill của bạn và bật/tắt bất kỳ skill nào; Settings → MCP để thêm server. Từ chat, gõ $tên-skill để dùng một skill, hoặc dùng command palette cho shortcut New Agent / New Skill.',
     tricks: [
+      'Settings → Agents → Tác vụ nền chọn việc lệnh nền đã xong sẽ làm khi agent đang rảnh: Đánh thức agent (mặc định) bắt đầu lượt mới để xử lý kết quả; Chờ giữ kết quả đến tin nhắn tiếp theo của bạn. Agent đang làm việc luôn được báo.',
       'Agent là file .md với YAML frontmatter — diff và version được.',
       'Skill là thư mục có SKILL.md. Agent thấy tên và mô tả của mọi skill đang bật và tự đọc SKILL.md khi việc khớp.',
       'Skill diagram-design tích hợp giúp vẽ hoặc làm lại sơ đồ kiến trúc, sequence, trạng thái và quy trình; trong Work, sơ đồ theo theme sáng/tối và màu nhấn hiện tại, dùng visualize_read_me cùng show_widget, đồng thời kiểm tra bố cục trước và sau preview. Gõ $diagram-design để gọi trực tiếp.',

@@ -98,3 +98,39 @@ async def test_a_notice_wakes_an_idle_lead_and_is_persisted() -> None:
         assert rows[-1].role == "assistant"
     finally:
         await team.stop()
+
+
+@pytest.mark.asyncio
+async def test_with_waking_off_the_notice_waits_for_the_next_turn(monkeypatch) -> None:
+    import app.core.db as _db
+
+    monkeypatch.setattr(
+        "app.core.runtime_settings.background_task_wake_idle", lambda: False
+    )
+    sid = uuid.uuid7()
+    async with _db.async_session_factory() as db:
+        async with db.begin():
+            db.add(ChatSession(id=sid, agent_name="lead"))
+
+    provider = MockTeamProvider("Noted.")
+    lead = TeamLead(
+        Agent(name="lead", llm_provider=provider),
+        session_id=str(sid),
+        db_factory=_db.async_session_factory,
+    )
+    team = AgentTeam(lead=lead, members={})
+    await team.start()
+    try:
+        await team.deliver_background_task_event(_TEXT, dict(_EVENT))
+        await asyncio.sleep(0.4)
+
+        # No turn of its own...
+        assert provider.call_count == 0
+        assert not team.has_active_user_turn()
+        # ...but the notice is held for the lead's next turn.
+        assert team.mailbox.inbox_size(lead.name) == 1
+        held = team.mailbox.drain_nowait(lead.name)
+        assert held[0].content == _TEXT
+        assert held[0].from_agent == TASK_EVENT_SENDER
+    finally:
+        await team.stop()

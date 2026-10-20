@@ -10,7 +10,7 @@ All notable changes to EvoFlux are documented in this file.
 
 ### Changed
 
-- Long commands no longer make the agent poll. `shell` waits for a command and returns its result, or, with `background=true`, starts it and returns at once; the task then tells the agent when it exits and, with `notify_on`, when an output line matches. An idle agent is woken for a new turn, so a build that finishes after it stopped talking still reaches it. Finished and matched tasks show as small status cards in the chat, and the desktop notification for a completed background task now follows the real exit.
+- Long commands no longer make the agent poll. `shell` waits for a command and returns its result, or, with `background=true`, starts it and returns at once; the task then tells the agent when it exits and, with `notify_on`, when an output line matches. An idle agent is woken for a new turn by default, so a build that finishes after it stopped talking still reaches it; **Settings → Agents → Background tasks** can switch that to **Wait**, which holds the result for your next message. Finished and matched tasks show as small status cards in the chat, and the desktop notification for a completed background task now follows the real exit.
 - The `process` tool now only lists background tasks, shows the latest output of one, or stops one.
 
 ### Fixed

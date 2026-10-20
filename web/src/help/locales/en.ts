@@ -2169,6 +2169,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
     setup:
       'Settings → Agents for team members; Settings → Skills to create or edit your skills and turn any skill on or off; Settings → MCP to add servers. From chat, type $skill-name to use a skill, or use the command palette for New Agent / New Skill shortcuts.',
     tricks: [
+      'Settings → Agents → Background tasks chooses what a finished background command does when the agent is idle: Wake agent (default) starts a new turn to handle the result; Wait holds the result until your next message. A working agent is told either way.',
       'Agents are .md files with YAML frontmatter — diffable and versionable.',
       'A Skill is a folder with a SKILL.md. The agent sees each enabled skill\'s name and description and reads SKILL.md itself when a task matches.',
       'The built-in diagram-design skill can be read for architecture, sequence, state, and process diagrams; in Work it pairs with visualize_read_me and show_widget, follows the current light/dark and accent theme, and checks diagram layout before and after preview. Type $diagram-design to invoke it explicitly.',

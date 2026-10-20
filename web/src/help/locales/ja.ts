@@ -2124,6 +2124,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
     setup:
       'チームメンバーは Settings → Agents; 自分のスキルの作成・編集と各スキルのオン/オフは Settings → Skills; サーバー追加は Settings → MCP。チャットからは $skill-name でスキルを使い、コマンドパレットで New Agent / New Skill ショートカット。',
     tricks: [
+      'Settings → Agents → バックグラウンドタスクで、エージェントが待機中にバックグラウンドコマンドが終了したときの動作を選べます。エージェントを起こす（既定）は結果を処理する新しいターンを開始し、待機は次のメッセージまで結果を保留します。作業中のエージェントにはどちらでも通知されます。',
       'エージェントは YAML frontmatter 付き .md — diff 可能でバージョン管理しやすい。',
       'スキルは SKILL.md を持つフォルダです。エージェントは有効なスキルの名前と説明を把握し、タスクが合うと自分で SKILL.md を読みます。',
       '組み込みの diagram-design Skill は、アーキテクチャ、シーケンス、状態、プロセス図の作成や描き直しに使えます。Work では現在のライト/ダークテーマとアクセント色に合わせ、visualize_read_me と show_widget を使い、プレビュー前後にレイアウトを確認します。$diagram-design と入力すると明示的に呼び出せます。',
