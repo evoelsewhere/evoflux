@@ -49,7 +49,7 @@ Primary code: `app/services/direct_browser_bridge.py`, team browser routes,
 For native desktop applications rather than web pages, see
 [Computer App Control](computer-app-control.md).
 
-Agent clicks, hover, coordinate clicks and drag run through page-local DOM events; they no longer move the desktop cursor. These events are synthetic rather than trusted OS input, so a page that requires a trusted user gesture may reject them; they also do not change the browser-managed CSS `:hover` state.
+Agent clicks, hover, coordinate clicks and drag run through page-local DOM events; they no longer move the desktop cursor. Each of them draws a virtual cursor inside the page (`#__evoflux-agent-cursor`, `pointer-events: none`, topmost layer) that glides to the target and pulses on a click, then fades after about two seconds; it follows the reduced-motion preference and is visible in the floating preview as well as the workbench panel, because the native WebView covers the app's own UI. These events are synthetic rather than trusted OS input, so a page that requires a trusted user gesture may reject them; they also do not change the browser-managed CSS `:hover` state.
 
 ### Dev-server launcher
 

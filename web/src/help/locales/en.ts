@@ -1559,7 +1559,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
     blocks: [
       {
         type: 'p',
-        text: 'Two browser paths exist: (1) the built-in in-app browser workbench for agent-driven pages inside EvoFlux, and (2) WebBridge, an extension that relays CDP control to your real Chrome or Edge profile with domain policy and audit trails. Pick the path that matches the login and trust model of the task. Built-in browser clicks, hover and drag use synthetic page events without moving the desktop cursor; pages that require trusted OS input may not accept them, and CSS `:hover` styles may not activate.',
+        text: 'Two browser paths exist: (1) the built-in in-app browser workbench for agent-driven pages inside EvoFlux, and (2) WebBridge, an extension that relays CDP control to your real Chrome or Edge profile with domain policy and audit trails. Pick the path that matches the login and trust model of the task. Built-in browser clicks, hover and drag use synthetic page events without moving your real cursor, and a purple virtual cursor in the page (in the floating preview too) glides to each target and pulses on a click so you can see what the agent is doing; pages that require trusted OS input may not accept them, and CSS `:hover` styles may not activate.',
       },
       {
         type: 'p',
