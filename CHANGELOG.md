@@ -4,6 +4,10 @@ All notable changes to EvoFlux are documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- The built-in browser now shows a virtual cursor while an agent clicks, hovers or drags — in the floating preview and in the workbench panel. It glides to each target and pulses on a click; your real mouse is never moved.
+
 ### Fixed
 
 - Opening the built-in browser no longer fails with "Something went wrong" (React error #301).

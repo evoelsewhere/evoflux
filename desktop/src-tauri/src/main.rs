@@ -2944,6 +2944,63 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
                         const style = element.ownerDocument.defaultView.getComputedStyle(element);
                         return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
                     }};
+                    // The agent's virtual cursor: drawn inside the page (the native
+                    // WebView covers the app's own UI), never the user's real pointer.
+                    const showAgentCursor = (x, y, kind) => {{
+                        try {{
+                            if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+                            let host = document.getElementById('__evoflux-agent-cursor');
+                            const fresh = !host;
+                            if (!host) {{
+                                host = document.createElement('div');
+                                host.id = '__evoflux-agent-cursor';
+                                host.setAttribute('aria-hidden', 'true');
+                                host.style.cssText = 'position:fixed;left:0;top:0;width:0;height:0;z-index:2147483647;pointer-events:none;opacity:0;';
+                                const ns = 'http://www.w3.org/2000/svg';
+                                const svg = document.createElementNS(ns, 'svg');
+                                svg.setAttribute('width', '20');
+                                svg.setAttribute('height', '23');
+                                svg.setAttribute('viewBox', '0 0 24 27');
+                                svg.style.cssText = 'position:absolute;left:-3px;top:-2px;filter:drop-shadow(0 1px 2px rgba(0,0,0,.45));';
+                                const path = document.createElementNS(ns, 'path');
+                                path.setAttribute('d', 'M4 2.7 L4 21 L9 16.6 L12.4 24 L15.4 22.7 L12.1 15.4 L18.8 15.4 Z');
+                                path.setAttribute('fill', '#7c5cff');
+                                path.setAttribute('stroke', '#ffffff');
+                                path.setAttribute('stroke-width', '1.6');
+                                path.setAttribute('stroke-linejoin', 'round');
+                                svg.appendChild(path);
+                                const ring = document.createElement('span');
+                                ring.style.cssText = 'position:absolute;left:-14px;top:-14px;width:28px;height:28px;box-sizing:border-box;border-radius:50%;border:2px solid #7c5cff;opacity:0;';
+                                host.appendChild(svg);
+                                host.appendChild(ring);
+                                host.__ring = ring;
+                                (document.documentElement || document.body).appendChild(host);
+                            }}
+                            const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+                            if (fresh) {{
+                                host.style.transition = 'none';
+                                host.style.transform = `translate(${{Math.max(0, x - 90)}}px, ${{Math.max(0, y - 60)}}px)`;
+                                void host.offsetWidth;
+                            }}
+                            host.style.transition = reduced ? 'none' : 'transform 320ms cubic-bezier(.22,.8,.3,1), opacity 200ms';
+                            host.style.opacity = '1';
+                            host.style.transform = `translate(${{x}}px, ${{y}}px)`;
+                            if (kind === 'click' && !reduced && host.__ring?.animate) {{
+                                host.__ring.animate(
+                                    [{{ opacity: 0.9, transform: 'scale(.4)' }}, {{ opacity: 0, transform: 'scale(1.4)' }}],
+                                    {{ duration: 520, delay: 240, easing: 'ease-out' }},
+                                );
+                            }}
+                            clearTimeout(host.__hide);
+                            host.__hide = setTimeout(() => {{ host.style.opacity = '0'; }}, 2200);
+                        }} catch {{}}
+                    }};
+                    const cursorOn = (element, kind) => {{
+                        try {{
+                            const rect = element.getBoundingClientRect();
+                            showAgentCursor(rect.left + rect.width / 2, rect.top + rect.height / 2, kind);
+                        }} catch {{}}
+                    }};
                     const INTERACTIVE_TAGS = new Set(['A', 'BUTTON', 'INPUT', 'TEXTAREA', 'SELECT', 'SUMMARY', 'DETAILS']);
                     const INTERACTIVE_ROLES = new Set(['button', 'link', 'checkbox', 'radio', 'switch', 'tab', 'menuitem', 'option', 'textbox', 'combobox', 'slider', 'spinbutton', 'treeitem', 'gridcell']);
                     const interactive = (element) => (
@@ -3339,6 +3396,7 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
                         const element = resolveElement();
                         if (!element) throw new Error('Element not found; run snapshot again or provide a selector');
                         element.scrollIntoView({{ block: 'center', inline: 'center' }});
+                        cursorOn(element, 'click');
                         element.focus?.();
                         element.click();
                         return `Clicked ${{describe(element)}}`;
@@ -3348,6 +3406,7 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
                         const element = resolveElement();
                         if (!element) throw new Error('Element not found; run snapshot again or provide a selector');
                         element.scrollIntoView({{ block: 'center', inline: 'center' }});
+                        cursorOn(element, 'click');
                         element.focus?.();
                         element.dispatchEvent(new MouseEvent('dblclick', {{ bubbles: true, cancelable: true, view: window, detail: 2 }}));
                         return `Double-clicked ${{describe(element)}}`;
@@ -3357,6 +3416,7 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
                         const element = resolveElement();
                         if (!element) throw new Error('Element not found; run snapshot again or provide a selector');
                         element.scrollIntoView({{ block: 'center', inline: 'center' }});
+                        cursorOn(element, 'move');
                         for (const type of ['pointerover', 'mouseover', 'pointerenter', 'mouseenter', 'pointermove', 'mousemove']) element.dispatchEvent(new MouseEvent(type, {{ bubbles: !type.endsWith('enter'), cancelable: true, view: window }}));
                         return `Hovered ${{describe(element)}}`;
                     }}
@@ -3496,6 +3556,7 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
                         if (!source || !target) throw new Error('Drag source or target not found');
                         source.scrollIntoView({{ block: 'center', inline: 'center' }});
                         target.scrollIntoView({{ block: 'center', inline: 'center' }});
+                        cursorOn(target, 'click');
                         const transfer = new DataTransfer();
                         for (const type of ['dragstart', 'drag', 'dragenter', 'dragover', 'drop', 'dragend']) {{
                             const recipient = ['dragstart', 'drag', 'dragend'].includes(type) ? source : target;
@@ -3521,6 +3582,7 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
                         const button = params.button === 'middle' ? 1 : params.button === 'right' ? 2 : 0;
                         const buttons = button === 0 ? 1 : button === 1 ? 4 : 2;
                         const init = {{ bubbles: true, cancelable: true, view: window, clientX: x, clientY: y, button, buttons }};
+                        showAgentCursor(x, y, 'click');
                         element.focus?.();
                         for (const type of ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click']) element.dispatchEvent(new MouseEvent(type, init));
                         return `Clicked at ${{x}},${{y}} on ${{describe(element)}}`;
@@ -6466,6 +6528,21 @@ mod tests {
             browser_agent_action_script(action, &serde_json::json!({}))
                 .unwrap_or_else(|error| panic!("{action} should be supported: {error}"));
         }
+    }
+
+    #[test]
+    fn browser_pointer_actions_draw_a_virtual_cursor_in_the_page() {
+        for action in ["click", "dblclick", "hover", "drag", "click_at"] {
+            let script = browser_agent_action_script(action, &serde_json::json!({}))
+                .unwrap_or_else(|error| panic!("{action} should be supported: {error}"));
+            assert!(script.contains("__evoflux-agent-cursor"), "{action}");
+            assert!(script.contains("pointer-events:none"), "{action}");
+        }
+        let click = browser_agent_action_script("click", &serde_json::json!({})).unwrap();
+        assert!(click.contains("cursorOn(element, 'click')"));
+        let click_at =
+            browser_agent_action_script("click_at", &serde_json::json!({})).unwrap();
+        assert!(click_at.contains("showAgentCursor(x, y, 'click')"));
     }
 
     #[test]
