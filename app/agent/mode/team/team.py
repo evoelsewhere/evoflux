@@ -1497,6 +1497,30 @@ class AgentTeam:
         ):
             self.lead._maybe_activate()
 
+    async def deliver_background_task_event(self, content: str, event: dict) -> None:
+        """Tell the lead that a background command exited or printed a match.
+
+        A lead that is mid-turn gets the notice before its next model call (the
+        inbox hook drains it). An idle lead is woken for a new turn, which is
+        what lets a build that finishes after the agent stopped talking still
+        reach it.
+        """
+
+        from app.agent.background_tasks import TASK_EVENT_SENDER
+
+        session_id = self.lead.session_id
+        message = Message(
+            from_agent=TASK_EVENT_SENDER,
+            to_agent=self.lead.name,
+            content=content,
+            extra=event,
+        )
+        async with self._user_message_lock:
+            if not self.has_active_user_turn():
+                await stream_store.init_turn(session_id, keep_subscribers=True)
+                self._has_active_turn = True
+            await self.mailbox.send(to=self.lead.name, message=message)
+
     async def _activate_queued_user_messages(self, session_id: str) -> bool:
         try:
             session_uuid = UUID(session_id)

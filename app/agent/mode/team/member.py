@@ -389,6 +389,25 @@ def worktree_obligation_text(
 # =============================================================================
 
 
+def _inbox_sse_extra(msg_obj: HumanMessage, raw_msg: Message) -> dict:
+    """The payload of an ``inbox`` SSE event for one drained mailbox message."""
+
+    extra: dict = {
+        "content": msg_obj.content,
+        "from_agent": raw_msg.from_agent,
+    }
+    artifact = raw_msg.extra.get("_handoff_artifact") or getattr(
+        raw_msg, "_handoff_artifact", None
+    )
+    if artifact is not None:
+        extra["_handoff_artifact"] = artifact
+    if raw_msg.extra.get("kind") == "task_event":
+        extra["task_event"] = {
+            key: value for key, value in raw_msg.extra.items() if key != "kind"
+        }
+    return extra
+
+
 class TeamMemberBase(abc.ABC):
     """Base class for team agents.  Owns on-demand activation, inbox, and history.
 
@@ -835,15 +854,7 @@ class TeamMemberBase(abc.ABC):
             # Emit one inbox SSE per message for split view
             for msg_obj, raw_msg in zip(inbox_msgs, pending):
                 if self._should_emit_inbox_sse([raw_msg.from_agent]):
-                    inbox_extra: dict = {
-                        "content": msg_obj.content,
-                        "from_agent": raw_msg.from_agent,
-                    }
-                    artifact = raw_msg.extra.get("_handoff_artifact") or getattr(
-                        raw_msg, "_handoff_artifact", None
-                    )
-                    if artifact is not None:
-                        inbox_extra["_handoff_artifact"] = artifact
+                    inbox_extra = _inbox_sse_extra(msg_obj, raw_msg)
                     await self._team._emit(
                         agent=self.name,
                         event="inbox",

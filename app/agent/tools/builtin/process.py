@@ -1,21 +1,23 @@
-"""Tracked command processes with delta-only output consumption.
+"""Tracked command processes and the background-task registry.
 
-``shell`` owns process creation.  This module owns the continuation protocol:
-commands that outlive the shell tool's yield window receive an opaque
-``process_id`` and can then be polled, waited for, listed, or terminated through
-one compact tool.  Output is journalled once to a session artifact; model-facing
-polls consume only bytes not returned by an earlier observation.
+``shell`` owns process creation.  This module owns what happens to a command
+that is allowed to outlive its tool call: it is registered under an opaque
+``process_id``, its output is journalled to a session artifact, and it
+announces its own exit (and any ``notify_on`` match) to the agent through
+:mod:`app.agent.background_tasks`.  The model never polls.  The ``process`` tool
+only lists, shows the latest output of, or stops a background task.
 """
 
 from __future__ import annotations
 
 import asyncio
+import codecs
 import os
+import re
 import signal
 import subprocess
 import time
 import uuid
-from collections import deque
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Annotated, Any, Literal
@@ -24,14 +26,15 @@ from loguru import logger
 from pydantic import Field
 
 from app.agent.artifacts import shell_output_dir
+from app.agent.background_tasks import MAX_MATCH_NOTICES_PER_TASK, announce_task_event
 from app.agent.sandbox import get_sandbox
 from app.agent.tools.registry import InjectedArg, Tool
 
-_PENDING_OUTPUT_MAX_BYTES = 262_144
+_OUTPUT_PREVIEW_MAX_BYTES = 262_144
+_MATCH_LINE_MAX_CHARS = 8_192
 _MODEL_SUCCESS_MAX_BYTES = 6_000
 _MODEL_FAILURE_MAX_BYTES = 12_000
 _PROCESS_REGISTRY_CAP = 100
-_MAX_WAIT_SECONDS = 60
 _MAX_PROCESS_LIFETIME_SECONDS = 30 * 60
 _FORCE_KILL = getattr(signal, "SIGKILL", signal.SIGTERM)
 
@@ -179,7 +182,12 @@ def stash_result_metadata(
 
 
 class TrackedProcess:
-    """A subprocess whose raw output is journalled and consumed incrementally."""
+    """A subprocess whose raw output is journalled to a session artifact.
+
+    A *foreground* process is awaited by the ``shell`` call that started it. A
+    *background* one (``announce=True``) is registered and reports for itself:
+    it tells the agent when it exits, and when a line matches ``notify_on``.
+    """
 
     def __init__(
         self,
@@ -189,8 +197,11 @@ class TrackedProcess:
         cwd: Path,
         timeout_seconds: float | None,
         scope: str,
+        session_id: str | None = None,
         output_callback: Callable[[str], Awaitable[None]] | None = None,
         process_id: str | None = None,
+        announce: bool = False,
+        notify_on: re.Pattern[str] | None = None,
     ) -> None:
         self.proc = proc
         self.command = command
@@ -204,14 +215,20 @@ class TrackedProcess:
         )
         self.timeout_seconds = min(requested_lifetime, _MAX_PROCESS_LIFETIME_SECONDS)
         self.scope = scope
+        self.session_id = session_id
         self.timed_out = False
         self.output_path = shell_output_dir() / f"{self.process_id}.txt"
         self.output_path.parent.mkdir(parents=True, exist_ok=True)
         self.output_path.write_bytes(b"")
-        self._pending: deque[bytes] = deque()
-        self._pending_bytes = 0
-        self._dropped_pending_bytes = 0
-        self._activity = asyncio.Event()
+        self.announce = announce
+        self.notify_on = notify_on
+        # Set when the agent or the app ends the process on purpose: that is
+        # not news, so no exit notice is sent for it.
+        self._stopped = False
+        self._match_notices = 0
+        self._line_buffer = ""
+        self._decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+        self._announcements: set[asyncio.Task[Any]] = set()
         self._output_callback = output_callback
         self._reader_task = asyncio.create_task(self._drain())
         self._timeout_task = (
@@ -219,6 +236,16 @@ class TrackedProcess:
             if timeout_seconds is not None
             else None
         )
+        self._exit_task: asyncio.Task[None] | None = None
+        if announce:
+            self.begin_announcing()
+
+    def begin_announcing(self) -> None:
+        """Start telling the agent when this task exits (background tasks)."""
+
+        self.announce = True
+        if self._exit_task is None:
+            self._exit_task = asyncio.create_task(self._announce_exit())
 
     @property
     def pid(self) -> int | None:
@@ -274,18 +301,15 @@ class TrackedProcess:
                         break
                     artifact.write(chunk)
                     artifact.flush()
-                    self._pending.append(chunk)
-                    self._pending_bytes += len(chunk)
-                    while self._pending_bytes > _PENDING_OUTPUT_MAX_BYTES:
-                        dropped = self._pending.popleft()
-                        self._pending_bytes -= len(dropped)
-                        self._dropped_pending_bytes += len(dropped)
-                    self._activity.set()
+                    if self.notify_on is not None:
+                        self._scan_for_matches(chunk)
                     if self._output_callback is not None:
                         emit_buffer.append(chunk.decode("utf-8", errors="replace"))
                         if emit_task is None or emit_task.done():
                             emit_task = asyncio.create_task(flush_later())
         finally:
+            if self.notify_on is not None:
+                self._scan_for_matches(b"", final=True)
             if emit_task is not None:
                 try:
                     await emit_task
@@ -296,7 +320,52 @@ class TrackedProcess:
                     await self._output_callback("".join(emit_buffer))
                 except Exception:
                     pass
-            self._activity.set()
+
+    def _scan_for_matches(self, chunk: bytes, *, final: bool = False) -> None:
+        """Announce each complete output line that matches ``notify_on``."""
+
+        assert self.notify_on is not None
+        text = self._decoder.decode(chunk, final=final)
+        self._line_buffer += text
+        lines = self._line_buffer.split("\n")
+        # The unfinished tail waits for its newline, but is bounded so a task
+        # that never prints one cannot grow it without limit.
+        self._line_buffer = "" if final else lines.pop()[-_MATCH_LINE_MAX_CHARS:]
+        if final and lines and not lines[-1]:
+            lines.pop()
+        for line in lines:
+            if (
+                not self.announce
+                or self._match_notices >= MAX_MATCH_NOTICES_PER_TASK
+                or self._stopped
+            ):
+                return
+            if not self.notify_on.search(line):
+                continue
+            self._match_notices += 1
+            self._spawn_announcement(
+                announce_task_event(self, "matched", matched_line=line)
+            )
+
+    def _spawn_announcement(self, coro: Awaitable[Any]) -> None:
+        task = asyncio.ensure_future(coro)
+        self._announcements.add(task)
+        task.add_done_callback(self._announcements.discard)
+
+    async def _announce_exit(self) -> None:
+        """Tell the agent how this background task ended."""
+
+        try:
+            await self.proc.wait()
+            await self._reader_task
+            await self._cancel_timeout_task()
+        except asyncio.CancelledError:
+            return
+        except Exception:  # noqa: BLE001 - the notice is best effort
+            return
+        if self._stopped:
+            return
+        await announce_task_event(self, "exited")
 
     async def _enforce_timeout(self) -> None:
         assert self.timeout_seconds is not None
@@ -352,29 +421,8 @@ class TrackedProcess:
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)
 
-    async def wait_for_activity(self, timeout_seconds: float) -> None:
-        """Wait until unread output arrives or the process exits."""
-
-        if self._pending_bytes or not self.running or timeout_seconds <= 0:
-            return
-        self._activity.clear()
-        if self._pending_bytes or not self.running:
-            return
-        try:
-            await asyncio.wait_for(self._activity.wait(), timeout=timeout_seconds)
-        except asyncio.TimeoutError:
-            pass
-
-    def consume_delta(self) -> tuple[bytes, int]:
-        raw = b"".join(self._pending)
-        dropped = self._dropped_pending_bytes
-        self._pending.clear()
-        self._pending_bytes = 0
-        self._dropped_pending_bytes = 0
-        self._activity.clear()
-        return raw, dropped
-
     async def terminate(self) -> None:
+        self._stopped = True
         if self.running:
             await _kill_process_group(self.proc, signal.SIGTERM)
             try:
@@ -398,12 +446,15 @@ class TrackedProcess:
             except asyncio.CancelledError:
                 pass
         await self._cancel_timeout_task()
+        if self._exit_task is not None and not self._exit_task.done():
+            self._exit_task.cancel()
+            await asyncio.gather(self._exit_task, return_exceptions=True)
 
     def read_output(self, *, last_n: int | None = None) -> str:
-        """Read a bounded log view without participating in delta consumption."""
+        """Read a bounded view of the output so far."""
 
         preview, _total, _omitted = _read_artifact_preview(
-            self.output_path, _PENDING_OUTPUT_MAX_BYTES
+            self.output_path, _OUTPUT_PREVIEW_MAX_BYTES
         )
         if last_n is None:
             return preview
@@ -499,106 +550,95 @@ def completed_metadata(tracked: TrackedProcess, *, output_limit: int) -> dict[st
     )
 
 
-def format_running_process(
-    tracked: TrackedProcess,
-    *,
-    initial: bytes,
-    dropped_bytes: int,
-    output_limit: int,
-) -> tuple[str, dict[str, Any]]:
-    limit = min(output_limit, _MODEL_SUCCESS_MAX_BYTES)
-    output, omitted = _clip_bytes(initial, limit)
-    omitted += dropped_bytes
+def format_started_process(tracked: TrackedProcess) -> tuple[str, dict[str, Any]]:
+    """The result of ``shell(background=true)``: the task is running on its own."""
+
     lines = [
-        "[Running]",
+        "[Started in background]",
         f"process_id: {tracked.process_id}",
         f"pid: {tracked.pid}",
         f"command: {tracked.command}",
-        f"artifact: {tracked.output_path}",
+        f"output: {tracked.output_path}",
+        "",
     ]
-    if output:
-        lines.extend(["", "Initial output:", output])
-    if omitted:
-        lines.extend(["", f"{omitted:,} earlier bytes are available in the artifact."])
-    lines.extend(
-        ["", f"Use process(action='poll', process_id='{tracked.process_id}')."]
-    )
-    metadata = _result_metadata(
-        tracked,
-        shown_bytes=min(len(initial), limit),
-        omitted_bytes=omitted,
-    )
-    return "\n".join(lines), metadata
+    if tracked.notify_on is not None:
+        lines.append(
+            "You will be notified when it exits, and when a line matches "
+            f"/{tracked.notify_on.pattern}/. Do not poll it; carry on with other "
+            "work or finish your turn."
+        )
+    else:
+        lines.append(
+            "You will be notified when it exits. Do not poll it; carry on with "
+            "other work or finish your turn."
+        )
+    return "\n".join(lines), _result_metadata(tracked, shown_bytes=0, omitted_bytes=0)
 
 
-def _format_delta(
-    tracked: TrackedProcess,
-    *,
-    raw: bytes,
-    dropped: int,
+def _format_snapshot(
+    tracked: TrackedProcess, *, last_lines: int
 ) -> tuple[str, dict[str, Any]]:
-    failed = not tracked.running and (tracked.timed_out or tracked.exit_code != 0)
-    limit = _MODEL_FAILURE_MAX_BYTES if failed else _MODEL_SUCCESS_MAX_BYTES
-    output, omitted = _clip_bytes(raw, limit)
-    omitted += dropped
+    """A non-consuming view of a task's status and the end of its output."""
+
     label = _status_label(
         exit_code=tracked.exit_code,
         timed_out=tracked.timed_out,
         running=tracked.running,
     )
+    output = tracked.read_output(last_n=last_lines)
     lines = [
         f"[{label}]",
         f"process_id: {tracked.process_id}",
         f"duration: {tracked.elapsed_seconds:.2f}s",
+        "",
+        output or "(No output yet)",
     ]
-    if output:
-        lines.extend(["", "New output:", output])
-    else:
-        lines.extend(["", "(No new output)"])
-    if omitted:
+    if tracked.output_bytes > len(output.encode("utf-8", errors="ignore")):
         lines.extend(
             ["", f"Full output: {tracked.output_path} ({tracked.output_bytes:,} bytes)"]
         )
+    shown = len(output.encode("utf-8", errors="ignore"))
     metadata = _result_metadata(
         tracked,
-        shown_bytes=min(len(raw), limit),
-        omitted_bytes=omitted,
+        shown_bytes=shown,
+        omitted_bytes=max(0, tracked.output_bytes - shown),
     )
     return "\n".join(lines), metadata
 
 
 async def _process(
     action: Annotated[
-        Literal["list", "poll", "wait", "terminate"],
+        Literal["list", "output", "stop"],
         Field(
-            description="List processes, consume new output, wait briefly, or terminate."
+            description=(
+                "list background tasks, show the latest output of one, or stop one."
+            )
         ),
     ],
     process_id: Annotated[
         str | None,
-        Field(description="Opaque process_id returned by shell. Omit only for list."),
-    ] = None,
-    wait_seconds: Annotated[
-        int,
         Field(
             description=(
-                "For wait: seconds to await process completion before returning "
-                "the latest output (max 60). Use poll for immediate progress."
-            ),
-            ge=1,
+                "process_id returned by shell(background=true). Omit only for list."
+            )
         ),
-    ] = 10,
+    ] = None,
+    last_lines: Annotated[
+        int,
+        Field(description="For output: how many trailing lines to show.", ge=1, le=500),
+    ] = 50,
     _state: Annotated[Any, InjectedArg()] = None,
     tool_call_id: Annotated[str | None, InjectedArg()] = None,
 ) -> str:
-    """Continue a command returned by shell without replaying old output."""
+    """Inspect or stop a background command. Never needed to learn that it ended."""
+
+    sandbox = get_sandbox()
+    scope = command_process_scope(sandbox.session_id, sandbox.workspace_root)
 
     if action == "list":
-        sandbox = get_sandbox()
-        scope = command_process_scope(sandbox.session_id, sandbox.workspace_root)
         visible = [item for item in _processes.values() if item.scope == scope]
         if not visible:
-            return "No tracked command processes."
+            return "No background tasks."
         return "\n".join(
             f"{item.process_id}  {item.status}  pid={item.pid}  {item.command[:100]}"
             for item in sorted(visible, key=lambda value: value.started_at)
@@ -607,36 +647,19 @@ async def _process(
     if not process_id:
         return "Error: process_id is required."
     tracked = _processes.get(process_id)
-    sandbox = get_sandbox()
-    scope = command_process_scope(sandbox.session_id, sandbox.workspace_root)
     if tracked is None or tracked.scope != scope:
         return f"Error: process '{process_id}' was not found."
 
-    if action == "wait":
-        await tracked.wait(timeout_seconds=float(min(wait_seconds, _MAX_WAIT_SECONDS)))
-        if not tracked.running:
-            # Completion and the final pipe read are separate events. Join the
-            # reader before consuming the last delta.
-            await tracked.wait()
-    elif action == "terminate":
+    if action == "stop":
         await tracked.terminate()
-    elif not tracked.running:
-        # The OS may report completion before the stdout reader has consumed
-        # the final pipe bytes. Join it before the last delta and registry exit.
-        await tracked.wait()
-
-    raw, dropped = tracked.consume_delta()
-    result, metadata = _format_delta(tracked, raw=raw, dropped=dropped)
-    stash_result_metadata(_state, tool_call_id, metadata)
-    if not tracked.running:
         _processes.pop(tracked.process_id, None)
+    result, metadata = _format_snapshot(tracked, last_lines=last_lines)
+    stash_result_metadata(_state, tool_call_id, metadata)
     logger.info(
-        "command_process_observed process_id={} action={} status={} delta_bytes={} dropped_bytes={}",
+        "command_process_observed process_id={} action={} status={}",
         tracked.process_id,
         action,
         tracked.status,
-        len(raw),
-        dropped,
     )
     return result
 
@@ -645,8 +668,9 @@ process_tool = Tool(
     _process,
     name="process",
     description=(
-        "Continue a command process returned by shell. Poll returns progress "
-        "immediately; wait blocks for completion up to wait_seconds. Both return "
-        "only new output since the previous observation."
+        "Manage background commands started with shell(background=true). A "
+        "background command reports for itself when it exits, so use this only "
+        "to list them, look at the latest output of one that is still running, "
+        "or stop one. Never poll."
     ),
 )

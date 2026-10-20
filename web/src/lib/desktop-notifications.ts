@@ -91,11 +91,6 @@ async function playNotificationSound(): Promise<void> {
   }
 }
 
-export function isBackgroundCompletion(toolName: string, result: string | undefined): boolean {
-  if (toolName !== 'bg' || !result) return false
-  return /PID \d+: (?:exited|stopped)/.test(result)
-}
-
 async function shouldNotify(options: { force?: boolean } = {}): Promise<DesktopNotificationResult | null> {
   if (!isTauriRuntime()) {
     return { status: 'unsupported', message: 'Native app notifications only work in the Tauri app.' }

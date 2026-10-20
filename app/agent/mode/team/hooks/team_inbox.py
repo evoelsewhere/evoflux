@@ -42,6 +42,7 @@ class TeamInboxHook(BaseAgentHook):
         request: "ModelRequest",
     ) -> ModelRequest | None:
         """Drain inbox and append any new messages to state before the LLM call."""
+        from app.agent.mode.team.member import _inbox_sse_extra
         from app.agent.mode.team.mailbox import Message
 
         member = self._member
@@ -57,15 +58,7 @@ class TeamInboxHook(BaseAgentHook):
         for msg_obj, raw_msg in zip(inbox_msgs, pending):
             if member._should_emit_inbox_sse([raw_msg.from_agent]):
                 assert member._team is not None
-                inbox_extra: dict = {
-                    "content": msg_obj.content,
-                    "from_agent": raw_msg.from_agent,
-                }
-                artifact = raw_msg.extra.get("_handoff_artifact") or getattr(
-                    raw_msg, "_handoff_artifact", None
-                )
-                if artifact is not None:
-                    inbox_extra["_handoff_artifact"] = artifact
+                inbox_extra = _inbox_sse_extra(msg_obj, raw_msg)
                 await member._team._emit(
                     agent=member.name,
                     event="inbox",

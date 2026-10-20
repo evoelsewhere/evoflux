@@ -8,6 +8,11 @@ All notable changes to EvoFlux are documented in this file.
 
 - The built-in browser now shows a virtual cursor while an agent clicks, hovers or drags — in the floating preview and in the workbench panel. It glides to each target and pulses on a click; your real mouse is never moved.
 
+### Changed
+
+- Long commands no longer make the agent poll. `shell` waits for a command and returns its result, or, with `background=true`, starts it and returns at once; the task then tells the agent when it exits and, with `notify_on`, when an output line matches. An idle agent is woken for a new turn, so a build that finishes after it stopped talking still reaches it. Finished and matched tasks show as small status cards in the chat, and the desktop notification for a completed background task now follows the real exit.
+- The `process` tool now only lists background tasks, shows the latest output of one, or stops one.
+
 ### Fixed
 
 - Opening the built-in browser no longer fails with "Something went wrong" (React error #301).
@@ -27,6 +32,14 @@ All notable changes to EvoFlux are documented in this file.
 - Stopping the dev launcher on Windows now ends the whole process tree, and port detection works on non-English Windows.
 - Timed-out commands on Windows are stopped with the System32 `taskkill`, and cancelling mid-kill no longer leaves the command running.
 - `web_search` gets 15 more seconds before it is cut off, so a slow but successful search is no longer lost at the limit.
+
+### Removed
+
+- `shell`'s `yield_time_ms` and the `process` tool's `poll`, `wait` and `terminate` actions are gone, with no compatibility layer.
+
+### Upgrade notes
+
+- Custom agent instructions, skills or prompts that tell an agent to use `process` with `poll`, `wait` or `terminate`, or to pass `yield_time_ms` to `shell`, need updating: run long commands with `shell(background=true)` and let them report back, and use `process(action="stop")` to end one.
 
 ## [3.0.10] - 2026-10-19
 
