@@ -55,9 +55,20 @@ interface BrowserPipHostProps {
   sessionId: string
   stackDepth: number
   stackOrder: number
+  /**
+   * Whether this is the chat on screen. A preview belongs to its own chat: it
+   * stays mounted while you look at another one, so the agent's browser keeps
+   * working and its page survives, but its card and native view are hidden.
+   */
+  active?: boolean
 }
 
-export function BrowserPipHost({ sessionId, stackDepth, stackOrder }: BrowserPipHostProps) {
+export function BrowserPipHost({
+  sessionId,
+  stackDepth,
+  stackOrder,
+  active = true,
+}: BrowserPipHostProps) {
   const viewportRef = useRef<HTMLDivElement>(null)
   const [preferences, setPreferences] = useState<BrowserPreferences>(loadBrowserPreferences)
   const [placement, setPlacement] = useState<PreviewPlacement>(loadPreviewPlacement)
@@ -99,7 +110,7 @@ export function BrowserPipHost({ sessionId, stackDepth, stackOrder }: BrowserPip
     enabled: preferences.enabled,
     // A hidden page is how the card says anything: an overlay is DOM, and
     // DOM under a native view cannot be seen.
-    visible: !pageHidden,
+    visible: active && !pageHidden,
     bridgeEnabled: true,
     singleTab: true,
     zoom: preferences.defaultZoom,
@@ -238,12 +249,15 @@ export function BrowserPipHost({ sessionId, stackDepth, stackOrder }: BrowserPip
   return createPortal((
     <div
       className="fixed z-(--z-overlay)"
+      data-browser-pip-session={sessionId}
+      aria-hidden={active ? undefined : true}
       onPointerDownCapture={() => focusPip(sessionId)}
       style={{
         left: stackedPlacement.x,
         top: stackedPlacement.y,
         width,
         zIndex: 100 + stackOrder,
+        display: active ? undefined : 'none',
       }}
     >
       <div

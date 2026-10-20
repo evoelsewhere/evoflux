@@ -9,8 +9,9 @@ WebBridge for the user's existing Chrome/Edge profile.
 The Browser workbench opens a desktop-owned browser surface whose profile can
 persist across sessions. A session presence channel lets the backend ask the UI
 to mount an agent-owned floating browser preview; the workbench remains under
-the user's control. Multiple agent previews can stay open at once and stack
-with the newest preview on top. A separate WebSocket carries versioned command
+the user's control. A preview belongs to its own chat: it stays mounted while
+you read another chat, so the agent's browser and page survive, but its card and
+native view are hidden until you are back in that chat. A separate WebSocket carries versioned command
 requests and responses. Commands are serialized per visible browser connection
 and fail pending requests when the panel reconnects or closes.
 

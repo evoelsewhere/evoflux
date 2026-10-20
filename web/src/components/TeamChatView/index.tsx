@@ -1431,11 +1431,11 @@ export function TeamChatView({ sessionId, importedSource, mode = 'work', workspa
   // what the user asked for, so it hangs here instead — over the
   // conversation, as a card of its own.
   //
-  // Deliberately not tied to the chat on screen: reading another
-  // conversation used to unmount this, and unmounting closes the WebView, so
-  // a glance at a second chat threw away the page an agent was working in
-  // and left it a blank new tab. The card floats above whatever is open
-  // until someone closes it, which is what a floating window is for.
+  // Mounted for every chat that has one, but shown only for the chat on
+  // screen. Unmounting closes the WebView, so reading another conversation
+  // used to throw away the page an agent was working in; keeping the host
+  // mounted keeps the page and the agent's browser alive, while the card and
+  // its native view stay hidden until you are back in that chat.
   const browserPipHost = browserPipSessionIds.length > 0
     ? (
         <Suspense fallback={null}>
@@ -1443,8 +1443,11 @@ export function TeamChatView({ sessionId, importedSource, mode = 'work', workspa
             <BrowserPipHost
               key={sessionId}
               sessionId={sessionId}
-              stackDepth={browserPipSessionIds.length - index - 1}
+              // Only the chat on screen shows its preview, so there is one
+              // card and nothing to stack it under.
+              stackDepth={0}
               stackOrder={index}
+              active={sessionId === sessionIdState}
             />
           ))}
         </Suspense>
