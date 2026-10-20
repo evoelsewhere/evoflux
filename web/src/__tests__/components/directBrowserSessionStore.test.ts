@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   activeDirectBrowserSurface,
   claimantForTab,
+  disposeDirectBrowserSession,
   disposeDirectBrowserSessionIfAbandoned,
   disposeDirectBrowserSessionIfUnused,
   getDirectBrowserSession,
@@ -159,5 +160,73 @@ describe('direct browser session store', () => {
     disposeDirectBrowserSessionIfUnused('session-explicit')
     expect(close).toHaveBeenCalled()
     expect(hasLiveBrowserTabs('session-explicit')).toBe(false)
+  })
+})
+
+describe('detached browser sessions', () => {
+  function detach(sessionId: string, at: number) {
+    vi.setSystemTime(at)
+    const session = seedTabs(sessionId, 1)
+    const close = vi.fn()
+    session.webviews.set('tab-1', { close } as never)
+    registerDirectBrowserSurfaceSlot(sessionId, {
+      id: 'panel:w',
+      kind: 'panel',
+      visible: true,
+      boundTabId: 'tab-1',
+    })
+    unregisterDirectBrowserSurfaceSlot(sessionId, 'panel:w')
+    return { session, close }
+  }
+
+  it('closes the longest-detached sessions beyond the cap, keeping the newest', () => {
+    vi.useFakeTimers()
+    try {
+      const oldest = detach('detached-1', 1_000)
+      const second = detach('detached-2', 2_000)
+      const third = detach('detached-3', 3_000)
+      const fourth = detach('detached-4', 4_000)
+
+      expect(oldest.close).toHaveBeenCalled()
+      expect(hasLiveBrowserTabs('detached-1')).toBe(false)
+      for (const kept of [second, third, fourth]) {
+        expect(kept.close).not.toHaveBeenCalled()
+        expect(kept.session.webviews.size).toBe(1)
+      }
+    } finally {
+      for (const id of ['detached-1', 'detached-2', 'detached-3', 'detached-4']) {
+        disposeDirectBrowserSession(id)
+      }
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not close a session that is shown again', () => {
+    vi.useFakeTimers()
+    try {
+      const shown = detach('shown-1', 100)
+      registerDirectBrowserSurfaceSlot('shown-1', {
+        id: 'pip',
+        kind: 'pip',
+        visible: true,
+        boundTabId: 'tab-1',
+      })
+      for (let i = 0; i < 5; i += 1) detach(`shown-other-${i}`, 200 + i)
+
+      expect(shown.close).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('closes a session browser outright when its chat is deleted', () => {
+    const session = seedTabs('deleted-chat', 1)
+    const close = vi.fn()
+    session.webviews.set('tab-1', { close } as never)
+
+    disposeDirectBrowserSession('deleted-chat')
+
+    expect(close).toHaveBeenCalled()
+    expect(hasLiveBrowserTabs('deleted-chat')).toBe(false)
   })
 })

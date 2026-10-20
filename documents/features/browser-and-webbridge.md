@@ -14,6 +14,12 @@ with the newest preview on top. A separate WebSocket carries versioned command
 requests and responses. Commands are serialized per visible browser connection
 and fail pending requests when the panel reconnects or closes.
 
+Each chat session owns one set of browser pages. Closing a view hands the pages
+back rather than closing them, so a chat you return to still has its page. To
+keep a long day of chats from leaving a WebView process per chat, at most three
+chats keep pages while no view shows them; the longest-detached ones are closed
+beyond that. Deleting a chat closes its pages immediately.
+
 The preview and the browser panel are one browser per chat session: they share
 the same tab list and the same WebViews, so opening the panel shows the pages
 already open in the preview (never an empty page beside them) and closing the
