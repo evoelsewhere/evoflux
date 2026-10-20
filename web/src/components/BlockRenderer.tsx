@@ -23,6 +23,7 @@ import { WidgetRenderer } from './WidgetRenderer'
 import { UiBlockRenderer } from './ui/UiBlockRenderer'
 import { VisualArtifactRenderer } from './VisualArtifactRenderer'
 import { InboxBubble } from './InboxBubble'
+import { BackgroundTaskNotice } from './BackgroundTaskNotice'
 import { HandoffCard } from './HandoffCard'
 import { CompactionDivider } from './CompactionDivider'
 import { ImageAttachment } from './ImageAttachment'
@@ -374,6 +375,9 @@ export const BlockRenderer = memo(function BlockRenderer({ block, isStreaming, s
       // Me check if this is an inbox message (from another agent, not real user)
       const fromAgent = block.extra?.from_agent as string | undefined
       if (fromAgent && fromAgent !== 'user') {
+        if (block.extra?.kind === 'task_event') {
+          return <BackgroundTaskNotice content={block.content} extra={block.extra ?? {}} compact={compact} />
+        }
         const handoffArtifact = block.extra?._handoff_artifact as Record<string, unknown> | undefined
         if (isConsolidatedDelegationMessage(block)) return null
         if (handoffArtifact) {

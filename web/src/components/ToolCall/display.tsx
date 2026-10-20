@@ -145,9 +145,14 @@ export function getToolDisplay(name: string, args: string | undefined): ToolDisp
   // ── shell: description as header, command as bash block ─────────────
   if (name === 'shell') {
     const description = str(parsed, 'description')
+    const background = parsed['background'] === true
     return {
-      header: description ? <Arg>{description}</Arg> : null,
-      headerTitle: description,
+      header: description
+        ? <>{background ? 'In background: ' : null}<Arg>{description}</Arg></>
+        : background ? 'Starting in background…' : null,
+      headerTitle: description
+        ? background ? `In background: ${description}` : description
+        : background ? 'Starting in background…' : null,
       formattedArgs: str(parsed, 'command'),
       language: 'bash',
     }
@@ -227,54 +232,27 @@ export function getToolDisplay(name: string, args: string | undefined): ToolDisp
     }
   }
 
-  // ── bg: action-based header, hide raw JSON ────────
-  if (name === 'bg') {
+  // ── process: list / output / stop a background command ─────────────
+  if (name === 'process') {
     const action = str(parsed, 'action')?.toLowerCase()
-    const pid = parsed['pid'] != null ? String(parsed['pid']) : null
-    let header: ReactNode
-    let headerTitle: string
-    switch (action) {
-      case 'list':
-        header = 'Listing background processes…'
-        headerTitle = 'Listing background processes…'
-        break
-      case 'status':
-        if (pid) {
-          header = <>Checking process <Arg>{pid}</Arg>…</>
-          headerTitle = `Checking process ${pid}…`
-        } else {
-          header = 'Checking process status…'
-          headerTitle = 'Checking process status…'
-        }
-        break
-      case 'output':
-        if (pid) {
-          header = <>Reading output of process <Arg>{pid}</Arg>…</>
-          headerTitle = `Reading output of process ${pid}…`
-        } else {
-          header = 'Reading process output…'
-          headerTitle = 'Reading process output…'
-        }
-        break
-      case 'stop':
-        if (pid) {
-          header = <>Stopping process <Arg>{pid}</Arg>…</>
-          headerTitle = `Stopping process ${pid}…`
-        } else {
-          header = 'Stopping process…'
-          headerTitle = 'Stopping process…'
-        }
-        break
-      default:
-        if (action) {
-          header = <>bg: <Arg>{action}</Arg></>
-          headerTitle = `bg: ${action}`
-        } else {
-          header = 'Managing background process…'
-          headerTitle = 'Managing background process…'
-        }
+    const id = str(parsed, 'process_id')
+    const verb = action === 'stop'
+      ? 'Stopping'
+      : action === 'output'
+        ? 'Reading output of'
+        : 'Listing'
+    const label = action === 'list' || !action
+      ? 'Listing background tasks…'
+      : id
+        ? `${verb} background task ${id}…`
+        : `${verb} background task…`
+    return {
+      header: action === 'list' || !action || !id
+        ? label
+        : <>{verb} background task <Arg>{id}</Arg>…</>,
+      headerTitle: label,
+      formattedArgs: null,
     }
-    return { header, headerTitle, formattedArgs: null }
   }
 
   // ── note: conversational header, note body as args ─────────────

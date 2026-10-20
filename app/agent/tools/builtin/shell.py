@@ -1,9 +1,10 @@
-"""Token-bounded shell execution with tracked process continuation."""
+"""Token-bounded shell execution, in the foreground or as a background task."""
 
 from __future__ import annotations
 
 import asyncio
 import os
+import re
 import subprocess
 import sys
 from collections.abc import Awaitable, Callable
@@ -21,7 +22,7 @@ from app.agent.tools.builtin.process import (
     command_process_scope,
     completed_metadata,
     format_completed_process,
-    format_running_process,
+    format_started_process,
     register_process,
     stash_result_metadata,
 )
@@ -30,10 +31,10 @@ from app.services.user_shell import discover_login_path
 
 # ── Constants ────────────────────────────────────────────────────────────────
 
-_DEFAULT_TIMEOUT_SECONDS = (
-    120  # 2 min default (opencode parity) — test suites and builds routinely
-    # exceed 60 s; yielded processes handle longer-running commands.
-)
+_DEFAULT_TIMEOUT_SECONDS = 120  # 2 min default (opencode parity)
+# A background command that dies at once (a typo, a missing binary) is reported
+# in the tool result instead of as a notice a model round trip later.
+_BACKGROUND_SETTLE_SECONDS = 1.0
 # Compatibility helpers retained for callers/tests that import ``_tail_text``.
 _OUTPUT_MAX_LINES = 300
 _OUTPUT_MAX_BYTES = 12_000
@@ -266,21 +267,33 @@ async def _shell(
     timeout_seconds: Annotated[
         int | None,
         Field(
-            description="Hard command timeout in seconds; defaults to 120.",
+            description=(
+                "Hard command timeout in seconds; defaults to 120. A foreground "
+                "command is waited for until it ends or this elapses."
+            ),
             ge=1,
         ),
     ] = None,
-    yield_time_ms: Annotated[
-        int,
+    background: Annotated[
+        bool,
         Field(
             description=(
-                "Return a process_id when the command is still running after this many "
-                "milliseconds. Use process to continue it."
-            ),
-            ge=250,
-            le=30000,
+                "Start the command and return at once. You are notified when it "
+                "exits; never poll it. Use for dev servers, watchers, and builds "
+                "or test suites that may outlast the timeout."
+            )
         ),
-    ] = 10000,
+    ] = False,
+    notify_on: Annotated[
+        str | None,
+        Field(
+            description=(
+                "With background: a regular expression. You are also notified "
+                "(at most a few times) when an output line matches it, e.g. "
+                "'ready|listening|error'."
+            )
+        ),
+    ] = None,
     _tool_output: Annotated[
         Callable[[str], Awaitable[None]] | None,
         InjectedArg(),
@@ -288,7 +301,7 @@ async def _shell(
     _state: Annotated[Any, InjectedArg()] = None,
     tool_call_id: Annotated[str | None, InjectedArg()] = None,
 ) -> str:
-    """Run a command, or yield a tracked process for long-running work."""
+    """Run a command and wait for it, or start it as a background task."""
 
     sandbox = get_sandbox()
     # Commands are never blocked on path grounds — see `audit_command`. Out
@@ -296,6 +309,17 @@ async def _shell(
     sandbox.audit_command(command, tool="shell")
     if not command.strip():
         return "[Succeeded]\n\n(No output)"
+
+    pattern: re.Pattern[str] | None = None
+    if notify_on is not None:
+        if not background:
+            return "Error: notify_on needs background=true."
+        try:
+            pattern = re.compile(notify_on)
+        except re.error as exc:
+            return f"Error: notify_on is not a valid regular expression: {exc}"
+    if background and not sandbox.session_id:
+        return "Error: background tasks need a chat session to report to."
 
     cwd = _resolve_workdir(workdir)
     requested_timeout = (
@@ -318,12 +342,12 @@ async def _shell(
         extra["start_new_session"] = True
 
     logger.debug(
-        "shell_execute_start shell={} command={} cwd={} timeout={} yield_ms={} description={}",
+        "shell_execute_start shell={} command={} cwd={} timeout={} background={} description={}",
         _shell_mod.name(shell_bin),
         command[:200],
         cwd,
         timeout,
-        yield_time_ms,
+        background,
         description,
     )
     env = _command_env(shell_bin, inherit=sandbox.inherit_shell_environment)
@@ -358,9 +382,21 @@ async def _shell(
         cwd=cwd,
         timeout_seconds=timeout,
         scope=command_process_scope(sandbox.session_id, sandbox.workspace_root),
-        output_callback=_tool_output,
+        session_id=sandbox.session_id,
+        output_callback=None if background else _tool_output,
+        notify_on=pattern,
     )
-    completed = await tracked.wait(timeout_seconds=yield_time_ms / 1000)
+    try:
+        if background:
+            completed = await tracked.wait(timeout_seconds=_BACKGROUND_SETTLE_SECONDS)
+        else:
+            completed = await tracked.wait()
+    except asyncio.CancelledError:
+        # The turn was interrupted while a foreground command ran: leave no
+        # orphan behind.
+        await asyncio.shield(tracked.terminate())
+        raise
+
     if completed:
         result = format_completed_process(tracked, output_limit=output_limit)
         stash_result_metadata(
@@ -376,29 +412,26 @@ async def _shell(
         )
         return result
 
-    initial, dropped = tracked.consume_delta()
+    tracked.begin_announcing()
     register_process(tracked)
-    result, metadata = format_running_process(
-        tracked,
-        initial=initial,
-        dropped_bytes=dropped,
-        output_limit=output_limit,
-    )
+    result, metadata = format_started_process(tracked)
     stash_result_metadata(_state, tool_call_id, metadata)
     logger.info(
-        "shell_process_yielded process_id={} pid={} command={} output_bytes={}",
+        "shell_background_started process_id={} pid={} command={}",
         tracked.process_id,
         tracked.pid,
         command[:200],
-        tracked.output_bytes,
     )
     return result
 
 
 _SHELL_DESCRIPTION = (
-    "Run a non-interactive shell command in the session workspace. The tool "
-    "returns a process_id when work outlives yield_time_ms; continue it with "
-    "process. Full output is archived while the model receives a bounded view. "
+    "Run a non-interactive shell command in the session workspace and wait for "
+    "it. For a dev server, a watcher, or a build or test run that may take "
+    "minutes, pass background=true: the command starts at once and you are "
+    "notified when it exits (and, with notify_on, when an output line matches), "
+    "so never poll it. Full output is archived while the model receives a "
+    "bounded view. "
     "Use it for repository commands (tests, linters, builds, git, package "
     "managers). To read, search, list, or edit files, use the read, grep, glob, "
     "ls, edit, write, and patch tools instead of cat, sed, head, grep, rg, or "

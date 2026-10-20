@@ -97,15 +97,26 @@ bounded durable-skill budget; reads of other bundle files may be summarized.
 If an old activation falls outside that budget, the model simply reads the
 file again.
 
-Command execution has one continuation contract. `shell` starts a
+Command execution is event-driven; nothing polls. `shell` starts a
 non-interactive command, journals raw combined stdout/stderr to a
-session-scoped artifact, and returns a bounded head/tail observation. If the
-command outlives `yield_time_ms`, `shell` returns an opaque process ID and the
-`process` tool owns list, poll, wait, and
-terminate; poll and wait consume only output produced since the previous
-observation. There are no parallel `bg` or `shell_bg_*` APIs. Preview servers
-reuse the same journalled process runtime but keep their specialized lifecycle
-inside `preview`, so they do not leak into the model's command-process registry.
+session-scoped artifact, and, by default, waits for it and returns a bounded
+head/tail observation (bounded by `timeout_seconds`). With `background=true` it
+instead returns an opaque process ID at once and the command becomes a
+*background task* that reports for itself: when it exits, and, if the agent
+passed a `notify_on` regular expression, when an output line matches (at most
+five times per task and twenty per session in ten minutes). A notice is a
+mailbox message from `background_task` to the lead
+(`app/agent/background_tasks.py`, `AgentTeam.deliver_background_task_event`).
+A lead that is mid-turn receives it before its next model call through
+`TeamInboxHook`; an idle lead is woken for a new turn. The notice is persisted
+as a transcript row with `extra.kind = "task_event"` and sent to the UI as an
+`inbox` event carrying a `task_event` object, which renders as a status card.
+The `process` tool only lists tasks, shows the tail of one's output without
+consuming it, or stops one; stopping or shutting down is never announced. A
+command that ends within a second of starting is returned directly instead.
+There are no parallel `bg` or `shell_bg_*` APIs. Preview servers reuse the same
+journalled process runtime but keep their specialized lifecycle inside
+`preview`, so they do not leak into the model's command-process registry.
 
 The durable transcript remains authoritative for reload, audit, and UI
 rendering; oversized raw payloads remain available through their artifact
@@ -144,8 +155,8 @@ formatter and metadata path instead of maintaining a second output protocol.
   feature-specific branches. Revision-aware tools return a receipt instead of
   rereading an unchanged source range; no fixed investigation quota can block
   a legitimate evidence chain.
-- Shell output is journalled once, model-visible observations are bounded, and
-  repeated `process` polls never replay already consumed bytes.
+- Shell output is journalled once and model-visible observations are bounded;
+  a background task's exit is pushed to the agent, never polled for.
 - Application shutdown terminates every tracked command and Preview process
   group before the sidecar exits.
 - Work and Coding project old tool results only at the model boundary; durable

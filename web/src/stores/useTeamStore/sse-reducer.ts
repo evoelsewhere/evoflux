@@ -19,7 +19,7 @@ import {
   extractToolPaths,
   touchesWiki,
 } from './helpers'
-import { isBackgroundCompletion, sendDesktopNotification } from '@/lib/desktop-notifications'
+import { sendDesktopNotification } from '@/lib/desktop-notifications'
 import { createNotificationActivation } from '@/lib/notification-activation'
 import { useUIStore } from '@/stores/useUIStore'
 import type { ContentBlock, GoalResponse, MotionProgressPayload, SuggestedTask, TurnCost, TurnUsage, TurnUsageBreakdown } from '@/api/types'
@@ -762,18 +762,6 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
             }
           })
         }
-        if (isBackgroundCompletion(toolName, result)) {
-          const state = get()
-          const activation = state.sessionId
-            ? createNotificationActivation('background_done', state.sessionId)
-            : undefined
-          void sendDesktopNotification({
-            kind: 'background_done',
-            title: `Background task completed${codingWorkspaceSuffix(state)}`,
-            body: sessionLabel(state),
-            ...(activation ? { activation } : {}),
-          })
-        }
         const events: CacheInvalidation[] = []
         if (NOTE_TOOLS.has(toolName)) {
           events.push({ kind: 'wiki' })
@@ -903,10 +891,26 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
         const agent = d.agent as string
         const fromAgent = d.from_agent as string
         const artifact = d._handoff_artifact as Record<string, unknown> | undefined
+        const taskEvent = d.task_event as Record<string, unknown> | undefined
+        if (taskEvent?.task_event === 'exited') {
+          const state = get()
+          const activation = state.sessionId
+            ? createNotificationActivation('background_done', state.sessionId)
+            : undefined
+          void sendDesktopNotification({
+            kind: 'background_done',
+            title: `Background task completed${codingWorkspaceSuffix(state)}`,
+            body: sessionLabel(state),
+            ...(activation ? { activation } : {}),
+          })
+        }
         set((draft) => {
           ensureAgent(draft, agent)
           const extra: Record<string, unknown> = { from_agent: fromAgent }
           if (artifact) extra._handoff_artifact = artifact
+          // A background task's notice: the same flat shape the transcript row
+          // stores, so the live card and the reloaded one render identically.
+          if (taskEvent) Object.assign(extra, taskEvent, { kind: 'task_event' })
           draft.agentStreams[agent].currentBlocks.push({
             id: generateBlockId(),
             type: 'user',
@@ -919,7 +923,9 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
             agent,
             label: artifact
               ? `Handoff from ${fromAgent}`
-              : `Message from ${fromAgent}`,
+              : taskEvent
+                ? `Background task ${taskEvent.task_event === 'matched' ? 'output matched' : 'ended'}`
+                : `Message from ${fromAgent}`,
             artifact: artifact ?? undefined,
             meta: { from_agent: fromAgent },
           })

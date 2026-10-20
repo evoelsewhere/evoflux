@@ -270,6 +270,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
     setup:
       '任意のセッションを開きます。チームメンバー、モデル、ツールは Settings → Agents（work / coding スコープ）で設定。composer 上のセッション pill は、現在のチャットだけモデル・thinking レベル・fast mode を上書きします。',
     tricks: [
+      '長いビルド、テスト実行、開発サーバーはバックグラウンドタスクとして動きます。エージェントは起動後も作業を続け、各タスクは終了時（または監視を頼まれた行が出力されたとき）に自分で報告します。完了したタスクは小さなステータスカードとして表示され、待機中のエージェントを新しいターンのために起こし、ポーリングは不要です。',
       'Ctrl+V はデスクトップで Agent ↔ Split を循環（フォーカス中フィールドがペーストを使う間は無効）。',
       'コマンドパレットの Next / Previous Agent は worker が活きているとき便利 — identity ドロップダウンを探すより速い。',
       'workbench のコンテキスト予算バーはモデルの context_length と summary_trigger_tokens を使います — 上がったら早めに compact。',

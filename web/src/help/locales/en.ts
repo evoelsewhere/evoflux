@@ -282,6 +282,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
     setup:
       'Open any session. Configure team membership, models, and tools under Settings → Agents (scoped to work / coding). Session pills on the composer override model, thinking level, and fast mode for the current chat only.',
     tricks: [
+      'Long builds, test runs and dev servers run as background tasks: the agent starts them and keeps working, and each one reports back by itself when it exits (or prints a line it was told to watch for). A finished task shows as a small status card, wakes an idle agent for a new turn, and never needs polling.',
       'Ctrl+V cycles Agent ↔ Split on desktop (disabled while the focused field uses paste).',
       'Command palette has Next / Previous Agent when workers are active — faster than hunting the identity dropdown.',
       'The context budget bar on the workbench uses the model’s context_length and summary_trigger_tokens — compact early if it climbs.',

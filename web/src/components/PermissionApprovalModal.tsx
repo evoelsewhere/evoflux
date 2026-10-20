@@ -68,7 +68,7 @@ function PermissionApprovalForm({
     }
   }
 
-  const isShell = permissionRequest.tool === 'shell' || permissionRequest.tool === 'bg'
+  const isShell = permissionRequest.tool === 'shell'
 
   return (
     <GateOverlay label="Permission required" className="max-w-3xl">

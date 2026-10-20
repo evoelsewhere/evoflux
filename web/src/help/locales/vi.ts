@@ -272,6 +272,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
     setup:
       'Mở bất kỳ session nào. Cấu hình team, model và tool trong Settings → Agents (scope work / coding). Session pills trên composer override model, thinking level và fast mode chỉ cho chat hiện tại.',
     tricks: [
+      'Build dài, chạy test và dev server chạy như tác vụ nền: agent khởi chạy rồi làm tiếp việc khác, và mỗi tác vụ tự báo lại khi kết thúc (hoặc khi in ra dòng được dặn theo dõi). Tác vụ xong hiện thành thẻ trạng thái nhỏ, đánh thức agent đang rảnh để bắt đầu lượt mới, và không cần poll.',
       'Ctrl+V xoay Agent ↔ Split trên desktop (tắt khi field đang focus dùng paste).',
       'Command palette có Next / Previous Agent khi worker đang chạy — nhanh hơn lục identity dropdown.',
       'Context budget bar trên workbench dùng context_length và summary_trigger_tokens của model — /compact sớm nếu thanh leo.',
