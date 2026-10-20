@@ -233,3 +233,83 @@ describe('detached browser sessions', () => {
     expect(hasLiveBrowserTabs('deleted-chat')).toBe(false)
   })
 })
+
+describe('webviews nobody is showing', () => {
+  function shown(sessionId: string) {
+    const session = seedTabs(sessionId, 1)
+    const hide = vi.fn()
+    session.webviews.set('tab-1', { hide, close: vi.fn() } as never)
+    session.visibility.set('tab-1', true)
+    return { session, hide }
+  }
+
+  it('hides the page when the panel showing it is hidden, even before it unmounts', () => {
+    const { session, hide } = shown('unclaimed-hidden')
+    registerDirectBrowserSurfaceSlot('unclaimed-hidden', {
+      id: 'panel:w',
+      kind: 'panel',
+      visible: true,
+      boundTabId: 'tab-1',
+    })
+    expect(hide).not.toHaveBeenCalled()
+
+    updateDirectBrowserSurfaceSlot('unclaimed-hidden', 'panel:w', { visible: false })
+
+    expect(hide).toHaveBeenCalledTimes(1)
+    expect(session.visibility.get('tab-1')).toBe(false)
+  })
+
+  it('hides the page when its last view goes away', () => {
+    const { session, hide } = shown('unclaimed-gone')
+    registerDirectBrowserSurfaceSlot('unclaimed-gone', {
+      id: 'panel:w',
+      kind: 'panel',
+      visible: true,
+      boundTabId: 'tab-1',
+    })
+
+    unregisterDirectBrowserSurfaceSlot('unclaimed-gone', 'panel:w')
+
+    expect(hide).toHaveBeenCalledTimes(1)
+    expect(session.visibility.get('tab-1')).toBe(false)
+  })
+
+  it('leaves the page alone while another view still claims it (docking)', () => {
+    const { session, hide } = shown('unclaimed-dock')
+    registerDirectBrowserSurfaceSlot('unclaimed-dock', {
+      id: 'pip',
+      kind: 'pip',
+      visible: true,
+      boundTabId: 'tab-1',
+    })
+    registerDirectBrowserSurfaceSlot('unclaimed-dock', {
+      id: 'panel:w',
+      kind: 'panel',
+      visible: true,
+      boundTabId: 'tab-1',
+    })
+
+    unregisterDirectBrowserSurfaceSlot('unclaimed-dock', 'pip')
+
+    expect(hide).not.toHaveBeenCalled()
+    expect(session.visibility.get('tab-1')).toBe(true)
+
+    unregisterDirectBrowserSurfaceSlot('unclaimed-dock', 'panel:w')
+    expect(hide).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not re-hide a page that is already hidden', () => {
+    const { session, hide } = shown('unclaimed-twice')
+    session.visibility.set('tab-1', false)
+    registerDirectBrowserSurfaceSlot('unclaimed-twice', {
+      id: 'panel:w',
+      kind: 'panel',
+      visible: false,
+      boundTabId: 'tab-1',
+    })
+
+    unregisterDirectBrowserSurfaceSlot('unclaimed-twice', 'panel:w')
+
+    expect(hide).not.toHaveBeenCalled()
+  })
+})
