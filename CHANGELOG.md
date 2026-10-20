@@ -4,7 +4,9 @@ All notable changes to EvoFlux are documented in this file.
 
 ## [Unreleased]
 
-No changes yet.
+### Fixed
+
+- A browser page no longer stays on screen after the panel or preview showing it goes away. Docking the preview into the browser panel and then closing the panel, or switching chats, could leave the page floating over the app at its old position; any page no view is showing is now hidden.
 
 ## [3.1.0] - 2026-10-20
 

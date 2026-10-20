@@ -117,6 +117,7 @@ export function updateDirectBrowserSurfaceSlot(
   const slot = session?.surfaces.get(id)
   if (!session || !slot) return
   Object.assign(slot, patch)
+  hideUnclaimedWebviews(session)
   notifyDirectBrowserSession(sessionId)
 }
 
@@ -127,11 +128,35 @@ export function unregisterDirectBrowserSurfaceSlot(
   const session = sessions.get(sessionId)
   if (!session) return
   session.surfaces.delete(id)
+  hideUnclaimedWebviews(session)
   if (session.surfaces.size === 0) {
     session.detachedAt = Date.now()
     trimDetachedDirectBrowserSessions()
   }
   notifyDirectBrowserSession(sessionId)
+}
+
+/**
+ * Hide every native WebView that no view is showing.
+ *
+ * A WebView is an OS window floating above the app, so one nobody hides stays
+ * on screen at its last rectangle — over the next chat, or stranded where a
+ * closed panel used to be. The view that owned it usually hides it, but a
+ * panel that becomes inactive and unmounts in the same frame is torn down
+ * before its own sync runs, and a chat switch unmounts the old chat's views
+ * wholesale. Reconciling here, whenever a view appears, goes away or is
+ * hidden, makes the invariant independent of those races: a page with no
+ * claimant is hidden.
+ */
+export function hideUnclaimedWebviews(session: DirectBrowserSession): void {
+  for (const [tabId, webview] of session.webviews) {
+    if (session.visibility.get(tabId) !== true) continue
+    if (claimantForTab(session, tabId) !== null) continue
+    session.visibility.set(tabId, false)
+    void Promise.resolve(webview.hide()).catch(() => {
+      // Already gone, or no desktop shell left to hide it with.
+    })
+  }
 }
 
 /** Close the longest-detached sessions beyond the cap. */
