@@ -42,11 +42,12 @@ export interface DirectBrowserSession {
 
 /**
  * Sessions that keep live WebViews with no view showing them. Their pages
- * cannot be restored once closed, so a few are kept for coming back to; past
- * this the longest-detached ones are closed so a long day of chats does not
- * leave an engine process per chat running.
+ * cannot be restored once closed, and every switch back would pay a full
+ * reload, so a generous number are kept; past this the longest-detached ones
+ * are closed so a very long day of chats cannot leave an engine process per
+ * chat running without bound.
  */
-export const MAX_DETACHED_BROWSER_SESSIONS = 3
+export const MAX_DETACHED_BROWSER_SESSIONS = 12
 
 const sessions = new Map<string, DirectBrowserSession>()
 

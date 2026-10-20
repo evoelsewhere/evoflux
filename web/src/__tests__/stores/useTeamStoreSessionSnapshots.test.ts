@@ -47,9 +47,7 @@ function seedSession(sessionId: string, text: string): void {
 
 describe('session snapshots', () => {
   beforeEach(() => {
-    for (const id of ['s1', 's2', 's3', 's4', 's5', 's6', 's7']) {
-      forgetSessionSnapshot(id)
-    }
+    for (let n = 1; n <= 13; n += 1) forgetSessionSnapshot(`s${n}`)
     store().beginResolvedSession(null, {})
   })
 
@@ -93,11 +91,9 @@ describe('session snapshots', () => {
   })
 
   it('forgets the least recently visited beyond the limit', () => {
-    // The limit is 6; a snapshot holds a whole transcript.
-    for (const id of ['s1', 's2', 's3', 's4', 's5', 's6', 's7']) {
-      seedSession(id, `text:${id}`)
-    }
-    // Leaving s7 stashes it, evicting s1 — the oldest.
+    // The limit is 12; a snapshot holds a whole transcript.
+    for (let n = 1; n <= 13; n += 1) seedSession(`s${n}`, `text:s${n}`)
+    // Leaving s13 stashes it, evicting s1 — the oldest.
     store().beginResolvedSession('s2', {})
     expect(store()._restoredFromCache).toBe(true)
 
@@ -106,13 +102,11 @@ describe('session snapshots', () => {
   })
 
   it('treats a revisit as recent use, not eviction fodder', () => {
-    for (const id of ['s1', 's2', 's3', 's4', 's5', 's6']) {
-      seedSession(id, `text:${id}`)
-    }
+    for (let n = 1; n <= 12; n += 1) seedSession(`s${n}`, `text:s${n}`)
     // Touch s1 so it is no longer the oldest, then push the cache over.
     store().beginResolvedSession('s1', {})
     expect(store()._restoredFromCache).toBe(true)
-    seedSession('s7', 'text:s7')
+    seedSession('s13', 'text:s13')
 
     store().beginResolvedSession('s1', {})
     expect(store()._restoredFromCache).toBe(true)
