@@ -11,9 +11,9 @@ use serde_json::Value;
 use std::env;
 use std::fs;
 use std::io::{Read, Write};
-use std::path::{Path, PathBuf};
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
+use std::path::{Path, PathBuf};
 #[cfg(windows)]
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -48,6 +48,8 @@ pub struct NativeConnectionState {
 struct NativeRequest {
     #[serde(rename = "type")]
     request_type: String,
+    #[serde(default)]
+    base_url: Option<String>,
 }
 
 pub fn invoked_as_native_host() -> bool {
@@ -106,23 +108,78 @@ pub fn publish_connection(app: &AppHandle, base_url: &str, discovery_token: &str
             .as_millis(),
     };
     let root = native_root(app)?;
-    fs::create_dir_all(&root)?;
-    write_private_atomic(
-        &root.join(CONNECTION_FILENAME),
-        &serde_json::to_vec(&state).context("encode native connection state")?,
-    )
+    publish_at(&root, &state)
 }
 
 pub fn clear_connection(app: &AppHandle) {
     let Ok(root) = native_root(app) else {
         return;
     };
-    let path = root.join(CONNECTION_FILENAME);
-    if let Err(error) = fs::remove_file(&path) {
-        if error.kind() != std::io::ErrorKind::NotFound {
-            log::warn!("could not clear WebBridge native discovery: {error}");
-        }
+    if let Err(error) = clear_at(&root, std::process::id()) {
+        log::warn!("could not clear WebBridge native discovery: {error}");
     }
+}
+
+// Native-host binaries live at <local-data>/<app-identifier>/native-messaging.
+// Keep the registry beside the app directories so isolated Desktop identifiers
+// can discover one another without sharing databases or desktop bearer tokens.
+fn instance_registry(root: &Path) -> Result<PathBuf> {
+    Ok(root
+        .parent()
+        .and_then(Path::parent)
+        .ok_or_else(|| anyhow!("native host directory has no local data parent"))?
+        .join("com.evoflux.webbridge")
+        .join("instances"))
+}
+
+fn publish_at(root: &Path, state: &NativeConnectionState) -> Result<()> {
+    validate_connection(&state.base_url, &state.discovery_token)?;
+    let registry = instance_registry(root)?;
+    fs::create_dir_all(root)?;
+    fs::create_dir_all(&registry)?;
+    let bytes = serde_json::to_vec(state).context("encode native connection state")?;
+    write_private_atomic(&registry.join(format!("{}.json", state.app_pid)), &bytes)?;
+    write_private_atomic(&root.join(CONNECTION_FILENAME), &bytes)
+}
+
+fn read_live_state(path: &Path) -> Result<NativeConnectionState> {
+    let state: NativeConnectionState = serde_json::from_slice(&fs::read(path)?)?;
+    if state.protocol_version != 1 || !process_is_alive(state.app_pid) {
+        return Err(anyhow!(
+            "EvoFlux Desktop is not running or uses an unsupported discovery protocol"
+        ));
+    }
+    validate_connection(&state.base_url, &state.discovery_token)?;
+    Ok(state)
+}
+
+fn clear_at(root: &Path, pid: u32) -> Result<()> {
+    let own_record = instance_registry(root)?.join(format!("{pid}.json"));
+    match fs::remove_file(own_record) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.into()),
+    }
+    let legacy = root.join(CONNECTION_FILENAME);
+    if fs::read(&legacy)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<NativeConnectionState>(&bytes).ok())
+        .is_some_and(|state| state.app_pid == pid)
+    {
+        fs::remove_file(legacy)?;
+    }
+    Ok(())
+}
+
+fn same_endpoint(left: &str, right: &str) -> bool {
+    let (Ok(left), Ok(right)) = (url::Url::parse(left), url::Url::parse(right)) else {
+        return false;
+    };
+    let host = |url: &url::Url| match url.host_str().unwrap_or("") {
+        "localhost" | "127.0.0.1" => "127.0.0.1".to_string(),
+        other => other.to_string(),
+    };
+    left.scheme() == right.scheme() && left.port() == right.port() && host(&left) == host(&right)
 }
 
 fn native_root(app: &AppHandle) -> Result<PathBuf> {
@@ -244,7 +301,14 @@ fn write_manifest(path: &Path, bytes: &[u8]) -> Result<()> {
 }
 
 fn write_private_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
-    let tmp = path.with_extension("tmp");
+    let tmp = path.with_extension(format!(
+        "{}.{}.tmp",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos()
+    ));
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;
@@ -300,30 +364,42 @@ fn write_native_message(value: &Value) -> Result<()> {
 }
 
 fn discover(request: NativeRequest) -> Result<NativeConnectionState> {
-    if request.request_type != "discover" {
-        return Err(anyhow!("unsupported native messaging request"));
-    }
     let executable = env::args_os()
         .next()
         .map(PathBuf::from)
         .ok_or_else(|| anyhow!("native host path is unavailable"))?;
-    let state_path = executable
+    let root = executable
         .parent()
-        .ok_or_else(|| anyhow!("native host directory is unavailable"))?
-        .join(CONNECTION_FILENAME);
-    let state: NativeConnectionState = serde_json::from_slice(
-        &fs::read(&state_path)
-            .with_context(|| format!("read connection state at {}", state_path.display()))?,
-    )
-    .context("decode connection state")?;
-    if state.protocol_version != 1 {
-        return Err(anyhow!("unsupported native discovery protocol"));
+        .ok_or_else(|| anyhow!("native host directory is unavailable"))?;
+    discover_at(root, request)
+}
+
+fn discover_at(root: &Path, request: NativeRequest) -> Result<NativeConnectionState> {
+    if request.request_type != "discover" {
+        return Err(anyhow!("unsupported native messaging request"));
     }
-    if !process_is_alive(state.app_pid) {
-        return Err(anyhow!("EvoFlux Desktop is not running"));
+    if let Some(base_url) = request.base_url.as_deref() {
+        validate_base_url(base_url)?;
     }
-    validate_connection(&state.base_url, &state.discovery_token)?;
-    Ok(state)
+    let legacy = read_live_state(&root.join(CONNECTION_FILENAME)).ok();
+    if request.base_url.is_none() {
+        if let Some(state) = legacy.as_ref() {
+            return Ok(state.clone());
+        }
+    }
+    let mut states: Vec<_> = legacy.into_iter().collect();
+    if let Ok(entries) = fs::read_dir(instance_registry(root)?) {
+        states.extend(
+            entries
+                .filter_map(Result::ok)
+                .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "json"))
+                .filter_map(|entry| read_live_state(&entry.path()).ok()),
+        );
+    }
+    states.into_iter()
+        .filter(|state| request.base_url.as_ref().map_or(true, |url| same_endpoint(url, &state.base_url)))
+        .max_by_key(|state| state.updated_at_ms)
+        .ok_or_else(|| anyhow!("The selected EvoFlux Desktop is not available. Update and start that Desktop instance to publish its discovery record."))
 }
 
 #[cfg(unix)]
@@ -375,8 +451,16 @@ fn validate_connection(base_url: &str, discovery_token: &str) -> Result<()> {
 pub fn validate_base_url(base_url: &str) -> Result<()> {
     let parsed = url::Url::parse(base_url).context("parse native discovery URL")?;
     if parsed.scheme() != "http"
-        || !matches!(parsed.host_str(), Some("127.0.0.1" | "localhost" | "::1"))
+        || !matches!(
+            parsed.host_str(),
+            Some("127.0.0.1" | "localhost" | "::1" | "[::1]")
+        )
         || parsed.port().is_none()
+        || !parsed.username().is_empty()
+        || parsed.password().is_some()
+        || parsed.path() != "/"
+        || parsed.query().is_some()
+        || parsed.fragment().is_some()
     {
         return Err(anyhow!(
             "native discovery URL must be an explicit loopback HTTP port"
@@ -388,6 +472,123 @@ pub fn validate_base_url(base_url: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn selected_endpoint_does_not_return_another_desktops_token() {
+        let workspace =
+            env::temp_dir().join(format!("evoflux-native-select-{}", std::process::id()));
+        let root = workspace.join("desktop").join("native-messaging");
+        fs::create_dir_all(&root).unwrap();
+        let state = NativeConnectionState {
+            protocol_version: 1,
+            base_url: "http://127.0.0.1:48211".into(),
+            discovery_token: "a".repeat(32),
+            app_pid: std::process::id(),
+            updated_at_ms: 1,
+        };
+        fs::write(
+            root.join(CONNECTION_FILENAME),
+            serde_json::to_vec(&state).unwrap(),
+        )
+        .unwrap();
+        let request = serde_json::from_value(serde_json::json!({
+            "type": "discover", "base_url": "http://127.0.0.1:48212"
+        }))
+        .unwrap();
+        let selected = discover_at(&root, request);
+        fs::remove_file(root.join(CONNECTION_FILENAME)).unwrap();
+        fs::remove_dir_all(&workspace).unwrap();
+        assert!(
+            selected.is_err(),
+            "must refuse an unavailable selected endpoint"
+        );
+    }
+
+    #[test]
+    fn selects_live_instances_across_desktop_identifiers_and_cleans_up_only_its_own() {
+        const CHILD_FLAG: &str = "EVOFLUX_NATIVE_DISCOVERY_TEST_CHILD";
+        if env::var_os(CHILD_FLAG).is_some() {
+            std::thread::sleep(std::time::Duration::from_secs(60));
+            return;
+        }
+        struct ChildGuard(std::process::Child);
+        impl Drop for ChildGuard {
+            fn drop(&mut self) {
+                let _ = self.0.kill();
+                let _ = self.0.wait();
+            }
+        }
+        let mut command = std::process::Command::new(env::current_exe().unwrap());
+        command.args(["--exact", "native_messaging::tests::selects_live_instances_across_desktop_identifiers_and_cleans_up_only_its_own"])
+            .env(CHILD_FLAG, "1").stdout(std::process::Stdio::null());
+        #[cfg(windows)]
+        command.creation_flags(0x08000000);
+        let child = ChildGuard(command.spawn().unwrap());
+        let workspace =
+            env::temp_dir().join(format!("evoflux-native-multiple-{}", std::process::id()));
+        let root = workspace.join("desktop").join("native-messaging");
+        let other_root = workspace.join("desktop-isolated").join("native-messaging");
+        let first = NativeConnectionState {
+            protocol_version: 1,
+            base_url: "http://127.0.0.1:48211".into(),
+            discovery_token: "a".repeat(32),
+            app_pid: std::process::id(),
+            updated_at_ms: 1,
+        };
+        let second = NativeConnectionState {
+            base_url: "http://127.0.0.1:48212".into(),
+            discovery_token: "b".repeat(32),
+            app_pid: child.0.id(),
+            updated_at_ms: 2,
+            ..first.clone()
+        };
+        publish_at(&root, &first).unwrap();
+        publish_at(&other_root, &second).unwrap();
+        let registry = instance_registry(&root).unwrap();
+        fs::write(registry.join("broken.json"), "invalid JSON").unwrap();
+        let stale = NativeConnectionState {
+            base_url: "http://127.0.0.1:48213".into(),
+            app_pid: 0,
+            ..first.clone()
+        };
+        fs::write(registry.join("0.json"), serde_json::to_vec(&stale).unwrap()).unwrap();
+        let request = |base: Option<&str>| NativeRequest {
+            request_type: "discover".into(),
+            base_url: base.map(str::to_owned),
+        };
+        assert_eq!(
+            discover_at(&root, request(None)).unwrap().app_pid,
+            first.app_pid
+        );
+        let selected = discover_at(&root, request(Some("http://localhost:48212/"))).unwrap();
+        assert_eq!(selected.app_pid, second.app_pid);
+        assert_eq!(selected.discovery_token, second.discovery_token);
+        assert!(discover_at(&root, request(Some(&stale.base_url))).is_err());
+        assert!(discover_at(&root, request(Some("http://example.com:48212"))).is_err());
+        assert!(discover_at(&root, request(Some("http://localhost:48212/private"))).is_err());
+        clear_at(&root, first.app_pid).unwrap();
+        assert!(registry.join(format!("{}.json", second.app_pid)).exists());
+        assert_eq!(
+            discover_at(&root, request(None)).unwrap().app_pid,
+            second.app_pid
+        );
+        // A different instance may be the current legacy record in this directory.
+        write_private_atomic(
+            &root.join(CONNECTION_FILENAME),
+            &serde_json::to_vec(&second).unwrap(),
+        )
+        .unwrap();
+        clear_at(&root, first.app_pid).unwrap();
+        assert_eq!(
+            read_live_state(&root.join(CONNECTION_FILENAME))
+                .unwrap()
+                .app_pid,
+            second.app_pid
+        );
+        drop(child);
+        assert!(discover_at(&root, request(Some(&second.base_url))).is_err());
+        fs::remove_dir_all(&workspace).unwrap();
+    }
 
     #[test]
     fn validates_only_explicit_loopback_endpoints() {

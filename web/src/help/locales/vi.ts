@@ -1490,6 +1490,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
     setup:
       'Built-in: bật trong Settings → Browser, rồi Ctrl+T. WebBridge: cài extension từ Chrome Web Store (Edge cài từ cùng trang đó), bật master policy trong Settings → Browser, pair từ desktop status control, và để WebBridge bật trên workbench bar.',
     tricks: [
+      'Khi chạy nhiều ứng dụng Desktop, chọn địa chỉ local trong settings của extension WebBridge → Connection → EvoFlux endpoint, rồi Save & reconnect. Use automatic khôi phục tự tìm kết nối. Mỗi bản Desktop cần hỗ trợ discovery nhiều instance và khởi động lại một lần sau khi cập nhật.',
       'Ctrl+T toggle built-in browser workbench — không phải WebBridge pairing.',
       'Xem trước trình duyệt nổi và bảng trình duyệt là MỘT trình duyệt cho mỗi chat: hai bên dùng chung tab và trang. Mở bảng sẽ hiện đúng các trang đang mở trong khung xem trước (không mở trang trống), và đóng bảng sẽ đưa khung xem trước trở lại khi vẫn còn trang đang mở.',
       'Bảng liệt kê các tab dùng chung phía trên trang: bấm vào tab để chuyển trang đang xem, đóng trang bằng nút đóng trên tab đó.',

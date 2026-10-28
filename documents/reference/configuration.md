@@ -68,6 +68,11 @@ of committed repository files.
 Unknown keys are ignored for forward compatibility; known values are validated
 before atomic save. Models use `provider:model`.
 
+The WebBridge extension saves a local endpoint override in its own
+`chrome.storage.local.relayBaseOverride`. Save and reconnect from its Connection
+settings to choose a running Desktop instance, or use automatic discovery to
+clear the override. This does not change EvoFlux's backend configuration.
+
 ## Core environment settings
 
 | Setting | Meaning |
