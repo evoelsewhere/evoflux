@@ -1541,6 +1541,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
     setup:
       'Built-in: enable under Settings → Browser, then Ctrl+T. WebBridge: install the extension from the Chrome Web Store (Edge installs it from the same listing), enable master policy in Settings → Browser, pair from the desktop status control, and keep WebBridge on in the workbench bar.',
     tricks: [
+      'When several Desktop apps are running, choose the local address in WebBridge extension settings → Connection → EvoFlux endpoint, then Save & reconnect. Use automatic restores discovery. Each Desktop build needs multi-instance discovery support and one restart after updating.',
       'Ctrl+T toggles the built-in browser workbench — this is not WebBridge pairing.',
       'The floating preview and the browser panel are one browser per chat: they share the same tabs and pages. Opening the panel shows the pages already open in the preview instead of an empty page, and closing the panel brings the preview back while pages are still open. A preview only shows in its own chat; open another chat and it hides, then returns when you come back.',
       'The panel lists the shared tabs above the page: click a tab to switch the active page, and close a page from the close button on its tab.',

@@ -1500,6 +1500,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
     setup:
       '内蔵: Settings → Browser で有効化し Ctrl+T。WebBridge: Chrome ウェブストアから拡張をインストールし（Edge も同じページから入れられます）、Settings → Browser でマスターポリシーを有効化、デスクトップのステータスコントロールからペアし、workbench バーで WebBridge をオンにしておく。',
     tricks: [
+      '複数の Desktop アプリを起動している場合は、WebBridge 拡張の設定 → Connection → EvoFlux endpoint でローカルアドレスを選び、Save & reconnect を押します。Use automatic で自動検出に戻ります。各 Desktop ビルドには複数インスタンスの検出対応と更新後の一度の再起動が必要です。',
       'Ctrl+T は内蔵ブラウザ workbench をトグル — WebBridge ペアリングではありません。',
       'フローティングのプレビューとブラウザパネルはチャットごとに 1 つのブラウザです。タブとページを共有するため、パネルを開くとプレビューで開いていたページがそのまま表示され（空のページは開きません）、パネルを閉じるとページが残っている限りプレビューが再表示されます。',
       'パネルのページ上部に共有タブが表示されます。タブをクリックすると表示中のページが切り替わり、タブの閉じるボタンでページを閉じます。',

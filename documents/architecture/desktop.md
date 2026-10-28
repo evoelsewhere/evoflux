@@ -49,6 +49,14 @@ owns operations that cannot be safely or portably implemented in browser JS:
 The Python sidecar remains the authority for agent permissions, workspace
 authorization, application persistence and WebBridge policy.
 
+WebBridge discovery uses private per-process records under the user's local data
+directory (`com.evoflux.webbridge/instances`), shared across Desktop identifiers.
+An explicit native-host `discover` request may supply a loopback HTTP `base_url`;
+the host returns only a live record matching that endpoint. Requests without it
+use the host's own Desktop record, or the newest live instance if that app has
+closed. The scoped discovery token stays in Native Messaging; the desktop bearer
+token is never returned. The HTTP authentication boundary is unchanged.
+
 ## Desktop settings
 
 Run on startup, the tray icon and Keep computer awake are shell-owned

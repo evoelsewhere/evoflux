@@ -73,6 +73,17 @@ Primary code: `app/api/routes/team/preview.py`,
 
 ## WebBridge
 
+When several Desktop instances are running, enter the desired instance's loopback
+address under **WebBridge settings → Connection → EvoFlux endpoint** in the
+extension and choose **Save & reconnect**. **Use automatic** restores discovery.
+Each updated Desktop instance publishes a private discovery record identified by
+its process ID in a shared per-user registry, independent of its Tauri identifier.
+The native host selects the record matching the requested endpoint and verifies
+that its process is alive; it never substitutes a different instance. Closing an
+instance removes only its own record. All participating Desktop builds and the
+extension must include this support; previously running builds need an update
+and one restart to publish their records.
+
 WebBridge connects EvoFlux to the user's real logged-in Chrome/Edge session
 through the independently distributed `evo-webbridge` extension, published as
 [EvoFlux WebBridge](https://chromewebstore.google.com/detail/evoflux-webbridge/bdjbbajllcdbihmmlncfendednochdbc)

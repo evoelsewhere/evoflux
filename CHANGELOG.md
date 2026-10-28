@@ -6,6 +6,7 @@ All notable changes to EvoFlux are documented in this file.
 
 ### Fixed
 
+- WebBridge can pair with a selected running Desktop instance when several EvoFlux apps are open. Each instance publishes its own local discovery record, and closing one no longer removes another instance's record.
 - A browser preview no longer shows up in other chats: it appears only in the chat it belongs to and returns when you switch back, while its page and the agent's browser keep running.
 - A browser page no longer stays on screen after the panel or preview showing it goes away. Docking the preview into the browser panel and then closing the panel, or switching chats, could leave the page floating over the app at its old position; any page no view is showing is now hidden.
 
