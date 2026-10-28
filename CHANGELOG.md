@@ -4,6 +4,18 @@ All notable changes to EvoFlux are documented in this file.
 
 ## [Unreleased]
 
+No changes yet.
+
+## [3.1.1] - 2026-10-28
+
+### Changed
+
+- Bump EvoFlux package and desktop application versions to 3.1.1.
+
+### Upgrade notes
+
+- To select between running Desktop instances, update each participating Desktop app and restart it once, then use WebBridge 2.12.0 or newer. In the extension, choose **Settings → Connection → EvoFlux endpoint** and **Save & reconnect**.
+
 ### Fixed
 
 - WebBridge can pair with a selected running Desktop instance when several EvoFlux apps are open. Each instance publishes its own local discovery record, and closing one no longer removes another instance's record.
