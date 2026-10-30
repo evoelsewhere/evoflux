@@ -82,7 +82,7 @@ class Backend:
         return "\n".join(self.log)
 
 
-def _command(target: Target) -> list[str]:
+def _command(target: Target, python: str | None = None) -> list[str]:
     serve_flags = [
         "--handshake",
         "--generate-token",
@@ -95,7 +95,7 @@ def _command(target: Target) -> list[str]:
     if not (os.name == "nt" and target == "python"):
         serve_flags.extend(["--parent-pid", str(os.getpid())])
     if target == "python":
-        return [sys.executable, "-m", "app.cli", "serve", *serve_flags]
+        return [python or sys.executable, "-m", "app.cli", "serve", *serve_flags]
     # rust and gateway are the same binary; routing.toml decides which one runs.
     if not RUST_BINARY.exists():
         raise BackendStartError(
@@ -105,11 +105,19 @@ def _command(target: Target) -> list[str]:
 
 
 def start_backend(
-    target: Target, data_dir: Path, db_fixture: Path | None = None
+    target: Target,
+    data_dir: Path,
+    db_fixture: Path | None = None,
+    *,
+    source_root: Path | None = None,
+    python: str | None = None,
 ) -> Backend:
     """Start ``target`` with fresh data/config/state/cache dirs under ``data_dir``.
 
     ``db_fixture`` is copied to ``<data>/evoflux.db`` before launch.
+    ``source_root`` and ``python`` run the Python target from another checkout
+    (the upgrade fixture builder starts each v3.x tag this way); they default
+    to this repository and the current interpreter.
     """
     dirs = {
         "EVOFLUX_DATA_DIR": data_dir / "data",
@@ -139,7 +147,7 @@ def start_backend(
             "USERPROFILE": str(home),
             "APPDATA": str(home / "AppData" / "Roaming"),
             "LOCALAPPDATA": str(home / "AppData" / "Local"),
-            "PYTHONPATH": str(REPO_ROOT),
+            "PYTHONPATH": str(source_root or REPO_ROOT),
         }
     )
     env.update({k: str(v) for k, v in dirs.items()})
@@ -149,7 +157,7 @@ def start_backend(
     env["PYTHONIOENCODING"] = "utf-8"
 
     process = subprocess.Popen(
-        _command(target),
+        _command(target, python),
         cwd=cwd,
         env=env,
         stdin=subprocess.DEVNULL,

@@ -31,6 +31,7 @@ so the gateway target relies on the gateway's own tree kill (Phase 0 task 10).
 | `normalize.py` | `normalize(obj, rules)`: UUIDs become `<uuid:N>`, ISO-8601 timestamps `<ts>`, lists are sorted only at JSON paths a rule names. |
 | `sse.py` | `collect_events(...)` and `assert_same_sequence(a, b)`; SSE is compared as event sequences, never raw bytes. |
 | `harness/` | Tests of the harness itself (isolation, SSE timeout, normalizer, `openapi_diff.py`). |
+| `fixtures/` | `upgrade/<tag>/` holds a seeded `evoflux.db`, `config/`, `wiki/` and `MANIFEST.json` for each v3.0.0 to v3.1.1 tag; `build_upgrade_fixtures.py` rebuilds them (git worktrees under `D:\evoelsewhere\.tmp-upgrade-tags`, removed afterwards). `fixtures.upgrade_fixture(tag)` returns a temp copy of the database. |
 | `<area>/` | One directory per area, with `test_*.py` and `snapshots/`. |
 | `openapi/python-v3.1.1.json` | Pinned `GET /openapi.json` from v3.1.1. |
 

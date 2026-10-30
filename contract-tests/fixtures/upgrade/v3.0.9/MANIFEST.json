@@ -1,0 +1,49 @@
+{
+  "alembic_revision": "00000074",
+  "created_ids": {
+    "coding_sessions": [
+      "06ae473b-a244-79ee-8000-a74543b0b4c0"
+    ],
+    "dummy_provider_key_saved": true,
+    "project": "06ae473b-a18a-7276-8000-7299bb0b66a3",
+    "scheduler_task": "06ae473b-ae9b-7cce-8000-edb0a8442c28",
+    "sessions": [
+      "06ae473b-7a12-7967-8000-cc054b87fb4b",
+      "06ae473b-97e7-722d-8000-12f41bb928ad"
+    ],
+    "skill_disabled": "browser-use",
+    "wiki": [
+      "topics/fixture-wiki.md",
+      "notes/fixture-memory.md"
+    ]
+  },
+  "row_counts": {
+    "chat_sessions": 3,
+    "coding_project_workspaces": 1,
+    "coding_projects": 1,
+    "coding_workspaces": 1,
+    "delegation_tasks": 0,
+    "dream_log": 0,
+    "dream_notes_log": 0,
+    "git_server_connections": 0,
+    "import_job_items": 0,
+    "import_jobs": 0,
+    "memory_extraction_states": 0,
+    "memory_fact_evidence": 0,
+    "memory_facts": 0,
+    "remote_use_sessions": 0,
+    "scheduled_task": 1,
+    "session_folders": 0,
+    "session_goals": 0,
+    "session_messages": 6,
+    "session_prefix_snapshots": 0,
+    "session_suggested_tasks": 0,
+    "sqlite_stat1": 1,
+    "webbridge_interactions": 0,
+    "webbridge_pairings": 0,
+    "webbridge_tab_bindings": 0,
+    "webbridge_teach_drafts": 0,
+    "webbridge_teach_replays": 0
+  },
+  "tag": "v3.0.9"
+}
