@@ -99,7 +99,7 @@ fn python_paths(env: &[(&str, &str)], home: &Path, cwd: &Path) -> Option<Vec<Str
     ] {
         cmd.env_remove(key);
     }
-    for (k, v) in env {
+    for (k, v) in env.iter().filter(|(k, _)| !k.ends_with("_DOTENV")) {
         cmd.env(k, v);
     }
     let output = match cmd.output() {
@@ -155,6 +155,7 @@ fn paths_match_python() {
         let cwd = tmp.join("cwd");
         std::fs::create_dir_all(&home).unwrap_or_else(|e| panic!("{e}"));
         std::fs::create_dir_all(&cwd).unwrap_or_else(|e| panic!("{e}"));
+        write_dotenv(&home, &cwd, &combo);
         let Some(py) = python_paths(&combo, &home, &cwd) else {
             return;
         };
@@ -162,8 +163,8 @@ fn paths_match_python() {
             .iter()
             .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
             .collect();
-        let settings =
-            Settings::from_vars(&map, Some(home.as_path()), &cwd).unwrap_or_else(|e| panic!("{e}"));
+        let settings = Settings::from_vars_and_dotenv(&map, Some(home.as_path()), &cwd)
+            .unwrap_or_else(|e| panic!("{e}"));
         let paths = Paths::resolve(&settings);
         let rust = vec![
             norm(&settings.data_dir),
@@ -204,4 +205,49 @@ fn tempdir() -> PathBuf {
     ));
     let _ = std::fs::create_dir_all(&dir);
     dir
+}
+
+/// Materialise `HOME_DOTENV` / `PROJECT_DOTENV` pseudo-keys as `.env` files.
+fn write_dotenv(home: &Path, cwd: &Path, combo: &[(&str, &str)]) {
+    for (key, value) in combo {
+        let path = match *key {
+            "HOME_DOTENV" => home.join(".config").join("evoflux").join(".env"),
+            "PROJECT_DOTENV" => cwd.join(".env"),
+            _ => continue,
+        };
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, value).unwrap();
+    }
+}
+
+#[test]
+fn dotenv_precedence_is_env_then_home_then_project() {
+    let tmp = tempdir();
+    let (home, cwd) = (tmp.join("home"), tmp.join("cwd"));
+    write_dotenv(
+        &home,
+        &cwd,
+        &[
+            (
+                "HOME_DOTENV",
+                "EVOFLUX_DATA_DIR=/h
+API_PORT=1
+LOG_LEVEL=warn
+",
+            ),
+            (
+                "PROJECT_DOTENV",
+                "EVOFLUX_DATA_DIR=/p
+API_PORT=2
+API_HOST=\"1.2.3.4\"
+",
+            ),
+        ],
+    );
+    let env = vars(&[("API_PORT", "3")]);
+    let s = Settings::from_vars_and_dotenv(&env, Some(home.as_path()), &cwd).unwrap();
+    assert_eq!(s.api_port, 3);
+    assert_eq!(s.data_dir, PathBuf::from("/h"));
+    assert_eq!(s.log_level, "warn");
+    assert_eq!(s.api_host, "1.2.3.4");
 }
