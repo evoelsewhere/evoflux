@@ -74,8 +74,11 @@ without more throughput. `DbOptions.concurrent_writers` is therefore 2. The
 message workload conflicts on every multi-writer size because all sessions'
 `UPDATE`s land on the same `chat_sessions` leaf page; FIFO is faster there,
 and FIFO with two or more callers matches or beats the concurrent lane in every
-workload on this host. Concurrent writes stay off by default while Python
-writes (design §3.3); this table does not by itself justify turning them on.
+workload on this host. **Default (owner decision, design §3.3).** FIFO is the default for every
+write path, not only while Python writes. The concurrent lane is built, and
+`EVOFLUX_DB_CONCURRENT_WRITES=on` enables it; any other value, or no value,
+keeps FIFO. The table above does not justify turning it on by default. It
+stays off until it is re-benchmarked in Phase 4 and v4.1.
 Repeat on representative workloads and all platforms before changing the pool
 again (and repeat in Phase 4).
 

@@ -307,7 +307,8 @@ async fn off_switch_uses_fifo() {
     assert_eq!(db.metric(wait, &[("lane", "exclusive")]), 1.0);
     assert_eq!(db.metric(wait, &[("lane", "write")]), 0.0);
     assert!(!DbOptions::concurrent_writes_from_env(Some("off")));
-    assert!(DbOptions::concurrent_writes_from_env(Some("on")));
+    assert!(DbOptions::concurrent_writes_from_env(Some(" ON ")));
+    assert!(!DbOptions::concurrent_writes_from_env(Some("yes")));
     assert!(!DbOptions::concurrent_writes_from_env(None));
 }
 

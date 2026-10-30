@@ -25,8 +25,8 @@ use checkpoint::WalKeeper;
 use lanes::{ConcurrentWrites, Lane, Opener, WRITTEN_TABLES};
 use metrics::Metrics;
 
-/// Environment switch: `off` sends every write through the exclusive FIFO lane
-/// (design §3.3 rule 5).
+/// Environment switch: only `on` enables the concurrent lane; anything else,
+/// including unset, keeps every write on the exclusive FIFO lane (design §3.3).
 pub const CONCURRENT_WRITES_ENV: &str = "EVOFLUX_DB_CONCURRENT_WRITES";
 
 #[derive(Debug, thiserror::Error)]
@@ -86,7 +86,8 @@ pub struct DbOptions {
     /// Retries after a lost concurrent commit, one per backoff step
     /// (2/8/32/64/128 ms); the default 5 allows up to 6 attempts in total.
     pub max_retries: u32,
-    /// `false` routes [`Db::write`] through the exclusive FIFO lane.
+    /// `false` routes [`Db::write`] through the exclusive FIFO lane. Defaults
+    /// to `false` unless `EVOFLUX_DB_CONCURRENT_WRITES=on`.
     pub concurrent_enabled: bool,
     /// WAL frames after a commit that trigger a `PASSIVE` checkpoint.
     pub wal_checkpoint_pages: u32,
@@ -96,10 +97,10 @@ pub struct DbOptions {
 }
 
 impl DbOptions {
-    /// Concurrent writes stay off by default while Python also writes; an
-    /// explicit value other than `off` opts into the experimental lane.
+    /// Concurrent writes are off by default everywhere (owner decision,
+    /// design §3.3) until they are re-benchmarked; only `on` enables them.
     pub fn concurrent_writes_from_env(value: Option<&str>) -> bool {
-        value.is_some_and(|v| !v.trim().eq_ignore_ascii_case("off"))
+        value.is_some_and(|v| v.trim().eq_ignore_ascii_case("on"))
     }
 }
 
