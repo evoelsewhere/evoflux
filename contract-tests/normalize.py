@@ -7,7 +7,8 @@ from dataclasses import dataclass, field
 from typing import Any
 
 _UUID = re.compile(
-    r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+    r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}",
+    re.ASCII,
 )
 # The value is volatile but its format is contract (the UI parses a naive time
 # as local and a "Z" time as UTC), so the token keeps the format class:
@@ -17,7 +18,8 @@ _UUID = re.compile(
 _TIMESTAMP = re.compile(
     r"(?<![\d-])(?P<date>\d{4}-\d{2}-\d{2})"
     r"(?:(?P<sep>[T ])\d{2}:\d{2}:\d{2}(?P<frac>\.\d+)?"
-    r"(?P<zone>Z|[+-]\d{2}:?\d{2})?)?(?![\d:])"
+    r"(?P<zone>Z|[+-]\d{2}:?\d{2})?)?(?![\d:])",
+    re.ASCII,
 )
 
 

@@ -6,5 +6,7 @@
 #![allow(clippy::result_large_err)]
 
 pub mod proxy;
+pub mod record;
 pub mod routing;
+pub mod shadow;
 pub mod supervisor;

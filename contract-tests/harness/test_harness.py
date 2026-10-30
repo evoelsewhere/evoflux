@@ -250,3 +250,9 @@ def test_backend_stop_terminates_handshake_process(backend) -> None:
         backend.stop()
         with pytest.raises(ProcessLookupError):
             os.kill(backend.pid, 0)
+
+
+def test_normalize_ignores_non_ascii_digits() -> None:
+    # \d would match Arabic-Indic digits without re.ASCII; Rust's port is ASCII only.
+    text = "٢٠٢٦-١٠-٣١"
+    assert normalize({"d": text}) == {"d": text}

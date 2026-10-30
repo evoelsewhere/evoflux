@@ -96,6 +96,21 @@ async fn run() -> Result<(), String> {
         .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../routing.toml"));
     let override_env = std::env::var("EVOFLUX_ROUTE_OVERRIDE").ok();
     let table = RoutingTable::load(&routing, override_env.as_deref()).map_err(|e| e.to_string())?;
+    // A shadow unit must not own a path with a non-GET operation.
+    let openapi = std::env::var_os("EVOFLUX_GATEWAY_OPENAPI")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../../../contract-tests/openapi/python-v3.1.1.json")
+        });
+    let openapi = tokio::fs::read_to_string(&openapi)
+        .await
+        .map_err(|e| format!("cannot read {}: {e}", openapi.display()))?;
+    let operations =
+        evoflux_gateway::routing::openapi_operations(&openapi).map_err(|e| e.to_string())?;
+    table
+        .check_shadow_get_only(&operations)
+        .map_err(|e| e.to_string())?;
 
     let token = if args.generate_token {
         Some(random_hex())
@@ -154,7 +169,21 @@ async fn run() -> Result<(), String> {
             }
         }
     });
-    let app = proxy::router(Arc::new(table), Arc::clone(&sup), axum::Router::new());
+    // `EVOFLUX_GATEWAY_STATE_DIR` enables shadow comparison for `shadow` units;
+    // `EVOFLUX_GATEWAY_RECORD_DIR` records traffic.
+    let options = match std::env::var_os("EVOFLUX_GATEWAY_STATE_DIR") {
+        Some(dir) => proxy::GatewayOptions::from_env(PathBuf::from(dir)),
+        None => proxy::GatewayOptions {
+            shadow: None,
+            recorder: evoflux_gateway::record::Recorder::from_env().map(Arc::new),
+        },
+    };
+    let app = proxy::router_with(
+        Arc::new(table),
+        Arc::clone(&sup),
+        axum::Router::new(),
+        options,
+    );
     let served = axum::serve(listener, app)
         .with_graceful_shutdown(async {
             let _ = tokio::signal::ctrl_c().await;
