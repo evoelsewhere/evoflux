@@ -286,7 +286,8 @@ The protocol uses only git, files and `make` targets, so any agent, tool or app 
   `make contract AREA=<lane> TARGET=python|rust`, `make gates AREA=<lane>`.
 - Agents never edit `app/`, `web/` or `desktop/` on the migration branch,
   except two Phase 0 shared PRs: the launcher change in `sidecar.rs` and the
-  Python startup PR (§3).
+  Python startup PR (§3), and cutover PRs adding temporary `app/core/rust_bridge/`
+  adapters, their replaced call sites and contract tests (ADR 0001).
 
 ## 6. Constraints that protect the app core
 
