@@ -21,6 +21,8 @@ All notable changes to EvoFlux are documented in this file.
 - Added the Rust gateway for the v4 server (`server/crates/gateway`). It routes each request by `server/routing.toml`, where `{param}` matches one path segment, `**` matches the rest and the most specific route wins. It also starts and supervises the Python backend on a private port, restarting it after a crash and stopping it if the gateway dies. Requests for Python, including SSE streams, large uploads and terminal WebSockets, are forwarded without buffering, and the backend answers `backend_unavailable` while Python restarts. The desktop app does not use it yet; no app behaviour changes.
 - Added the `evoflux-server serve` command for the v4 server (`server/crates/server`). It takes the same flags as the Python `serve` command and prints the desktop handshake only after the Python backend is ready. It waits up to 85 s on a slow first start; if Python is still not ready, it exits with Python's last log lines on stderr. It also exits when its parent process dies, including on Windows. It never starts without auth while `settings.yaml` sets `server.access_key`, and it refuses tailnet requests on Rust-served routes until the remote session lock is ported. The desktop app does not use it yet; no app behaviour changes.
 
+- Added tests that fail if `evoflux-server` stops enforcing the `settings.yaml` access key or stops turning a panicking handler into a 500, and an authenticated `/api/gateway/ping` route on the v4 server to prove the key is enforced. The desktop app does not use it yet; no app behaviour changes.
+
 ## [3.1.1] - 2026-10-28
 
 ### Changed

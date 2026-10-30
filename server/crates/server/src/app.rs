@@ -26,14 +26,32 @@ use tower_http::catch_panic::CatchPanicLayer;
 /// The gateway's own metrics; `/metrics` stays Python's in Phase 0.
 pub const GATEWAY_METRICS_PATH: &str = "/metrics/gateway";
 
+/// An authenticated liveness check of the gateway itself. `/metrics/gateway`
+/// is exempt from desktop auth like Python's `/metrics`, so this is the Rust
+/// route that proves the token wiring.
+pub const GATEWAY_PING_PATH: &str = "/api/gateway/ping";
+
 /// The whole server: `/metrics/gateway`, then the routing table.
 pub fn router(table: Arc<RoutingTable>, sup: Arc<PythonSupervisor>, auth: DesktopAuth) -> Router {
-    // No unit is Rust-owned yet; cutovers add their routes here, before the layers.
-    let units = rust_routes(Router::new(), auth.clone());
+    // No unit is Rust-owned yet; cutovers add their routes here.
+    router_with_units(table, sup, auth, Router::new())
+}
+
+/// [`router`] with the routes of Rust-owned units; they get the same auth and
+/// tailnet refusal as every other Rust route.
+pub fn router_with_units(
+    table: Arc<RoutingTable>,
+    sup: Arc<PythonSupervisor>,
+    auth: DesktopAuth,
+    units: Router,
+) -> Router {
+    let units = rust_routes(units, auth.clone());
     // Layers only wrap routes added before them, so the proxy fallback below
     // stays outside the Rust auth: Python authenticates its own routes.
     let own = rust_routes(
-        Router::new().route(GATEWAY_METRICS_PATH, get(gateway_metrics)),
+        Router::new()
+            .route(GATEWAY_METRICS_PATH, get(gateway_metrics))
+            .route(GATEWAY_PING_PATH, get(gateway_ping)),
         auth,
     );
     catch_panics(own.fallback_service(proxy::router(table, sup, units)))
@@ -76,6 +94,10 @@ async fn refuse_tailnet(req: Request, next: Next) -> Response {
         .into_response();
     }
     next.run(req).await
+}
+
+async fn gateway_ping() -> &'static str {
+    r#"{"status":"ok"}"#
 }
 
 async fn gateway_metrics() -> Response {

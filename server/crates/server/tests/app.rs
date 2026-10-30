@@ -14,10 +14,14 @@ use axum::routing::get;
 use axum::Router;
 use common::http_get;
 use evoflux_core::auth::DesktopAuth;
+use evoflux_gateway::routing::RoutingTable;
+use evoflux_gateway::supervisor::{PythonConfig, PythonSupervisor};
 use evoflux_server::access_key::{expected_token, AccessKeyError};
 use evoflux_server::app;
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::Arc;
+use std::time::Duration;
 
 async fn serve(router: Router) -> u64 {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -36,15 +40,58 @@ async fn boom() -> &'static str {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn handler_panic_returns_500_and_server_survives() {
-    let router = Router::new()
+    // Built through `app::router_with_units`, so dropping the layer there fails this test.
+    let table = RoutingTable::from_toml(
+        r#"
+[[unit]]
+name = "test-rust"
+owner = "rust"
+routes = ["/boom", "/ok"]
+services = []
+
+[[unit]]
+name = "web"
+owner = "python"
+routes = ["/**"]
+services = []
+"#,
+        None,
+    )
+    .unwrap();
+    let units = Router::new()
         .route("/boom", get(boom))
         .route("/ok", get(|| async { "ok" }));
-    let port = serve(app::catch_panics(router)).await;
+    let entry = common::fake_upstream();
+    let sup = Arc::new(
+        PythonSupervisor::start(PythonConfig {
+            python_bin: common::python(),
+            site_packages: entry.parent().unwrap().to_path_buf(),
+            cli_entry: entry,
+            desktop_token: None,
+            gateway_secret: "test-gateway-secret".to_owned(),
+            remote_proxy_secret: "test-remote-secret".to_owned(),
+            gateway_port: 1,
+            disabled_services: vec![],
+            env_passthrough: vec![],
+            startup_timeout: Duration::from_secs(30),
+        })
+        .await
+        .unwrap(),
+    );
+    let auth = DesktopAuth::new(None, "test-remote-secret".to_owned());
+    let port = serve(app::router_with_units(
+        Arc::new(table),
+        Arc::clone(&sup),
+        auth,
+        units,
+    ))
+    .await;
     let (status, body) = http_get(port, "/boom", &[]).await;
     assert_eq!(status, 500);
     assert_eq!(body, r#"{"detail":"Internal Server Error"}"#);
     let (status, body) = http_get(port, "/ok", &[]).await;
     assert_eq!((status, body.as_str()), (200, "ok"));
+    sup.shutdown().await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
