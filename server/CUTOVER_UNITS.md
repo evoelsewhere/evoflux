@@ -1,130 +1,137 @@
 # Cutover units
 
-Every FastAPI route prefix and every lifespan background service is in exactly
-one unit. A unit flips between `python`, `shadow` and `rust` as a whole, in one
-`server/routing.toml` change, together with `EVOFLUX_DISABLE_SERVICES` for its
-services (design §3.1). Routes that share in-memory state with code that stays
-in Python must be in the same unit, because Rust never calls Python (design §3).
-
-`server/routing.toml` is the source of truth for the assignment.
-`scripts/migration/check_board.py` fails when this file and `routing.toml`
-disagree, when a route FastAPI registers has no unit, or when a service is
-missing or listed twice.
-
-Evidence below comes from reading `app/api/app.py`, `app/api/routes/` and the
-`app/services/` modules they call, at v3.1.1. "Shared" means a module-level
-dict, lock, cache or manager object that another part of the sidecar also uses
-in-process (agent tools, hooks, the team manager, the stream store).
+The route and service assignments reflect v3.1.1 state. Python owns every unit until its owner-approved cutover. Longest matching route prefix wins; narrower unit routes carve out from broader prefixes. The SPA catch-all does not own API paths.
 
 ## Units
 
-| unit | phase | adapter_call_sites | what it holds |
-|---|---|---|---|
-| `edge-stateless` | 1 | - | routes that read files or compute and keep no in-process state |
-| `observability` | 1 | - | observability reads over the OpenTelemetry JSONL files, plus their retention job |
-| `import` | 2 | - | importing conversations from other tools into the database |
-| `remote-access` | 2 | - | remote use: embedded tailnet node and the single-device claim |
-| `agent-runtime` | 3 | - | the agent loop and everything that shares its in-memory state |
-| `platform-meta` | 4 | - | FastAPI's own docs, the Python process metrics and the packaged web UI mount |
+| unit | phase | pin_breaker | reverse_deps | adapter_call_sites | what it holds / pin rationale |
+|---|---|---|---|---|---|
+| `edge-stateless` | 1 | `adapter:edge-stateless` | - | - | Pure responses and file discovery; no shared in-process pin. The adapter is a reserved cutover boundary. |
+| `observability` | 1 | `adapter:observability` | - | - | OpenTelemetry JSONL readers and retention; writers remain file based. |
+| `import` | 2 | `adapter:import` | - | - | Database-backed import jobs and session records; no shared process cache identified. |
+| `remote-access` | 2 | `adapter:remote-access` | desktop authentication claim and embedded tailnet manager | `app/core/desktop_auth.py`, `app/services/remote_use_service.py` | Tailnet manager and desktop claim must share ownership through the adapter. |
+| `settings-providers` | 2 | `adapter:settings-providers` | model_registry and provider plugin registry caches | `app/core/runtime_settings.py`, `app/agent/providers/**`, `app/plugin_platform/registry.py` | Provider and settings consumers switch through the adapter; cached registry data must revalidate. |
+| `agents-skills` | 2 | `adapter:agents-skills` | team_manager skill cache and agent settings cache | `app/services/team_manager.py`, `app/services/skills_service.py`, `app/core/agent_settings.py`, `app/core/skill_settings.py`, `app/agent/skills/**` | Skill writes currently invalidate team_manager; replace invalidation with versioned reads or a Rust event stream. |
+| `plugins-mcp` | 2 | `adapter:plugins-mcp` | plugin_mcp_runtime, MCP connections and team_manager skill cache | `app/plugin_platform/runtime.py`, `app/agent/mcp/**`, `app/services/team_manager.py`, `app/api/routes/plugins.py` | Plugin writes refresh plugin_mcp_runtime and invalidate skill caches; MCP tool access needs the adapter and revalidation. |
+| `git-coding` | 2 | `adapter:git-coding` | change_set_service and problems_service caches | `app/agent/tools/builtin/pr.py`, `app/agent/tools/builtin/worktree.py`, `app/agent/tools/builtin/code_reviews.py`, `app/agent/hooks/problem_capture.py`, `app/agent/hooks/post_edit_diagnostics.py`, `app/api/routes/team/git_ai.py`, `app/services/git_ops.py`, `app/services/coding_*`, `app/services/change_set_service.py`, `app/services/problems_service.py` | Git locks, coding workspace, change sets and diagnostics need adapter-owned state; repository locks must also work across processes. |
+| `terminal-processes` | 2 | `adapter:terminal-processes` | terminal, process and preview registries; active stream watchers | `app/agent/tools/**`, `app/services/terminal_service.py`, `app/services/process_manager.py`, `app/services/workspace_file_watcher.py`, `app/services/memory_stream_store.py` | The tools and watcher consumers must use one Rust-owned process registry via the adapter. |
+| `memory-search` | 2 | `adapter:memory-search` | memory hooks and wiki readers | `app/agent/hooks/**`, `app/agent/tools/**`, `app/services/wiki.py`, `app/services/memory*.py` | Wiki writes require a cross-process file lock and Python memory consumers must revalidate Rust writes. |
+| `documents-preview` | 2 | `adapter:documents-preview` | stream_store and motion review pending state | `app/agent/tools/**`, `app/services/memory_stream_store.py`, `app/services/motion_review_service.py`, `app/services/office_runtime.py` | Document preview, motion review and office tools use shared in-memory services and stream notifications. |
+| `workspace-files` | 2 | `adapter:workspace-files` | snapshot, LSP and session activity caches | `app/agent/tools/**`, `app/services/snapshot_service.py`, `app/services/lsp*.py`, `app/services/chat_service.py`, `app/services/shell_service.py`, `app/services/memory_stream_store.py` | File and LSP consumers need adapter-owned state; snapshot locks must work across processes. |
+| `webbridge-browser` | 2 | `adapter:webbridge-browser` | webbridge policy cache, extension connections and direct bridge sockets | `app/services/webbridge_service.py`, `app/api/routes/settings.py`, `app/api/routes/team/webbridge.py`, `app/agent/tools/builtin/webbridge_tool.py`, `app/agent/tools/builtin/browser_use_tool.py`, `app/agent/tools/builtin/computer_app_tool.py`, `app/services/memory_stream_store.py` | Settings writes currently call reload_policy; use Rust version revalidation or a Python subscription to Rust events. |
+| `conductor` | 2 | `adapter:conductor` | conductor managed-agent state and telemetry | `app/conductor/**`, `app/agent/loader.py`, `app/agent/hooks/**`, `app/services/skills_service.py` | Conductor consumers must use the adapter for shared managed-agent state. |
+| `health-diagnostics` | 2 | `adapter:health-diagnostics` | team_manager active-turn and MCP status | `app/services/team_manager.py`, `app/agent/mcp/**` | Readiness and diagnostics depend on live state; provide equivalent Rust-backed reads through the adapter. |
+| `agent-runtime` | 3 | - | - | - | Chat and WebBridge session ingress, git AI provider calls, SSE, pending interaction futures, team_manager, scheduler and dream execute the Python agent loop. An adapter would need to run that loop or require Rust to call Python, so these remain together until the loop moves. |
+| `platform-meta` | 4 | `adapter:platform-meta` | - | - | Python-generated docs and metrics plus the packaged UI stay Python-owned until gateway equivalents are ready; adapter reserved for cutover. |
 
-`adapter_call_sites` lists, as comma-separated globs (or `-`), the `app/` paths
-a cutover branch may edit to switch call sites to its adapter (ADR 0001). The
-owner-reviewed shared PR that prepares a cutover fills it in; `check_paths.py`
-allows nothing else under `app/` besides `app/core/rust_bridge/<unit>.py`
-(hyphens become underscores).
+`adapter_call_sites` lists the Python paths a cutover branch may change. The adapter is `app/core/rust_bridge/<unit>.py` (hyphens become underscores); each cutover must prove its tool path through Rust. The entries are planning boundaries, not evidence that an adapter already exists. Stateless units have reserved adapter names to keep the cutover contract uniform.
 
-`agent-runtime` holds most of the API (see
-[Split candidates](#split-candidates)). That is what the code requires today,
-not a planning choice: the agent tools, hooks and the team manager run in the
-Python process until the agent loop itself moves, and they import the same
-service singletons the routes use.
+Reverse dependencies must use read-through or Rust version/ETag revalidation, or subscribe to a Rust event stream, as ADR 0001 rule 7 requires. Each lane NOTES must inventory these dependencies and prove the proposed lock and adapter boundaries before cutover.
 
 ## Route prefixes
 
-The longest matching prefix wins. `/api/health/live/**` is carved out of
-`/api/health/**`.
-
 | route | unit | pinned by |
 |---|---|---|
-| `/api/health/live/**` | edge-stateless | nothing: `health.py` `live()` answers without touching `team_manager`, the database writer or any lock |
-| `/api/quote/**` | edge-stateless | nothing: `quote_service.get_quote_of_the_day` is a pure function |
-| `/api/commands/**` | edge-stateless | nothing shared: `services/commands.py` discovers command files through an mtime-keyed `lru_cache` that revalidates against the files, so a Python copy and a Rust copy cannot go stale against each other; the agent's `parse_slash_invocation` is a pure function |
-| `/api/snippets/**` | edge-stateless | nothing shared: `services/snippets.py` uses the same mtime-keyed discovery cache |
-| `/api/observability/**` | observability | files only: `observability_service` reads the JSONL written by `core/otel.py` through DuckDB. The writers (`_span_writer`, `_metric_writer`) stay in Python and are only read through files |
-| `/api/import/**` | import | database only: `import_service` and `services/importers/*` write `ImportJob`, `ChatSession` and `SessionMessage` rows and keep no module state |
-| `/api/remote-use/**` | remote-access | `remote_use_service._embedded_manager` (the tailnet child process) and the single-device `claim` lock that `core/desktop_auth.py` takes when a remote request arrives. Both must be owned by whoever authenticates remote requests |
-| `/metrics` | platform-meta | the Prometheus registry of the Python process (`core/metrics.py`) |
-| `/openapi.json` | platform-meta | FastAPI's generated schema of the whole Python route table |
-| `/docs` | platform-meta | FastAPI Swagger UI, built from `/openapi.json` |
-| `/docs/oauth2-redirect` | platform-meta | FastAPI Swagger UI helper |
-| `/redoc` | platform-meta | FastAPI ReDoc, built from `/openapi.json` |
-| `/**` | platform-meta | the packaged web UI: `static_web.mount_web_ui` adds a `Mount("/")` catch-all (SPA fallback to `index.html`) only when a `web/dist` bundle exists, after every router. The checks refuse to let it cover an `/api` route |
-| `/api/team/**` | agent-runtime | `team_manager` (live teams, session-to-team map), `stream_store` (SSE frames per running session), `webbridge_manager` (extension connections, policy cache), `terminal_manager`, `lsp_manager`, `change_set_service._change_sets`, `problems_service._problems`, `motion_review_service._pending`, `office_runtime`, and the process and preview registries of the `process` and `preview` agent tools. Detail per route module below |
-| `/api/health/**` | agent-runtime | `/ready` and `/diagnostics` read `team_manager.validate_agents_dir`, `team_manager.has_active_team_turn` and `mcp_manager.list_status`; `/diagnostics/actions/db_reclaim` checks for an active team turn |
-| `/api/diagnostics/**` | agent-runtime | `team_manager.current_team` and `mcp_manager.server_names` |
-| `/api/agents/**` | agent-runtime | `core/agent_settings.py` `lru_cache`, the tool registry, and `app.conductor.agent_runtime` managed-agent state |
-| `/api/skills/**` | agent-runtime | `core/skill_settings.py` `lru_cache` and `team_manager.invalidate_skill_cache`, called by `skills_service` after every change |
-| `/api/plugins/**` | agent-runtime | `plugin_mcp_runtime` (plugin-provided MCP servers) and `team_manager.invalidate_skill_cache` |
-| `/api/mcp/**` | agent-runtime | `mcp_manager` (live MCP connections and their tools, used by the agent loop in-process) and `plugin_mcp_runtime` |
-| `/api/settings/**` | agent-runtime | provider and model registries (`model_registry` `lru_cache`, `plugin_registry`), `conductor_service` (15 uses, `/api/settings/conductor/*`), `webbridge_manager.reload_policy` (`/api/settings/webbridge*`). The remaining settings files are read fresh each time and could split out later |
-| `/api/auth/**` | agent-runtime | `plugin_registry.find_provider_plugin`: provider login flows come from loaded Python provider plugins |
-| `/api/wiki/**` | agent-runtime | `services/wiki._thread_write_lock`, shared with the `note` tool, `memory_extraction` hook, `dream` and `memory`, which write the same wiki files in-process |
-| `/api/scheduler/**` | agent-runtime | `task_scheduler`, which dispatches through `team_manager` (design §3.1) |
-| `/api/dream/**` | agent-runtime | `dream_scheduler` (held in `app.state`) and `services/dream.py`, which builds an agent and provider in-process (design §3.1) |
+| `/api/health/live/**` | edge-stateless | Pure responses and file discovery; no shared in-process pin. The adapter is a reserved cutover boundary. |
+| `/api/quote/**` | edge-stateless | Pure responses and file discovery; no shared in-process pin. The adapter is a reserved cutover boundary. |
+| `/api/commands/**` | edge-stateless | Pure responses and file discovery; no shared in-process pin. The adapter is a reserved cutover boundary. |
+| `/api/snippets/**` | edge-stateless | Pure responses and file discovery; no shared in-process pin. The adapter is a reserved cutover boundary. |
+| `/api/observability/**` | observability | OpenTelemetry JSONL readers and retention; writers remain file based. |
+| `/api/import/**` | import | Database-backed import jobs and session records; no shared process cache identified. |
+| `/api/remote-use/**` | remote-access | Tailnet manager and desktop claim must share ownership through the adapter. |
+| `/api/settings/**` | settings-providers | Provider and settings consumers switch through the adapter; cached registry data must revalidate. |
+| `/api/auth/**` | settings-providers | Provider and settings consumers switch through the adapter; cached registry data must revalidate. |
+| `/api/agents/**` | agents-skills | Skill writes currently invalidate team_manager; replace invalidation with versioned reads or a Rust event stream. |
+| `/api/skills/**` | agents-skills | Skill writes currently invalidate team_manager; replace invalidation with versioned reads or a Rust event stream. |
+| `/api/plugins/**` | plugins-mcp | Plugin writes refresh plugin_mcp_runtime and invalidate skill caches; MCP tool access needs the adapter and revalidation. |
+| `/api/mcp/**` | plugins-mcp | Plugin writes refresh plugin_mcp_runtime and invalidate skill caches; MCP tool access needs the adapter and revalidation. |
+| `/api/team/workspace/git/**` | git-coding | Git locks, coding workspace, change sets and diagnostics need adapter-owned state; repository locks must also work across processes. |
+| `/api/team/workspace/worktrees/**` | git-coding | Git locks, coding workspace, change sets and diagnostics need adapter-owned state; repository locks must also work across processes. |
+| `/api/team/reviews/**` | git-coding | Git locks, coding workspace, change sets and diagnostics need adapter-owned state; repository locks must also work across processes. |
+| `/api/team/projects/**` | git-coding | Git locks, coding workspace, change sets and diagnostics need adapter-owned state; repository locks must also work across processes. |
+| `/api/team/workspace/change-sets/**` | git-coding | Git locks, coding workspace, change sets and diagnostics need adapter-owned state; repository locks must also work across processes. |
+| `/api/team/workspace/problems/**` | git-coding | Git locks, coding workspace, change sets and diagnostics need adapter-owned state; repository locks must also work across processes. |
+| `/api/team/workspace/editor/**` | git-coding | Git locks, coding workspace, change sets and diagnostics need adapter-owned state; repository locks must also work across processes. |
+| `/api/team/{session_id}/terminal/**` | terminal-processes | The tools and watcher consumers must use one Rust-owned process registry via the adapter. |
+| `/api/team/{session_id}/terminals/**` | terminal-processes | The tools and watcher consumers must use one Rust-owned process registry via the adapter. |
+| `/api/team/processes/**` | terminal-processes | The tools and watcher consumers must use one Rust-owned process registry via the adapter. |
+| `/api/team/preview/**` | terminal-processes | The tools and watcher consumers must use one Rust-owned process registry via the adapter. |
+| `/api/team/workspace/watch/**` | terminal-processes | The tools and watcher consumers must use one Rust-owned process registry via the adapter. |
+| `/api/team/{session_id}/files/watch/**` | terminal-processes | The tools and watcher consumers must use one Rust-owned process registry via the adapter. |
+| `/api/wiki/**` | memory-search | Wiki writes require a cross-process file lock and Python memory consumers must revalidate Rust writes. |
+| `/api/team/workspace/search-everywhere/**` | memory-search | Wiki writes require a cross-process file lock and Python memory consumers must revalidate Rust writes. |
+| `/api/team/search-app/**` | memory-search | Wiki writes require a cross-process file lock and Python memory consumers must revalidate Rust writes. |
+| `/api/team/{session_id}/document-preview/**` | documents-preview | Document preview, motion review and office tools use shared in-memory services and stream notifications. |
+| `/api/team/{session_id}/office-preview/**` | documents-preview | Document preview, motion review and office tools use shared in-memory services and stream notifications. |
+| `/api/team/{session_id}/document-versions/**` | documents-preview | Document preview, motion review and office tools use shared in-memory services and stream notifications. |
+| `/api/team/{session_id}/motion-review/**` | documents-preview | Document preview, motion review and office tools use shared in-memory services and stream notifications. |
+| `/api/team/{session_id}/media/**` | documents-preview | Document preview, motion review and office tools use shared in-memory services and stream notifications. |
+| `/api/team/office-runtime/**` | documents-preview | Document preview, motion review and office tools use shared in-memory services and stream notifications. |
+| `/api/team/workspace/files/**` | workspace-files | File and LSP consumers need adapter-owned state; snapshot locks must work across processes. |
+| `/api/team/workspace/status/**` | workspace-files | File and LSP consumers need adapter-owned state; snapshot locks must work across processes. |
+| `/api/team/workspace/git-diff/**` | workspace-files | File and LSP consumers need adapter-owned state; snapshot locks must work across processes. |
+| `/api/team/workspace/lsp/**` | workspace-files | File and LSP consumers need adapter-owned state; snapshot locks must work across processes. |
+| `/api/team/workspace/language-servers/**` | workspace-files | File and LSP consumers need adapter-owned state; snapshot locks must work across processes. |
+| `/api/team/workspace/browse/**` | workspace-files | File and LSP consumers need adapter-owned state; snapshot locks must work across processes. |
+| `/api/team/workspace/tree/**` | workspace-files | File and LSP consumers need adapter-owned state; snapshot locks must work across processes. |
+| `/api/team/workspace/validate/**` | workspace-files | File and LSP consumers need adapter-owned state; snapshot locks must work across processes. |
+| `/api/team/{session_id}/files/**` | workspace-files | File and LSP consumers need adapter-owned state; snapshot locks must work across processes. |
+| `/api/team/{session_id}/workspace/**` | workspace-files | File and LSP consumers need adapter-owned state; snapshot locks must work across processes. |
+| `/api/team/{session_id}/uploads/**` | workspace-files | File and LSP consumers need adapter-owned state; snapshot locks must work across processes. |
+| `/api/team/webbridge/**` | webbridge-browser | Settings writes currently call reload_policy; use Rust version revalidation or a Python subscription to Rust events. |
+| `/api/team/browser/**` | webbridge-browser | Settings writes currently call reload_policy; use Rust version revalidation or a Python subscription to Rust events. |
+| `/api/team/{session_id}/browser/**` | webbridge-browser | Settings writes currently call reload_policy; use Rust version revalidation or a Python subscription to Rust events. |
+| `/api/team/{session_id}/computer/**` | webbridge-browser | Settings writes currently call reload_policy; use Rust version revalidation or a Python subscription to Rust events. |
+| `/api/settings/webbridge/**` | webbridge-browser | Settings writes currently call reload_policy; use Rust version revalidation or a Python subscription to Rust events. |
+| `/api/settings/computer-app/**` | webbridge-browser | Settings writes currently call reload_policy; use Rust version revalidation or a Python subscription to Rust events. |
+| `/api/settings/conductor/**` | conductor | Conductor consumers must use the adapter for shared managed-agent state. |
+| `/api/health/**` | health-diagnostics | Readiness and diagnostics depend on live state; provide equivalent Rust-backed reads through the adapter. |
+| `/api/diagnostics/**` | health-diagnostics | Readiness and diagnostics depend on live state; provide equivalent Rust-backed reads through the adapter. |
+| `/api/scheduler/**` | agent-runtime | Chat and WebBridge session ingress, git AI provider calls, SSE, pending interaction futures, team_manager, scheduler and dream execute the Python agent loop. An adapter would need to run that loop or require Rust to call Python, so these remain together until the loop moves. |
+| `/api/dream/**` | agent-runtime | Chat and WebBridge session ingress, git AI provider calls, SSE, pending interaction futures, team_manager, scheduler and dream execute the Python agent loop. An adapter would need to run that loop or require Rust to call Python, so these remain together until the loop moves. |
+| `/api/team/chat/**` | agent-runtime | Chat and WebBridge session ingress, git AI provider calls, SSE, pending interaction futures, team_manager, scheduler and dream execute the Python agent loop. An adapter would need to run that loop or require Rust to call Python, so these remain together until the loop moves. |
+| `/api/team/leads/**` | agent-runtime | Chat and WebBridge session ingress, git AI provider calls, SSE, pending interaction futures, team_manager, scheduler and dream execute the Python agent loop. An adapter would need to run that loop or require Rust to call Python, so these remain together until the loop moves. |
+| `/api/team/agents/**` | agent-runtime | Chat and WebBridge session ingress, git AI provider calls, SSE, pending interaction futures, team_manager, scheduler and dream execute the Python agent loop. An adapter would need to run that loop or require Rust to call Python, so these remain together until the loop moves. |
+| `/api/team/commands/**` | agent-runtime | Chat and WebBridge session ingress, git AI provider calls, SSE, pending interaction futures, team_manager, scheduler and dream execute the Python agent loop. An adapter would need to run that loop or require Rust to call Python, so these remain together until the loop moves. |
+| `/api/team/sessions/**` | agent-runtime | Chat and WebBridge session ingress, git AI provider calls, SSE, pending interaction futures, team_manager, scheduler and dream execute the Python agent loop. An adapter would need to run that loop or require Rust to call Python, so these remain together until the loop moves. |
+| `/api/team/session-folders/**` | agent-runtime | Chat and WebBridge session ingress, git AI provider calls, SSE, pending interaction futures, team_manager, scheduler and dream execute the Python agent loop. An adapter would need to run that loop or require Rust to call Python, so these remain together until the loop moves. |
+| `/api/team/suggested-tasks/**` | agent-runtime | Chat and WebBridge session ingress, git AI provider calls, SSE, pending interaction futures, team_manager, scheduler and dream execute the Python agent loop. An adapter would need to run that loop or require Rust to call Python, so these remain together until the loop moves. |
+| `/api/team/{session_id}/history/**` | agent-runtime | Chat and WebBridge session ingress, git AI provider calls, SSE, pending interaction futures, team_manager, scheduler and dream execute the Python agent loop. An adapter would need to run that loop or require Rust to call Python, so these remain together until the loop moves. |
+| `/api/team/{session_id}/side-chat/**` | agent-runtime | Chat and WebBridge session ingress, git AI provider calls, SSE, pending interaction futures, team_manager, scheduler and dream execute the Python agent loop. An adapter would need to run that loop or require Rust to call Python, so these remain together until the loop moves. |
+| `/api/team/{session_id}/stream/**` | agent-runtime | Chat and WebBridge session ingress, git AI provider calls, SSE, pending interaction futures, team_manager, scheduler and dream execute the Python agent loop. An adapter would need to run that loop or require Rust to call Python, so these remain together until the loop moves. |
+| `/api/team/{session_id}/goal/**` | agent-runtime | Chat and WebBridge session ingress, git AI provider calls, SSE, pending interaction futures, team_manager, scheduler and dream execute the Python agent loop. An adapter would need to run that loop or require Rust to call Python, so these remain together until the loop moves. |
+| `/api/team/{session_id}/permissions/**` | agent-runtime | Chat and WebBridge session ingress, git AI provider calls, SSE, pending interaction futures, team_manager, scheduler and dream execute the Python agent loop. An adapter would need to run that loop or require Rust to call Python, so these remain together until the loop moves. |
+| `/api/team/{session_id}/questions/**` | agent-runtime | Chat and WebBridge session ingress, git AI provider calls, SSE, pending interaction futures, team_manager, scheduler and dream execute the Python agent loop. An adapter would need to run that loop or require Rust to call Python, so these remain together until the loop moves. |
+| `/api/team/**` | agent-runtime | Chat and WebBridge session ingress, git AI provider calls, SSE, pending interaction futures, team_manager, scheduler and dream execute the Python agent loop. An adapter would need to run that loop or require Rust to call Python, so these remain together until the loop moves. |
+| `/metrics` | platform-meta | Python-generated docs and metrics plus the packaged UI stay Python-owned until gateway equivalents are ready; adapter reserved for cutover. |
+| `/openapi.json` | platform-meta | Python-generated docs and metrics plus the packaged UI stay Python-owned until gateway equivalents are ready; adapter reserved for cutover. |
+| `/docs` | platform-meta | Python-generated docs and metrics plus the packaged UI stay Python-owned until gateway equivalents are ready; adapter reserved for cutover. |
+| `/docs/oauth2-redirect` | platform-meta | Python-generated docs and metrics plus the packaged UI stay Python-owned until gateway equivalents are ready; adapter reserved for cutover. |
+| `/redoc` | platform-meta | Python-generated docs and metrics plus the packaged UI stay Python-owned until gateway equivalents are ready; adapter reserved for cutover. |
+| `/**` | platform-meta | Python-generated docs and metrics plus the packaged UI stay Python-owned until gateway equivalents are ready; adapter reserved for cutover. |
 
-### `/api/team` by route module
+| `/api/team/webbridge/sessions/**` | agent-runtime | WebBridge session messages and streams invoke Python chat and the in-memory stream store; Rust cannot call Python. |
+| `/api/team/webbridge/interactions/**` | agent-runtime | WebBridge interactions can submit messages to the Python agent loop; Rust cannot call Python. |
 
-All of these answer under `/api/team/**`, so they are one unit. The column shows
-what pins each module, so a later shared PR can see which could split.
-
-| route module (`app/api/routes/team/`) | paths | pinned by |
-|---|---|---|
-| `chat.py` | `chat`, `leads`, `agents`, `commands`, `sessions`, `{session_id}/history`, `side-chat`, `stream`, `goal`, `workspace/browse`, `workspace/tree`, `workspace/validate` | `team_manager`, `stream_store`, `agent_service`, `goal_service`, `chat_service`: the ingress, the SSE stream and the agent loop (design §3.1) |
-| `webbridge.py` | `webbridge/**` | `webbridge_manager` (44 uses), `stream_store`, the tool registry, `interactive_message_service` |
-| `files.py` | `workspace/files`, `{session_id}/files`, `workspace/status`, `workspace/watch`, `workspace/lsp`, `workspace/git-diff`, previews, uploads, media | `stream_store.running_session_ids`, `lsp_manager`, `snapshot_service` (also used by `chat_service` and `shell_service`), `team_manager.current_team_for_session` |
-| `git.py`, `git_ai.py`, `worktrees.py`, `reviews.py`, `projects.py` | `workspace/git`, `workspace/worktrees`, `reviews`, `projects` | `git_ops` per-repository `asyncio.Lock`s, also taken by the `pr` agent tool; `coding_workspace_service`, used by the `worktree`, `pr` and `code_reviews` tools; `change_set_service` |
-| `change_sets.py`, `editor.py`, `problems.py` | `workspace/change-sets`, `workspace/editor`, `workspace/problems` | `change_set_service._change_sets`, `problems_service._problems`; the latter is written by the `problem_capture` and `post_edit_diagnostics` hooks |
-| `terminal.py`, `processes.py`, `preview.py` | `{session_id}/terminal(s)`, `processes`, `preview` | `terminal_manager`; `process_manager`, which lists the `process` and `preview` tools' registries (`stop_all_processes`, `stop_all_servers`) |
-| `browser.py`, `computer.py` | `browser`, `{session_id}/browser`, `{session_id}/computer` | `direct_browser_bridge` and `direct_computer_bridge` (live bridge sockets that the browser and computer tools use in-process) |
-| `folders.py`, `suggested_tasks.py`, `todos.py`, `questions.py`, `permissions.py` | `session-folders`, `sessions/{session_id}/folder`, `suggested-tasks`, `todos`, `questions`, `permissions` | `stream_store.running_session_ids`; `team_manager.prewarm_session_team`; the `suggested_task` tool; the pending permission and question requests held per stream by `agent/permission.py` and `agent/ask_user.py` (`get_services_for_stream`) |
-| `language_servers.py`, `search_everywhere.py`, `app_search.py`, `document_versions.py`, `motion_review.py`, `office_runtime.py` | `workspace/language-servers`, `workspace/search-everywhere`, `search-app`, `{session_id}/document-versions`, `motion-review`, `office-runtime` | `lsp_manager` (also used by the `lsp` tool); `problems_service`; `memory_stream_store`; `motion_review_service._pending` (also used by the `visualize` tool); `office_runtime` (also used by the `shell` tool) |
+| `/api/team/workspace/git/ai/**` | agent-runtime | Git AI obtains a live Python team provider and calls it in-process, so it moves with the agent loop. |
 
 ## Lifespan services
 
-The twelve names `EVOFLUX_DISABLE_SERVICES` accepts (Phase 0 plan, Task 6),
-started in `app/api/app.py` `lifespan()` and `_start_optional_services()`.
-Scheduler and dream are in the agent-runtime unit (design §3.1).
-
 | service | unit | pinned by |
 |---|---|---|
-| `otel_retention` | observability | deletes aged OpenTelemetry files that `/api/observability` reads; no in-process state shared with the agent |
-| `model_registry_refresh` | agent-runtime | refreshes the `lru_cache`d `model_registry` that provider code and `/api/settings/providers` read in-process |
-| `mcp` | agent-runtime | `mcp_manager`: owns the `mcp.json` watcher and live connections; the agent loop reads its tools in-process |
-| `plugin_mcp` | agent-runtime | `plugin_mcp_runtime`: starts MCP servers declared by installed plugins, shares tools with `mcp_manager` |
-| `conductor` | agent-runtime | `conductor_service`: imported by `agent/loader.py`, `mode/team`, the telemetry hook and `skills_service` |
-| `agents_validation` | agent-runtime | `team_manager.validate_agents_dir`, which validates the agent files the team manager loads |
-| `standalone_coding_purge` | agent-runtime | removes standalone Coding sessions and tasks (`snapshot_service`, terminals) and must finish before the scheduler can fire |
-| `scheduler` | agent-runtime | `task_scheduler.start`, which dispatches through `team_manager` |
-| `memory_backfill` | agent-runtime | `scoped_memory`, which the memory hooks and tools use in-process |
-| `dream_scheduler` | agent-runtime | `DreamScheduler`, whose run builds an agent and provider in-process |
-| `webbridge_cleanup` | agent-runtime | `webbridge_manager.run_cleanup_loop`: cleans the in-memory extension connections |
-| `webbridge_artifact_cleanup` | agent-runtime | `run_artifact_cleanup_loop` over the WebBridge artifact store used by the browser tools |
+| `otel_retention` | observability | OpenTelemetry JSONL readers and retention; writers remain file based. |
+| `agents_validation` | agents-skills | Skill writes currently invalidate team_manager; replace invalidation with versioned reads or a Rust event stream. |
+| `mcp` | plugins-mcp | Plugin writes refresh plugin_mcp_runtime and invalidate skill caches; MCP tool access needs the adapter and revalidation. |
+| `plugin_mcp` | plugins-mcp | Plugin writes refresh plugin_mcp_runtime and invalidate skill caches; MCP tool access needs the adapter and revalidation. |
+| `standalone_coding_purge` | git-coding | Git locks, coding workspace, change sets and diagnostics need adapter-owned state; repository locks must also work across processes. |
+| `memory_backfill` | memory-search | Wiki writes require a cross-process file lock and Python memory consumers must revalidate Rust writes. |
+| `conductor` | conductor | Conductor consumers must use the adapter for shared managed-agent state. |
+| `webbridge_cleanup` | webbridge-browser | Settings writes currently call reload_policy; use Rust version revalidation or a Python subscription to Rust events. |
+| `webbridge_artifact_cleanup` | webbridge-browser | Settings writes currently call reload_policy; use Rust version revalidation or a Python subscription to Rust events. |
+| `model_registry_refresh` | agent-runtime | Chat and WebBridge session ingress, git AI provider calls, SSE, pending interaction futures, team_manager, scheduler and dream execute the Python agent loop. An adapter would need to run that loop or require Rust to call Python, so these remain together until the loop moves. |
+| `scheduler` | agent-runtime | Chat and WebBridge session ingress, git AI provider calls, SSE, pending interaction futures, team_manager, scheduler and dream execute the Python agent loop. An adapter would need to run that loop or require Rust to call Python, so these remain together until the loop moves. |
+| `dream_scheduler` | agent-runtime | Chat and WebBridge session ingress, git AI provider calls, SSE, pending interaction futures, team_manager, scheduler and dream execute the Python agent loop. An adapter would need to run that loop or require Rust to call Python, so these remain together until the loop moves. |
 
 ## Split candidates
 
-Splits need a shared PR (owner-reviewed) that changes `routing.toml` and this
-file, and a lane `NOTES.md` that proves the new unit shares nothing with Python
-code that stays behind. Starting points found while reading:
-
-- **`/api/settings` file-backed sections** (sandbox, context, version control,
-  follow-up, background tasks, response style) read through `runtime_settings`
-  and `sandbox_config`, which have no process cache. Providers, conductor and
-  WebBridge stay in agent-runtime. Verify each section before splitting.
-- **Git and worktrees** are pinned mostly by `git_ops`'s in-process locks and
-  `coding_workspace_service`. If the `pr`, `worktree` and `code_reviews` tools
-  were reached over a process-level lock instead, git could be its own unit.
-- **`/api/health/ready` and `/diagnostics`** need the team manager's state. A
-  gateway-owned readiness check could replace them, but that changes behaviour
-  and needs a `KNOWN_DIFFERENCES.md` entry.
-- **`/api/wiki`** could join `observability` if wiki writes from the `note` tool,
-  the memory hooks and dream went through a cross-process lock.
+The previous settings, git and wiki candidates are now planned as independent units above. The remaining `agent-runtime` routes must move with the agent loop: ingress, streamed events, interaction futures, scheduler and dream directly manipulate its process-local state. Before a lane cuts over, its NOTES must verify the listed call sites and reverse dependencies against the then-current Python code. Cross-process locks for wiki, git and snapshots require their own parity and contention tests.
