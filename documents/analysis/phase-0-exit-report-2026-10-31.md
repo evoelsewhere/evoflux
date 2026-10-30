@@ -126,3 +126,19 @@ the Tauri build). Record any issue as a failing contract test first.
 - [ ] Scheduler task: create one, run it, pause and resume it.
 - [ ] MCP server start: start a configured server and call one of its tools.
 - [ ] Throughout: no UI freeze; note any pause of a second or more and the time.
+
+## User-level checkpoint (design §9a), 2026-10-31
+
+The orchestrator ran an exploratory smoke run as a first-time user. Setup: the web UI (Vite) talked to `evoflux-server` on :8000, with Python behind it, throwaway data/state dirs, and a copy of the owner's real provider config.
+
+| Check | Result |
+|---|---|
+| App boots through the gateway; first-launch import dialog shows | pass |
+| Owner's model picked up from config (`mimo-v2.6-flash`) | pass |
+| Work chat: send a message, the reply streams over SSE through the proxy ("smoke test ok", 5.4 s, 33.7k tokens, $0.005) | pass |
+| Reload: the session and its history persist | pass |
+| Crash drill: kill the Python child; requests get `502` at once, `/api/health/ready` returns `200` again after ~9 s, and the UI shows the session after a reload | pass |
+
+Environment finding: drive D: ran out of space (0 GB free), mostly per-worktree Rust `target/` caches, and Vite crashed with "not enough space on the disk". Clearing the caches of landed worktrees freed 37.7 GB. Agents must delete build caches when a worktree's task lands (added to the execution doc).
+
+The automated e2e suite (Phase 1 T10) and the owner's half-day of use are still to come.
