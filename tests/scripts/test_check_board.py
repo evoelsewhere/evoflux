@@ -123,13 +123,13 @@ def test_agents_md_is_the_authoritative_copy_of_the_workflow() -> None:
 
     assert "authoritative" in agents.split("\n\n", 1)[0].lower()
     assert "server/AGENTS.md" in workflow.split("\n\n", 2)[1]
-    # Every paragraph of the planning copy appears in the authoritative one;
-    # only the relative link to the design document differs.
-    for paragraph in workflow.split("\n\n")[2:]:
-        expected = paragraph.replace(
-            "](rust-migration-", "](../documents/plans/rust-migration-"
-        ).strip()
-        assert expected in agents
+    # The authoritative copy evolves through owner-reviewed shared PRs (for
+    # example ADR 0001), so only its structure is pinned: every section of the
+    # planning record still exists.
+    headings = [line for line in workflow.splitlines() if line.startswith("#")]
+    assert headings
+    for heading in headings:
+        assert heading in agents.splitlines()
 
 
 # --- the checker itself can fail ----------------------------------------------
