@@ -24,7 +24,7 @@ If something is unclear, stop and escalate (§9). Don't guess.
 | `migrate/rust-v4` | CI merge only | squash-merge of a green PR; no direct pushes (after the bootstrap commit), no force pushes |
 | `migrate/<lane>` | the lane's claimant | your own branch; rebase on `migrate/rust-v4` at least daily and before opening a PR |
 | `migrate/shared-<topic>` | anyone, owner-reviewed | for changes to shared paths |
-| `migrate/cutover-<unit>` | anyone, owner-approved | contains only the `routing.toml` change |
+| `migrate/cutover-<unit>` | anyone, owner-approved | the `routing.toml` change, plus the unit's temporary Python adapter when needed (design §3.4) |
 
 - One lane per branch, one branch per agent session. Never commit to someone
   else's lane branch.
@@ -37,10 +37,12 @@ If something is unclear, stop and escalate (§9). Don't guess.
   lane: `feat(rust/scheduler): port task CRUD routes`,
   `test(contract/scheduler): cover pause/resume errors`,
   `chore(shared): add db.write retry API`. No AI co-author trailers.
-- `app/`, `web/`, `desktop/` aren't edited on migration branches, except two
-  Phase 0 shared PRs: the one that points `sidecar.rs` at the gateway, and the
-  Python startup PR (private port, forwarded identity,
-  `EVOFLUX_DISABLE_SERVICES`; design §3). Python's behaviour stays the reference.
+- `app/`, `web/`, `desktop/` aren't edited on migration branches, except:
+  two Phase 0 shared PRs (the one that points `sidecar.rs` at the gateway, and
+  the Python startup PR: private port, forwarded identity,
+  `EVOFLUX_DISABLE_SERVICES`; design §3), and **cutover PRs**, which may add
+  `app/core/rust_bridge/<area>.py` and switch the call sites it replaces (design
+  §3.4, ADR 0001). Python's behaviour stays the reference.
 
 ## 2. Lane lifecycle (the loop every lane follows)
 
@@ -90,13 +92,18 @@ claim → study → contract tests → implement → self-test → re-review
     day. The diff report must show zero unexplained differences. Explained ones
     go to `KNOWN_DIFFERENCES.md` (owner-approved) or get fixed.
 12. **Cutover.** When every lane of a unit is `merged`, open `migrate/cutover-<unit>`
-    flipping it to `rust`, with the gate and shadow reports attached. The owner approves.
+    flipping it to `rust`, with the gate and shadow reports attached. If the
+    unit's state is used by Python agent code, the same PR adds its temporary
+    adapter in `app/core/rust_bridge/<area>.py` (design §3.4) and a contract
+    test proving the Python tool path now reaches Rust. The owner approves.
 13. **Watch.** 24 h of real use. Any regression: flip back with
     `EVOFLUX_ROUTE_OVERRIDE`, open a bug PR with a failing contract test first,
     fix it, then cut over again.
 14. **Done.** Board row → `cut-over`, with links to the cutover PR and gate report.
 
 ## 3. Coding rules (Rust)
+
+Rust never calls Python. Temporary Python adapters may call Rust as specified in ADR 0001.
 
 **Structure, per lane crate**
 ```text
