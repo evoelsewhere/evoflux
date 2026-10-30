@@ -50,6 +50,14 @@ contract: ## Run one area of the black-box contract suite (usage: make contract 
 contract-all: ## Run the whole contract suite against one backend (usage: make contract-all TARGET=python|rust|gateway)
 	TARGET=$(or $(TARGET),python) uv run --group contract pytest contract-tests -q --no-cov
 
+shadow: ## Replay recorded GETs of one unit through a running shadow-mode gateway (usage: make shadow UNIT=<unit> RECORDINGS=<dir> STATE_DIR=<dir> BASE_URL=<url> [TOKEN=<t>])
+	@test -n "$(UNIT)" -a -n "$(RECORDINGS)" -a -n "$(STATE_DIR)" -a -n "$(BASE_URL)" || { echo "error: set UNIT, RECORDINGS, STATE_DIR and BASE_URL"; exit 1; }
+	uv run python scripts/migration/shadow_replay.py "$(UNIT)" --recordings "$(RECORDINGS)" --state-dir "$(STATE_DIR)" --base-url "$(BASE_URL)" --token "$(TOKEN)"
+
+scrub: ## Remove secrets and PII from a recording in place (usage: make scrub FILE=<recording.jsonl>)
+	@test -n "$(FILE)" || { echo "error: set FILE=<recording.jsonl>"; exit 1; }
+	uv run python scripts/migration/scrub.py "$(FILE)"
+
 validate-skills: ## Check bundled Agent Skills against the spec and best practices
 	uv run python scripts/validate_skills.py --strict-warnings
 

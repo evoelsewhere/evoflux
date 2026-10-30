@@ -7,12 +7,14 @@
 //! spliced at the byte level after the upstream answers `101`, so Python's own
 //! handshake answers (a pre-accept close is a `403`) reach the client as-is.
 
+use crate::record::Recorder;
 use crate::routing::{Owner, RoutingTable};
+use crate::shadow::{capture, tap_response, Shadow, Snapshot, BODY_LIMIT};
 use crate::supervisor::PythonSupervisor;
 use axum::body::Body;
 use axum::extract::{Request, State};
 use axum::http::header::{CONNECTION, UPGRADE};
-use axum::http::{HeaderName, HeaderValue, StatusCode};
+use axum::http::{HeaderName, HeaderValue, Method, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::Router;
 use axum_reverse_proxy::{HostBehaviour, ProxyError, ProxyPolicy, ReverseProxy, XForwardedFor};
@@ -45,10 +47,42 @@ struct ProxyState {
     client: Client<HttpConnector, Body>,
     /// The forwarder for the current Python address; rebuilt after a restart.
     http: Mutex<Option<(SocketAddr, HttpProxy)>>,
+    options: GatewayOptions,
+}
+
+/// Optional gateway features: shadow comparison and traffic recording.
+#[derive(Clone, Default)]
+pub struct GatewayOptions {
+    /// Without it a `shadow` unit is answered by Python alone.
+    pub shadow: Option<Arc<Shadow>>,
+    pub recorder: Option<Arc<Recorder>>,
+}
+
+impl GatewayOptions {
+    /// Shadow diffs go under `state_dir`; `EVOFLUX_SHADOW_PYTHON_TWICE` and
+    /// `EVOFLUX_GATEWAY_RECORD_DIR` are read from the environment.
+    pub fn from_env(state_dir: std::path::PathBuf) -> Self {
+        Self {
+            shadow: Some(Arc::new(Shadow::new(
+                crate::shadow::ShadowOptions::from_env(state_dir),
+            ))),
+            recorder: Recorder::from_env().map(Arc::new),
+        }
+    }
 }
 
 /// Build the gateway router.
 pub fn router(table: Arc<RoutingTable>, sup: Arc<PythonSupervisor>, rust_routes: Router) -> Router {
+    router_with(table, sup, rust_routes, GatewayOptions::default())
+}
+
+/// Build the gateway router with shadow comparison and/or traffic recording.
+pub fn router_with(
+    table: Arc<RoutingTable>,
+    sup: Arc<PythonSupervisor>,
+    rust_routes: Router,
+    options: GatewayOptions,
+) -> Router {
     // A secret that is not a valid header value can never match Python's
     // check; send an empty value so Python answers 403 instead of us panicking.
     let secret =
@@ -64,6 +98,7 @@ pub fn router(table: Arc<RoutingTable>, sup: Arc<PythonSupervisor>, rust_routes:
         secret,
         client,
         http: Mutex::new(None),
+        options,
     });
     Router::new().fallback(dispatch).with_state(state)
 }
@@ -76,8 +111,88 @@ async fn dispatch(State(state): State<Arc<ProxyState>>, mut req: Request) -> Res
             Ok(response) => response,
             Err(never) => match never {},
         },
-        Owner::Python | Owner::Shadow => forward_to_python(&state, req).await,
+        Owner::Python => forward_recorded(&state, req, None).await,
+        Owner::Shadow => forward_shadow(&state, req).await,
     }
+}
+
+/// Which shadow comparison a request belongs to.
+struct ShadowJob {
+    shadow: Arc<Shadow>,
+    unit: String,
+    rust: crate::shadow::RustRun,
+    noise: Option<crate::shadow::NoiseRun>,
+}
+
+/// Python answers the client; Rust (and, for the noise run, Python again) runs
+/// the same GET in the background. Anything but a plain GET is Python only.
+async fn forward_shadow(state: &Arc<ProxyState>, req: Request) -> Response {
+    let unit = state
+        .table
+        .unit_for(req.uri().path())
+        .map(|u| u.name.clone());
+    let shadow = state.options.shadow.clone();
+    let (Some(unit), Some(shadow)) = (unit, shadow) else {
+        return forward_recorded(state, req, None).await;
+    };
+    if req.method() != Method::GET || is_websocket_upgrade(&req) {
+        return forward_recorded(state, req, None).await;
+    }
+    let snapshot = Snapshot::of(&req);
+    let rust = shadow.spawn_rust(state.rust_routes.clone(), &snapshot);
+    let noise = shadow.python_twice().then(|| {
+        let state = Arc::clone(state);
+        let again = snapshot.to_request();
+        tokio::spawn(async move {
+            let response = forward_to_python(&state, again).await;
+            capture(response, BODY_LIMIT, std::time::Duration::from_secs(15)).await
+        })
+    });
+    let job = ShadowJob {
+        shadow,
+        unit,
+        rust,
+        noise,
+    };
+    forward_recorded(state, req, Some(job)).await
+}
+
+/// Forward to Python; when recording or shadowing, keep a copy of the answer
+/// for after the client has received it.
+async fn forward_recorded(
+    state: &Arc<ProxyState>,
+    req: Request,
+    job: Option<ShadowJob>,
+) -> Response {
+    let recorder = state.options.recorder.clone();
+    if recorder.is_none() && job.is_none() {
+        return forward_to_python(state, req).await;
+    }
+    let snapshot = Snapshot::of(&req);
+    let response = forward_to_python(state, req).await;
+    if response.status() == StatusCode::SWITCHING_PROTOCOLS {
+        return response;
+    }
+    // The comparison needs a runtime to spawn into; there is always one while serving.
+    tap_response(
+        response,
+        BODY_LIMIT,
+        Box::new(move |python| {
+            let Ok(handle) = tokio::runtime::Handle::try_current() else {
+                return;
+            };
+            handle.spawn(async move {
+                if let Some(recorder) = &recorder {
+                    recorder.record(&snapshot, &python).await;
+                }
+                if let Some(job) = job {
+                    job.shadow
+                        .finish(&job.unit, &snapshot, python, job.rust, job.noise)
+                        .await;
+                }
+            });
+        }),
+    )
 }
 
 async fn forward_to_python(state: &ProxyState, mut req: Request) -> Response {

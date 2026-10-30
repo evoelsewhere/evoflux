@@ -21,7 +21,7 @@ use std::path::Path;
 pub enum Owner {
     Python,
     Rust,
-    /// Python answers; Rust runs the same GET in the background (Task 15).
+    /// Python answers; Rust runs the same GET in the background (`shadow`).
     Shadow,
 }
 
@@ -69,6 +69,16 @@ pub enum RoutingError {
         first: String,
         second: String,
     },
+    #[error(
+        "shadow unit {unit:?} would shadow {method} {path}: shadow mode replays GET requests only"
+    )]
+    ShadowNonGetOperation {
+        unit: String,
+        method: String,
+        path: String,
+    },
+    #[error("invalid OpenAPI document: {0}")]
+    OpenApi(String),
     #[error("EVOFLUX_ROUTE_OVERRIDE entry {0:?} is not <unit>=python|rust|shadow")]
     InvalidOverride(String),
     #[error("EVOFLUX_ROUTE_OVERRIDE names unknown unit {0:?}")]
@@ -248,6 +258,34 @@ impl RoutingTable {
         best.and_then(|(_, index)| self.units.get(index))
     }
 
+    /// Fail if a `shadow` unit owns a path that has a non-GET operation.
+    ///
+    /// Routes in `routing.toml` are path-only, so the methods come from the
+    /// OpenAPI document (`operations` from [`openapi_operations`]). A path
+    /// template is matched with concrete values in place of `{param}` segments,
+    /// as a real request would be. `HEAD` and `OPTIONS` are not shadowed either
+    /// but are harmless, so they are allowed.
+    pub fn check_shadow_get_only(
+        &self,
+        operations: &[(String, String)],
+    ) -> Result<(), RoutingError> {
+        for (path, method) in operations {
+            if matches!(method.as_str(), "GET" | "HEAD" | "OPTIONS") {
+                continue;
+            }
+            if let Some(unit) = self.unit_for(&concrete_path(path)) {
+                if unit.owner == Owner::Shadow {
+                    return Err(RoutingError::ShadowNonGetOperation {
+                        unit: unit.name.clone(),
+                        method: method.clone(),
+                        path: path.clone(),
+                    });
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Owner of `path`; unmatched paths belong to Python.
     pub fn owner_for(&self, path: &str) -> Owner {
         self.unit_for(path).map_or(Owner::Python, |unit| unit.owner)
@@ -269,6 +307,42 @@ impl RoutingTable {
     pub fn units(&self) -> &[Unit] {
         &self.units
     }
+}
+
+/// `(path template, UPPER-CASE method)` for every operation in an OpenAPI document.
+pub fn openapi_operations(json: &str) -> Result<Vec<(String, String)>, RoutingError> {
+    let doc: serde_json::Value =
+        serde_json::from_str(json).map_err(|e| RoutingError::OpenApi(e.to_string()))?;
+    let paths = doc
+        .get("paths")
+        .and_then(|p| p.as_object())
+        .ok_or_else(|| RoutingError::OpenApi("no \"paths\" object".to_owned()))?;
+    let mut out = Vec::new();
+    for (path, item) in paths {
+        for method in item.as_object().into_iter().flat_map(|o| o.keys()) {
+            if matches!(
+                method.as_str(),
+                "get" | "put" | "post" | "delete" | "options" | "head" | "patch" | "trace"
+            ) {
+                out.push((path.clone(), method.to_ascii_uppercase()));
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// Replace `{name}` segments with `abc` and a final `{name:path}` with `a/b`.
+fn concrete_path(path: &str) -> String {
+    path.split('/')
+        .map(
+            |segment| match segment.strip_prefix('{').and_then(|s| s.strip_suffix('}')) {
+                Some(name) if name.ends_with(":path") => "a/b",
+                Some(_) => "abc",
+                None => segment,
+            },
+        )
+        .collect::<Vec<_>>()
+        .join("/")
 }
 
 fn apply_override(units: &mut [Unit], raw: &str) -> Result<(), RoutingError> {

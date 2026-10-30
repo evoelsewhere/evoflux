@@ -570,3 +570,23 @@ def test_path_param_as_last_segment_takes_the_rest_of_the_path() -> None:
     assert check_board.owner_for(units, "/api/f/x/y/z.txt") == "f"
     assert check_board.owner_for(units, "/api/f") == "a"
     assert check_board.owner_for(units, "/api/f/") == "a"
+
+
+def test_shadow_unit_must_not_own_non_get_operations() -> None:
+    openapi = {
+        "paths": {
+            "/api/a": {"get": {}},
+            "/api/b/{id}": {"get": {}, "delete": {}},
+            "/api/c": {"post": {}},
+        }
+    }
+
+    def shadow(*routes: str):
+        return [check_board.Unit("u", "shadow", routes, ())]
+
+    errors = check_board.check_shadow_get_only(shadow("/api/b/**"), openapi)
+    assert len(errors) == 1 and "DELETE" in errors[0]
+    assert check_board.check_shadow_get_only(shadow("/api/c"), openapi)
+    assert check_board.check_shadow_get_only(shadow("/api/a"), openapi) == []
+    python = [check_board.Unit("u", "python", ("/api/b/**",), ())]
+    assert check_board.check_shadow_get_only(python, openapi) == []

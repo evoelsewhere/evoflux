@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import fnmatch
+import json
 import re
 import sys
 import tomllib
@@ -34,6 +35,7 @@ ROOT = Path(__file__).resolve().parents[2]
 SERVER = ROOT / "server"
 BOARD = SERVER / "MIGRATION_BOARD.md"
 ROUTING = SERVER / "routing.toml"
+OPENAPI = ROOT / "contract-tests" / "openapi" / "python-v3.1.1.json"
 CUTOVER_UNITS = SERVER / "CUTOVER_UNITS.md"
 
 COLUMNS = (
@@ -234,6 +236,26 @@ def check_routes_assigned(units: list[Unit], paths: list[str]) -> list[str]:
         match = _best_match(unit_patterns, path)
         if match is None or _only_catch_all(match, path):
             errors.append(f"route {path} has no unit in routing.toml")
+    return errors
+
+
+def check_shadow_get_only(units: list[Unit], openapi: dict[str, Any]) -> list[str]:
+    """A shadow unit replays GET requests, so it must not own a path that has
+    another operation in the OpenAPI document (``HEAD`` and ``OPTIONS`` are harmless)."""
+    errors = []
+    for template, item in sorted(openapi.get("paths", {}).items()):
+        methods = sorted(
+            m.upper() for m in item if m in {"put", "post", "delete", "patch", "trace"}
+        )
+        if not methods:
+            continue
+        owner = owner_for(units, concrete_path(template))
+        unit = next((u for u in units if u.name == owner), None)
+        if unit is not None and unit.owner == "shadow":
+            errors.append(
+                f"shadow unit {unit.name} owns {template}, which has "
+                f"{', '.join(methods)}: shadow mode replays GET requests only"
+            )
     return errors
 
 
@@ -532,6 +554,9 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     errors = check_services(units) + check_pin_breakers(units)
+    errors += check_shadow_get_only(
+        units, json.loads(OPENAPI.read_text(encoding="utf-8"))
+    )
     errors += check_rows(rows, units) + check_overlaps(rows)
     errors += check_cutover_document(units, CUTOVER_UNITS.read_text(encoding="utf-8"))
     if not args.skip_app_routes:

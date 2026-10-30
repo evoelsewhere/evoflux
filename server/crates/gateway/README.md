@@ -39,3 +39,20 @@ uv run --group contract pytest contract-tests/gateway -q --no-cov
 
 `evoflux-gateway-harness` (`src/bin/harness.rs`) is a test-only binary used by
 the contract and supervisor tests. The product binary is `evoflux-server`.
+
+## Shadow mode and recording
+
+A unit whose owner is `shadow` is answered by Python; the gateway also runs
+the same `GET` against the Rust routes in the background, normalizes both
+answers (the rules of `contract-tests/normalize.py`) and appends the
+differences to `<state_dir>/shadow/<unit>.jsonl`. Other methods go to Python
+only, and `RoutingTable::check_shadow_get_only` rejects a shadow unit that owns
+a path with a non-GET operation in the OpenAPI document.
+`EVOFLUX_SHADOW_PYTHON_TWICE=1` also replays each request against Python to
+tell noise from real differences.
+
+`EVOFLUX_GATEWAY_RECORD_DIR=<dir>` writes request/response pairs to
+`<dir>/traffic.jsonl` (SSE as event lists) without `Authorization`, cookie and
+`_token` values. **Recorded GET bodies can still hold secrets and personal
+data.** Run `make scrub FILE=<recording>` (`scripts/migration/scrub.py`) before
+sharing or committing a recording.

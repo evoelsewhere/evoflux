@@ -74,6 +74,10 @@ class Handler(BaseHTTPRequestHandler):
             self._json(
                 200, {k: v for k, v in os.environ.items() if k.startswith("EVOFLUX_")}
             )
+        elif self.path == "/fake/counter":
+            # A different answer on every request: shadow noise.
+            _STATE["counter"] = _STATE.get("counter", 0) + 1
+            self._json(200, {"n": _STATE["counter"]})
         elif self.path == "/fake/child":
             self._json(200, {"pid": _CHILD.pid})
         elif self.path == "/fake/sse":
