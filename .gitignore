@@ -283,3 +283,9 @@ MiMo-Code/
 /.local/
 # Machine-local Cargo config (MSVC toolchain paths).
 desktop/src-tauri/.cargo/config.toml
+
+# Rust server workspace build output
+server/target/
+
+# The standalone lint fixture is not a production workspace.
+server/lint-fixtures/bad-blocking/Cargo.lock
