@@ -400,6 +400,72 @@ run at real-world speed.
 - At least 3 days of daily use by the owner on a v4 build with no stall and no data issue.
 - Desktop packages build and install for Windows, macOS and Linux; updater works from v3.1.1 to v4.
 
+## 9a. User-level checkpoints (owner decision, 2026-10-31)
+
+Contract tests prove the API matches; they don't prove the app works for a
+person. At every checkpoint below, the app is exercised **as a normal user
+would use it**, through the real desktop/web UI and the real gateway.
+
+**Checkpoints:**
+- the end of each phase (its exit report);
+- every unit cutover, before its 24 h watch starts;
+- before the final v4 merge to `main`.
+
+**1. Automated end-to-end smoke suite** (`web/e2e/`, Playwright). It runs against
+`run_dev.py --desktop` behind `evoflux-server`, with the mock model provider (T5)
+so it's deterministic. The journeys:
+- first launch: connect a provider, start a Work session, stream a reply, reload, and see the history;
+- Coding: open a project, file tree, git status/diff, workspace search, editor save;
+- terminal: run a command and see its output;
+- agent tool call: a tool runs, is approved, and its result renders;
+- settings: change a provider and toggle a skill, then restart and check both persisted;
+- plugins and MCP: install the sample plugin and see its MCP server reach `ready`;
+- scheduler: create a task and trigger it, and see its run appear;
+- every unit cut over so far: its screens work, plus a rollback drill (`EVOFLUX_ROUTE_OVERRIDE=<unit>=python`, where the same journey still passes);
+- a crash drill: kill the Python child mid-session, and the UI recovers after the 502 window.
+
+It runs on Windows at every checkpoint and on all 3 OSes in CI nightly. A
+failing journey blocks the checkpoint, the same way a failing gate does.
+
+**2. Exploratory smoke run** (an agent with a browser). After the automated
+suite passes, an agent drives the running app through the built-in browser for
+about 15–30 minutes as a first-time user. It clicks around the areas changed
+since the last checkpoint, captures screenshots and console/network errors,
+and files each problem as a failing contract or e2e test before any fix.
+
+**3. Owner daily use.** At phase exits and before the v4 merge, the owner uses
+the app normally for at least half a day (3 days before v4, §9).
+
+The checkpoint results go into the phase exit report: the suite results,
+the exploratory findings, and the owner's sign-off.
+
+## 9b. Phase 5: Python removal and repo cleanup (owner decision, 2026-10-31)
+
+The final state is a **fully Rust backend with the old Python code removed**.
+This runs after Phase 4: everything is cut over, the v3.x upgrade tests pass,
+and the owner has signed off. Deleting earlier would remove the per-unit
+rollback to Python.
+
+**Removed:**
+- `app/`: the Python backend;
+- `tests/`: Python unit tests for the backend; their behaviour is covered by the contract, e2e and Rust tests;
+- the Python sidecar packaging (the bundled interpreter in `scripts/build_sidecar.py`, and the backend dependencies in `pyproject.toml`/`uv.lock`);
+- the gateway's Python supervisor and its Python routing (`owner = "python"`, `EVOFLUX_DISABLE_SERVICES`, `EVOFLUX_GATEWAY_SECRET` handling);
+- `app/core/rust_bridge/` (it should already be gone, per ADR 0001);
+- docs describing the Python backend, rewritten for Rust (`documents/architecture/*`, `AGENTS.md` files, README).
+
+**Kept:**
+- the §11 on-demand Python pieces (the `python` tool runtime, the plugin host for user `.py` plugins, and unported skill scripts), moved into one small folder outside the backend;
+- the `contract-tests/` HTTP suite and the `web/e2e/` suite as permanent regression tests. Contract tests stay in pytest unless the owner later chooses to port them to Rust;
+- the v3 history: the `v3.1.1` tag and pre-v4 `main`.
+
+**Exit gate:**
+- a repo-wide search finds no imports of the removed backend;
+- the packaged app contains no Python backend;
+- all regression suites pass;
+- a user-level checkpoint (§9a) passes;
+- the CHANGELOG has upgrade notes.
+
 ## 10. Rollback
 
 - Per unit, during the migration: `EVOFLUX_ROUTE_OVERRIDE`, or revert the routing line.
