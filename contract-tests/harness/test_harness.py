@@ -197,3 +197,20 @@ def test_openapi_single_level_pattern_is_not_recursive() -> None:
     assert openapi_diff.owns("/api/a/b", ["/api/a/*"])
     assert not openapi_diff.owns("/api/a/b/c", ["/api/a/*"])
     assert openapi_diff.owns("/api/a/b/c", ["/api/a/**"])
+
+
+@pytest.mark.parametrize("keyword", ["default", "example", "enum"])
+def test_openapi_preserves_titles_in_literal_values(keyword: str) -> None:
+    pinned = _spec_with_title_property()
+    schema = pinned["components"]["schemas"]["Req"]
+    value = {"title": "first", "nested": {"title": "inner"}}
+    schema[keyword] = [value] if keyword == "enum" else value
+    candidate = copy.deepcopy(pinned)
+    target = candidate["components"]["schemas"]["Req"][keyword]
+    if keyword == "enum":
+        target = target[0]
+    target["title"] = "changed"
+    assert openapi_diff.diff(
+        openapi_diff.extract(pinned, ["/api/x"]),
+        openapi_diff.extract(candidate, ["/api/x"]),
+    )
