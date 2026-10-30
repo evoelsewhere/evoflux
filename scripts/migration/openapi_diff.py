@@ -87,7 +87,11 @@ def _inline(
                 return {"$cycle": len(stack) - stack.index(ref)}
             return _inline(spec, _resolve(spec, ref), (*stack, ref))
         return {
-            key: _inline(spec, value, stack, key in _NAME_MAPS and not names)
+            key: (
+                value
+                if not names and key in {"default", "example", "enum"}
+                else _inline(spec, value, stack, key in _NAME_MAPS and not names)
+            )
             for key, value in node.items()
             if names or key != "title"
         }
