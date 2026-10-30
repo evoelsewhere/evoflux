@@ -121,6 +121,34 @@ async fn unreadable_settings_yaml_refuses_to_start() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn settings_access_key_protects_rust_routes() {
+    let home = tempfile::tempdir().unwrap();
+    let config = home.path().join("config");
+    std::fs::create_dir_all(&config).unwrap();
+    std::fs::write(config.join("settings.yaml"), "server:\n  access_key: k\n").unwrap();
+    let mut server = spawn_server(&home, &fake_upstream(), &[], &[]);
+    let handshake = handshake_json(&mut server).await;
+    // Python's handshake carries only a generated or EVOFLUX_DESKTOP_TOKEN token.
+    assert_eq!(handshake["token"], "");
+    let port = handshake["port"].as_u64().unwrap();
+    // `/metrics/gateway` is exempt from desktop auth (non-API path, as Python's
+    // `/metrics`), so the token wiring is proven on an `/api` route.
+    let (status, _) = http_get(port, "/api/gateway/ping", &[]).await;
+    assert_eq!(status, 401);
+    let (status, _) = http_get(
+        port,
+        "/api/gateway/ping",
+        &[("Authorization", "Bearer wrong")],
+    )
+    .await;
+    assert_eq!(status, 401);
+    let (status, body) =
+        http_get(port, "/api/gateway/ping", &[("Authorization", "Bearer k")]).await;
+    assert_eq!(status, 200, "{body}");
+    stop(server).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn gateway_metrics_are_served_by_rust() {
     let home = tempfile::tempdir().unwrap();
     let mut server = spawn_server(&home, &fake_upstream(), &[], &[]);
