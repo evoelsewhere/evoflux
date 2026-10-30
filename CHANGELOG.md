@@ -6,6 +6,7 @@ All notable changes to EvoFlux are documented in this file.
 
 ### Changed
 
+- Started documenting the v3.1.1 freeze investigation and its open diagnostic workload question.
 - Added a black-box contract test harness and OpenAPI comparison for the v4 migration, with isolated backend settings, SSE deadlines, timestamp format checks, preserved OpenAPI literal values and Windows backend process cleanup.
 - Added a Rust backend workspace and migration quality checks for contributors, including lane test counts, path ownership checks, lint verification, cutover branch path rules driven by a new `adapter_call_sites` column in `server/CUTOVER_UNITS.md`, and a Python gate baseline script that fails only on new Ruff, ty and pytest failures.
 - The Python backend can now run behind the upcoming Rust `evoflux-server` gateway (EvoFlux v4). Four opt-in environment variables set by the gateway control this: `EVOFLUX_GATEWAY_SECRET` (refuse HTTP and WebSocket requests that lack the `X-EvoFlux-Gateway` header), `EVOFLUX_REMOTE_PROXY_SECRET`, `EVOFLUX_TSNET_TARGET_PORT` and `EVOFLUX_DISABLE_SERVICES` (skip named background services). Nothing changes unless they are set.
