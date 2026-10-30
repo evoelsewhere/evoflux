@@ -283,3 +283,4 @@ MiMo-Code/
 /.local/
 # Machine-local Cargo config (MSVC toolchain paths).
 desktop/src-tauri/.cargo/config.toml
+!contract-tests/fixtures/upgrade/**/evoflux.db
