@@ -6,3 +6,22 @@ license = "Apache-2.0"
 
 [lints]
 workspace = true
+
+[dependencies]
+axum = { version = "0.8", default-features = false, features = ["http1", "tokio"] }
+base64 = "0.22"
+evoflux-core = { path = "../core" }
+evoflux-gateway = { path = "../gateway" }
+getrandom = "0.3"
+serde_json = "1"
+sysinfo = { version = "0.37", default-features = false, features = ["system"] }
+thiserror = "2"
+tokio = { version = "1", features = ["io-std", "io-util", "macros", "net", "rt", "rt-multi-thread", "signal", "sync", "time"] }
+tower-http = { version = "0.6", default-features = false, features = ["catch-panic"] }
+tracing = "0.1"
+yaml-rust2 = "0.10"
+
+[dev-dependencies]
+regex = "1"
+tempfile = "3"
+tokio = { version = "1", features = ["process"] }
