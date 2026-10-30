@@ -69,6 +69,7 @@ GATEWAY_SERVICES = (
     "webbridge_artifact_cleanup",
 )
 
+_BREAKER_RE = re.compile(r"^(adapter|file-lock):[a-z0-9]+(-[a-z0-9]+)*$")
 _LANE_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 
 
@@ -82,6 +83,8 @@ class Unit:
     owner: str
     routes: tuple[str, ...]
     services: tuple[str, ...]
+    pin_breakers: tuple[str, ...] = ()
+    together_reason: str = ""
 
 
 # --- parsing -----------------------------------------------------------------
@@ -120,6 +123,8 @@ def load_routing(path: Path) -> list[Unit]:
                 owner=entry["owner"],
                 routes=tuple(entry.get("routes", ())),
                 services=tuple(entry.get("services", ())),
+                pin_breakers=tuple(entry.get("pin_breakers", ())),
+                together_reason=entry.get("together_reason", ""),
             )
         )
     names = [u.name for u in units]
@@ -215,6 +220,24 @@ def check_services(units: list[Unit]) -> list[str]:
             errors.append(f"service {service} is in more than one unit: {owners}")
     for service in sorted(set(seen) - set(GATEWAY_SERVICES)):
         errors.append(f"unknown service {service} (not in the gateway service list)")
+    return errors
+
+
+def check_pin_breakers(units: list[Unit]) -> list[str]:
+    """Every unit says how its in-memory pin is broken (ADR 0001)."""
+    errors = []
+    for u in units:
+        if u.name == "agent-runtime" and not u.pin_breakers:
+            continue
+        if not u.pin_breakers:
+            errors.append(f"unit {u.name} has no pin_breakers")
+            continue
+        for breaker in u.pin_breakers:
+            if not _BREAKER_RE.match(breaker):
+                errors.append(
+                    f"unit {u.name}: pin breaker {breaker!r} must be "
+                    "adapter:<area> or file-lock:<name>"
+                )
     return errors
 
 
@@ -377,6 +400,32 @@ def check_cutover_document(units: list[Unit], text: str) -> list[str]:
             errors.append(
                 f"CUTOVER_UNITS.md lists {kind} {key} that routing.toml lacks"
             )
+    errors += _check_breaker_table(units, text)
+    return errors
+
+
+def _check_breaker_table(units: list[Unit], text: str) -> list[str]:
+    match = re.search(r"^## Units\s*$(.*?)(?=^#{2,3} |\Z)", text, re.S | re.M)
+    documented: dict[tuple[str, str], str] = {}
+    if match:
+        for cells in _table_rows(match.group(1))[1:]:
+            if len(cells) >= 6:
+                for breaker in cells[2].split(","):
+                    if breaker.strip() != "-":
+                        documented[(cells[0], breaker.strip())] = cells[5]
+    errors = []
+    expected = {(u.name, b) for u in units for b in u.pin_breakers}
+    for unit, breaker in sorted(expected):
+        if (unit, breaker) not in documented:
+            errors.append(
+                f"CUTOVER_UNITS.md is missing pin breaker {breaker} of {unit}"
+            )
+        elif not documented[(unit, breaker)]:
+            errors.append(f"CUTOVER_UNITS.md pin breaker {breaker} of {unit} is empty")
+    for unit, breaker in sorted(set(documented) - expected):
+        errors.append(
+            f"CUTOVER_UNITS.md lists pin breaker {breaker} of {unit} that routing.toml lacks"
+        )
     return errors
 
 
@@ -411,7 +460,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{'total':<10} {len(rows)}")
         return 0
 
-    errors = check_services(units) + check_rows(rows, units) + check_overlaps(rows)
+    errors = check_services(units) + check_pin_breakers(units)
+    errors += check_rows(rows, units) + check_overlaps(rows)
     errors += check_cutover_document(units, CUTOVER_UNITS.read_text(encoding="utf-8"))
     if not args.skip_app_routes:
         sys.path.insert(0, str(ROOT))
