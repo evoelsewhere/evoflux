@@ -9,3 +9,4 @@ One line per landed task: date · task · author agent · reviewer · commit ran
 2026-10-30 · T10 gateway (routing, Python supervisor, streaming proxy) · Claude CLI Opus · Codex Luna review (CHANGELOG fix applied) · e4b3c5b2
 2026-10-31 · T11 evoflux-server serve + handshake · Claude CLI Opus/Sonnet · Claude Opus reviewer (APPROVE 3b7688ba) · 58c7fbc0..HEAD
 2026-10-31 · T15 shadow mode + recording · Codex (start) + Claude Sonnet · Claude Opus reviewer (APPROVE 0d36a96c) · 07683b8a..HEAD
+2026-10-31 · T14 perf baseline + open-loop responsiveness gate · Claude Sonnet (desktop + CLI) · Codex Luna review (APPROVE) · 6a3d286d..HEAD
