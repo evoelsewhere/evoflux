@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 import sqlite3
 import subprocess
 import time
@@ -19,34 +18,6 @@ from mock_provider.server import MockProvider
 from sse import collect_events
 
 TABLES = ("chat_sessions", "session_messages", "session_folders", "memory_facts")
-
-
-def wait_for_backend_exit(pid: int) -> None:
-    """Wait for the handshake PID, not just the Windows venv launcher."""
-    if os.name != "nt":
-        return
-    import ctypes
-    from ctypes import wintypes
-
-    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
-    kernel.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
-    kernel.OpenProcess.restype = wintypes.HANDLE
-    kernel.WaitForSingleObject.argtypes = (wintypes.HANDLE, wintypes.DWORD)
-    kernel.WaitForSingleObject.restype = wintypes.DWORD
-    kernel.CloseHandle.argtypes = (wintypes.HANDLE,)
-    kernel.CloseHandle.restype = wintypes.BOOL
-    handle = kernel.OpenProcess(0x00100000, False, pid)  # SYNCHRONIZE
-    if not handle:
-        error = ctypes.get_last_error()
-        if error == 87:  # ERROR_INVALID_PARAMETER: the PID no longer exists
-            return
-        raise ctypes.WinError(error)
-    try:
-        result = kernel.WaitForSingleObject(handle, 15000)
-        if result != 0:  # WAIT_OBJECT_0
-            raise RuntimeError(f"backend PID {pid} did not exit: wait result {result}")
-    finally:
-        kernel.CloseHandle(handle)
 
 
 def counts(db: Path) -> dict[str, int]:
@@ -156,7 +127,6 @@ def run_two_process_stress(
                 flush=True,
             )
         backend.stop()
-        wait_for_backend_exit(backend.pid)
         return {
             "db": shared,
             "actual_counts": counts(shared),

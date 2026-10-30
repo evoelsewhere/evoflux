@@ -51,6 +51,39 @@ class BackendStartError(RuntimeError):
     pass
 
 
+def wait_for_exit(pid: int, timeout_s: float = 15.0) -> None:
+    """Wait for the handshake PID, not just the Windows venv launcher.
+
+    ``taskkill /T`` returns, and the launcher exits, while the backend itself
+    can still be releasing its SQLite file and WAL index handles; opening the
+    database before that finishes can fail with ``disk I/O error``.
+    """
+    if os.name != "nt":
+        return
+    import ctypes
+    from ctypes import wintypes
+
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+    kernel.OpenProcess.restype = wintypes.HANDLE
+    kernel.WaitForSingleObject.argtypes = (wintypes.HANDLE, wintypes.DWORD)
+    kernel.WaitForSingleObject.restype = wintypes.DWORD
+    kernel.CloseHandle.argtypes = (wintypes.HANDLE,)
+    kernel.CloseHandle.restype = wintypes.BOOL
+    handle = kernel.OpenProcess(0x00100000, False, pid)  # SYNCHRONIZE
+    if not handle:
+        error = ctypes.get_last_error()
+        if error == 87:  # ERROR_INVALID_PARAMETER: the PID no longer exists
+            return
+        raise ctypes.WinError(error)
+    try:
+        result = kernel.WaitForSingleObject(handle, int(timeout_s * 1000))
+        if result != 0:  # WAIT_OBJECT_0
+            raise RuntimeError(f"backend PID {pid} did not exit: wait result {result}")
+    finally:
+        kernel.CloseHandle(handle)
+
+
 @dataclass
 class Backend:
     base_url: str
@@ -82,6 +115,7 @@ class Backend:
                 except subprocess.TimeoutExpired:
                     self.process.kill()
                     self.process.wait(timeout=10)
+        wait_for_exit(self.pid)
 
     def log_tail(self) -> str:
         return "\n".join(self.log)
