@@ -196,6 +196,11 @@ disconnect mid-stream, reconnect/resume.
 
 ### 5.3 Rules
 
+- During the migration, Python quality gates (Ruff, Ruff format, ty and pytest)
+  require **no new failures compared with the base branch**. Compare the same
+  commands and failure identities on the merge-base and the PR head; report
+  pre-existing failures and treat unexplained or incomplete runs as failures.
+
 - **Never weaken an existing test** to make Rust pass: don't loosen asserts,
   add skips, widen normalisation or raise timeouts. Changes to existing
   contract tests are shared PRs that the owner reviews.

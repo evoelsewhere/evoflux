@@ -18,14 +18,20 @@ in-process (agent tools, hooks, the team manager, the stream store).
 
 ## Units
 
-| unit | phase | what it holds |
-|---|---|---|
-| `edge-stateless` | 1 | routes that read files or compute and keep no in-process state |
-| `observability` | 1 | observability reads over the OpenTelemetry JSONL files, plus their retention job |
-| `import` | 2 | importing conversations from other tools into the database |
-| `remote-access` | 2 | remote use: embedded tailnet node and the single-device claim |
-| `agent-runtime` | 3 | the agent loop and everything that shares its in-memory state |
-| `platform-meta` | 4 | FastAPI's own docs, the Python process metrics and the packaged web UI mount |
+| unit | phase | adapter_call_sites | what it holds |
+|---|---|---|---|
+| `edge-stateless` | 1 | - | routes that read files or compute and keep no in-process state |
+| `observability` | 1 | - | observability reads over the OpenTelemetry JSONL files, plus their retention job |
+| `import` | 2 | - | importing conversations from other tools into the database |
+| `remote-access` | 2 | - | remote use: embedded tailnet node and the single-device claim |
+| `agent-runtime` | 3 | - | the agent loop and everything that shares its in-memory state |
+| `platform-meta` | 4 | - | FastAPI's own docs, the Python process metrics and the packaged web UI mount |
+
+`adapter_call_sites` lists, as comma-separated globs (or `-`), the `app/` paths
+a cutover branch may edit to switch call sites to its adapter (ADR 0001). The
+owner-reviewed shared PR that prepares a cutover fills it in; `check_paths.py`
+allows nothing else under `app/` besides `app/core/rust_bridge/<unit>.py`
+(hyphens become underscores).
 
 `agent-runtime` holds most of the API (see
 [Split candidates](#split-candidates)). That is what the code requires today,

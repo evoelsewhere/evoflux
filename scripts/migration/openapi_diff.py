@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Compare the OpenAPI surface one migration area owns against the pinned v3.1.1 spec.
+"""Compare the OpenAPI surface one migration lane owns against the pinned v3.1.1 spec.
 
-    openapi_diff.py <area> --candidate http://127.0.0.1:PORT/openapi.json [--token T]
-    openapi_diff.py <area> --candidate path/to/rust-openapi.json
+    openapi_diff.py <lane> --candidate http://127.0.0.1:PORT/openapi.json [--token T]
+    openapi_diff.py <lane> --candidate path/to/rust-openapi.json
 
-The paths an area owns come from the ``[[unit]]`` named ``<area>`` in
-``server/routing.toml`` (``routes = ["/api/health/**"]``); ``--routes`` overrides
-that while the routing table does not exist yet. Both specs are cut down to those
+The paths a lane owns are the ``routes`` cell of its row in
+``server/MIGRATION_BOARD.md`` (read with ``check_board.parse_board``);
+``--routes`` overrides that. Both specs are cut down to those
 paths, component references are inlined (so generated component names cannot
 matter) and auto-generated ``title`` keys are dropped. The result is checked with
 ``oasdiff breaking`` (when installed) and a strict structural diff.
@@ -22,25 +22,33 @@ import shutil
 import subprocess
 import sys
 import tempfile
-import tomllib
 import urllib.request
 from pathlib import Path
 from typing import Any
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_PINNED = REPO_ROOT / "contract-tests" / "openapi" / "python-v3.1.1.json"
-DEFAULT_ROUTING = REPO_ROOT / "server" / "routing.toml"
+DEFAULT_BOARD = REPO_ROOT / "server" / "MIGRATION_BOARD.md"
 _REF_PREFIX = "#/components/"
 
 
-def area_routes(area: str, routing: Path) -> list[str]:
-    data = tomllib.loads(routing.read_text(encoding="utf-8"))
-    routes: list[str] = []
-    for unit in data.get("unit", []):
-        if unit.get("name") == area:
-            routes.extend(unit.get("routes", []))
+def lane_routes(lane: str, board: Path) -> list[str]:
+    """The ``routes`` cell of the lane's row in ``server/MIGRATION_BOARD.md``."""
+    from check_board import parse_board
+
+    rows = [
+        r for r in parse_board(board.read_text(encoding="utf-8")) if r["lane"] == lane
+    ]
+    if len(rows) != 1:
+        raise SystemExit(f"error: expected one row for lane {lane!r} in {board}")
+    routes = [
+        part.strip().strip("`")
+        for part in rows[0]["routes"].split(",")
+        if part.strip().strip("`") not in ("", "-")
+    ]
     if not routes:
-        raise SystemExit(f"error: no [[unit]] named {area!r} with routes in {routing}")
+        raise SystemExit(f"error: lane {lane!r} owns no routes in {board}")
     return routes
 
 
@@ -168,20 +176,20 @@ def oasdiff_breaking(pinned: dict[str, Any], candidate: dict[str, Any]) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
-    parser.add_argument("area", help="unit name in server/routing.toml")
+    parser.add_argument("lane", help="lane name in server/MIGRATION_BOARD.md")
     parser.add_argument(
         "--candidate", required=True, help="Rust spec: file path or URL"
     )
     parser.add_argument("--token", help="bearer token when --candidate is a URL")
     parser.add_argument("--pinned", type=Path, default=DEFAULT_PINNED)
-    parser.add_argument("--routing", type=Path, default=DEFAULT_ROUTING)
+    parser.add_argument("--board", type=Path, default=DEFAULT_BOARD)
     parser.add_argument(
-        "--routes", nargs="+", help="path patterns, instead of routing.toml"
+        "--routes", nargs="+", help="path patterns, instead of the board"
     )
     args = parser.parse_args(argv)
 
     try:
-        patterns = args.routes or area_routes(args.area, args.routing)
+        patterns = args.routes or lane_routes(args.lane, args.board)
         pinned = extract(load_spec(str(args.pinned), None), patterns)
         candidate = extract(load_spec(args.candidate, args.token), patterns)
     except (OSError, ValueError, KeyError) as exc:
@@ -196,9 +204,9 @@ def main(argv: list[str] | None = None) -> int:
     for line in differences:
         print(line)
     if differences or breaking:
-        print(f"FAIL: {args.area}: {len(differences)} difference(s)")
+        print(f"FAIL: {args.lane}: {len(differences)} difference(s)")
         return 1
-    print(f"OK: {args.area}: {len(pinned['paths'])} path(s) identical")
+    print(f"OK: {args.lane}: {len(pinned['paths'])} path(s) identical")
     return 0
 
 

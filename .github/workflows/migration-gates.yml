@@ -1,0 +1,38 @@
+name: Migration gates
+
+on:
+  pull_request:
+    branches: [migrate/rust-v4]
+
+jobs:
+  gates:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: taiki-e/install-action@nextest
+      - uses: taiki-e/install-action@cargo-deny
+      - uses: taiki-e/install-action@cargo-mutants
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run migration gates
+        shell: bash
+        env:
+          HEAD_BRANCH: ${{ github.head_ref }}
+        run: |
+          case "$HEAD_BRANCH" in
+            migrate/shared-*) area=shared ;;
+            migrate/cutover-*) echo "cutover path rules not implemented yet (ADR 0001)" >&2; exit 1 ;;
+            migrate/*) area=${HEAD_BRANCH#migrate/} ;;
+            *) echo "Unexpected branch: $HEAD_BRANCH" >&2; exit 1 ;;
+          esac
+          bash scripts/migration/gates.sh "$area"
