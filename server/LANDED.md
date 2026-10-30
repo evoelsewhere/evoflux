@@ -7,3 +7,4 @@ One line per landed task: date · task · author agent · reviewer · commit ran
 2026-10-30 · Cutover-unit regroup (adapter/file-lock pin breakers, #55) · Codex + Claude · Phase 0 PR reviewer (APPROVE 1507576e) · 1ca32196..HEAD
 2026-10-30 · T4 upgrade fixture, v3.0.0 only (PR #54) · Claude T4 session · Claude reviewer (APPROVE) · cherry-picked 27978ce4
 2026-10-30 · T10 gateway (routing, Python supervisor, streaming proxy) · Claude CLI Opus · Codex Luna review (CHANGELOG fix applied) · e4b3c5b2
+2026-10-31 · T11 evoflux-server serve + handshake · Claude CLI Opus/Sonnet · Claude Opus reviewer (APPROVE 3b7688ba) · 58c7fbc0..HEAD
