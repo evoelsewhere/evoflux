@@ -6,3 +6,36 @@ license = "Apache-2.0"
 
 [lints]
 workspace = true
+
+[[bin]]
+# Test harness only (contract tests, supervisor tests); evoflux-server is the product binary (Task 11).
+name = "evoflux-gateway-harness"
+path = "src/bin/harness.rs"
+test = false
+
+[dependencies]
+axum = { version = "0.8", default-features = false, features = ["http1", "tokio"] }
+axum-reverse-proxy = { version = "2.2", default-features = false }
+bytes = "1"
+evoflux-core = { path = "../core" }
+http-body-util = "0.1"
+hyper = { version = "1", features = ["client", "http1"] }
+hyper-util = { version = "0.1", features = ["client-legacy", "http1", "tokio"] }
+percent-encoding = "2"
+process-wrap = { version = "10", default-features = false, features = ["tokio1", "job-object", "process-group", "creation-flags", "kill-on-drop"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["io-util", "macros", "net", "process", "rt", "rt-multi-thread", "signal", "sync", "time"] }
+toml = "0.9"
+tower = { version = "0.5", default-features = false, features = ["util"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[dev-dependencies]
+futures-util = "0.3"
+tempfile = "3"
+
+[target.'cfg(windows)'.dependencies]
+# Same version as process-wrap's, for its CreationFlags wrapper.
+windows = { version = "0.62", features = ["Win32_System_Threading"] }
