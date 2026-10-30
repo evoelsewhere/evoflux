@@ -219,9 +219,12 @@ Owner decision, 2026-10-30. Full record:
 
 - When a unit cuts over, its in-process Python service object is replaced by
   an adapter in `app/core/rust_bridge/<area>.py`. The adapter forwards to the
-  gateway's loopback API, sending the gateway secret and the desktop token.
+  gateway's loopback API, sending the gateway secret and the desktop token;
+  adapters act as the desktop user, matching v3 parity.
 - An adapter is active only while its unit's owner is `rust`, so
-  `EVOFLUX_ROUTE_OVERRIDE` rollback also switches the adapter back.
+  `EVOFLUX_ROUTE_OVERRIDE` rollback also switches the adapter back. Python reads
+  `EVOFLUX_GATEWAY_URL` and `EVOFLUX_RUST_UNITS` at startup; routing changes
+  restart Python to apply the new ownership.
 - The adapter ships in the unit's cutover PR, together with a contract test
   proving the Python agent tool path reaches Rust.
 - Pins that are only locks become cross-process file locks (a `core` helper,

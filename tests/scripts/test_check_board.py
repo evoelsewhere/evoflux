@@ -132,6 +132,59 @@ def test_agents_md_is_the_authoritative_copy_of_the_workflow() -> None:
         assert heading in agents.splitlines()
 
 
+def _assert_workflow_rules(agents: str) -> None:
+    import re
+
+    phrases = (
+        "Never weaken an existing test",
+        "No AI co-author trailers",
+        "Flaky = failing",
+        "Prove the tests can fail",
+        "No DDL",
+        "#![forbid(unsafe_code)]",
+        "Never edit a gate",
+        "Rust never calls Python",
+    )
+    for phrase in phrases:
+        assert phrase in agents, phrase
+    sections = re.split(r"(?m)^## (?:[1-9]|10)\. [^\n]+\n", agents)
+    assert len(sections) == 11
+    for section in sections[1:]:
+        assert len(section.strip()) >= 100
+
+
+def test_authoritative_rules_survive_mutations() -> None:
+    import pytest
+
+    agents = (ROOT / "server" / "AGENTS.md").read_text(encoding="utf-8")
+    _assert_workflow_rules(agents)
+    for phrase in (
+        "Never weaken an existing test",
+        "No AI co-author trailers",
+        "Flaky = failing",
+        "Prove the tests can fail",
+        "No DDL",
+        "#![forbid(unsafe_code)]",
+        "Never edit a gate",
+        "Rust never calls Python",
+    ):
+        with pytest.raises(AssertionError):
+            _assert_workflow_rules(agents.replace(phrase, "REMOVED"))
+    with pytest.raises(AssertionError):
+        _assert_workflow_rules(
+            agents.replace(
+                "## 4. Generated and shared code",
+                "## 4. Generated and shared code\n",
+                1,
+            ).replace(
+                agents.split("## 4. Generated and shared code", 1)[1].split("## 5.", 1)[
+                    0
+                ],
+                "\nshort\n",
+            )
+        )
+
+
 # --- the checker itself can fail ----------------------------------------------
 
 

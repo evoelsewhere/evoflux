@@ -34,12 +34,15 @@ thing is a lock, use a cross-process file lock instead.
 2. **Adapters are temporary.** Each adapter lives in
    `app/core/rust_bridge/<area>.py` and replaces the Python service object's
    public functions with calls to the gateway's loopback API, using the
-   gateway secret and desktop token. Each adapter carries a header comment
+   gateway secret and desktop token. Adapters act as the desktop user, matching
+   v3 parity. Each adapter carries a header comment
    `# TEMPORARY (ADR 0001): delete when the agent-runtime unit moves to Rust.`
 3. **Adapters follow routing.** An adapter is active only while its unit's
    owner in `routing.toml` is `rust`. Rolling the unit back to `python`
    (`EVOFLUX_ROUTE_OVERRIDE`) switches the adapter back to the in-process
-   code, so rollback stays one switch.
+   code, so rollback stays one switch. Python reads `EVOFLUX_GATEWAY_URL`
+   and `EVOFLUX_RUST_UNITS` at startup; the gateway restarts Python when routing
+   changes so rollback takes effect.
 4. **Same PR as the cutover.** A unit's cutover PR flips `routing.toml`, adds
    its adapter, and adds a contract test proving the Python agent tool path
    now hits Rust (for example, the `pr` tool's git call shows up in Rust's
@@ -49,6 +52,13 @@ thing is a lock, use a cross-process file lock instead.
    remains the last line of defence.
 6. **No new Python features in adapters.** They only forward calls. Bugs are
    ported as-is (workflow §3).
+
+7. **Reverse pins.** When a Rust-owned write must update Python state (such as
+   `skills_service` invalidating `team_manager.invalidate_skill_cache()`,
+   WebBridge `reload_policy`, or `plugin_mcp_runtime`), the adapter replaces
+   that cache by reading through or revalidating against a Rust version/ETag,
+   or subscribes to a Rust event stream. Communication stays Python to Rust.
+   Each split unit lists its reverse dependencies in `NOTES.md`.
 
 ## Consequences
 
@@ -65,7 +75,7 @@ thing is a lock, use a cross-process file lock instead.
 This is a bridge, not a destination. The owner's goal is **a fully Rust
 backend**. When the agent-runtime unit moves to Rust (Phase 3), every adapter
 is deleted along with the Python sidecar. v4's done criteria (design §9)
-require `app/core/rust_bridge/` to be empty or gone. The only Python left in v4
+require `app/core/rust_bridge/` to be gone. The only Python left in v4
 is what can't be avoided (design §11): the `python` tool, user `.py` plugins and
 any skill scripts without a matching Rust port, all run on demand outside the
 backend.

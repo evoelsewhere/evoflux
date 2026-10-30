@@ -103,6 +103,8 @@ claim → study → contract tests → implement → self-test → re-review
 
 ## 3. Coding rules (Rust)
 
+Rust never calls Python. Temporary Python adapters may call Rust as specified in ADR 0001.
+
 **Structure, per lane crate**
 ```text
 area-<lane>/src/
