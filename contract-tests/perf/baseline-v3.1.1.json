@@ -1,0 +1,139 @@
+{
+  "version": "3.1.1",
+  "target": "python",
+  "machine": {
+    "name": "Windows 11 Home 10.0.26300, AMD Ryzen 9 5900HS, 23.4 GiB RAM",
+    "os": "Windows-11-10.0.26300-SP0",
+    "python": "3.12.14",
+    "cpu": "AMD64 Family 25 Model 80 Stepping 0, AuthenticAMD",
+    "cpu_count": 16
+  },
+  "git_commit": "5c4dd3e96794003ec739955e94a2ec1257911008",
+  "samples_per_endpoint": 200,
+  "cold_start_ms": 5956.3,
+  "idle_rss_mb": 223.7,
+  "endpoints": {
+    "/api/health/live": {
+      "p50_ms": 1.7,
+      "p99_ms": 2.32
+    },
+    "/api/health/ready": {
+      "p50_ms": 3.52,
+      "p99_ms": 4.26
+    },
+    "/api/health/diagnostics": {
+      "p50_ms": 6.56,
+      "p99_ms": 7.38
+    },
+    "/api/agents": {
+      "p50_ms": 22.77,
+      "p99_ms": 39.05
+    },
+    "/api/skills": {
+      "p50_ms": 61.86,
+      "p99_ms": 175.3
+    },
+    "/api/commands": {
+      "p50_ms": 3.44,
+      "p99_ms": 5.5
+    },
+    "/api/mcp/servers": {
+      "p50_ms": 3.04,
+      "p99_ms": 4.94
+    },
+    "/api/plugins": {
+      "p50_ms": 2.71,
+      "p99_ms": 3.44
+    },
+    "/api/settings/providers": {
+      "p50_ms": 1338.99,
+      "p99_ms": 3132.51
+    },
+    "/api/settings/context": {
+      "p50_ms": 8.56,
+      "p99_ms": 9.69
+    },
+    "/api/settings/sandbox": {
+      "p50_ms": 2.36,
+      "p99_ms": 2.93
+    },
+    "/api/settings/version-control": {
+      "p50_ms": 8.68,
+      "p99_ms": 14.54
+    },
+    "/api/settings/response-style": {
+      "p50_ms": 8.73,
+      "p99_ms": 14.83
+    },
+    "/api/settings/follow-up": {
+      "p50_ms": 8.79,
+      "p99_ms": 14.68
+    },
+    "/api/settings/team-spawn": {
+      "p50_ms": 8.64,
+      "p99_ms": 9.24
+    },
+    "/api/settings/background-tasks": {
+      "p50_ms": 8.51,
+      "p99_ms": 9.75
+    },
+    "/api/scheduler/tasks": {
+      "p50_ms": 5.3,
+      "p99_ms": 11.22
+    },
+    "/api/team/leads": {
+      "p50_ms": 34.77,
+      "p99_ms": 60.53
+    },
+    "/api/team/sessions": {
+      "p50_ms": 5.23,
+      "p99_ms": 6.1
+    },
+    "/api/team/session-folders": {
+      "p50_ms": 4.84,
+      "p99_ms": 5.92
+    },
+    "/api/team/projects": {
+      "p50_ms": 4.04,
+      "p99_ms": 4.95
+    },
+    "/api/team/processes": {
+      "p50_ms": 1.91,
+      "p99_ms": 2.36
+    },
+    "/api/team/office-runtime/status": {
+      "p50_ms": 2.1,
+      "p99_ms": 2.49
+    },
+    "/api/team/reviews/connections": {
+      "p50_ms": 3.84,
+      "p99_ms": 4.7
+    },
+    "/api/team/webbridge/status": {
+      "p50_ms": 2.05,
+      "p99_ms": 2.71
+    },
+    "/api/observability/summary": {
+      "p50_ms": 2.99,
+      "p99_ms": 4.21
+    },
+    "/api/wiki/tree": {
+      "p50_ms": 8.65,
+      "p99_ms": 9.52
+    },
+    "/api/team/00000000-0000-7000-8000-00000000b16b/history": {
+      "p50_ms": 43.87,
+      "p99_ms": 84.37
+    },
+    "/api/team/sessions/00000000-0000-7000-8000-00000000b16b": {
+      "p50_ms": 60.03,
+      "p99_ms": 138.21
+    },
+    "/api/team/00000000-0000-7000-8000-00000000b16b/goal": {
+      "p50_ms": 7.15,
+      "p99_ms": 17.24
+    }
+  },
+  "sse_first_event_ms": null,
+  "sse_idle_open_ms": 3.6
+}

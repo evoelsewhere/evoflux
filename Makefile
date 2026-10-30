@@ -1,6 +1,6 @@
 # Makefile for evoflux
 
-.PHONY: all run dev dev-web dev-desktop kill-dev-ports test contract contract-all validate-skills coverage migrate revision build-web build dist clean help
+.PHONY: all run dev dev-web dev-desktop kill-dev-ports test contract contract-all perf perf-responsiveness perf-baseline validate-skills coverage migrate revision build-web build dist clean help
 
 # Default target
 all: test
@@ -57,6 +57,16 @@ shadow: ## Replay recorded GETs of one unit through a running shadow-mode gatewa
 scrub: ## Remove secrets and PII from a recording in place (usage: make scrub FILE=<recording.jsonl>)
 	@test -n "$(FILE)" || { echo "error: set FILE=<recording.jsonl>"; exit 1; }
 	uv run python scripts/migration/scrub.py "$(FILE)"
+
+perf: ## Compare endpoint p99, cold start and memory with baseline-v3.1.1.json (usage: make perf AREA=health|all TARGET=python|rust|gateway)
+	uv run --group contract python contract-tests/perf/bench_endpoints.py compare --target $(or $(TARGET),python) --area $(or $(AREA),all)
+
+perf-responsiveness: ## Run the freeze gate: /api/health/live and history latency under heavy load (usage: make perf-responsiveness TARGET=python|rust|gateway)
+	TARGET=$(or $(TARGET),python) uv run --group contract pytest contract-tests/perf -q --no-cov
+
+perf-baseline: ## Re-record baseline-v3.1.1.json from Python on this machine (usage: make perf-baseline MACHINE="<name>")
+	@test -n "$(MACHINE)" || { echo "error: set MACHINE=<reference machine name>"; exit 1; }
+	uv run --group contract python contract-tests/perf/bench_endpoints.py record --target python --machine "$(MACHINE)"
 
 validate-skills: ## Check bundled Agent Skills against the spec and best practices
 	uv run python scripts/validate_skills.py --strict-warnings

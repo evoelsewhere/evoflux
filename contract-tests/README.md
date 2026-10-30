@@ -33,6 +33,7 @@ so the gateway target relies on the gateway's own tree kill (Phase 0 task 10).
 | `harness/` | Tests of the harness itself (isolation, SSE timeout, normalizer, `openapi_diff.py`). |
 | `mock_provider/` | `server.py` is a replaying model provider (OpenAI Chat Completions and Anthropic Messages streaming); `recordings/*.jsonl` are its scripts. |
 | `fixtures/` | `upgrade/<tag>/` holds a seeded `evoflux.db`, `config/`, `wiki/` and `MANIFEST.json` for v3.0.0, the oldest schema (the builder can produce any v3.0.0 to v3.1.1 tag with `--tag`); `build_upgrade_fixtures.py` rebuilds them (git worktrees under `D:\evoelsewhere\.tmp-upgrade-tags`, removed afterwards). `fixtures.upgrade_fixture(tag)` returns a temp copy of the database. `config/.env` holds only the dummy key `sk-dummy-upgrade-fixture-0000`; `Backend` starts from the database alone, so config and wiki are for later phases. |
+| `perf/` | Performance baseline and responsiveness gate (below). |
 | `<area>/` | One directory per area, with `test_*.py` and `snapshots/`. |
 | `openapi/python-v3.1.1.json` | Pinned `GET /openapi.json` from v3.1.1. |
 
@@ -82,3 +83,16 @@ v3 behaviour worth knowing: a retryable 429 produces `rate_limit` and
 `provider_status` events and no `error` event; a quota-style 429
 (`insufficient_quota`, which v3 treats as non-retryable) ends the turn with no
 event or message at all.
+## Performance and responsiveness
+
+```bash
+make perf AREA=health TARGET=gateway     # endpoint p99, cold start, memory vs baseline-v3.1.1.json
+make perf-responsiveness TARGET=python   # design section 8 freeze gate
+make perf-baseline MACHINE="<name>"      # re-record the baseline from Python
+```
+
+- `perf/baseline-v3.1.1.json` names the machine it was recorded on; compare only on comparable hardware.
+- `make perf` fails when an endpoint p99 is more than 10 % (and more than 2 ms) above the baseline. `AREA=all` also checks cold start and idle memory.
+- The gate runs every scenario in `perf/scenarios.py:FREEZE_SCENARIOS`. To add one from the freeze diagnosis, register a factory with `@freeze_scenario("name")`; if v3.1.1 stalls under it, add its name and reason to `V3_STALLS` so `TARGET=python` expects the failure (`xfail(strict=True)`).
+- The large test repository is built once under `D:\evoelsewhere\.tmp-perf\` (set `EVOFLUX_PERF_ROOT` to move it); it is never created inside the checkout.
+- `sse_first_event_ms` is `null` until the mock provider (task 5) can start a turn; `sse_idle_open_ms` records the open time of an idle stream meanwhile.
