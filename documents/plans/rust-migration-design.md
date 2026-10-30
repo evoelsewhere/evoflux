@@ -209,6 +209,15 @@ Python stops writing (Phase 4).
   latency, FIFO vs concurrent, on the main write paths. v4 target: no write
   path slower than FIFO; the pool size is tuned from these numbers.
 
+**Owner decision (2026-10-31): implemented, default off.** The Phase 0
+benchmark (`documents/analysis/sqlite-concurrent-writes-benchmark-2026-10-30.md`,
+3-run medians, 2 writers) showed the FIFO writer matching or beating
+`BEGIN CONCURRENT` in every workload: messages 2087/s vs 1472/s, cross-table
+3354/s vs 2940/s. The concurrent lane stays built and tested behind
+`EVOFLUX_DB_CONCURRENT_WRITES`, but **the default is the FIFO writer**. Re-benchmark it
+(a) after Python stops writing (Phase 4), and (b) with v4.1 schema changes that
+remove the time-ordered hot pages, and enable it per write path only where it wins.
+
 Note: in v3, database contention is already bounded at 5 s → `503`, so this
 improves throughput and is probably not the cause of the freezes.
 
