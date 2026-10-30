@@ -19,6 +19,7 @@ use axum::Router;
 use evoflux_core::auth::{DesktopAuth, RemoteLogin};
 use evoflux_core::{telemetry, ApiError};
 use evoflux_gateway::proxy;
+use evoflux_gateway::proxy::GatewayOptions;
 use evoflux_gateway::routing::RoutingTable;
 use evoflux_gateway::supervisor::PythonSupervisor;
 use tower_http::catch_panic::CatchPanicLayer;
@@ -45,6 +46,16 @@ pub fn router_with_units(
     auth: DesktopAuth,
     units: Router,
 ) -> Router {
+    router_with_options(table, sup, auth, units, GatewayOptions::default())
+}
+
+pub fn router_with_options(
+    table: Arc<RoutingTable>,
+    sup: Arc<PythonSupervisor>,
+    auth: DesktopAuth,
+    units: Router,
+    options: GatewayOptions,
+) -> Router {
     let units = rust_routes(units, auth.clone());
     // Layers only wrap routes added before them, so the proxy fallback below
     // stays outside the Rust auth: Python authenticates its own routes.
@@ -54,7 +65,7 @@ pub fn router_with_units(
             .route(GATEWAY_PING_PATH, get(gateway_ping)),
         auth,
     );
-    catch_panics(own.fallback_service(proxy::router(table, sup, units)))
+    catch_panics(own.fallback_service(proxy::router_with(table, sup, units, options)))
 }
 
 /// Design §6.1 gate 2: a panicking handler answers Python's 500 body and the

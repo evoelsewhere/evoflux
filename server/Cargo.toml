@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/core", "crates/api-types", "crates/gateway", "crates/server"]
+members = ["crates/*"]
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

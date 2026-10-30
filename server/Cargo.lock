@@ -345,6 +345,7 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
+ "tokio-util",
  "tower-http",
  "tracing",
  "yaml-rust2",
