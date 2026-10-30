@@ -6,21 +6,21 @@
 [[unit]]
 name = "edge-stateless"
 owner = "python"
-pin_breakers = ["adapter:edge-stateless"]
+pin_breakers = ["none"]
 routes = ["/api/health/live/**", "/api/quote/**", "/api/commands/**", "/api/snippets/**"]
 services = []
 
 [[unit]]
 name = "observability"
 owner = "python"
-pin_breakers = ["adapter:observability"]
+pin_breakers = ["none"]
 routes = ["/api/observability/**"]
 services = ["otel_retention"]
 
 [[unit]]
 name = "import"
 owner = "python"
-pin_breakers = ["adapter:import"]
+pin_breakers = ["none"]
 routes = ["/api/import/**"]
 services = []
 
@@ -55,7 +55,7 @@ services = ["mcp", "plugin_mcp"]
 [[unit]]
 name = "git-coding"
 owner = "python"
-pin_breakers = ["adapter:git-coding"]
+pin_breakers = ["adapter:git-coding", "file-lock:git-repo"]
 routes = ["/api/team/workspace/git/**", "/api/team/workspace/worktrees/**", "/api/team/reviews/**", "/api/team/projects/**", "/api/team/workspace/change-sets/**", "/api/team/workspace/problems/**", "/api/team/workspace/editor/**"]
 services = ["standalone_coding_purge"]
 
@@ -69,7 +69,7 @@ services = []
 [[unit]]
 name = "memory-search"
 owner = "python"
-pin_breakers = ["adapter:memory-search"]
+pin_breakers = ["adapter:memory-search", "file-lock:wiki"]
 routes = ["/api/wiki/**", "/api/team/workspace/search-everywhere/**", "/api/team/search-app/**"]
 services = ["memory_backfill"]
 
@@ -83,7 +83,7 @@ services = []
 [[unit]]
 name = "workspace-files"
 owner = "python"
-pin_breakers = ["adapter:workspace-files"]
+pin_breakers = ["adapter:workspace-files", "file-lock:snapshot"]
 routes = ["/api/team/workspace/files/**", "/api/team/workspace/status/**", "/api/team/workspace/git-diff/**", "/api/team/workspace/lsp/**", "/api/team/workspace/language-servers/**", "/api/team/workspace/browse/**", "/api/team/workspace/tree/**", "/api/team/workspace/validate/**", "/api/team/{session_id}/files/**", "/api/team/{session_id}/workspace/**", "/api/team/{session_id}/uploads/**"]
 services = []
 
@@ -117,6 +117,6 @@ services = ["model_registry_refresh", "scheduler", "dream_scheduler"]
 [[unit]]
 name = "platform-meta"
 owner = "python"
-pin_breakers = ["adapter:platform-meta"]
+pin_breakers = ["none"]
 routes = ["/metrics", "/openapi.json", "/docs", "/docs/oauth2-redirect", "/redoc", "/**"]
 services = []

@@ -46,7 +46,7 @@ def test_split_unit_requires_valid_pin_breaker() -> None:
     missing = unit("settings", ["/api/settings/**"])
     assert check_board.check_pin_breakers([missing])
     assert check_board.check_pin_breakers([unit("agent-runtime", [])]) == []
-    bad = check_board.Unit("settings", "python", (), (), ("none",))
+    bad = check_board.Unit("settings", "python", (), (), ("adapter:other",))
     assert check_board.check_pin_breakers([bad])
     good = check_board.Unit("settings", "python", (), (), ("adapter:settings",))
     assert check_board.check_pin_breakers([good]) == []
@@ -363,12 +363,16 @@ def test_check_services_flags_missing_duplicate_and_unknown() -> None:
 
 
 def test_check_cutover_document_flags_drift() -> None:
-    units = [unit("a", ["/api/x/**"], ["scheduler"])]
+    units = [check_board.Unit("a", "python", ("/api/x/**",), ("scheduler",), ("none",))]
     good = (
         "## Route prefixes\n\n| route | unit | pinned by |\n|---|---|---|\n"
         "| `/api/x/**` | a | state |\n\n"
         "## Lifespan services\n\n| service | unit | pinned by |\n|---|---|---|\n"
-        "| `scheduler` | a | state |\n"
+        "| `scheduler` | a | state |\n\n"
+        "## Units\n\n"
+        "| unit | phase | pin_breaker | reverse_deps | adapter_call_sites | rationale |\n"
+        "|---|---|---|---|---|---|\n"
+        "| `a` | 1 | none | - | - | state |\n"
     )
     drifted = good.replace("| a | state |\n\n##", "| b | state |\n\n##")
 
@@ -423,3 +427,137 @@ def test_web_ui_catch_all_never_covers_an_api_route() -> None:
     assert check_board.check_lane_coverage(rows, units, ["/", "/api/team/x"]) == []
     assert check_board.check_routes_assigned(units, ["/api/new"])
     assert check_board.check_lane_coverage(rows, units, ["/api/new"])
+
+
+def test_adapter_breaker_must_name_its_own_unit() -> None:
+    wrong = check_board.Unit("git", "python", (), (), ("adapter:wiki",))
+    errors = check_board.check_pin_breakers([wrong])
+    assert any("must be adapter:git" in e for e in errors)
+
+
+def test_none_breaker_is_allowed_for_stateless_units_only_alone() -> None:
+    stateless = check_board.Unit("quote", "python", (), (), ("none",))
+    mixed = check_board.Unit("quote", "python", (), (), ("none", "file-lock:x"))
+    assert check_board.check_pin_breakers([stateless]) == []
+    assert check_board.check_pin_breakers([mixed])
+
+
+def test_unit_can_combine_adapter_and_file_lock_breakers() -> None:
+    both = check_board.Unit(
+        "git", "python", (), (), ("adapter:git", "file-lock:git-repo")
+    )
+    assert check_board.check_pin_breakers([both]) == []
+    bad_lock = check_board.Unit("git", "python", (), (), ("file-lock:Git Repo",))
+    assert check_board.check_pin_breakers([bad_lock])
+
+
+UNITS_HEADER = (
+    "## Units\n\n"
+    "| unit | phase | pin_breaker | reverse_deps | adapter_call_sites | rationale |\n"
+    "|---|---|---|---|---|---|\n"
+)
+
+
+def test_adapter_call_sites_require_reverse_deps() -> None:
+    units = [check_board.Unit("git", "python", (), (), ("adapter:git",))]
+    ok = UNITS_HEADER + "| `git` | 2 | `adapter:git` | locks | `app/x.py` | why |\n"
+    bad = UNITS_HEADER + "| `git` | 2 | `adapter:git` | - | `app/x.py` | why |\n"
+
+    assert check_board._check_breaker_table(units, ok) == []
+    errors = check_board._check_breaker_table(units, bad)
+    assert any("no reverse_deps" in e for e in errors)
+
+
+def test_adapter_call_sites_need_an_adapter_breaker_and_table_must_match() -> None:
+    units = [check_board.Unit("git", "python", (), (), ("none",))]
+    sites = UNITS_HEADER + "| `git` | 2 | none | locks | `app/x.py` | why |\n"
+    drift = UNITS_HEADER + "| `git` | 2 | `adapter:git` | - | - | why |\n"
+
+    errors = check_board._check_breaker_table(units, sites)
+    assert any("no adapter breaker" in e for e in errors)
+    errors = check_board._check_breaker_table(units, drift)
+    assert any("pin_breaker of git" in e for e in errors)
+
+
+@pytest.mark.parametrize(
+    ("path", "unit_name"),
+    [
+        ("/api/team/abc/terminal/x", "terminal"),
+        ("/api/team/abc/files/watch", "agent"),
+        ("/api/team/abc/files/a.txt", "files"),
+        ("/api/team/workspace/files/read", "files-ws"),
+        ("/api/team/abc/stream", "agent"),
+        ("/api/team/abc", "agent"),
+    ],
+)
+def test_param_segments_match_one_segment_and_literals_win(
+    path: str, unit_name: str
+) -> None:
+    units = [
+        unit("agent", ["/api/team/**", "/api/team/{session_id}/files/watch/**"]),
+        unit("terminal", ["/api/team/{session_id}/terminal/**"]),
+        unit("files", ["/api/team/{session_id}/files/**"]),
+        unit("files-ws", ["/api/team/workspace/files/**"]),
+    ]
+
+    assert check_board.owner_for(units, path) == unit_name
+
+
+def test_param_pattern_does_not_match_a_missing_segment() -> None:
+    units = [unit("t", ["/api/team/{session_id}/terminal/**"]), unit("a", ["/api/**"])]
+
+    assert check_board.owner_for(units, "/api/team/terminal") == "a"
+    assert check_board.owner_for(units, "/api/team//terminal") == "a"
+
+
+def test_concrete_path_instantiates_templates() -> None:
+    assert check_board.concrete_path("/api/team/{session_id}/x") == "/api/team/abc/x"
+    assert check_board.concrete_path("/f/{file_path:path}") == "/f/a/b"
+
+
+def test_check_concrete_routes_flags_a_template_that_only_matches_literally() -> None:
+    template = ["/api/team/{session_id}/terminal"]
+    good = [unit("a", ["/api/team/**", "/api/team/{session_id}/terminal/**"])]
+    broken = [unit("a", ["/api/team/**"]), unit("t", ["/api/team/abc/terminal/**"])]
+
+    assert check_board.check_concrete_routes(good, template) == []
+    assert check_board.check_concrete_routes(broken, template)
+
+
+EXPECTED_UNIT_FOR_SEGMENT = {
+    "terminal": "terminal-processes",
+    "terminals": "terminal-processes",
+    "files": "workspace-files",
+    "workspace": "workspace-files",
+    "uploads": "workspace-files",
+    "browser": "webbridge-browser",
+    "computer": "webbridge-browser",
+    "document-preview": "documents-preview",
+    "office-preview": "documents-preview",
+    "document-versions": "documents-preview",
+    "motion-review": "documents-preview",
+    "media": "documents-preview",
+}
+
+
+def test_templated_session_routes_land_in_their_units_not_agent_runtime(
+    app_paths: list[str],
+) -> None:
+    units = check_board.load_routing(check_board.ROUTING)
+    checked = 0
+    for path in app_paths:
+        parts = path.split("/")
+        if parts[:3] != ["", "api", "team"] or len(parts) < 5:
+            continue
+        if parts[3] != "{session_id}" or parts[4] not in EXPECTED_UNIT_FOR_SEGMENT:
+            continue
+        if parts[4:6] == ["files", "watch"]:
+            expected = "terminal-processes"
+        else:
+            expected = EXPECTED_UNIT_FOR_SEGMENT[parts[4]]
+        concrete = check_board.concrete_path(path)
+        assert check_board.owner_for(units, concrete) == expected, concrete
+        checked += 1
+
+    assert checked >= 20
+    assert check_board.check_concrete_routes(units, app_paths) == []
