@@ -585,7 +585,7 @@ provides-extras = ["office-preview"]
 [package.metadata.requires-dev]
 contract = [
     { name = "httpx", specifier = ">=0.28.1" },
-    { name = "httpx-sse", specifier = ">=0.4.3" },
+    { name = "httpx-sse", specifier = "==0.4.3" },
     { name = "pytest", specifier = ">=9.0.3" },
 ]
 dev = [
