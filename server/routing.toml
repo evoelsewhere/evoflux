@@ -1,7 +1,24 @@
 # Routing table for the evoflux-server gateway (design sections 3.1 and 3.4).
-# Longest matching prefix wins; unmatched routes go to Python. All units
-# remain Python-owned until their owner-approved cutover. Pin breakers and
-# reverse dependencies are documented in CUTOVER_UNITS.md.
+# All units remain Python-owned until their owner-approved cutover. Pin
+# breakers and reverse dependencies are documented in CUTOVER_UNITS.md.
+#
+# Matching contract (scripts/migration/check_board.py is the reference; the
+# gateway's routing.rs must reproduce it exactly):
+#   * A route is split into "/" segments. A trailing "/**" covers the prefix
+#     itself and everything below it; any other route is an exact path.
+#   * "{name}" matches exactly one non-empty path segment. "{name:path}" as the
+#     last segment matches the rest of the path (one or more segments).
+#   * Every other segment matches only itself, case-sensitively.
+#   * When several routes match a request, the most specific wins, ranked by:
+#     1. more segments in the route (without the "/**");
+#     2. then more literal (non-"{...}") segments;
+#     3. then an exact route over a "/**" route.
+#     So "/api/team/workspace/files/**" beats "/api/team/{session_id}/files/**"
+#     for "/api/team/workspace/files/read", and a request with a real session id
+#     reaches "/api/team/{session_id}/terminal/**" rather than "/api/team/**".
+#   * A request that matches no route goes to Python. The "/**" catch-all (the
+#     packaged web UI) must never be what serves an "/api" path.
+#   * The same route in two units is an error.
 
 [[unit]]
 name = "edge-stateless"

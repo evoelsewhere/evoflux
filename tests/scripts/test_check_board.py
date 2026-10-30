@@ -561,3 +561,12 @@ def test_templated_session_routes_land_in_their_units_not_agent_runtime(
 
     assert checked >= 20
     assert check_board.check_concrete_routes(units, app_paths) == []
+
+
+def test_path_param_as_last_segment_takes_the_rest_of_the_path() -> None:
+    units = [unit("f", ["/api/f/{file_path:path}"]), unit("a", ["/api/**"])]
+
+    assert check_board.owner_for(units, "/api/f/x") == "f"
+    assert check_board.owner_for(units, "/api/f/x/y/z.txt") == "f"
+    assert check_board.owner_for(units, "/api/f") == "a"
+    assert check_board.owner_for(units, "/api/f/") == "a"

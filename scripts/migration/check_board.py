@@ -160,10 +160,16 @@ def _specificity(pattern: str, path: str) -> tuple[int, int, int] | None:
     glob = pattern.endswith("/**")
     base = (pattern[:-3] if glob else pattern).split("/")
     parts = path.split("/")
-    if len(parts) < len(base) or (not glob and len(parts) != len(base)):
+    rest = bool(base) and base[-1].startswith("{") and base[-1].endswith(":path}")
+    if len(parts) < len(base) or (not glob and not rest and len(parts) != len(base)):
         return None
     literals = 0
-    for want, got in zip(base, parts):
+    for index, (want, got) in enumerate(zip(base, parts)):
+        if _is_param(want) and want.endswith(":path}") and index == len(base) - 1:
+            # {name:path} as the last segment takes the rest of the path.
+            if not any(parts[index:]):
+                return None
+            return (len(base), literals, 0 if glob else 1)
         if _is_param(want):
             if not got:
                 return None
