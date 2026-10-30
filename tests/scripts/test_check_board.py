@@ -42,6 +42,45 @@ def unit(name: str, routes: list[str], services: list[str] | None = None):
     return check_board.Unit(name, "python", tuple(routes), tuple(services or ()))
 
 
+def test_split_unit_requires_valid_pin_breaker() -> None:
+    missing = unit("settings", ["/api/settings/**"])
+    assert check_board.check_pin_breakers([missing])
+    assert check_board.check_pin_breakers([unit("agent-runtime", [])]) == []
+    bad = check_board.Unit("settings", "python", (), (), ("none",))
+    assert check_board.check_pin_breakers([bad])
+    good = check_board.Unit("settings", "python", (), (), ("adapter:settings",))
+    assert check_board.check_pin_breakers([good]) == []
+
+
+def test_duplicate_route_in_distinct_units_is_rejected() -> None:
+    units = [unit("one", ["/api/a/**"]), unit("two", ["/api/a/**"])]
+    assert any(
+        "more than one unit" in error
+        for error in check_board.check_routes_assigned(units, ["/api/a"])
+    )
+
+
+def test_webbridge_agent_ingress_stays_with_python_loop() -> None:
+    units = check_board.load_routing(check_board.ROUTING)
+    assert (
+        check_board.owner_for(
+            units, "/api/team/webbridge/sessions/{session_id}/messages"
+        )
+        == "agent-runtime"
+    )
+    assert (
+        check_board.owner_for(units, "/api/team/webbridge/status")
+        == "webbridge-browser"
+    )
+    assert (
+        check_board.owner_for(units, "/api/team/workspace/git/ai/generate")
+        == "agent-runtime"
+    )
+    assert (
+        check_board.owner_for(units, "/api/team/workspace/git/status") == "git-coding"
+    )
+
+
 @pytest.fixture
 def app_paths(tmp_path, monkeypatch) -> list[str]:
     """Route paths of an app that always has the web UI mounted."""

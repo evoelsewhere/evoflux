@@ -1,86 +1,122 @@
-# Routing table for the evoflux-server gateway (design §3, §3.1).
-#
-# One [[unit]] per cutover unit. owner = "python" | "rust" | "shadow".
-# A route ending in /** covers the prefix and everything below it; any other
-# route is an exact path. The longest matching route wins, so a unit may carve
-# a sub-prefix out of a broader one (/api/health/live out of /api/health).
-# Unmatched paths go to Python. services lists the lifespan services the
-# gateway disables in Python (EVOFLUX_DISABLE_SERVICES) once the unit is rust.
-#
-# Why each route and service is in its unit: CUTOVER_UNITS.md.
-# Changing an owner is a cutover and needs owner approval (design §6.2).
+# Routing table for the evoflux-server gateway (design sections 3.1 and 3.4).
+# Longest matching prefix wins; unmatched routes go to Python. All units
+# remain Python-owned until their owner-approved cutover. Pin breakers and
+# reverse dependencies are documented in CUTOVER_UNITS.md.
 
 [[unit]]
 name = "edge-stateless"
 owner = "python"
-routes = [
-  "/api/health/live/**",
-  "/api/quote/**",
-  "/api/commands/**",
-  "/api/snippets/**",
-]
+pin_breakers = ["adapter:edge-stateless"]
+routes = ["/api/health/live/**", "/api/quote/**", "/api/commands/**", "/api/snippets/**"]
 services = []
 
 [[unit]]
 name = "observability"
 owner = "python"
+pin_breakers = ["adapter:observability"]
 routes = ["/api/observability/**"]
 services = ["otel_retention"]
 
 [[unit]]
 name = "import"
 owner = "python"
+pin_breakers = ["adapter:import"]
 routes = ["/api/import/**"]
 services = []
 
 [[unit]]
 name = "remote-access"
 owner = "python"
+pin_breakers = ["adapter:remote-access"]
 routes = ["/api/remote-use/**"]
 services = []
 
 [[unit]]
-name = "platform-meta"
+name = "settings-providers"
 owner = "python"
-routes = [
-  "/metrics",
-  "/openapi.json",
-  "/docs",
-  "/docs/oauth2-redirect",
-  "/redoc",
-  # Packaged web UI (app/api/static_web.py), mounted last as the catch-all.
-  # Checks refuse to let it cover an /api route.
-  "/**",
-]
+pin_breakers = ["adapter:settings-providers"]
+routes = ["/api/settings/**", "/api/auth/**"]
+services = []
+
+[[unit]]
+name = "agents-skills"
+owner = "python"
+pin_breakers = ["adapter:agents-skills"]
+routes = ["/api/agents/**", "/api/skills/**"]
+services = ["agents_validation"]
+
+[[unit]]
+name = "plugins-mcp"
+owner = "python"
+pin_breakers = ["adapter:plugins-mcp"]
+routes = ["/api/plugins/**", "/api/mcp/**"]
+services = ["mcp", "plugin_mcp"]
+
+[[unit]]
+name = "git-coding"
+owner = "python"
+pin_breakers = ["adapter:git-coding"]
+routes = ["/api/team/workspace/git/**", "/api/team/workspace/worktrees/**", "/api/team/reviews/**", "/api/team/projects/**", "/api/team/workspace/change-sets/**", "/api/team/workspace/problems/**", "/api/team/workspace/editor/**"]
+services = ["standalone_coding_purge"]
+
+[[unit]]
+name = "terminal-processes"
+owner = "python"
+pin_breakers = ["adapter:terminal-processes"]
+routes = ["/api/team/{session_id}/terminal/**", "/api/team/{session_id}/terminals/**", "/api/team/processes/**", "/api/team/preview/**", "/api/team/workspace/watch/**", "/api/team/{session_id}/files/watch/**"]
+services = []
+
+[[unit]]
+name = "memory-search"
+owner = "python"
+pin_breakers = ["adapter:memory-search"]
+routes = ["/api/wiki/**", "/api/team/workspace/search-everywhere/**", "/api/team/search-app/**"]
+services = ["memory_backfill"]
+
+[[unit]]
+name = "documents-preview"
+owner = "python"
+pin_breakers = ["adapter:documents-preview"]
+routes = ["/api/team/{session_id}/document-preview/**", "/api/team/{session_id}/office-preview/**", "/api/team/{session_id}/document-versions/**", "/api/team/{session_id}/motion-review/**", "/api/team/{session_id}/media/**", "/api/team/office-runtime/**"]
+services = []
+
+[[unit]]
+name = "workspace-files"
+owner = "python"
+pin_breakers = ["adapter:workspace-files"]
+routes = ["/api/team/workspace/files/**", "/api/team/workspace/status/**", "/api/team/workspace/git-diff/**", "/api/team/workspace/lsp/**", "/api/team/workspace/language-servers/**", "/api/team/workspace/browse/**", "/api/team/workspace/tree/**", "/api/team/workspace/validate/**", "/api/team/{session_id}/files/**", "/api/team/{session_id}/workspace/**", "/api/team/{session_id}/uploads/**"]
+services = []
+
+[[unit]]
+name = "webbridge-browser"
+owner = "python"
+pin_breakers = ["adapter:webbridge-browser"]
+routes = ["/api/team/webbridge/**", "/api/team/browser/**", "/api/team/{session_id}/browser/**", "/api/team/{session_id}/computer/**", "/api/settings/webbridge/**", "/api/settings/computer-app/**"]
+services = ["webbridge_cleanup", "webbridge_artifact_cleanup"]
+
+[[unit]]
+name = "conductor"
+owner = "python"
+pin_breakers = ["adapter:conductor"]
+routes = ["/api/settings/conductor/**"]
+services = ["conductor"]
+
+[[unit]]
+name = "health-diagnostics"
+owner = "python"
+pin_breakers = ["adapter:health-diagnostics"]
+routes = ["/api/health/**", "/api/diagnostics/**"]
 services = []
 
 [[unit]]
 name = "agent-runtime"
 owner = "python"
-routes = [
-  "/api/team/**",
-  "/api/health/**",
-  "/api/diagnostics/**",
-  "/api/agents/**",
-  "/api/skills/**",
-  "/api/plugins/**",
-  "/api/mcp/**",
-  "/api/settings/**",
-  "/api/auth/**",
-  "/api/wiki/**",
-  "/api/scheduler/**",
-  "/api/dream/**",
-]
-services = [
-  "model_registry_refresh",
-  "mcp",
-  "plugin_mcp",
-  "conductor",
-  "agents_validation",
-  "standalone_coding_purge",
-  "scheduler",
-  "memory_backfill",
-  "dream_scheduler",
-  "webbridge_cleanup",
-  "webbridge_artifact_cleanup",
-]
+routes = ["/api/team/workspace/git/ai/**", "/api/team/webbridge/sessions/**", "/api/team/webbridge/interactions/**", "/api/scheduler/**", "/api/dream/**", "/api/team/chat/**", "/api/team/leads/**", "/api/team/agents/**", "/api/team/commands/**", "/api/team/sessions/**", "/api/team/session-folders/**", "/api/team/suggested-tasks/**", "/api/team/{session_id}/history/**", "/api/team/{session_id}/side-chat/**", "/api/team/{session_id}/stream/**", "/api/team/{session_id}/goal/**", "/api/team/{session_id}/permissions/**", "/api/team/{session_id}/questions/**", "/api/team/**"]
+services = ["model_registry_refresh", "scheduler", "dream_scheduler"]
+
+[[unit]]
+name = "platform-meta"
+owner = "python"
+pin_breakers = ["adapter:platform-meta"]
+routes = ["/metrics", "/openapi.json", "/docs", "/docs/oauth2-redirect", "/redoc", "/**"]
+services = []
