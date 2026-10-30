@@ -23,10 +23,41 @@ def test_build_services_propagates_api_port_to_web_and_desktop() -> None:
     services = run_dev.build_services(8123, True, "/bin/bun", "/bin/cargo")
 
     assert [service.name for service in services] == ["api", "web", "desktop"]
-    assert services[0].command[-1] == "--no-access-log"
     assert services[0].command[services[0].command.index("--port") + 1] == "8123"
     assert services[1].env["VITE_API_PROXY_TARGET"] == "http://127.0.0.1:8123"
     assert services[2].env["EVOFLUX_DESKTOP_DEV_BACKEND_URL"] == "http://127.0.0.1:8123"
+
+
+def test_desktop_api_runs_python_behind_the_gateway() -> None:
+    services = run_dev.build_services(8123, True, "/bin/bun", "/bin/cargo")
+    api = services[0]
+
+    assert api.command[:8] == [
+        "/bin/cargo",
+        "run",
+        "--manifest-path",
+        str(run_dev.ROOT / "server" / "Cargo.toml"),
+        "-p",
+        "evoflux-server",
+        "--",
+        "serve",
+    ]
+    assert api.command[api.command.index("--port") + 1] == "8123"
+    assert api.command[api.command.index("--parent-pid") + 1] == str(os.getpid())
+    assert api.command[api.command.index("--python-root") + 1] == sys.prefix
+    # Python inherits the cwd and imports ``app`` from the checkout, as with uvicorn.
+    assert api.cwd == run_dev.ROOT
+    assert api.env["EVOFLUX_GATEWAY_PYTHON_BIN"] == sys.executable
+    assert api.env["EVOFLUX_GATEWAY_CLI_ENTRY"] == str(
+        run_dev.ROOT / "app" / "cli" / "__main__.py"
+    )
+    assert Path(api.env["EVOFLUX_GATEWAY_SITE_PACKAGES"]).is_dir()
+
+
+def test_web_only_api_keeps_uvicorn_reload() -> None:
+    api = run_dev.build_services(8123, False, "/bin/bun", None)[0]
+
+    assert "--reload" in api.command
 
 
 def test_supervisor_stops_siblings_when_a_service_fails(tmp_path: Path) -> None:

@@ -1,11 +1,13 @@
-//! Python sidecar supervisor.
+//! Backend sidecar supervisor.
 //!
-//! Spawns `python -m app.cli serve --handshake --generate-token
-//! --parent-pid <us>`, parses the first JSON handshake line from stdout,
-//! and exposes the child for graceful shutdown.
+//! Spawns the Rust gateway, `evoflux-server serve --handshake
+//! --generate-token --parent-pid <us>`, which starts the Python backend
+//! behind it. Parses the first JSON handshake line from stdout and exposes
+//! the child for graceful shutdown.
 //!
 //! Layout expectations (paths relative to the bundled resources dir):
 //!
+//! - `sidecar/evoflux-server[.exe]`: the gateway (`sidecar_gateway.rs`).
 //! - `sidecar/python/bin/python3`: the bundled CPython interpreter.
 //! - `sidecar/site-packages/`: pre-installed evoflux + dependencies.
 //! - `sidecar/site-packages/app/_web_dist/`: the built React frontend that the
@@ -15,6 +17,7 @@
 //! gates as defensive portability for any future Windows desktop revival;
 //! it is dead today because CI does not build for Windows.
 
+use crate::sidecar_gateway::{gateway_args, gateway_env, resolve_gateway_bin};
 use anyhow::{anyhow, Context, Result};
 use serde::Deserialize;
 use std::fs::OpenOptions;
@@ -45,15 +48,22 @@ pub struct Sidecar {
 }
 
 impl Sidecar {
-    pub fn spawn(app: &AppHandle) -> Result<Self> {
-        Self::spawn_with_desktop_token(app, None)
+    /// `attempt` is 1-based; retries give Python a shorter wait (see
+    /// `sidecar_gateway::gateway_env`).
+    pub fn spawn(app: &AppHandle, attempt: u32) -> Result<Self> {
+        Self::spawn_with_desktop_token(app, None, attempt)
     }
 
-    pub fn spawn_with_desktop_token(app: &AppHandle, desktop_token: Option<&str>) -> Result<Self> {
+    pub fn spawn_with_desktop_token(
+        app: &AppHandle,
+        desktop_token: Option<&str>,
+        attempt: u32,
+    ) -> Result<Self> {
         let resource_dir = app.path().resource_dir().context("locate resource dir")?;
         let sidecar_root = resource_dir.join("sidecar");
 
-        let python_bin = resolve_python_bin(&sidecar_root)
+        let gateway_bin = resolve_gateway_bin(&sidecar_root)?;
+        resolve_python_bin(&sidecar_root)
             .with_context(|| format!("locate python binary under {}", sidecar_root.display()))?;
 
         let log_dir = app.path().app_log_dir().context("resolve app log dir")?;
@@ -63,16 +73,15 @@ impl Sidecar {
         let parent_pid = std::process::id();
 
         log::info!(
-            "spawning sidecar: {} (parent_pid={}, log={})",
-            python_bin.display(),
+            "spawning sidecar: {} (attempt={}, parent_pid={}, log={})",
+            gateway_bin.display(),
+            attempt,
             parent_pid,
             log_path.display()
         );
 
-        // Explicit script path (not ``-m app.cli``) so we know exactly
-        // which CLI module is invoked. ``-m`` would let Python search
-        // ``sys.path`` and could surface a vendored ``app.cli`` from a
-        // user-extended directory later.
+        // The gateway starts Python from this layout too, but reports a
+        // broken bundle with less context, so check the Python half here.
         let cli_entry = sidecar_root
             .join("site-packages")
             .join("app")
@@ -85,55 +94,19 @@ impl Sidecar {
             ));
         }
 
-        let site_packages = sidecar_root.join("site-packages");
-
-        // Bootstrap ``sys.path`` from inside the child instead of via the
-        // ``PYTHONPATH`` environment variable.
-        //
-        // Background:  ``PYTHONPATH`` is inherited by every grandchild
-        // process the agent spawns. Another Python interpreter from a user
-        // tool, pipx, Homebrew, etc. would then find *our* pure-Python
-        // packages on ``sys.path`` before its own.  When that package
-        // tries to load a native extension built for our ABI
-        // (``pydantic_core`` cpython-3.12 vs. the tool's cpython-3.12),
-        // the import crashes with ``ModuleNotFoundError`` because
-        // Python's import system has already committed to our package
-        // directory.
-        //
-        // ``PYTHONHOME`` is still intentionally NOT set — python-build-
-        // standalone is relocatable and finds its own stdlib from the
-        // executable path; setting PYTHONHOME would leak into every
-        // subprocess and override the user's other Python interpreters'
-        // stdlib resolution.
-        //
-        // Paths arrive via ``sys.argv[1]`` (site-packages dir) and
-        // ``sys.argv[2]`` (CLI entry) so we never embed them into Python
-        // source — that would break on directories containing quotes.
-        // ``sys.argv`` is then rewritten to look like a normal
-        // ``python <entry> serve …`` invocation before ``runpy``.
-        let bootstrap = "import sys, runpy, site; \
-             _site = sys.argv.pop(1); \
-             _entry = sys.argv.pop(1); \
-             site.addsitedir(_site); \
-             sys.argv[0] = _entry; \
-             runpy.run_path(_entry, run_name='__main__')";
-
-        let mut cmd = Command::new(&python_bin);
-        cmd.arg("-c")
-            .arg(bootstrap)
-            .arg(site_packages.as_os_str())
-            .arg(cli_entry.as_os_str())
-            .arg("serve")
-            .arg("--host")
-            .arg("127.0.0.1")
-            .arg("--port")
-            .arg("0")
-            .arg("--handshake");
+        // `evoflux-server serve` takes Python's `serve` flags and starts
+        // Python from `EVOFLUX_SIDECAR_ROOT` with the ``site.addsitedir``
+        // bootstrap this shell used before (no ``PYTHONPATH``, no
+        // ``PYTHONHOME``). Python inherits the gateway's environment, so the
+        // desktop token, helper paths and ``APP_ENV`` set below still reach it.
+        let mut cmd = Command::new(&gateway_bin);
+        cmd.args(gateway_args(desktop_token.is_none(), parent_pid));
+        for (name, value) in gateway_env(&sidecar_root, attempt) {
+            cmd.env(name, value);
+        }
 
         if let Some(token) = desktop_token {
             cmd.env("EVOFLUX_DESKTOP_TOKEN", token);
-        } else {
-            cmd.arg("--generate-token");
         }
         if let Some(tailnet_bin) = resolve_tailnet_bin(&sidecar_root) {
             log::info!(
@@ -176,9 +149,7 @@ impl Sidecar {
             .try_clone()
             .context("clone backend log handle for child stderr")?;
 
-        cmd.arg("--parent-pid")
-            .arg(parent_pid.to_string())
-            .env("PYTHONUNBUFFERED", "1")
+        cmd.env("PYTHONUNBUFFERED", "1")
             .env("APP_ENV", app_env)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
@@ -210,7 +181,7 @@ impl Sidecar {
             cmd.creation_flags(CREATE_NO_WINDOW | CREATE_SUSPENDED);
         }
 
-        let mut child = cmd.spawn().context("spawn python sidecar")?;
+        let mut child = cmd.spawn().context("spawn backend gateway")?;
 
         #[cfg(windows)]
         {
