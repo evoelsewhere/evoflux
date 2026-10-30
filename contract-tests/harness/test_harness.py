@@ -105,6 +105,41 @@ def test_lists_sorted_only_at_named_paths() -> None:
     assert normalize(body, rules) == {"sorted": ["a", "b"], "kept": ["b", "a"]}
 
 
+@pytest.mark.parametrize(
+    ("a", "b"),
+    [
+        ("2026-10-30T05:00:00", "2031-01-02T23:59:59"),
+        ("2026-10-30T05:00:00Z", "2031-01-02T23:59:59Z"),
+        ("2026-10-30T05:00:00+07:00", "2031-01-02T23:59:59-05:00"),
+        ("2026-10-30T05:00:00.123456Z", "2031-01-02T23:59:59.9Z"),
+        ("2026-10-30 05:00:00", "2031-01-02 23:59:59"),
+        ("2026-10-30", "2031-01-02"),
+    ],
+)
+def test_same_timestamp_class_normalizes_equal(a: str, b: str) -> None:
+    assert normalize({"t": a}) == normalize({"t": b})
+    assert "<ts:" in normalize({"t": a})["t"]
+
+
+@pytest.mark.parametrize(
+    ("a", "b"),
+    [
+        ("2026-10-30T05:00:00", "2026-10-30T05:00:00Z"),
+        ("2026-10-30T05:00:00Z", "2026-10-30T05:00:00+00:00"),
+        ("2026-10-30T05:00:00", "2026-10-30T05:00:00.000"),
+        ("2026-10-30T05:00:00", "2026-10-30 05:00:00"),
+        ("2026-10-30", "2026-10-30T05:00:00"),
+    ],
+)
+def test_different_timestamp_class_stays_different(a: str, b: str) -> None:
+    assert normalize({"t": a}) != normalize({"t": b})
+
+
+def test_timestamp_inside_text_keeps_surrounding_text() -> None:
+    assert normalize("at 2026-10-30T05:00:00Z ok") == "at <ts:utc-z> ok"
+    assert normalize("v3.1.1") == "v3.1.1"
+
+
 # --- openapi_diff -------------------------------------------------------------
 
 
