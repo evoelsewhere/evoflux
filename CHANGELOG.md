@@ -7,7 +7,7 @@ All notable changes to EvoFlux are documented in this file.
 ### Changed
 
 - Added a v3.1.1 responsiveness diagnostic and Windows freeze investigation, separating cold startup from the approved large repository open and other workloads.
-- Remaining v4 migration tasks now land directly on the migration branch after a local review by a second agent, instead of one pull request per task (`documents/plans/rust-migration-execution.md`). No app behaviour changes.
+- Remaining v4 migration tasks now land directly on the migration branch after a local review by a second agent, instead of one pull request per task, with a usage budget and model ladder per agent (`documents/plans/rust-migration-execution.md`). No app behaviour changes.
 - Regrouped v4 migration cutover units around Python adapters and recorded their reverse dependencies, so backend areas can migrate independently while agent-loop routes stay together. Route patterns with a `{param}` segment now match one path segment, so requests with real session ids reach the unit that owns them, and each unit names its pin breaker (`none`, `adapter:<unit>` and/or `file-lock:<name>`); `routing.toml` documents the exact matching order for the gateway.
 - Added a black-box contract test harness and OpenAPI comparison for the v4 migration, with isolated backend settings, SSE deadlines, timestamp format checks, preserved OpenAPI literal values and Windows backend process cleanup.
 - Added a Rust backend workspace and migration quality checks for contributors, including lane test counts, path ownership checks, lint verification, cutover branch path rules driven by a new `adapter_call_sites` column in `server/CUTOVER_UNITS.md`, and a Python gate baseline script that fails only on new Ruff, ty and pytest failures.

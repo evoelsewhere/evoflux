@@ -49,6 +49,35 @@ Choose the cheapest model that can do the task in one pass. A failed pass on a c
 
 **Commit rules are unchanged:** Conventional Commits, a CHANGELOG addition under `[Unreleased]`, UTF-8, no AI trailers, and never weaken a test or gate.
 
+## Usage budget (owner decision, 2026-10-30)
+
+There are three separate pools. Spend each one on what it does best, and never let one pool sit idle while another runs out.
+
+| Pool | Spend on | Never on | Model ladder |
+|---|---|---|---|
+| **Desktop Claude** (orchestrator account) | decisions, short briefs, landing commits, owner questions | implementation, test runs, long reviews | Opus, in short turns; keep **≥ 40 % in reserve** |
+| **Claude CLI** (Team org account) | most implementation, plus fix rounds | — | Haiku: mechanical · Sonnet: default · Opus: gateway, server binary, auth, agent loop |
+| **Codex CLI** | Rust-heavy implementation, plus reviews of Claude's work | long multi-task threads | Luna/low: reviews and mechanical · Terra/medium: default · Sol or Terra/high: hardest Rust only |
+
+**Who reviews whom:** reviews go to the *other* pool's cheapest capable model. Codex Luna reviews Claude's Sonnet work. Claude CLI Sonnet reviews Codex's work. The desktop Opus reviewer is used only for auth, sandbox, the database lanes and the gateway.
+
+**Thread hygiene, the biggest saving:**
+- One **fresh** Codex thread or Claude CLI conversation per task. Resume (`codex exec resume`, `claude --continue`) only for that task's own fix rounds.
+- Never chain unrelated tasks onto one long thread, because each turn re-sends the whole history.
+
+**Brief and report limits:**
+- Briefs are at most 25 lines, and point to plan sections instead of copying them.
+- Reports are at most 5 lines. Logs, benchmarks and diffs go to files in `D:\evoelsewhere\codex-bridge\`.
+
+**Test runs:** focused tests while iterating, and the full gate once before review and once after the final rebase. Never rerun a suite whose inputs didn't change.
+
+**Thresholds** (the owner checks each pool's usage page):
+- At **50 %** left in a pool, that pool starts no new tasks; it only finishes what's in flight.
+- At **20 %** left, pause the pool and move its queue to another pool. The work stays in its worktree.
+- The orchestrator pauses at **40 %** left, leaving only status replies.
+
+**Parallelism cap:** at most 2 implementers per pool at once. More than that adds coordination turns faster than it adds finished work.
+
 ## Keeping context (token budget)
 
 - One long-lived CLI session per agent and lane, fed tasks one after another (Codex: `codex exec resume <id>`; Claude CLI: `claude --continue`). No new session per task.
