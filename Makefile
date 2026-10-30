@@ -1,6 +1,6 @@
 # Makefile for evoflux
 
-.PHONY: all run dev dev-web dev-desktop kill-dev-ports test validate-skills coverage migrate revision build-web build dist clean help
+.PHONY: all run dev dev-web dev-desktop kill-dev-ports test contract contract-all validate-skills coverage migrate revision build-web build dist clean help
 
 # Default target
 all: test
@@ -42,6 +42,13 @@ dev-desktop: ## Start backend, web UI, and Tauri desktop app
 
 test: ## Run tests
 	uv run pytest -q
+
+contract: ## Run one area of the black-box contract suite (usage: make contract AREA=health TARGET=python|rust|gateway)
+	@test -n "$(AREA)" || { echo "error: set AREA=<directory under contract-tests/>"; exit 1; }
+	TARGET=$(or $(TARGET),python) uv run --group contract pytest contract-tests/$(AREA) -q --no-cov
+
+contract-all: ## Run the whole contract suite against one backend (usage: make contract-all TARGET=python|rust|gateway)
+	TARGET=$(or $(TARGET),python) uv run --group contract pytest contract-tests -q --no-cov
 
 validate-skills: ## Check bundled Agent Skills against the spec and best practices
 	uv run python scripts/validate_skills.py --strict-warnings

@@ -1,0 +1,142 @@
+"""Start a real backend process and read its ``EVOFLUX_HANDSHAKE`` line."""
+
+from __future__ import annotations
+
+import json
+import os
+import queue
+import shutil
+import subprocess
+import sys
+import threading
+from collections import deque
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Literal
+
+Target = Literal["python", "rust", "gateway"]
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+RUST_BINARY = (
+    REPO_ROOT
+    / "server"
+    / "target"
+    / "debug"
+    / ("evoflux-server.exe" if os.name == "nt" else "evoflux-server")
+)
+HANDSHAKE_PREFIX = "EVOFLUX_HANDSHAKE "
+HANDSHAKE_TIMEOUT_S = 90.0
+_LOG_TAIL_LINES = 200
+
+
+class BackendStartError(RuntimeError):
+    pass
+
+
+@dataclass
+class Backend:
+    base_url: str
+    token: str
+    pid: int
+    process: subprocess.Popen[str]
+    log: deque[str]
+
+    def stop(self) -> None:
+        if self.process.poll() is None:
+            self.process.terminate()
+            try:
+                self.process.wait(timeout=15)
+            except subprocess.TimeoutExpired:
+                self.process.kill()
+                self.process.wait(timeout=10)
+
+    def log_tail(self) -> str:
+        return "\n".join(self.log)
+
+
+def _command(target: Target) -> list[str]:
+    serve_flags = [
+        "--handshake",
+        "--generate-token",
+        "--port",
+        "0",
+        "--parent-pid",
+        str(os.getpid()),
+    ]
+    if target == "python":
+        return [sys.executable, "-m", "app.cli", "serve", *serve_flags]
+    # rust and gateway are the same binary; routing.toml decides which one runs.
+    if not RUST_BINARY.exists():
+        raise BackendStartError(
+            f"TARGET={target} needs {RUST_BINARY}; it is built by Phase 0 task 11."
+        )
+    return [str(RUST_BINARY), "serve", *serve_flags]
+
+
+def start_backend(
+    target: Target, data_dir: Path, db_fixture: Path | None = None
+) -> Backend:
+    """Start ``target`` with fresh data/config/state/cache dirs under ``data_dir``.
+
+    ``db_fixture`` is copied to ``<data>/evoflux.db`` before launch.
+    """
+    dirs = {
+        "EVOFLUX_DATA_DIR": data_dir / "data",
+        "EVOFLUX_CONFIG_DIR": data_dir / "config",
+        "EVOFLUX_STATE_DIR": data_dir / "state",
+        "EVOFLUX_CACHE_DIR": data_dir / "cache",
+        "EVOFLUX_WORKSPACE_DIR": data_dir / "workspace",
+        "EVOFLUX_WIKI_DIR": data_dir / "wiki",
+    }
+    for path in dirs.values():
+        path.mkdir(parents=True, exist_ok=True)
+    if db_fixture is not None:
+        shutil.copyfile(db_fixture, dirs["EVOFLUX_DATA_DIR"] / "evoflux.db")
+
+    env = {k: v for k, v in os.environ.items() if not k.startswith("EVOFLUX_")}
+    env.update({k: str(v) for k, v in dirs.items()})
+    env["EVOFLUX_MODEL_REGISTRY_REFRESH"] = "false"
+    env["APP_ENV"] = "production"
+    env["PYTHONUNBUFFERED"] = "1"
+    env["PYTHONIOENCODING"] = "utf-8"
+
+    process = subprocess.Popen(
+        _command(target),
+        cwd=REPO_ROOT,
+        env=env,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    log: deque[str] = deque(maxlen=_LOG_TAIL_LINES)
+    handshakes: queue.Queue[dict | None] = queue.Queue()
+
+    def pump() -> None:
+        assert process.stdout is not None
+        for raw in process.stdout:
+            line = raw.rstrip("\r\n")
+            log.append(line)
+            if line.startswith(HANDSHAKE_PREFIX):
+                handshakes.put(json.loads(line[len(HANDSHAKE_PREFIX) :]))
+        handshakes.put(None)
+
+    threading.Thread(target=pump, name="backend-log", daemon=True).start()
+    try:
+        info = handshakes.get(timeout=HANDSHAKE_TIMEOUT_S)
+    except queue.Empty:
+        info = None
+    if info is None:
+        process.kill()
+        raise BackendStartError(
+            f"{target} backend gave no handshake:\n" + "\n".join(log)
+        )
+    return Backend(
+        base_url=f"http://127.0.0.1:{info['port']}",
+        token=info["token"],
+        pid=int(info["pid"]),
+        process=process,
+        log=log,
+    )
