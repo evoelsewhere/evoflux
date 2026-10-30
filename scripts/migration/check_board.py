@@ -69,7 +69,7 @@ GATEWAY_SERVICES = (
     "webbridge_artifact_cleanup",
 )
 
-_BREAKER_RE = re.compile(r"^(adapter|file-lock):[a-z0-9]+(-[a-z0-9]+)*$")
+_BREAKER_RE = re.compile(r"^(none|(adapter|file-lock):[a-z0-9]+(-[a-z0-9]+)*)$")
 _LANE_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 
 
@@ -144,18 +144,38 @@ def registered_route_paths(app: Any) -> list[str]:
 # --- route matching ----------------------------------------------------------
 
 
-def _specificity(pattern: str, path: str) -> int | None:
-    """Length of the match when ``pattern`` covers ``path``, else None."""
-    if pattern.endswith("/**"):
-        base = pattern[:-3]
-        if path == base or path.startswith(base + "/"):
-            return len(base)
+def _is_param(segment: str) -> bool:
+    return segment.startswith("{") and segment.endswith("}")
+
+
+def _specificity(pattern: str, path: str) -> tuple[int, int, int] | None:
+    """How well ``pattern`` covers ``path``; None when it does not.
+
+    A ``{name}`` segment matches exactly one path segment, so a pattern such as
+    ``/api/team/{session_id}/terminal/**`` covers ``/api/team/abc/terminal/x``.
+    The most specific pattern wins: more segments, then more literal segments
+    (so ``/api/team/workspace/files/**`` beats ``/api/team/{session_id}/files/**``
+    for ``/api/team/workspace/files/read``), then an exact pattern over a glob.
+    """
+    glob = pattern.endswith("/**")
+    base = (pattern[:-3] if glob else pattern).split("/")
+    parts = path.split("/")
+    if len(parts) < len(base) or (not glob and len(parts) != len(base)):
         return None
-    return len(pattern) + 1 if path == pattern else None
+    literals = 0
+    for want, got in zip(base, parts):
+        if _is_param(want):
+            if not got:
+                return None
+        elif want == got:
+            literals += 1
+        else:
+            return None
+    return (len(base), literals, 0 if glob else 1)
 
 
 def _best_match(patterns: list[tuple[str, str]], path: str) -> tuple[str, str] | None:
-    best: tuple[int, str, str] | None = None
+    best: tuple[tuple[int, int, int], str, str] | None = None
     for pattern, tag in patterns:
         score = _specificity(pattern, path)
         if score is not None and (best is None or score > best[0]):
@@ -182,6 +202,11 @@ def owner_for(units: list[Unit], path: str) -> str | None:
     return _best([(r, u.name) for u in units for r in u.routes], path)
 
 
+def concrete_path(path: str) -> str:
+    """Replace ``{name}`` and ``{name:path}`` segments with concrete values."""
+    return re.sub(r"\{[^/}]+:path\}", "a/b", re.sub(r"\{[^/}:]+\}", "abc", path))
+
+
 def _pattern_base(pattern: str) -> str:
     return pattern[:-3] if pattern.endswith("/**") else pattern
 
@@ -203,6 +228,25 @@ def check_routes_assigned(units: list[Unit], paths: list[str]) -> list[str]:
         match = _best_match(unit_patterns, path)
         if match is None or _only_catch_all(match, path):
             errors.append(f"route {path} has no unit in routing.toml")
+    return errors
+
+
+def check_concrete_routes(units: list[Unit], paths: list[str]) -> list[str]:
+    """A request with real ids must reach the same unit as its route template."""
+    errors = []
+    for path in paths:
+        if "{" not in path:
+            continue
+        concrete = concrete_path(path)
+        template_unit, concrete_unit = (
+            owner_for(units, path),
+            owner_for(units, concrete),
+        )
+        if template_unit != concrete_unit:
+            errors.append(
+                f"route {path} resolves to unit {template_unit} but {concrete} "
+                f"resolves to {concrete_unit}"
+            )
     return errors
 
 
@@ -235,9 +279,16 @@ def check_pin_breakers(units: list[Unit]) -> list[str]:
         for breaker in u.pin_breakers:
             if not _BREAKER_RE.match(breaker):
                 errors.append(
-                    f"unit {u.name}: pin breaker {breaker!r} must be "
-                    "adapter:<area> or file-lock:<name>"
+                    f"unit {u.name}: pin breaker {breaker!r} must be none, "
+                    "adapter:<unit> or file-lock:<name>"
                 )
+            elif breaker.startswith("adapter:") and breaker != f"adapter:{u.name}":
+                errors.append(
+                    f"unit {u.name}: adapter breaker {breaker!r} must be "
+                    f"adapter:{u.name}"
+                )
+        if "none" in u.pin_breakers and len(u.pin_breakers) > 1:
+            errors.append(f"unit {u.name}: 'none' cannot be combined with a breaker")
     return errors
 
 
@@ -406,26 +457,40 @@ def check_cutover_document(units: list[Unit], text: str) -> list[str]:
 
 def _check_breaker_table(units: list[Unit], text: str) -> list[str]:
     match = re.search(r"^## Units\s*$(.*?)(?=^#{2,3} |\Z)", text, re.S | re.M)
-    documented: dict[tuple[str, str], str] = {}
+    rows: dict[str, list[str]] = {}
     if match:
         for cells in _table_rows(match.group(1))[1:]:
             if len(cells) >= 6:
-                for breaker in cells[2].split(","):
-                    if breaker.strip() != "-":
-                        documented[(cells[0], breaker.strip())] = cells[5]
+                rows[cells[0]] = cells
     errors = []
-    expected = {(u.name, b) for u in units for b in u.pin_breakers}
-    for unit, breaker in sorted(expected):
-        if (unit, breaker) not in documented:
+    for u in units:
+        cells = rows.get(u.name)
+        if cells is None:
+            errors.append(f"CUTOVER_UNITS.md Units table is missing unit {u.name}")
+            continue
+        documented = {b.strip() for b in cells[2].split(",") if b.strip() != "-"}
+        if documented != set(u.pin_breakers):
             errors.append(
-                f"CUTOVER_UNITS.md is missing pin breaker {breaker} of {unit}"
+                f"CUTOVER_UNITS.md pin_breaker of {u.name} is {sorted(documented)}, "
+                f"routing.toml has {sorted(u.pin_breakers)}"
             )
-        elif not documented[(unit, breaker)]:
-            errors.append(f"CUTOVER_UNITS.md pin breaker {breaker} of {unit} is empty")
-    for unit, breaker in sorted(set(documented) - expected):
-        errors.append(
-            f"CUTOVER_UNITS.md lists pin breaker {breaker} of {unit} that routing.toml lacks"
-        )
+        reverse_deps, call_sites = cells[3], cells[4]
+        if call_sites != EMPTY and reverse_deps in (EMPTY, ""):
+            errors.append(
+                f"CUTOVER_UNITS.md unit {u.name} lists adapter_call_sites but no "
+                "reverse_deps"
+            )
+        if call_sites != EMPTY and not any(
+            b.startswith("adapter:") for b in u.pin_breakers
+        ):
+            errors.append(
+                f"CUTOVER_UNITS.md unit {u.name} lists adapter_call_sites but has "
+                "no adapter breaker"
+            )
+        if not cells[5]:
+            errors.append(f"CUTOVER_UNITS.md unit {u.name} has no rationale")
+    for name in sorted(set(rows) - {u.name for u in units}):
+        errors.append(f"CUTOVER_UNITS.md lists unit {name} that routing.toml lacks")
     return errors
 
 
@@ -469,6 +534,7 @@ def main(argv: list[str] | None = None) -> int:
 
         paths = registered_route_paths(create_app())
         errors += check_routes_assigned(units, paths)
+        errors += check_concrete_routes(units, paths)
         errors += check_lane_coverage(rows, units, paths)
 
     for error in errors:
