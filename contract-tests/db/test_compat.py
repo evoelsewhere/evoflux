@@ -8,7 +8,6 @@ import shutil
 import sqlite3
 import subprocess
 import sys
-import time
 from contextlib import closing
 from pathlib import Path
 
@@ -69,24 +68,12 @@ def run_rust(db: Path, seconds: int = 60) -> dict:
 
 
 def checkpoint(db: Path) -> None:
-    """Checkpoint WAL before the backend harness copies the database file.
-
-    The backend is force-killed first, and on Windows the first open can fail
-    with ``disk I/O error`` while the dead process's WAL index state is
-    released; a few retries cover that, a persistent failure still raises.
-    """
-    for attempt in range(5):
-        try:
-            with closing(sqlite3.connect(db, timeout=30)) as conn:
-                busy, _frames, _checkpointed = conn.execute(
-                    "PRAGMA wal_checkpoint(TRUNCATE)"
-                ).fetchone()
-            break
-        except sqlite3.OperationalError:
-            if attempt == 4:
-                raise
-            time.sleep(1)
-    assert busy == 0
+    """Checkpoint WAL before the backend harness copies the database file."""
+    with closing(sqlite3.connect(db, timeout=30)) as conn:
+        busy, _frames, _checkpointed = conn.execute(
+            "PRAGMA wal_checkpoint(TRUNCATE)"
+        ).fetchone()
+        assert busy == 0
 
 
 def verify_stock(db: Path) -> None:
