@@ -83,6 +83,12 @@ Repository = "https://github.com/evoelsewhere/evoflux"
 evoflux = "app.cli:main"
 
 [dependency-groups]
+contract = [
+    "httpx>=0.28.1",
+    # Pinned: contract-tests/sse.py imports httpx_sse._decoders, which is private.
+    "httpx-sse==0.4.3",
+    "pytest>=9.0.3",
+]
 dev = [
     "mutmut>=3.7.0",
     "pytest>=9.0.3",
