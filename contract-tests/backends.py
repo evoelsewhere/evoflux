@@ -56,12 +56,27 @@ class Backend:
 
     def stop(self) -> None:
         if self.process.poll() is None:
-            self.process.terminate()
-            try:
+            if os.name == "nt":
+                # The venv launcher can own a Python child. Terminate the
+                # entire tree and wait before the temp directory is removed.
+                result = subprocess.run(
+                    ["taskkill", "/PID", str(self.process.pid), "/T", "/F"],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                if result.returncode and self.process.poll() is None:
+                    raise RuntimeError(
+                        f"backend tree termination failed: {result.stderr}"
+                    )
                 self.process.wait(timeout=15)
-            except subprocess.TimeoutExpired:
-                self.process.kill()
-                self.process.wait(timeout=10)
+            else:
+                self.process.terminate()
+                try:
+                    self.process.wait(timeout=15)
+                except subprocess.TimeoutExpired:
+                    self.process.kill()
+                    self.process.wait(timeout=10)
 
     def log_tail(self) -> str:
         return "\n".join(self.log)
@@ -73,9 +88,12 @@ def _command(target: Target) -> list[str]:
         "--generate-token",
         "--port",
         "0",
-        "--parent-pid",
-        str(os.getpid()),
     ]
+    # Python v3's Windows parent watcher calls os.kill(pid, 0), which sends a
+    # console control event instead of checking process existence. It can
+    # interrupt pytest. Windows cleanup is performed by Backend.stop instead.
+    if not (os.name == "nt" and target == "python"):
+        serve_flags.extend(["--parent-pid", str(os.getpid())])
     if target == "python":
         return [sys.executable, "-m", "app.cli", "serve", *serve_flags]
     # rust and gateway are the same binary; routing.toml decides which one runs.
@@ -140,6 +158,7 @@ def start_backend(
         text=True,
         encoding="utf-8",
         errors="replace",
+        creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
     )
     log: deque[str] = deque(maxlen=_LOG_TAIL_LINES)
     handshakes: queue.Queue[dict | None] = queue.Queue()
@@ -159,7 +178,7 @@ def start_backend(
     except queue.Empty:
         info = None
     if info is None:
-        process.kill()
+        Backend("", "", process.pid, process, log).stop()
         raise BackendStartError(
             f"{target} backend gave no handshake:\n" + "\n".join(log)
         )
