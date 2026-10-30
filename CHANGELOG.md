@@ -6,6 +6,7 @@ All notable changes to EvoFlux are documented in this file.
 
 ### Changed
 
+- Added the Phase 1 (pilot) plan for the v4 migration (`documents/plans/rust-migration-phase-1-plan.md`). It covers porting and cutting over the `edge-stateless` and `observability` units, with `import` cut over only if the owner clears it. Each task has its lanes, shadow or replay runs, cutovers, 24 h watches, the Phase 0 follow-ups those need (shadow mode in `serve`, database metrics, CI on pushes and on Linux/macOS, a packaged build with the web UI), and an agent, model and reviewer. No app behaviour changes.
 - Added the Phase 0 exit report for the v4 migration (gate results, freeze diagnosis, SQLite decision, proxy choice, performance baseline, open risks and a daily-use checklist) and opened the Phase 1 migration lanes. No app behaviour changes.
 - Added SQLite compatibility, two-process stress, and write-lane benchmarks (including a multi-statement chat-turn workload); the concurrent lane uses two writers, and the write lanes run their own WAL checkpoints so the `-wal` file stays bounded (about 16 MB) even while several writers overlap. Concurrent Rust writes are off by default for every write path, so FIFO is the default until they are re-benchmarked; set `EVOFLUX_DB_CONCURRENT_WRITES=on` to enable them.
 - Added a v3.1.1 responsiveness diagnostic and Windows freeze investigation, separating cold startup from the approved large repository open and other workloads.
