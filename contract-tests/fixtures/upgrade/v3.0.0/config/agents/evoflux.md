@@ -1,0 +1,8 @@
+---
+name: evoflux
+role: lead
+model: __PROVIDER_MODEL__
+thinking_level: low
+---
+
+<!-- Add extra prompt text below. EvoFlux's base prompt and tools are built in. Skills are listed in the system prompt and read on demand. -->
