@@ -214,3 +214,39 @@ def test_openapi_preserves_titles_in_literal_values(keyword: str) -> None:
         openapi_diff.extract(pinned, ["/api/x"]),
         openapi_diff.extract(candidate, ["/api/x"]),
     )
+
+
+def test_windows_backend_does_not_signal_parent_with_pid_watch() -> None:
+    import os
+    import backends
+
+    if os.name == "nt":
+        assert "--parent-pid" not in backends._command("python")
+    else:
+        assert "--parent-pid" in backends._command("python")
+
+
+def test_backend_stop_terminates_handshake_process(backend) -> None:
+    import os
+
+    if os.name == "nt":
+        import ctypes
+        from ctypes import wintypes
+
+        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        kernel.OpenProcess.restype = wintypes.HANDLE
+        kernel.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+        kernel.WaitForSingleObject.restype = wintypes.DWORD
+        kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+        handle = kernel.OpenProcess(0x00100000, False, backend.pid)
+        assert handle, "could not open backend process for waiting"
+        try:
+            backend.stop()
+            assert kernel.WaitForSingleObject(handle, 10000) == 0
+        finally:
+            kernel.CloseHandle(handle)
+    else:
+        backend.stop()
+        with pytest.raises(ProcessLookupError):
+            os.kill(backend.pid, 0)
