@@ -24,6 +24,11 @@ RUST_BINARY = (
     / "debug"
     / ("evoflux-server.exe" if os.name == "nt" else "evoflux-server")
 )
+# Gateway test binary (Task 10): the gateway library in front of Python,
+# located through the EVOFLUX_GATEWAY_* variables set in start_backend.
+GATEWAY_HARNESS = RUST_BINARY.with_name(
+    "evoflux-gateway-harness.exe" if os.name == "nt" else "evoflux-gateway-harness"
+)
 HANDSHAKE_PREFIX = "EVOFLUX_HANDSHAKE "
 HANDSHAKE_TIMEOUT_S = 90.0
 _LOG_TAIL_LINES = 200
@@ -82,7 +87,9 @@ class Backend:
         return "\n".join(self.log)
 
 
-def _command(target: Target, python: str | None = None) -> list[str]:
+def _command(
+    target: Target, python: str | None = None, binary: Path | None = None
+) -> list[str]:
     serve_flags = [
         "--handshake",
         "--generate-token",
@@ -97,11 +104,14 @@ def _command(target: Target, python: str | None = None) -> list[str]:
     if target == "python":
         return [python or sys.executable, "-m", "app.cli", "serve", *serve_flags]
     # rust and gateway are the same binary; routing.toml decides which one runs.
-    if not RUST_BINARY.exists():
+    # EVOFLUX_CONTRACT_SERVER_BIN (or ``binary``) substitutes a test binary.
+    override = os.environ.get("EVOFLUX_CONTRACT_SERVER_BIN")
+    server = binary or (Path(override) if override else RUST_BINARY)
+    if not server.exists():
         raise BackendStartError(
-            f"TARGET={target} needs {RUST_BINARY}; it is built by Phase 0 task 11."
+            f"TARGET={target} needs {server}; it is built by Phase 0 task 11."
         )
-    return [str(RUST_BINARY), "serve", *serve_flags]
+    return [str(server), "serve", *serve_flags]
 
 
 def start_backend(
@@ -111,13 +121,16 @@ def start_backend(
     *,
     source_root: Path | None = None,
     python: str | None = None,
+    binary: Path | None = None,
+    extra_env: dict[str, str] | None = None,
 ) -> Backend:
     """Start ``target`` with fresh data/config/state/cache dirs under ``data_dir``.
 
     ``db_fixture`` is copied to ``<data>/evoflux.db`` before launch.
     ``source_root`` and ``python`` run the Python target from another checkout
     (the upgrade fixture builder starts each v3.x tag this way); they default
-    to this repository and the current interpreter.
+    to this repository and the current interpreter. ``binary`` replaces the
+    Rust server binary; ``extra_env`` is added last.
     """
     dirs = {
         "EVOFLUX_DATA_DIR": data_dir / "data",
@@ -155,9 +168,16 @@ def start_backend(
     env["APP_ENV"] = "production"
     env["PYTHONUNBUFFERED"] = "1"
     env["PYTHONIOENCODING"] = "utf-8"
+    if target != "python":
+        # Where the gateway test binary finds the Python sidecar (dev layout).
+        root = source_root or REPO_ROOT
+        env["EVOFLUX_GATEWAY_PYTHON_BIN"] = python or sys.executable
+        env["EVOFLUX_GATEWAY_SITE_PACKAGES"] = str(root)
+        env["EVOFLUX_GATEWAY_CLI_ENTRY"] = str(root / "app" / "cli" / "__main__.py")
+    env.update(extra_env or {})
 
     process = subprocess.Popen(
-        _command(target, python),
+        _command(target, python, binary),
         cwd=cwd,
         env=env,
         stdin=subprocess.DEVNULL,
