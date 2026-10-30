@@ -14,3 +14,7 @@ todo = "deny"
 unimplemented = "deny"
 await_holding_lock = "deny"
 disallowed_methods = "deny"
+
+# SQLite with BEGIN CONCURRENT (design §3.3); see vendor/SQLITE_BRANCH.toml.
+[patch.crates-io]
+libsqlite3-sys = { path = "vendor/libsqlite3-sys" }
