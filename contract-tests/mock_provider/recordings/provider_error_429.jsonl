@@ -1,0 +1,1 @@
+{"status":429,"headers":{"retry-after":"1"},"body":{"error":{"message":"Rate limit exceeded, retry shortly.","type":"rate_limit_error","code":"rate_limit_exceeded"}}}
