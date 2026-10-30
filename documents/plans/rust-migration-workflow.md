@@ -1,5 +1,7 @@
 # EvoFlux v4 — Rust migration workflow and rules
 
+> **Moved.** The authoritative copy of this document is [`server/AGENTS.md`](../../server/AGENTS.md). This file is kept as the planning record; do not edit it.
+
 Status: draft for approval · 2026-10-30 · Companion to
 [rust-migration-design.md](rust-migration-design.md)
 

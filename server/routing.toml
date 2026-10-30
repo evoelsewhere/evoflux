@@ -1,0 +1,86 @@
+# Routing table for the evoflux-server gateway (design §3, §3.1).
+#
+# One [[unit]] per cutover unit. owner = "python" | "rust" | "shadow".
+# A route ending in /** covers the prefix and everything below it; any other
+# route is an exact path. The longest matching route wins, so a unit may carve
+# a sub-prefix out of a broader one (/api/health/live out of /api/health).
+# Unmatched paths go to Python. services lists the lifespan services the
+# gateway disables in Python (EVOFLUX_DISABLE_SERVICES) once the unit is rust.
+#
+# Why each route and service is in its unit: CUTOVER_UNITS.md.
+# Changing an owner is a cutover and needs owner approval (design §6.2).
+
+[[unit]]
+name = "edge-stateless"
+owner = "python"
+routes = [
+  "/api/health/live/**",
+  "/api/quote/**",
+  "/api/commands/**",
+  "/api/snippets/**",
+]
+services = []
+
+[[unit]]
+name = "observability"
+owner = "python"
+routes = ["/api/observability/**"]
+services = ["otel_retention"]
+
+[[unit]]
+name = "import"
+owner = "python"
+routes = ["/api/import/**"]
+services = []
+
+[[unit]]
+name = "remote-access"
+owner = "python"
+routes = ["/api/remote-use/**"]
+services = []
+
+[[unit]]
+name = "platform-meta"
+owner = "python"
+routes = [
+  "/metrics",
+  "/openapi.json",
+  "/docs",
+  "/docs/oauth2-redirect",
+  "/redoc",
+  # Packaged web UI (app/api/static_web.py), mounted last as the catch-all.
+  # Checks refuse to let it cover an /api route.
+  "/**",
+]
+services = []
+
+[[unit]]
+name = "agent-runtime"
+owner = "python"
+routes = [
+  "/api/team/**",
+  "/api/health/**",
+  "/api/diagnostics/**",
+  "/api/agents/**",
+  "/api/skills/**",
+  "/api/plugins/**",
+  "/api/mcp/**",
+  "/api/settings/**",
+  "/api/auth/**",
+  "/api/wiki/**",
+  "/api/scheduler/**",
+  "/api/dream/**",
+]
+services = [
+  "model_registry_refresh",
+  "mcp",
+  "plugin_mcp",
+  "conductor",
+  "agents_validation",
+  "standalone_coding_purge",
+  "scheduler",
+  "memory_backfill",
+  "dream_scheduler",
+  "webbridge_cleanup",
+  "webbridge_artifact_cleanup",
+]
