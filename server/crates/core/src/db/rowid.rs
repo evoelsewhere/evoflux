@@ -23,13 +23,30 @@ pub fn random_rowid() -> i64 {
 ///
 /// Retries with a new rowid only when the rowid itself collided; any other
 /// constraint failure (including the table's own primary key) is returned.
+///
+/// Tables whose primary key is an `INTEGER PRIMARY KEY` (a rowid alias, such
+/// as `dream_log.id`) get a plain insert instead: there the rowid is the
+/// API-visible id, and v3 hands out ascending values.
 pub fn insert(
     tx: &Tx<'_>,
     table: &str,
     columns: &[&str],
     values: &[&dyn ToSql],
 ) -> Result<(), DbError> {
+    let alias = has_rowid_alias(tx, table)?;
     let table = quote_ident(table);
+    if alias {
+        let names: Vec<String> = columns.iter().map(|c| quote_ident(c)).collect();
+        let placeholders: Vec<String> = (1..=columns.len()).map(|i| format!("?{i}")).collect();
+        let sql = format!(
+            "INSERT INTO {table} ({}) VALUES ({})",
+            names.join(", "),
+            placeholders.join(", ")
+        );
+        tx.prepare_cached(&sql)?
+            .execute(params_from_iter(values.iter().copied()))?;
+        return Ok(());
+    }
     let names: String = columns
         .iter()
         .map(|c| format!(", {}", quote_ident(c)))
@@ -47,6 +64,16 @@ pub fn insert(
         }
     }
     Err(DbError::RowidExhausted)
+}
+
+/// Whether the table's primary key is a single `INTEGER` column, which SQLite
+/// makes an alias of the rowid.
+fn has_rowid_alias(tx: &Tx<'_>, table: &str) -> Result<bool, DbError> {
+    let mut stmt = tx.prepare_cached("SELECT type, pk FROM pragma_table_info(?1) WHERE pk > 0")?;
+    let pks = stmt
+        .query_map([table], |r| r.get::<_, String>(0))?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(matches!(pks.as_slice(), [t] if t.eq_ignore_ascii_case("INTEGER")))
 }
 
 fn is_primary_key_violation(err: &rusqlite::Error) -> bool {

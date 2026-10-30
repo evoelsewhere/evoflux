@@ -81,7 +81,8 @@ pub struct DbOptions {
     pub concurrent_writers: usize,
     /// Longest wait for a connection before [`DbError::Busy`].
     pub admission_timeout: Duration,
-    /// Retries after a lost concurrent commit (backoff 2/8/32/64/128 ms).
+    /// Retries after a lost concurrent commit, one per backoff step
+    /// (2/8/32/64/128 ms); the default 5 allows up to 6 attempts in total.
     pub max_retries: u32,
     /// `false` routes [`Db::write`] through the exclusive FIFO lane.
     pub concurrent_enabled: bool,
