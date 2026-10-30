@@ -27,6 +27,19 @@ RUST_BINARY = (
 HANDSHAKE_PREFIX = "EVOFLUX_HANDSHAKE "
 HANDSHAKE_TIMEOUT_S = 90.0
 _LOG_TAIL_LINES = 200
+_ENV_ALLOWLIST = (
+    "PATH",
+    "PATHEXT",
+    "SYSTEMROOT",
+    "SYSTEMDRIVE",
+    "WINDIR",
+    "COMSPEC",
+    "TEMP",
+    "TMP",
+    "TMPDIR",
+    "LANG",
+    "LC_ALL",
+)
 
 
 class BackendStartError(RuntimeError):
@@ -93,7 +106,24 @@ def start_backend(
     if db_fixture is not None:
         shutil.copyfile(db_fixture, dirs["EVOFLUX_DATA_DIR"] / "evoflux.db")
 
-    env = {k: v for k, v in os.environ.items() if not k.startswith("EVOFLUX_")}
+    # Allow-list, not "everything but EVOFLUX_*": DATABASE_URL, provider keys,
+    # XDG_* and the like must not reach the backend. HOME and the app-data dirs
+    # point into the temp dir so ~/.config/evoflux/.env and user skills are not
+    # read, and cwd is the temp dir so the repo's .env is not either.
+    home = data_dir / "home"
+    cwd = data_dir / "cwd"
+    home.mkdir(parents=True, exist_ok=True)
+    cwd.mkdir(parents=True, exist_ok=True)
+    env = {k: os.environ[k] for k in _ENV_ALLOWLIST if k in os.environ}
+    env.update(
+        {
+            "HOME": str(home),
+            "USERPROFILE": str(home),
+            "APPDATA": str(home / "AppData" / "Roaming"),
+            "LOCALAPPDATA": str(home / "AppData" / "Local"),
+            "PYTHONPATH": str(REPO_ROOT),
+        }
+    )
     env.update({k: str(v) for k, v in dirs.items()})
     env["EVOFLUX_MODEL_REGISTRY_REFRESH"] = "false"
     env["APP_ENV"] = "production"
@@ -102,7 +132,7 @@ def start_backend(
 
     process = subprocess.Popen(
         _command(target),
-        cwd=REPO_ROOT,
+        cwd=cwd,
         env=env,
         stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE,

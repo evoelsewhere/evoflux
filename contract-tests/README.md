@@ -16,6 +16,12 @@ then those targets fail at start-up with a message naming the missing binary.
 `make` needs the `contract` dependency group, which `uv run --group contract`
 installs.
 
+The backend runs with an allow-listed environment, `HOME`/`APPDATA` and the
+working directory inside a per-test temp dir, so the developer's `.env`,
+`DATABASE_URL`, provider keys and skills never reach it. `Backend.stop()` ends
+only the backend process; on Windows `terminate()` does not take a process tree,
+so the gateway target relies on the gateway's own tree kill (Phase 0 task 10).
+
 ## Layout
 
 | File | Purpose |
@@ -24,6 +30,7 @@ installs.
 | `conftest.py` | Fixtures `backend` and `client` (fresh temp data/config/state/cache dirs per test, bearer token set), `snapshot`, and the `--snapshot-update` option. |
 | `normalize.py` | `normalize(obj, rules)`: UUIDs become `<uuid:N>`, ISO-8601 timestamps `<ts>`, lists are sorted only at JSON paths a rule names. |
 | `sse.py` | `collect_events(...)` and `assert_same_sequence(a, b)`; SSE is compared as event sequences, never raw bytes. |
+| `harness/` | Tests of the harness itself (isolation, SSE timeout, normalizer, `openapi_diff.py`). |
 | `<area>/` | One directory per area, with `test_*.py` and `snapshots/`. |
 | `openapi/python-v3.1.1.json` | Pinned `GET /openapi.json` from v3.1.1. |
 

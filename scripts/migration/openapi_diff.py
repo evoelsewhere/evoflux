@@ -46,9 +46,14 @@ def area_routes(area: str, routing: Path) -> list[str]:
 
 def owns(path: str, patterns: list[str]) -> bool:
     for pattern in patterns:
-        if pattern.endswith(("/**", "/*")):
-            prefix = pattern.rsplit("/", 1)[0]
+        if pattern.endswith("/**"):
+            prefix = pattern[:-3]
             if path == prefix or path.startswith(prefix + "/"):
+                return True
+        elif pattern.endswith("/*"):
+            prefix = pattern[:-2]
+            rest = path[len(prefix) + 1 :]
+            if path.startswith(prefix + "/") and rest and "/" not in rest:
                 return True
         elif path == pattern:
             return True
@@ -64,17 +69,27 @@ def _resolve(spec: dict[str, Any], ref: str) -> Any:
     return node
 
 
-def _inline(spec: dict[str, Any], node: Any, stack: tuple[str, ...]) -> Any:
+# Keys whose children are user-chosen names, not schema keywords: a property
+# called "title" is contract, only the schema's own "title" is generated noise.
+_NAME_MAPS = frozenset({"properties", "patternProperties", "$defs", "definitions"})
+
+
+def _inline(
+    spec: dict[str, Any],
+    node: Any,
+    stack: tuple[str, ...],
+    names: bool = False,
+) -> Any:
     if isinstance(node, dict):
         ref = node.get("$ref")
-        if isinstance(ref, str):
+        if isinstance(ref, str) and not names:
             if ref in stack:
                 return {"$cycle": len(stack) - stack.index(ref)}
             return _inline(spec, _resolve(spec, ref), (*stack, ref))
         return {
-            key: _inline(spec, value, stack)
+            key: _inline(spec, value, stack, key in _NAME_MAPS and not names)
             for key, value in node.items()
-            if key != "title"
+            if names or key != "title"
         }
     if isinstance(node, list):
         return [_inline(spec, item, stack) for item in node]
@@ -148,7 +163,7 @@ def oasdiff_breaking(pinned: dict[str, Any], candidate: dict[str, Any]) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
     parser.add_argument("area", help="unit name in server/routing.toml")
     parser.add_argument(
         "--candidate", required=True, help="Rust spec: file path or URL"
