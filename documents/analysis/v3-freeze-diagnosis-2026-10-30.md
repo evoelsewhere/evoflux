@@ -2,27 +2,23 @@
 
 ## Result
 
-In the final run a health probe exceeded one second during `large_repo_open`:
-1,078 ms. At the one-second threshold, `py-spy` captured the main thread active
-with the GIL in SQLAlchemy ORM mapper configuration and statement compilation,
-ending in `sqlmodel.orm.session.exec`. No application call site was visible
-above that frame in the capture.
+A cold-start repeat reproduced a 1,407 ms `live` probe before optional services
+were ready. The one-second `py-spy` capture showed the main thread in the MCP
+SDK import, reached from `app/api/app.py:105` (`_start_optional_services`),
+`app/agent/mcp/lazy.py:22` (`_resolve`) and `app/agent/mcp/manager.py:39`.
+The reviewer's independent run observed the same 1,407 ms delay and call sites;
+an earlier run observed 3,547 ms during the same import. These observations
+support synchronous startup work blocking the event loop for roughly 1?3.5 s,
+but they do not establish that every start stalls for that long: the full
+rerun's cold-start maximum was 640 ms. Attaching `py-spy` after one second
+may add overhead, and a stack is a point sample rather than a breakdown of
+the whole delay.
 
-An earlier successful run against the same v3.1.1 checkout measured a
-3,547 ms probe in the same scenario. Its stack showed synchronous Python
-import machinery (`importlib` `get_data`) on the main thread, reached from
-`app/api/app.py:105` (`mcp_manager.start()`), `app/agent/mcp/lazy.py:22`
-(`_resolve`) and `app/agent/mcp/manager.py:39` while importing the MCP SDK.
-These samples support the hypothesis that synchronous work can hold up the
-event loop. Neither sample proves the entire delay was spent in the captured
-frames, nor that it explains the owner's intermittent UI freeze. Reported
-maxima may include overhead from attaching `py-spy` after the first second had
-already elapsed.
-
-The first workload begins immediately after the backend handshake, while
-optional startup services may still be running. These results therefore describe
-project-open load combined with cold startup, not a controlled warm-only
-reproduction. Other EvoFlux processes and workloads were active on the host.
+No steady-state workload exceeded one second in the rerun after optional
+services were ready. The earlier 1,078 ms project-open result overlapped cold
+startup and cannot be attributed to repository activity. This experiment does
+not establish whether any workload causes the owner's intermittent UI freeze;
+other EvoFlux processes and workloads were active on the host.
 
 ## Windows measurements
 
@@ -33,17 +29,25 @@ config, state, cache, workspace, wiki and Windows profile directories. A local
 mock provider returned deterministic responses; the shell scenario verified a
 persisted successful tool result with a duration above ten seconds. Health was
 polled approximately every 50 ms; p99 is the nearest-rank value of completed
-probes. Four samples in the history scenario are insufficient for a stable
-p99 estimate. Windows timer granularity and other host activity also limit
+probes. The short cold-start and history scenarios are insufficient for stable
+p99 estimates. Windows timer granularity and other host activity also limit
 precision.
 
 | Scenario | Samples | Maximum live latency | p99 live latency | Dumps |
 | --- | ---: | ---: | ---: | ---: |
-| `large_repo_open` | 155 | 1,078 ms | 47 ms | 1 |
-| `long_shell_tool` | 227 | 359 ms | 93 ms | 0 |
-| `history_reads` | 4 | 15 ms | 15 ms | 0 |
-| `mcp_never_answers` | 253 | 32 ms | 16 ms | 0 |
-| `large_pdf_intake` | 52 | 31 ms | 31 ms | 0 |
+| `cold_start` | 3 | 640 ms | 640 ms | 0 |
+| `large_repo_open` | 182 | 62 ms | 32 ms | 0 |
+| `long_shell_tool` | 225 | 516 ms | 110 ms | 0 |
+| `history_reads` | 6 | 31 ms | 31 ms | 0 |
+| `mcp_never_answers` | 252 | 31 ms | 16 ms | 0 |
+| `large_pdf_intake` | 50 | 16 ms | 16 ms | 0 |
+
+A separate run selecting only `history_reads` measured cold-start max/p99
+1,407/1,407 ms (4 samples, one MCP-import stack dump), followed by history
+max/p99 47/47 ms (5 samples, no dump). The cold-start and history samples are
+too few for a stable p99. The cold-start window runs from the handshake until
+the `optional_services_ready` log line, not from process creation; the probe
+already in flight when readiness is logged is allowed to finish.
 
 All five workload checks completed without a reported error. The shell command
 used the isolated session's bypass permission mode solely to run a controlled
@@ -71,14 +75,18 @@ migration repository root run:
 uv run python scripts/migration/diagnose_freeze.py --v3-source <v3.1.1-checkout> --repo <disposable-repo> --output <output-dir> --py-spy <py-spy-executable>
 ```
 
-The script prints a JSON summary for each scenario and writes `summary.json`
+The script always measures `cold_start` first, waits for `optional_services_ready`,
+and then runs the selected workload(s). It prints a JSON summary for each
+scenario and writes `summary.json`
 and a `py-spy` stack dump when a probe remains outstanding for more than one
 second. Dumps are local diagnostic artifacts and can contain process details;
 they are not committed. The backend process tree is terminated on exit.
 
 The first start from the freshly installed v3.1.1 environment exceeded the
-runner's 100-second handshake limit during imports and was stopped. The table
-is from the subsequent run after that environment's caches had warmed.
+runner's 100-second handshake limit during imports and was stopped. A forced
+handshake-timeout check confirmed the runner terminates its backend parent and
+child before the temporary directory is removed. An older leftover temporary
+directory could not be removed by the current account and remains open cleanup.
 
 The second-OS run remains open. WSL was unavailable on this machine; run the
 same script on `ubuntu-latest` or a Linux host with a disposable checkout and

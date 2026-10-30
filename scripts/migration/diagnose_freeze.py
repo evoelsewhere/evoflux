@@ -178,9 +178,17 @@ class Provider(http.server.BaseHTTPRequestHandler):
 
 
 class Backend:
-    def __init__(self, temp: Path, provider_port: int, repo: Path, source_root: Path):
+    def __init__(
+        self,
+        temp: Path,
+        provider_port: int,
+        repo: Path,
+        source_root: Path,
+        handshake_timeout: float = 100,
+    ):
         self.log: list[str] = []
         self.handshake: queue.Queue[dict] = queue.Queue()
+        self.optional_services_ready = threading.Event()
         env = {
             k: v
             for k, v in os.environ.items()
@@ -266,23 +274,37 @@ class Backend:
                     )
                 else:
                     self.log.append(line)
+                    if "optional_services_ready total_ms=" in line:
+                        self.optional_services_ready.set()
 
-        threading.Thread(target=pump, daemon=True).start()
+        self.pump_thread = threading.Thread(target=pump, daemon=True)
+        self.pump_thread.start()
         try:
-            info = self.handshake.get(timeout=100)
+            info = self.handshake.get(timeout=handshake_timeout)
+            self.pid = int(info["pid"])
+            self.url = f"http://127.0.0.1:{info['port']}"
+            self.client = httpx.Client(
+                base_url=self.url,
+                headers={"Authorization": f"Bearer {info['token']}"},
+                timeout=90,
+                trust_env=False,
+            )
         except queue.Empty as exc:
             self.stop()
             raise RuntimeError(
                 "backend handshake timeout; check isolated server logs"
             ) from exc
-        self.pid = int(info["pid"])
-        self.url = f"http://127.0.0.1:{info['port']}"
-        self.client = httpx.Client(
-            base_url=self.url,
-            headers={"Authorization": f"Bearer {info['token']}"},
-            timeout=90,
-            trust_env=False,
-        )
+        except BaseException:
+            self.stop()
+            raise
+
+    def wait_optional_services(self, timeout: float = 120) -> None:
+        deadline = time.monotonic() + timeout
+        while not self.optional_services_ready.wait(0.1):
+            if self.process.poll() is not None:
+                raise RuntimeError("backend exited before optional services were ready")
+            if time.monotonic() >= deadline:
+                raise RuntimeError("optional services readiness timeout")
 
     def stop(self) -> None:
         if hasattr(self, "client"):
@@ -305,6 +327,11 @@ class Backend:
             except subprocess.TimeoutExpired:
                 self.process.kill()
                 self.process.wait(timeout=10)
+        self.pump_thread.join(timeout=10)
+        if self.pump_thread.is_alive():
+            raise RuntimeError("backend output reader did not stop")
+        if self.process.stdout is not None:
+            self.process.stdout.close()
 
     def request(self, method: str, path: str, **kwargs: Any) -> httpx.Response:
         response = self.client.request(method, path, **kwargs)
@@ -326,6 +353,7 @@ class Probe:
         self.values: list[float] = []
         self.errors: list[str] = []
         self.done = threading.Event()
+        self.started = threading.Event()
         self.dump_count = 0
         self.dump_threads: list[threading.Timer] = []
         self.dump_lock = threading.Lock()
@@ -356,6 +384,7 @@ class Probe:
         ) as client:
             while not self.done.is_set():
                 started = time.monotonic()
+                self.started.set()
                 timer = threading.Timer(1, self.dump)
                 self.dump_threads.append(timer)
                 timer.start()
@@ -371,6 +400,8 @@ class Probe:
 
     def __enter__(self) -> Probe:
         self.thread.start()
+        if not self.started.wait(timeout=10):
+            raise RuntimeError("health probe did not start")
         return self
 
     def __exit__(self, *_args: object) -> None:
@@ -687,6 +718,15 @@ def main() -> int:
                     ("mcp_never_answers", lambda: mcp_never_answers(backend, temp)),
                     ("large_pdf_intake", lambda: large_pdf_intake(backend, temp)),
                 )
+                probe = Probe(backend, "cold_start", args.output, args.py_spy)
+                with probe:
+                    backend.wait_optional_services()
+                result = probe.summary()
+                result["workload_error"] = None
+                results.append(result)
+                print(json.dumps(result), flush=True)
+                if result["errors"]:
+                    raise RuntimeError("cold-start probe failed")
                 for label, action in scenarios:
                     if args.scenario and label != args.scenario:
                         continue
