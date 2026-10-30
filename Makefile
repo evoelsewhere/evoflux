@@ -99,3 +99,8 @@ help: ## Show this help message
 .PHONY: gates
 gates: ## Run migration gates (usage: make gates AREA=shared)
 	bash scripts/migration/gates.sh "$(AREA)"
+
+.PHONY: db-compat
+db-compat: ## Run SQLite compatibility and two-process stress gates
+	cd server && cargo build -p evoflux-core --example db_stress
+	uv run --group contract pytest contract-tests/db -q --no-cov

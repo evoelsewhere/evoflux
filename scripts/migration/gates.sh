@@ -42,6 +42,14 @@ if [[ "$area" != shared ]]; then
     python -c 'import json, sys; n = json.load(sys.stdin)["test-count"]; sys.exit(0 if n > 0 else "error: lane has no tests")'
 fi
 python scripts/migration/check_paths.py "$area"
+# The compatibility gate is mandatory whenever the DB implementation or its
+# pinned SQLite changes, including local unstaged/staged changes.
+db_changes=$(git diff --name-only origin/migrate/rust-v4...HEAD -- server/crates/core/src/db server/vendor server/crates/core/examples/db_stress.rs contract-tests/db contract-tests/fixtures/upgrade)
+db_changes+=$(git diff --name-only HEAD -- server/crates/core/src/db server/vendor server/crates/core/examples/db_stress.rs contract-tests/db contract-tests/fixtures/upgrade)
+if [[ -n "$db_changes" ]]; then
+  (cd server && cargo build -p evoflux-core --example db_stress)
+  uv run --group contract pytest contract-tests/db -q --no-cov
+fi
 if [[ "$area" != shared ]]; then
   diff=$(mktemp)
   trap 'cleanup; rm -f "$diff"' EXIT
