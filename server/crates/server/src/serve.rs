@@ -21,17 +21,21 @@ use std::time::Duration;
 
 use evoflux_core::auth::DesktopAuth;
 use evoflux_core::config::Settings;
+use evoflux_core::paths::Paths;
 use evoflux_core::{telemetry, watchdog};
-use evoflux_gateway::routing::RoutingTable;
+use evoflux_gateway::proxy::GatewayOptions;
+use evoflux_gateway::routing::{openapi_operations, Owner, RoutingTable};
 use evoflux_gateway::supervisor::{PythonConfig, PythonSupervisor};
 use tokio::io::AsyncWriteExt;
 use tokio::sync::watch;
+use tokio_util::sync::CancellationToken;
 
 use crate::access_key;
 use crate::app;
 use crate::cli::{self, Command, ServeArgs};
 use crate::handshake;
 use crate::parent;
+use crate::units::{self, UnitState};
 
 const EXIT_STARTUP: u8 = 1;
 const EXIT_USAGE: u8 = 2;
@@ -43,6 +47,7 @@ const STALL_THRESHOLD: Duration = Duration::from_millis(100);
 /// How long open connections (SSE streams) may delay shutdown.
 const SHUTDOWN_GRACE: Duration = Duration::from_secs(5);
 const ROUTING_TOML: &str = include_str!("../../../routing.toml");
+const PYTHON_OPENAPI: &str = include_str!("../../../../contract-tests/openapi/python-v3.1.1.json");
 
 struct Prepared {
     args: ServeArgs,
@@ -53,6 +58,7 @@ struct Prepared {
     /// What Rust-owned routes require (adds `EVOFLUX_ACCESS_KEY` and `settings.yaml`).
     auth_token: Option<String>,
     table: RoutingTable,
+    state: UnitState,
     state_file: Option<PathBuf>,
 }
 
@@ -134,6 +140,11 @@ fn prepare(args: ServeArgs, settings: &Settings) -> Result<Prepared, String> {
     };
     let table = RoutingTable::from_toml(&routing_text, env("EVOFLUX_ROUTE_OVERRIDE").as_deref())
         .map_err(|e| format!("routing table: {e}"))?;
+    let operations =
+        openapi_operations(PYTHON_OPENAPI).map_err(|e| format!("routing table: {e}"))?;
+    table
+        .check_shadow_get_only(&operations)
+        .map_err(|e| format!("routing table: {e}"))?;
     let python = python_paths(args.python_root.as_deref())?;
     Ok(Prepared {
         args,
@@ -142,6 +153,11 @@ fn prepare(args: ServeArgs, settings: &Settings) -> Result<Prepared, String> {
         handshake_token,
         auth_token,
         table,
+        state: UnitState {
+            settings: Arc::new(settings.clone()),
+            paths: Arc::new(Paths::resolve(settings)),
+            db: None,
+        },
         state_file: std::env::var_os("EVOFLUX_GATEWAY_STATE_FILE").map(PathBuf::from),
     })
 }
@@ -267,7 +283,23 @@ async fn run(prepared: Prepared) -> u8 {
         remote_proxy_secret: remote_proxy_secret.clone(),
         gateway_port: port,
         disabled_services: prepared.table.disabled_python_services(),
-        env_passthrough: Vec::new(),
+        env_passthrough: vec![
+            (
+                "EVOFLUX_GATEWAY_URL".into(),
+                format!("http://127.0.0.1:{port}"),
+            ),
+            (
+                "EVOFLUX_RUST_UNITS".into(),
+                prepared
+                    .table
+                    .units()
+                    .iter()
+                    .filter(|u| u.owner == Owner::Rust)
+                    .map(|u| u.name.as_str())
+                    .collect::<Vec<_>>()
+                    .join(","),
+            ),
+        ],
         startup_timeout: prepared.python_wait,
     };
     let sup = tokio::select! {
@@ -299,7 +331,15 @@ async fn run(prepared: Prepared) -> u8 {
     }
 
     let auth = DesktopAuth::new(prepared.auth_token, remote_proxy_secret);
-    let router = app::router(Arc::new(prepared.table), Arc::clone(&sup), auth);
+    let cancel = CancellationToken::new();
+    let services = units::start_rust_services(&prepared.table, &prepared.state, cancel.clone());
+    let router = router_with_units(
+        Arc::new(prepared.table),
+        Arc::clone(&sup),
+        auth,
+        units::router(&prepared.state),
+        prepared.state.paths.state_dir.clone(),
+    );
     let mut stop = shutdown.clone();
     let server = tokio::spawn(async move {
         axum::serve(listener, router)
@@ -315,8 +355,23 @@ async fn run(prepared: Prepared) -> u8 {
         Ok(Err(error)) => tracing::error!(%error, "server_task_failed"),
         Err(_) => tracing::warn!("open connections still busy at shutdown"),
     }
+    cancel.cancel();
+    for service in services {
+        let _ = service.await;
+    }
     sup.shutdown().await;
     exit_code(&parent_died)
+}
+
+/// Build the same production router with the supplied area routes.
+pub fn router_with_units(
+    table: Arc<RoutingTable>,
+    sup: Arc<PythonSupervisor>,
+    auth: DesktopAuth,
+    units: axum::Router,
+    state_dir: PathBuf,
+) -> axum::Router {
+    app::router_with_options(table, sup, auth, units, GatewayOptions::from_env(state_dir))
 }
 
 fn exit_code(parent_died: &AtomicBool) -> u8 {
