@@ -17,6 +17,7 @@ use std::time::{Duration, Instant};
 use rusqlite::Connection;
 use tokio::sync::{oneshot, OwnedSemaphorePermit, Semaphore};
 
+use super::checkpoint::WalKeeper;
 use super::metrics::{Metrics, CONFLICTS, POOL_TIMEOUTS, RETRIES};
 use super::{current_route, retry, DbError, Tx};
 
@@ -148,6 +149,7 @@ pub(crate) struct ConcurrentWrites {
     pub(crate) metrics: Arc<Metrics>,
     /// Test hook: every first `COMMIT` fails with `SQLITE_BUSY_SNAPSHOT`.
     pub(crate) inject_busy_snapshot: AtomicBool,
+    pub(crate) wal: Arc<WalKeeper>,
 }
 
 thread_local! {
@@ -172,6 +174,7 @@ where
         if let Ok(mut tables) = written.lock() {
             tables.clear();
         }
+        let entered = shared.wal.enter()?;
         conn.execute_batch("BEGIN CONCURRENT")?;
         let value = match f(&Tx { conn }) {
             Ok(value) => value,
@@ -185,13 +188,23 @@ where
             if retries == 0 && shared.inject_busy_snapshot.load(Ordering::SeqCst) {
                 Err(retry::busy_snapshot_error())
             } else {
-                conn.execute_batch("COMMIT")
+                let committed = conn.execute_batch("COMMIT");
+                if committed.is_ok() {
+                    shared.wal.after_commit(conn);
+                }
+                committed
             }
         };
         match committed {
-            Ok(()) => return Ok(value),
+            Ok(()) => {
+                drop(entered);
+                shared.wal.restart_if_due(conn);
+                return Ok(value);
+            }
             Err(err) if retry::is_busy_snapshot(&err) => {
                 rollback(conn);
+                // Let a waiting WAL reset run during the backoff.
+                drop(entered);
                 if let Ok(tables) = written.lock() {
                     for table in tables.iter() {
                         shared.metrics.inc(CONFLICTS, &[("table", table)]);
@@ -213,18 +226,27 @@ where
 }
 
 /// `BEGIN IMMEDIATE` transaction on the single FIFO connection.
-pub(crate) fn run_exclusive<T, F>(conn: &Connection, f: &mut F) -> Result<T, DbError>
+pub(crate) fn run_exclusive<T, F>(
+    conn: &Connection,
+    wal: &WalKeeper,
+    f: &mut F,
+) -> Result<T, DbError>
 where
     F: FnMut(&Tx<'_>) -> Result<T, DbError>,
 {
+    let entered = wal.enter()?;
     conn.execute_batch("BEGIN IMMEDIATE")?;
     let result = f(&Tx { conn }).and_then(|value| {
         conn.execute_batch("COMMIT")?;
+        wal.after_commit(conn);
         Ok(value)
     });
     if result.is_err() {
         rollback(conn);
+        return result;
     }
+    drop(entered);
+    wal.restart_if_due(conn);
     result
 }
 

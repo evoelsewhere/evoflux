@@ -5,6 +5,7 @@
 //! extended by design §3.3. The file stays readable by stock SQLite and v3:
 //! `wal` journal mode only (never `wal2`), no DDL, no schema change.
 
+mod checkpoint;
 mod lanes;
 mod metrics;
 mod retry;
@@ -20,6 +21,7 @@ use std::time::Duration;
 
 use rusqlite::{Connection, OpenFlags};
 
+use checkpoint::WalKeeper;
 use lanes::{ConcurrentWrites, Lane, Opener, WRITTEN_TABLES};
 use metrics::Metrics;
 
@@ -86,6 +88,11 @@ pub struct DbOptions {
     pub max_retries: u32,
     /// `false` routes [`Db::write`] through the exclusive FIFO lane.
     pub concurrent_enabled: bool,
+    /// WAL frames after a commit that trigger a `PASSIVE` checkpoint.
+    pub wal_checkpoint_pages: u32,
+    /// WAL frames after a commit that pause new write transactions until a
+    /// `TRUNCATE` checkpoint has reset the WAL.
+    pub wal_restart_pages: u32,
 }
 
 impl DbOptions {
@@ -101,11 +108,15 @@ impl Default for DbOptions {
         let switch = std::env::var(CONCURRENT_WRITES_ENV).ok();
         DbOptions {
             readers: 5,
-            // Windows Phase 0 benchmark: one writer had the best throughput.
-            concurrent_writers: 1,
+            // Windows Phase 0 benchmark (bounded WAL): two writers led
+            // cross-table work without exhausting the retry budget.
+            concurrent_writers: 2,
             admission_timeout: Duration::from_secs(5),
             max_retries: 5,
             concurrent_enabled: DbOptions::concurrent_writes_from_env(switch.as_deref()),
+            // SQLite's own autocheckpoint threshold, and four times that.
+            wal_checkpoint_pages: 1000,
+            wal_restart_pages: 4000,
         }
     }
 }
@@ -155,11 +166,17 @@ impl Db {
     pub fn open(path: &Path, opts: DbOptions) -> Result<Db, DbError> {
         refuse_wal2(path)?;
         let metrics = Arc::new(Metrics::default());
+        let wal = Arc::new(WalKeeper::new(
+            opts.wal_checkpoint_pages,
+            opts.wal_restart_pages,
+            metrics.clone(),
+        ));
         let concurrent = Arc::new(ConcurrentWrites {
             commit_lock: Mutex::new(()),
             max_retries: opts.max_retries,
             metrics: metrics.clone(),
             inject_busy_snapshot: AtomicBool::new(false),
+            wal: wal.clone(),
         });
         let timeout = opts.admission_timeout;
         // The exclusive connection opens first so it alone switches the file to WAL.
@@ -168,7 +185,7 @@ impl Db {
             1,
             timeout,
             metrics.clone(),
-            opener(path, Role::Write),
+            opener(path, Role::Write, &wal),
         )?;
         let writers = if opts.concurrent_enabled {
             Some(Lane::start(
@@ -176,7 +193,7 @@ impl Db {
                 opts.concurrent_writers,
                 timeout,
                 metrics.clone(),
-                opener(path, Role::Concurrent),
+                opener(path, Role::Concurrent, &wal),
             )?)
         } else {
             None
@@ -186,7 +203,7 @@ impl Db {
             opts.readers,
             timeout,
             metrics.clone(),
-            opener(path, Role::Read),
+            opener(path, Role::Read, &wal),
         )?;
         Ok(Db {
             readers,
@@ -232,8 +249,9 @@ impl Db {
         F: FnMut(&Tx<'_>) -> Result<T, DbError> + Send + 'static,
     {
         let mut f = f;
+        let wal = self.concurrent.wal.clone();
         self.exclusive
-            .run(move |conn| lanes::run_exclusive(conn, &mut f))
+            .run(move |conn| lanes::run_exclusive(conn, &wal, &mut f))
             .await
     }
 
@@ -269,12 +287,13 @@ enum Role {
     Concurrent,
 }
 
-fn opener(path: &Path, role: Role) -> Opener {
+fn opener(path: &Path, role: Role, wal: &Arc<WalKeeper>) -> Opener {
     let path: PathBuf = path.to_path_buf();
-    Arc::new(move || open_connection(&path, role))
+    let wal = wal.clone();
+    Arc::new(move || open_connection(&path, role, &wal))
 }
 
-fn open_connection(path: &Path, role: Role) -> Result<Connection, DbError> {
+fn open_connection(path: &Path, role: Role, wal: &Arc<WalKeeper>) -> Result<Connection, DbError> {
     let flags = OpenFlags::SQLITE_OPEN_READ_WRITE
         | OpenFlags::SQLITE_OPEN_CREATE
         | OpenFlags::SQLITE_OPEN_URI
@@ -289,8 +308,9 @@ fn open_connection(path: &Path, role: Role) -> Result<Connection, DbError> {
     conn.pragma_update(None, "synchronous", "NORMAL")?;
     match role {
         Role::Read => conn.pragma_update(None, "query_only", "ON")?,
-        Role::Write => {}
+        Role::Write => wal.attach(&mut conn)?,
         Role::Concurrent => {
+            wal.attach(&mut conn)?;
             let written = WRITTEN_TABLES.with(Arc::clone);
             conn.update_hook(Some(move |_action, _db: &str, table: &str, _rowid| {
                 if let Ok(mut tables) = written.lock() {

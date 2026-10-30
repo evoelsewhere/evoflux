@@ -398,3 +398,58 @@ fn linked_sqlite_is_the_pinned_build() {
         .trim_matches('"');
     assert_eq!(rusqlite::version(), release);
 }
+
+/// Overlapping `BEGIN CONCURRENT` snapshots keep SQLite's autocheckpoint from
+/// ever resetting the WAL; the lanes' own checkpoints must bound it.
+#[tokio::test(flavor = "multi_thread")]
+async fn concurrent_writes_keep_wal_bounded() {
+    let (_dir, path) = temp_db();
+    let tables = ["t0", "t1", "t2", "t3"];
+    create_tables(&path, &tables);
+    let restart_pages = 400;
+    let db = Arc::new(open(
+        &path,
+        DbOptions {
+            concurrent_writers: 4,
+            wal_checkpoint_pages: 100,
+            wal_restart_pages: restart_pages,
+            ..concurrent_options()
+        },
+    ));
+    let wal = path.with_extension("db-wal");
+    let mut tasks = Vec::new();
+    for table in tables {
+        let db = db.clone();
+        let wal = wal.clone();
+        tasks.push(tokio::spawn(async move {
+            let mut largest = 0;
+            for i in 0..500 {
+                db.write(move |tx| {
+                    for j in 0..3 {
+                        let id = format!("{i}-{j}-{}", "x".repeat(1000));
+                        rowid::insert(tx, table, &["id", "n"], &[&id as &dyn ToSql, &i])?;
+                    }
+                    Ok(())
+                })
+                .await
+                .unwrap();
+                largest = largest.max(std::fs::metadata(&wal).map_or(0, |m| m.len()));
+            }
+            largest
+        }));
+    }
+    let mut largest = 0;
+    for task in tasks {
+        largest = largest.max(task.await.unwrap());
+    }
+    for table in tables {
+        assert_eq!(count(&path, table), 500 * 3);
+    }
+    // Frames are a 4096-byte page plus a 24-byte header. Commits that were
+    // already in flight when a restart was due may add a little on top.
+    let bound = 2 * u64::from(restart_pages) * (4096 + 24);
+    assert!(
+        largest <= bound,
+        "WAL reached {largest} bytes, bound {bound}"
+    );
+}
