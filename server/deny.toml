@@ -1,0 +1,3 @@
+# Dependency policy is extended when shared PRs introduce dependencies.
+[licenses]
+allow = ["Apache-2.0"]

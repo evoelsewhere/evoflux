@@ -77,3 +77,7 @@ clean: ## Remove build and cache artifacts
 
 help: ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-15s\033[0m %s\n", $$1, $$2}'
+
+.PHONY: gates
+gates: ## Run migration gates (usage: make gates AREA=shared)
+	bash scripts/migration/gates.sh "$(AREA)"
