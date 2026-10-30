@@ -4,7 +4,8 @@
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::indexing_slicing,
-    clippy::disallowed_methods
+    clippy::disallowed_methods,
+    clippy::panic
 )]
 
 use std::path::{Path, PathBuf};
@@ -300,4 +301,81 @@ fn busy_maps_to_database_busy() {
     assert_eq!(busy.body_bytes(), expected.body_bytes());
     let other = evoflux_core::ApiError::from(DbError::Closed);
     assert_eq!(other.status, evoflux_core::ApiError::internal().status);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn rowid_alias_primary_key_keeps_sqlite_ids() {
+    let (_dir, path) = temp_db();
+    // Shaped like v3.1.1 `dream_log`: `id` is an INTEGER PRIMARY KEY, so it is
+    // the rowid and the API-visible id.
+    let conn = rusqlite::Connection::open(&path).unwrap();
+    conn.pragma_update(None, "journal_mode", "WAL").unwrap();
+    conn.execute_batch(
+        "CREATE TABLE dream_log (id INTEGER NOT NULL, session_id CHAR(32) NOT NULL, \
+         processed_at DATETIME NOT NULL, PRIMARY KEY (id))",
+    )
+    .unwrap();
+    drop(conn);
+    let db = open(&path, DbOptions::default());
+    db.write(|tx| {
+        for i in 0..5 {
+            let session = format!("s{i}");
+            rowid::insert(
+                tx,
+                "dream_log",
+                &["session_id", "processed_at"],
+                &[&session as &dyn ToSql, &"2026-10-30 00:00:00"],
+            )?;
+        }
+        Ok(())
+    })
+    .await
+    .unwrap();
+    let ids: Vec<i64> = db
+        .read(|conn| {
+            let mut stmt = conn.prepare("SELECT id FROM dream_log ORDER BY session_id")?;
+            let rows = stmt
+                .query_map([], |r| r.get(0))?
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(rows)
+        })
+        .await
+        .unwrap();
+    assert_eq!(ids, vec![1, 2, 3, 4, 5]);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn read_lane_is_query_only() {
+    let (_dir, path) = temp_db();
+    create_tables(&path, &["t"]);
+    let db = open(&path, DbOptions::default());
+    let query_only: i64 = db
+        .read(|conn| Ok(conn.query_row("PRAGMA query_only", [], |r| r.get(0))?))
+        .await
+        .unwrap();
+    assert_eq!(query_only, 1);
+    let err = db
+        .read(|conn| Ok(conn.execute("INSERT INTO t (id, n) VALUES ('x', 1)", [])?))
+        .await
+        .err()
+        .unwrap();
+    let DbError::Sqlite(err) = err else {
+        panic!("{err:?}");
+    };
+    assert_eq!(err.sqlite_error_code(), Some(rusqlite::ErrorCode::ReadOnly));
+    assert_eq!(count(&path, "t"), 0);
+}
+
+/// The bundled bindings were generated for a newer header than the pinned
+/// amalgamation; the library that actually links must be the pinned one.
+#[test]
+fn linked_sqlite_is_the_pinned_build() {
+    let pin = include_str!("../../../vendor/SQLITE_BRANCH.toml");
+    let release = pin
+        .lines()
+        .find_map(|l| l.strip_prefix("based_on_release = "))
+        .unwrap()
+        .trim()
+        .trim_matches('"');
+    assert_eq!(rusqlite::version(), release);
 }
