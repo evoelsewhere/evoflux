@@ -14,6 +14,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import sysconfig
 import threading
 import time
 from dataclasses import dataclass
@@ -169,30 +170,75 @@ def _force_kill(pid: int) -> None:
         pass
 
 
+def uvicorn_service(api_port: int) -> Service:
+    return Service(
+        name="api",
+        command=[
+            sys.executable,
+            "-m",
+            "uvicorn",
+            "app.server:app",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            str(api_port),
+            "--reload",
+            "--reload-dir",
+            "app",
+            "--no-access-log",
+        ],
+        cwd=ROOT,
+        env={},
+    )
+
+
+def gateway_service(api_port: int, cargo: str) -> Service:
+    """Run Python behind ``evoflux-server`` as the packaged desktop app does.
+
+    The dev venv is not the bundled ``python/`` + ``site-packages/`` layout, so
+    the interpreter, site-packages and CLI entry are named explicitly. The
+    gateway restarts Python when it exits; there is no ``--reload`` here.
+    """
+    return Service(
+        name="api",
+        command=[
+            cargo,
+            "run",
+            "--manifest-path",
+            str(ROOT / "server" / "Cargo.toml"),
+            "-p",
+            "evoflux-server",
+            "--",
+            "serve",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            str(api_port),
+            "--parent-pid",
+            str(os.getpid()),
+            "--python-root",
+            sys.prefix,
+        ],
+        cwd=ROOT,
+        env={
+            "EVOFLUX_GATEWAY_PYTHON_BIN": sys.executable,
+            "EVOFLUX_GATEWAY_SITE_PACKAGES": sysconfig.get_paths()["purelib"],
+            "EVOFLUX_GATEWAY_CLI_ENTRY": str(ROOT / "app" / "cli" / "__main__.py"),
+        },
+    )
+
+
 def build_services(
     api_port: int, desktop: bool, bun: str, cargo: str | None
 ) -> list[Service]:
     api_url = f"http://127.0.0.1:{api_port}"
+    if desktop:
+        assert cargo is not None
+        api = gateway_service(api_port, cargo)
+    else:
+        api = uvicorn_service(api_port)
     services = [
-        Service(
-            name="api",
-            command=[
-                sys.executable,
-                "-m",
-                "uvicorn",
-                "app.server:app",
-                "--host",
-                "127.0.0.1",
-                "--port",
-                str(api_port),
-                "--reload",
-                "--reload-dir",
-                "app",
-                "--no-access-log",
-            ],
-            cwd=ROOT,
-            env={},
-        ),
+        api,
         Service(
             name="web",
             command=[bun, "dev"],

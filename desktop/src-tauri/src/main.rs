@@ -12,6 +12,7 @@ mod notification_activation;
 mod notification_badge;
 mod openers;
 mod sidecar;
+mod sidecar_gateway;
 mod update_stage;
 mod workspace;
 
@@ -5577,9 +5578,9 @@ async fn start_bundled_backend_with_retry(
         .await;
         let attempt_started = Instant::now();
         let spawn_result = if let Some(token) = desktop_token {
-            Sidecar::spawn_with_desktop_token(app, Some(token))
+            Sidecar::spawn_with_desktop_token(app, Some(token), attempt)
         } else {
-            Sidecar::spawn(app)
+            Sidecar::spawn(app, attempt)
         };
         let mut sidecar = match spawn_result {
             Ok(sidecar) => sidecar,

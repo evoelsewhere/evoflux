@@ -265,3 +265,45 @@ def test_bundle_web_dist_requires_a_built_web_ui(tmp_path) -> None:
 
     with pytest.raises(SystemExit, match="web bundle missing"):
         build_sidecar.bundle_web_dist(tmp_path, site_packages)
+
+
+@pytest.mark.parametrize("is_windows", [False, True])
+def test_build_gateway_copies_the_release_binary(
+    tmp_path, monkeypatch, is_windows: bool
+) -> None:
+    calls: list[tuple[list[str], Path]] = []
+    name = "evoflux-server.exe" if is_windows else "evoflux-server"
+
+    def fake_run(cmd: list[str], **kwargs) -> None:
+        calls.append((cmd, kwargs["cwd"]))
+        built = tmp_path / "server" / "target" / "release" / name
+        built.parent.mkdir(parents=True)
+        built.write_bytes(b"gateway")
+
+    monkeypatch.setattr(build_sidecar, "IS_WINDOWS", is_windows)
+    monkeypatch.setattr(build_sidecar, "run", fake_run)
+    monkeypatch.delenv("CARGO_TARGET_DIR", raising=False)
+
+    gateway = build_sidecar.build_gateway(tmp_path, tmp_path / "bundle")
+
+    [(cmd, cwd)] = calls
+    assert cmd == ["cargo", "build", "--release", "--locked", "-p", "evoflux-server"]
+    assert cwd == tmp_path / "server"
+    assert gateway == tmp_path / "bundle" / name
+    assert gateway.read_bytes() == b"gateway"
+
+
+def test_build_gateway_honours_cargo_target_dir(tmp_path, monkeypatch) -> None:
+    target = tmp_path / "shared-target"
+
+    def fake_run(cmd: list[str], **kwargs) -> None:
+        (target / "release").mkdir(parents=True)
+        (target / "release" / "evoflux-server").write_bytes(b"gateway")
+
+    monkeypatch.setattr(build_sidecar, "IS_WINDOWS", False)
+    monkeypatch.setattr(build_sidecar, "run", fake_run)
+    monkeypatch.setenv("CARGO_TARGET_DIR", str(target))
+
+    gateway = build_sidecar.build_gateway(tmp_path, tmp_path / "bundle")
+
+    assert gateway.read_bytes() == b"gateway"

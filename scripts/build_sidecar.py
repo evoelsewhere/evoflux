@@ -14,11 +14,13 @@ Layout produced under ``<out>/``::
         …
       tailnet/               ← embedded tsnet helper + license notices
       ripgrep/               ← pinned rg binary + license notices (grep tool)
+      evoflux-server[.exe]   ← Rust gateway built from ``server/``
 
-The Tauri shell runs a tiny bootstrap that adds
-``sidecar-bundle/site-packages`` with ``site.addsitedir()`` so platform
-``.pth`` files are processed, then runs
-``app/cli/__main__.py serve --handshake --generate-token --parent-pid …``.
+The Tauri shell starts ``evoflux-server serve --handshake --generate-token
+--parent-pid …`` with ``EVOFLUX_SIDECAR_ROOT`` set to the bundle. The gateway
+runs a tiny bootstrap that adds ``sidecar-bundle/site-packages`` with
+``site.addsitedir()`` so platform ``.pth`` files are processed, then runs
+``app/cli/__main__.py serve --handshake …`` behind it.
 
 We deliberately do NOT use ``uv tool install`` — that produces an
 isolated venv with absolute paths inside it, which won't survive being
@@ -511,6 +513,28 @@ def fetch_ripgrep(out: Path, triple: str) -> Path:
     if not IS_WINDOWS:
         rg.chmod(0o755)
     return rg
+
+
+def build_gateway(root: Path, out: Path) -> Path:
+    """Build ``evoflux-server`` in release mode and copy it into ``out``.
+
+    The desktop shell starts this gateway, which starts Python from the same
+    bundle root (``EVOFLUX_SIDECAR_ROOT``).
+    """
+    name = "evoflux-server.exe" if IS_WINDOWS else "evoflux-server"
+    server = root / "server"
+    run(
+        ["cargo", "build", "--release", "--locked", "-p", "evoflux-server"],
+        cwd=server,
+    )
+    target_dir = Path(os.environ.get("CARGO_TARGET_DIR") or server / "target")
+    built = target_dir / "release" / name
+    if not built.is_file():
+        raise SystemExit(f"gateway build produced no binary at {built}")
+    out.mkdir(parents=True, exist_ok=True)
+    gateway = out / name
+    shutil.copy2(built, gateway)
+    return gateway
 
 
 def zip_pure_python_packages(site_packages: Path) -> tuple[int, int]:
@@ -1022,6 +1046,10 @@ def main() -> int:
     if not args.no_ripgrep:
         rg = fetch_ripgrep(out / "ripgrep", detect_target_triple())
         run([str(rg), "--version"])
+
+    # ── 5b. Build the Rust gateway the shell starts in front of Python ──
+    gateway = build_gateway(root, out)
+    print(f"gateway:       {gateway}")
 
     # ── 6. Smoke test ───────────────────────────────────────────────────
     if not args.no_smoke:
