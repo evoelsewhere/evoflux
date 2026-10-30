@@ -183,7 +183,10 @@ class _EmbeddedTailnetManager:
             state_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
             control_token = secrets.token_urlsafe(32)
             from app.core.desktop_auth import embedded_remote_proxy_secret
+            from app.core.gateway_mode import tsnet_target_port
 
+            # Behind the Rust gateway the helper forwards to the gateway's port.
+            target_port = tsnet_target_port() or port
             env = os.environ.copy()
             env["EVOFLUX_TAILNET_CONTROL_TOKEN"] = control_token
             env["EVOFLUX_TAILNET_PROXY_TOKEN"] = embedded_remote_proxy_secret()
@@ -194,7 +197,7 @@ class _EmbeddedTailnetManager:
                 "--hostname",
                 "evoflux",
                 "--target",
-                f"http://{SERVE_TARGET_HOST}:{port}",
+                f"http://{SERVE_TARGET_HOST}:{target_port}",
                 "--parent-pid",
                 str(os.getpid()),
                 stdout=asyncio.subprocess.PIPE,

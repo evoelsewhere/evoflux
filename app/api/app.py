@@ -37,6 +37,7 @@ from app.api.routes.wiki import router as wiki_router
 from app.core.config import settings
 from app.core.desktop_auth import DesktopTokenMiddleware
 from app.core.exception_handlers import EXCEPTION_HANDLERS
+from app.core.gateway_mode import GatewaySecretMiddleware, disabled_services
 from app.core.metrics import HTTPMetricsMiddleware, metrics_endpoint
 from app.core.middlewares import RequestSizeLimitMiddleware, SecurityHeadersMiddleware
 from app.core.otel import setup_otel, shutdown_otel
@@ -68,7 +69,17 @@ def _log_startup_timing(
     )
 
 
-async def _start_optional_services(app: FastAPI, process_started: float) -> None:
+def _service_disabled(name: str, disabled: frozenset[str]) -> bool:
+    """Whether the gateway turned *name* off; logs once per skipped service."""
+    if name not in disabled:
+        return False
+    logger.info("optional_service_disabled service={}", name)
+    return True
+
+
+async def _start_optional_services(
+    app: FastAPI, process_started: float, disabled: frozenset[str] = frozenset()
+) -> None:
     """Start non-critical services after the HTTP server becomes available."""
 
     # Taken before the server takes requests: the standalone-session purge
@@ -79,126 +90,145 @@ async def _start_optional_services(app: FastAPI, process_started: float) -> None
     # desktop handshake escape before any synchronous config/file scanning.
     await asyncio.sleep(0.1)
 
-    phase_started = perf_counter()
-    try:
-        start_otel_retention()
-    except Exception as exc:  # noqa: BLE001
-        logger.error(
-            "optional_service_start_failed service=otel_retention error={}", exc
-        )
-    _log_startup_timing("otel_retention", phase_started, process_started)
+    if not _service_disabled("otel_retention", disabled):
+        phase_started = perf_counter()
+        try:
+            start_otel_retention()
+        except Exception as exc:  # noqa: BLE001
+            logger.error(
+                "optional_service_start_failed service=otel_retention error={}", exc
+            )
+        _log_startup_timing("otel_retention", phase_started, process_started)
 
-    phase_started = perf_counter()
-    try:
-        start_model_registry_refresh()
-    except Exception as exc:  # noqa: BLE001
-        logger.error(
-            "optional_service_start_failed service=model_registry_refresh error={}", exc
-        )
-    _log_startup_timing("model_registry_refresh", phase_started, process_started)
+    if not _service_disabled("model_registry_refresh", disabled):
+        phase_started = perf_counter()
+        try:
+            start_model_registry_refresh()
+        except Exception as exc:  # noqa: BLE001
+            logger.error(
+                "optional_service_start_failed service=model_registry_refresh error={}",
+                exc,
+            )
+        _log_startup_timing("model_registry_refresh", phase_started, process_started)
 
-    phase_started = perf_counter()
-    try:
-        # Start even with an absent/empty config: the manager owns the
-        # mcp.json watcher that hot-activates servers created by EvoFlux
-        # itself after startup.
-        await mcp_manager.start()
-    except Exception as exc:  # noqa: BLE001
-        logger.error("optional_service_start_failed service=mcp error={}", exc)
-    _log_startup_timing("mcp", phase_started, process_started)
+    if not _service_disabled("mcp", disabled):
+        phase_started = perf_counter()
+        try:
+            # Start even with an absent/empty config: the manager owns the
+            # mcp.json watcher that hot-activates servers created by EvoFlux
+            # itself after startup.
+            await mcp_manager.start()
+        except Exception as exc:  # noqa: BLE001
+            logger.error("optional_service_start_failed service=mcp error={}", exc)
+        _log_startup_timing("mcp", phase_started, process_started)
 
-    phase_started = perf_counter()
-    try:
-        from app.plugin_platform.runtime import plugin_mcp_runtime
+    if not _service_disabled("plugin_mcp", disabled):
+        phase_started = perf_counter()
+        try:
+            from app.plugin_platform.runtime import plugin_mcp_runtime
 
-        await plugin_mcp_runtime.start()
-    except Exception as exc:  # noqa: BLE001
-        logger.error("optional_service_start_failed service=plugin_mcp error={}", exc)
-    _log_startup_timing("plugin_mcp", phase_started, process_started)
+            await plugin_mcp_runtime.start()
+        except Exception as exc:  # noqa: BLE001
+            logger.error(
+                "optional_service_start_failed service=plugin_mcp error={}", exc
+            )
+        _log_startup_timing("plugin_mcp", phase_started, process_started)
 
-    phase_started = perf_counter()
-    try:
-        from app.conductor import conductor_service
+    if not _service_disabled("conductor", disabled):
+        phase_started = perf_counter()
+        try:
+            from app.conductor import conductor_service
 
-        await conductor_service.start()
-    except Exception as exc:  # noqa: BLE001
-        logger.error(
-            "optional_service_start_failed service=conductor error_type={}",
-            type(exc).__name__,
-        )
-    _log_startup_timing("conductor", phase_started, process_started)
+            await conductor_service.start()
+        except Exception as exc:  # noqa: BLE001
+            logger.error(
+                "optional_service_start_failed service=conductor error_type={}",
+                type(exc).__name__,
+            )
+        _log_startup_timing("conductor", phase_started, process_started)
 
-    phase_started = perf_counter()
-    try:
-        if not team_manager.validate_agents_dir():
-            logger.warning("agents_dir_empty_or_missing path={}", settings.AGENTS_DIR)
-    except ValueError as exc:
-        # Invalid agent files should not make the local HTTP API disappear.
-        # Agent endpoints will surface the same configuration error when used.
-        logger.error("agents_dir_invalid path={} error={}", settings.AGENTS_DIR, exc)
-    except Exception as exc:  # noqa: BLE001
-        logger.error(
-            "optional_service_start_failed service=agents_validation error={}", exc
-        )
-    _log_startup_timing("agents_validation", phase_started, process_started)
+    if not _service_disabled("agents_validation", disabled):
+        phase_started = perf_counter()
+        try:
+            if not team_manager.validate_agents_dir():
+                logger.warning(
+                    "agents_dir_empty_or_missing path={}", settings.AGENTS_DIR
+                )
+        except ValueError as exc:
+            # Invalid agent files should not make the local HTTP API disappear.
+            # Agent endpoints will surface the same configuration error when used.
+            logger.error(
+                "agents_dir_invalid path={} error={}", settings.AGENTS_DIR, exc
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.error(
+                "optional_service_start_failed service=agents_validation error={}", exc
+            )
+        _log_startup_timing("agents_validation", phase_started, process_started)
 
     # Coding is project-only. Sessions and scheduled tasks left over from
     # standalone workspaces can no longer be opened; clear them before the
     # scheduler could fire one.
-    phase_started = perf_counter()
-    try:
-        from app.core.db import async_session_factory
-        from app.services.coding_purge_service import (
-            purge_standalone_coding_sessions,
-        )
-
-        async with async_session_factory() as db:
-            # Rows a request created after startup may still be half-built.
-            await purge_standalone_coding_sessions(
-                db, created_before=optional_services_started_at
+    if not _service_disabled("standalone_coding_purge", disabled):
+        phase_started = perf_counter()
+        try:
+            from app.core.db import async_session_factory
+            from app.services.coding_purge_service import (
+                purge_standalone_coding_sessions,
             )
-    except Exception as exc:  # noqa: BLE001
-        logger.error(
-            "optional_service_start_failed service=standalone_coding_purge error={}",
-            exc,
-        )
-    _log_startup_timing("standalone_coding_purge", phase_started, process_started)
 
-    phase_started = perf_counter()
-    try:
-        if await task_scheduler.has_enabled_tasks():
-            await task_scheduler.start()
-        else:
-            logger.info("scheduler_no_enabled_tasks")
-    except Exception as exc:  # noqa: BLE001
-        logger.error("optional_service_start_failed service=scheduler error={}", exc)
-    _log_startup_timing("scheduler", phase_started, process_started)
+            async with async_session_factory() as db:
+                # Rows a request created after startup may still be half-built.
+                await purge_standalone_coding_sessions(
+                    db, created_before=optional_services_started_at
+                )
+        except Exception as exc:  # noqa: BLE001
+            logger.error(
+                "optional_service_start_failed service=standalone_coding_purge error={}",
+                exc,
+            )
+        _log_startup_timing("standalone_coding_purge", phase_started, process_started)
 
-    phase_started = perf_counter()
-    try:
-        from app.core.db import async_session_factory
-        from app.services.scoped_memory import backfill_extracted_note_projections
+    if not _service_disabled("scheduler", disabled):
+        phase_started = perf_counter()
+        try:
+            if await task_scheduler.has_enabled_tasks():
+                await task_scheduler.start()
+            else:
+                logger.info("scheduler_no_enabled_tasks")
+        except Exception as exc:  # noqa: BLE001
+            logger.error(
+                "optional_service_start_failed service=scheduler error={}", exc
+            )
+        _log_startup_timing("scheduler", phase_started, process_started)
 
-        async with async_session_factory() as db:
-            await backfill_extracted_note_projections(db)
-    except Exception as exc:  # noqa: BLE001 - optional compatibility import
-        logger.error(
-            "optional_service_start_failed service=memory_backfill error={}", exc
-        )
-    _log_startup_timing("memory_backfill", phase_started, process_started)
+    if not _service_disabled("memory_backfill", disabled):
+        phase_started = perf_counter()
+        try:
+            from app.core.db import async_session_factory
+            from app.services.scoped_memory import backfill_extracted_note_projections
 
-    phase_started = perf_counter()
-    runtime_settings = app.state.runtime_settings
-    try:
-        if runtime_settings.dream.enabled:
-            await app.state.dream_scheduler.start()
-        else:
-            logger.info("dream_scheduler_disabled enabled=false")
-    except Exception as exc:  # noqa: BLE001
-        logger.error(
-            "optional_service_start_failed service=dream_scheduler error={}", exc
-        )
-    _log_startup_timing("dream_scheduler", phase_started, process_started)
+            async with async_session_factory() as db:
+                await backfill_extracted_note_projections(db)
+        except Exception as exc:  # noqa: BLE001 - optional compatibility import
+            logger.error(
+                "optional_service_start_failed service=memory_backfill error={}", exc
+            )
+        _log_startup_timing("memory_backfill", phase_started, process_started)
+
+    if not _service_disabled("dream_scheduler", disabled):
+        phase_started = perf_counter()
+        runtime_settings = app.state.runtime_settings
+        try:
+            if runtime_settings.dream.enabled:
+                await app.state.dream_scheduler.start()
+            else:
+                logger.info("dream_scheduler_disabled enabled=false")
+        except Exception as exc:  # noqa: BLE001
+            logger.error(
+                "optional_service_start_failed service=dream_scheduler error={}", exc
+            )
+        _log_startup_timing("dream_scheduler", phase_started, process_started)
 
     app.state.optional_services_ready = True
     logger.info(
@@ -211,6 +241,8 @@ async def _start_optional_services(app: FastAPI, process_started: float) -> None
 async def lifespan(app: FastAPI):
     """Startup / shutdown lifecycle."""
     process_started = perf_counter()
+    # Fail fast on a mistyped service name, before any state is touched.
+    disabled = disabled_services()
     logger.info("server_starting version={}", VERSION)
 
     phase_started = perf_counter()
@@ -262,14 +294,20 @@ async def lifespan(app: FastAPI):
     # Start WebBridge extension cleanup task
     from app.services.webbridge_service import webbridge_manager
 
-    webbridge_cleanup_task = asyncio.create_task(webbridge_manager.run_cleanup_loop())
-    app.state.webbridge_cleanup_task = webbridge_cleanup_task
+    app.state.webbridge_cleanup_task = None
+    if not _service_disabled("webbridge_cleanup", disabled):
+        app.state.webbridge_cleanup_task = asyncio.create_task(
+            webbridge_manager.run_cleanup_loop()
+        )
     from app.services.webbridge_artifact_service import run_artifact_cleanup_loop
 
-    webbridge_artifact_cleanup_task = asyncio.create_task(run_artifact_cleanup_loop())
-    app.state.webbridge_artifact_cleanup_task = webbridge_artifact_cleanup_task
+    app.state.webbridge_artifact_cleanup_task = None
+    if not _service_disabled("webbridge_artifact_cleanup", disabled):
+        app.state.webbridge_artifact_cleanup_task = asyncio.create_task(
+            run_artifact_cleanup_loop()
+        )
     optional_startup_task = asyncio.create_task(
-        _start_optional_services(app, process_started),
+        _start_optional_services(app, process_started, disabled),
         name="optional-service-startup",
     )
     app.state.optional_startup_task = optional_startup_task
@@ -372,6 +410,10 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    # Outermost (added last): behind the Rust gateway, refuse anything that did
+    # not carry its secret before metrics, auth or CORS see it. No-op unless
+    # EVOFLUX_GATEWAY_SECRET is set.
+    app.add_middleware(GatewaySecretMiddleware)
 
     # ── /metrics (Prometheus scrape target) ───────────────────────────────────
     # Deliberately un-prefixed (not under /api) to match Prometheus convention.

@@ -52,6 +52,7 @@ import os
 from urllib.parse import urlsplit
 
 from fastapi import Request, WebSocket
+from app.core.gateway_mode import remote_proxy_secret
 from app.core.runtime_settings import load_runtime_settings
 from fastapi.responses import JSONResponse
 from loguru import logger
@@ -196,7 +197,9 @@ REMOTE_DEVICE_LABEL_HEADER = "X-EvoFlux-Device-Label"
 REMOTE_PROXY_MARKER_HEADER = "X-EvoFlux-Remote-Proxy"
 REMOTE_PROXY_TOKEN_HEADER = "X-EvoFlux-Remote-Token"
 REMOTE_PROXY_MARKER = "tsnet"
-_EMBEDDED_REMOTE_PROXY_SECRET = os.urandom(32).hex()
+# The Rust gateway supplies a fixed secret so it can sign forwarded identity
+# headers; otherwise a fresh random one is shared only with the tsnet child.
+_EMBEDDED_REMOTE_PROXY_SECRET = remote_proxy_secret() or os.urandom(32).hex()
 
 
 def embedded_remote_proxy_secret() -> str:
