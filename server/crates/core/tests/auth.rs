@@ -102,6 +102,21 @@ async fn auth_bearer_wins_over_query_and_non_bearer_falls_back_to_query() {
 }
 
 #[tokio::test]
+async fn auth_repeated_token_param_uses_the_last_value() {
+    // Starlette `QueryParams.get` returns the last occurrence.
+    let good_last = format!("/api/x?_token=wrong&_token={TOKEN}");
+    assert_eq!(
+        call(app(Some(TOKEN)), get(&good_last)).await.0,
+        StatusCode::OK
+    );
+    let bad_last = format!("/api/x?_token={TOKEN}&_token=wrong");
+    assert_eq!(
+        call(app(Some(TOKEN)), get(&bad_last)).await.0,
+        StatusCode::UNAUTHORIZED
+    );
+}
+
+#[tokio::test]
 async fn auth_empty_or_wrong_query_token_rejected() {
     for uri in [
         "/api/x?_token=",

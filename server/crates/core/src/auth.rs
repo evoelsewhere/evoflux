@@ -113,6 +113,16 @@ impl DesktopAuth {
         }
     }
 
+    /// The token configured through the environment: `EVOFLUX_DESKTOP_TOKEN`,
+    /// then `EVOFLUX_ACCESS_KEY` (Python's `expected_desktop_token` minus the
+    /// `server.access_key` entry of `settings.yaml`, which is not read yet).
+    pub fn token_from_env() -> Option<String> {
+        ["EVOFLUX_DESKTOP_TOKEN", "EVOFLUX_ACCESS_KEY"]
+            .iter()
+            .filter_map(|name| std::env::var(name).ok())
+            .find(|value| !value.is_empty())
+    }
+
     pub fn layer(&self) -> DesktopAuthLayer {
         DesktopAuthLayer { auth: self.clone() }
     }
@@ -275,7 +285,8 @@ fn extract_token(headers: &HeaderMap, query: &str) -> Option<String> {
     }
     parse_qsl(query)
         .into_iter()
-        .find(|(k, _)| k == QS_TOKEN_PARAM)
+        // Starlette's `QueryParams.get` returns the last value of a repeated key.
+        .rfind(|(k, _)| k == QS_TOKEN_PARAM)
         .map(|(_, v)| v)
         .filter(|v| !v.is_empty())
 }

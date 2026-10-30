@@ -1,9 +1,8 @@
 //! Port of the settings subset of `app/core/config.py`.
 //!
-//! Only the variables the Rust server needs are modelled. Python also reads
-//! `.env` files from the working directory and `~/.config/evoflux/.env`; Rust
-//! reads the process environment only, which is what the Tauri shell and the
-//! gateway pass down.
+//! Only the variables the Rust server needs are modelled. Like Python, values
+//! come from the process environment, then `~/.config/evoflux/.env`, then
+//! `./.env` (earlier wins).
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -35,7 +34,31 @@ impl Settings {
         let vars: HashMap<String, String> = std::env::vars().collect();
         let home = home_from_vars(&vars);
         let cwd = std::env::current_dir()?;
-        Self::from_vars(&vars, home.as_deref(), &cwd)
+        Self::from_vars_and_dotenv(&vars, home.as_deref(), &cwd)
+    }
+
+    /// [`Self::from_vars`] after merging the `.env` files Python reads.
+    pub fn from_vars_and_dotenv(
+        vars: &HashMap<String, String>,
+        home: Option<&Path>,
+        cwd: &Path,
+    ) -> Result<Self, ConfigError> {
+        let mut merged = HashMap::new();
+        let mut files = vec![cwd.join(".env")];
+        if let Some(home) = home {
+            files.push(home.join(".config").join("evoflux").join(".env"));
+        }
+        // Later files win over earlier ones; the process environment wins over both.
+        for file in files {
+            for (key, value) in read_dotenv(&file) {
+                merged.insert(key.to_uppercase(), value);
+            }
+        }
+        for (key, value) in vars {
+            merged.retain(|k: &String, _| !k.eq_ignore_ascii_case(key));
+            merged.insert(key.clone(), value.clone());
+        }
+        Self::from_vars(&merged, home, cwd)
     }
 
     /// Resolve settings from explicit variables, home directory and working
@@ -123,4 +146,68 @@ fn home_from_vars(vars: &HashMap<String, String>) -> Option<PathBuf> {
         };
     }
     get("HOME").map(PathBuf::from).or_else(std::env::home_dir)
+}
+
+/// Startup-only synchronous read of a `.env` file; missing or unreadable
+/// files count as empty, as in pydantic-settings.
+#[allow(clippy::disallowed_methods)]
+fn read_dotenv(path: &Path) -> Vec<(String, String)> {
+    match std::fs::read(path) {
+        Ok(bytes) => parse_dotenv(&String::from_utf8_lossy(&bytes)),
+        Err(_) => Vec::new(),
+    }
+}
+
+/// The subset of python-dotenv syntax used for settings: `KEY=value`, an
+/// optional `export ` prefix, `#` comments, and single or double quotes.
+pub fn parse_dotenv(text: &str) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    for line in text.trim_start_matches('\u{feff}').lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let line = line.strip_prefix("export ").map_or(line, str::trim_start);
+        let Some((key, raw)) = line.split_once('=') else {
+            continue;
+        };
+        out.push((key.trim().to_owned(), dotenv_value(raw.trim())));
+    }
+    out
+}
+
+const BACKSLASH: char = '\u{5c}';
+
+fn dotenv_value(raw: &str) -> String {
+    for quote in ['"', '\''] {
+        if let Some(rest) = raw.strip_prefix(quote) {
+            let mut value = String::new();
+            let mut chars = rest.chars();
+            while let Some(c) = chars.next() {
+                if c == quote {
+                    break;
+                }
+                if c != BACKSLASH {
+                    value.push(c);
+                    continue;
+                }
+                match (quote, chars.next()) {
+                    ('"', Some('n')) => value.push('\n'),
+                    ('"', Some('t')) => value.push('\t'),
+                    (_, Some(next @ (BACKSLASH | '"' | '\''))) => value.push(next),
+                    (_, Some(next)) => {
+                        value.push(BACKSLASH);
+                        value.push(next);
+                    }
+                    (_, None) => value.push(BACKSLASH),
+                }
+            }
+            return value;
+        }
+    }
+    // Unquoted: a ` #` starts a comment.
+    match raw.find(" #") {
+        Some(i) => raw.get(..i).unwrap_or(raw).trim_end().to_owned(),
+        None => raw.to_owned(),
+    }
 }
