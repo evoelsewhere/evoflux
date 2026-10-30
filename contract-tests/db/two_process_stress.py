@@ -14,7 +14,7 @@ from pathlib import Path
 import httpx
 
 from backends import start_backend
-from conftest import configure_backend_provider
+from provider_setup import configure_backend_provider
 from mock_provider.server import MockProvider
 from sse import collect_events
 
