@@ -45,7 +45,8 @@ Choose the cheapest model that can do the task in one pass. A failed pass on a c
 5. **Land:** `git rebase migrate/rust-v4`, rerun the gates, then
    `git switch migrate/rust-v4 && git merge --ff-only wip/<agent>/<task> && git push`.
    If the push is rejected, rebase and repeat. Never force-push `migrate/rust-v4`.
-6. **Mark done:** set the board row to `merged` and add a one-line entry to `server/LANDED.md`: date, task, agent, reviewer, and the commit range. The owner reviews from that log.
+6. **Clean up:** after landing, delete the worktree's build caches (`server/target`, `desktop/src-tauri/target`); each one can take 5–10 GB.
+7. **Mark done:** set the board row to `merged` and add a one-line entry to `server/LANDED.md`: date, task, agent, reviewer, and the commit range. The owner reviews from that log.
 
 **Commit rules are unchanged:** Conventional Commits, a CHANGELOG addition under `[Unreleased]`, UTF-8, no AI trailers, and never weaken a test or gate.
 
