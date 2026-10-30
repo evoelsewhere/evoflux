@@ -6,7 +6,7 @@ All notable changes to EvoFlux are documented in this file.
 
 ### Changed
 
-- Added the planning documents for EvoFlux v4, which moves the local backend from Python to Rust for better performance and responsiveness: the migration design (`documents/plans/rust-migration-design.md`), the contributor workflow and rules (`documents/plans/rust-migration-workflow.md`) and the Rust technology research (`documents/research/rust-backend-stack-2026-10-30.md`). No app behaviour changes.
+- Added the planning documents for EvoFlux v4, which moves the local backend from Python to Rust for better performance and responsiveness: the migration design (`documents/plans/rust-migration-design.md`), the contributor workflow and rules (`documents/plans/rust-migration-workflow.md`), the Phase 0 task plan with Codex/Claude assignments (`documents/plans/rust-migration-phase-0-plan.md`) and the Rust technology research (`documents/research/rust-backend-stack-2026-10-30.md`). No app behaviour changes.
 
 ## [3.1.1] - 2026-10-28
 
