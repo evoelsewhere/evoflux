@@ -1,4 +1,10 @@
+from pathlib import Path
+
+import pytest
+
 from scripts.migration import check_paths
+
+MIGRATION_DIR = Path(__file__).resolve().parents[2] / "scripts" / "migration"
 
 BOARD = """# Board
 | lane | status |
@@ -57,6 +63,37 @@ def test_owned_path():
     )
     assert not check_paths.allowed_path(
         "server/crates/area-other/src/lib.rs", ["server/crates/area-quote/**"]
+    )
+
+
+def _row(lane: str, owned: str, status: str) -> dict[str, str]:
+    return {"lane": lane, "owned_paths": owned, "status": status}
+
+
+@pytest.fixture
+def check_board_on_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.syspath_prepend(str(MIGRATION_DIR))
+
+
+def test_path_contested_by_open_row_is_rejected(check_board_on_path: None) -> None:
+    rows = [
+        _row("quote", "server/crates/area-quote/**", "open"),
+        _row("gateway", "contract-tests/gateway/**", "open"),
+    ]
+
+    assert check_paths.contested_by_others(
+        "contract-tests/gateway/test_remote_claim.py", rows, "quote"
+    )
+
+
+def test_path_released_by_merged_row_is_allowed(check_board_on_path: None) -> None:
+    rows = [
+        _row("quote", "server/crates/area-quote/**", "open"),
+        _row("gateway", "contract-tests/gateway/**", "merged"),
+    ]
+
+    assert not check_paths.contested_by_others(
+        "contract-tests/gateway/test_remote_claim.py", rows, "quote"
     )
 
 

@@ -50,6 +50,8 @@ COLUMNS = (
     "gate_report",
 )
 STATUSES = ("open", "claimed", "in-review", "merged", "cut-over")
+# Rows in these states have landed; their owned_paths no longer reserve anything.
+RELEASED_STATUSES = ("merged", "cut-over")
 OWNERS = ("python", "rust", "shadow")
 CATCH_ALL = "/**"  # the packaged web UI mount
 NO_UNIT = "none"  # lanes with no HTTP routes (CLI, plugin host, skill scripts)
@@ -393,11 +395,17 @@ def globs_overlap(a: str, b: str) -> bool:
     return len(sa) == len(sb)
 
 
+def reserves_paths(row: dict[str, str]) -> bool:
+    """True when the row's owned_paths still reserve those files for its lane."""
+    return row["status"].split(":", 1)[0] not in RELEASED_STATUSES
+
+
 def check_overlaps(rows: list[dict[str, str]]) -> list[str]:
     errors = []
     owned = [
         (r["lane"], [g.strip() for g in r["owned_paths"].split(",") if g.strip()])
         for r in rows
+        if reserves_paths(r)
     ]
     for i, (lane_a, globs_a) in enumerate(owned):
         for lane_b, globs_b in owned[i + 1 :]:

@@ -14,6 +14,29 @@ def allowed_path(path: str, patterns: list[str]) -> bool:
     return any(fnmatch.fnmatchcase(path, pattern) for pattern in patterns)
 
 
+def owned_patterns(row: dict[str, str]) -> list[str]:
+    return [
+        part.strip().strip("`")
+        for part in row["owned_paths"].split(",")
+        if part.strip()
+    ]
+
+
+def contested_by_others(path: str, rows: list[dict[str, str]], area: str) -> bool:
+    """True when another lane whose row still reserves paths owns ``path``.
+
+    Rows that are merged or cut over have released their paths (check_board).
+    """
+    from check_board import reserves_paths
+
+    return any(
+        row["lane"] != area
+        and reserves_paths(row)
+        and allowed_path(path, owned_patterns(row))
+        for row in rows
+    )
+
+
 def valid_changelog(before: str, after: str) -> bool:
     old, new = before.splitlines(keepends=True), after.splitlines(keepends=True)
     try:
@@ -133,18 +156,11 @@ def main() -> int:
         raise SystemExit("Migration board is missing; cannot check ownership")
     from check_board import parse_board
 
-    rows = [
-        row
-        for row in parse_board(board.read_text(encoding="utf-8"))
-        if row["lane"] == area
-    ]
+    all_rows = parse_board(board.read_text(encoding="utf-8"))
+    rows = [row for row in all_rows if row["lane"] == area]
     if len(rows) != 1:
         raise SystemExit(f"Expected one board row for {area}, found {len(rows)}")
-    patterns = [
-        part.strip().strip("`")
-        for part in rows[0]["owned_paths"].split(",")
-        if part.strip()
-    ]
+    patterns = owned_patterns(rows[0])
     outside = []
     for path in paths:
         if path == "CHANGELOG.md":
@@ -154,7 +170,9 @@ def main() -> int:
                 git("show", f"{base}:{path}"), git("show", f"HEAD:{path}"), area
             ):
                 continue
-        elif allowed_path(path, patterns):
+        elif allowed_path(path, patterns) and not contested_by_others(
+            path, all_rows, area
+        ):
             continue
         outside.append(path)
     if outside:

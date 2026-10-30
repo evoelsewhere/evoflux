@@ -321,6 +321,29 @@ def test_check_overlaps_flags_two_lanes_on_one_path() -> None:
     assert "a" in errors[0] and "b" in errors[0]
 
 
+@pytest.mark.parametrize(
+    ("status_a", "status_b", "expected"),
+    [
+        ("open", "open", 1),
+        ("claimed", "in-review", 1),
+        ("merged", "open", 0),
+        ("cut-over", "claimed", 0),
+        ("merged", "merged", 0),
+    ],
+)
+def test_check_overlaps_ignores_paths_released_by_merged_rows(
+    status_a: str, status_b: str, expected: int
+) -> None:
+    rows = check_board.parse_board(
+        board_text(
+            row(lane="a", owned="`contract-tests/**`", status=status_a),
+            row(lane="b", owned="`contract-tests/quote/**`", status=status_b),
+        )
+    )
+
+    assert len(check_board.check_overlaps(rows)) == expected
+
+
 def test_owner_for_uses_longest_prefix_and_exact_paths() -> None:
     units = [
         unit("health", ["/api/health/live/**"]),
