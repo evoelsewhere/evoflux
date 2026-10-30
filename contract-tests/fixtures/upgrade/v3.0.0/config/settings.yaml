@@ -1,0 +1,80 @@
+title_generation:
+  enabled: true
+dream:
+  enabled: false
+  schedule: 0 2 * * *
+memory_extraction:
+  enabled: true
+  min_assistant_messages: 3
+  every_n_messages: 10
+  max_input_chars: 12000
+memory_vector:
+  enabled: false
+  backend: disabled
+server:
+  host: 127.0.0.1
+  port: 4082
+providers: {}
+git:
+  network_timeout_seconds: 120.0
+  max_diff_bytes: 2000000
+  default_pull_strategy: ff_only
+  prune_on_fetch: true
+  allow_force_push: false
+context: {}
+code_reviews:
+  request_timeout_seconds: 20.0
+  retry_attempts: 2
+  retry_backoff_seconds: 0.5
+  max_concurrent_repositories: 4
+  max_pages_per_repository: 5
+  allow_mutations: true
+  allow_insecure_connections: false
+  require_successful_checks_before_merge: false
+browser:
+  allowed_domains: []
+  blocked_domains: []
+  allow_evaluate: true
+  allow_storage: true
+  allow_cookie_values: false
+  allow_http_requests: true
+  allow_clipboard_read: false
+  allow_clipboard_write: true
+  allow_file_uploads: false
+  allow_downloads: true
+  allow_agent_permission_accept: false
+webbridge:
+  enabled: true
+  allowed_domains: []
+  blocked_domains: []
+  allow_evaluate: true
+  audit_log_size: 200
+  sharing:
+    default: ask
+    blocked_domains: []
+    allow_selection: true
+    allow_readable_page: true
+    allow_screenshot: true
+    max_artifact_bytes: 5000000
+    artifact_retention_hours: 24
+  interactions:
+    allow_background_triggers: false
+    max_per_minute: 30
+computer_app:
+  enabled: false
+  allowed_apps: []
+  blocked_apps: []
+  keep_hidden: true
+  permission: ask
+conductor:
+  enabled: false
+  url: ''
+  sync_interval_seconds: 60.0
+  heartbeat_interval_seconds: 60.0
+  request_timeout_seconds: 15.0
+  enforcement_mode: report
+team_spawn:
+  work: ask
+  coding: ask
+follow_up:
+  delivery: queue

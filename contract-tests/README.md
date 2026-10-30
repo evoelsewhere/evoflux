@@ -32,6 +32,7 @@ so the gateway target relies on the gateway's own tree kill (Phase 0 task 10).
 | `sse.py` | `collect_events(...)` and `assert_same_sequence(a, b)`; SSE is compared as event sequences, never raw bytes. |
 | `harness/` | Tests of the harness itself (isolation, SSE timeout, normalizer, `openapi_diff.py`). |
 | `mock_provider/` | `server.py` is a replaying model provider (OpenAI Chat Completions and Anthropic Messages streaming); `recordings/*.jsonl` are its scripts. |
+| `fixtures/` | `upgrade/<tag>/` holds a seeded `evoflux.db`, `config/`, `wiki/` and `MANIFEST.json` for v3.0.0, the oldest schema (the builder can produce any v3.0.0 to v3.1.1 tag with `--tag`); `build_upgrade_fixtures.py` rebuilds them (git worktrees under `D:\evoelsewhere\.tmp-upgrade-tags`, removed afterwards). `fixtures.upgrade_fixture(tag)` returns a temp copy of the database. `config/.env` holds only the dummy key `sk-dummy-upgrade-fixture-0000`; `Backend` starts from the database alone, so config and wiki are for later phases. |
 | `<area>/` | One directory per area, with `test_*.py` and `snapshots/`. |
 | `openapi/python-v3.1.1.json` | Pinned `GET /openapi.json` from v3.1.1. |
 
