@@ -87,6 +87,7 @@ contract = [
     "httpx>=0.28.1",
     # Pinned: contract-tests/sse.py imports httpx_sse._decoders, which is private.
     "httpx-sse==0.4.3",
+    "psutil>=6.0.0",
     "pytest>=9.0.3",
 ]
 dev = [
