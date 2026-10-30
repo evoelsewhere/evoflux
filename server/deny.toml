@@ -1,3 +1,5 @@
 # Dependency policy is extended when shared PRs introduce dependencies.
 [licenses]
-allow = ["Apache-2.0"]
+# MIT: rusqlite, libsqlite3-sys, tokio. Zlib: foldhash (via hashbrown).
+# Unicode-3.0: unicode-ident (via thiserror/tokio macros).
+allow = ["Apache-2.0", "MIT", "Unicode-3.0", "Zlib"]

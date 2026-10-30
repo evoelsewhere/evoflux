@@ -1,3 +1,8 @@
 # Auto detect text files and perform LF normalization
 * text=auto
 *.sh text eol=lf
+
+# Vendored upstream sources stay byte-for-byte; the amalgamation must match
+# the sha256 in server/vendor/SQLITE_BRANCH.toml.
+server/vendor/libsqlite3-sys/** -whitespace
+server/vendor/libsqlite3-sys/sqlite3/** -text

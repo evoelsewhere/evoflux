@@ -1,0 +1,12 @@
+# Pinned SQLite build for crates/core (design §3.3 rule 4). Only Rust links it;
+# Python and other tools keep using stock SQLite on the same database file.
+# Rebuild: bash scripts/migration/build_sqlite_amalgamation.sh <tag>
+# `tag` is the fossil branch tag on sqlite.org; `checkin` is its resolved tip.
+tag = "begin-concurrent-3.51"
+checkin = "07d118050d7bbc4233db20ce9a7256ce2e779e9bd81b6aec0f20e15a8c20aeca"
+sqlite3_c_sha256 = "f19e53f7335b0e438ec86e84e61fa399e074c4e01a7a28a8072617df16eef42d"
+based_on_release = "3.51.3"
+# Patched crate: server/vendor/libsqlite3-sys is libsqlite3-sys 0.39.1 (resolved
+# by rusqlite 0.41) with sqlite3/sqlite3.{c,h} and sqlite3ext.h replaced and
+# the unused sqlcipher/ directory removed.
+libsqlite3_sys = "0.39.1"
