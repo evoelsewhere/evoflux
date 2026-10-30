@@ -110,7 +110,7 @@ landed and its pool has a free slot (≤ 2 implementers per pool).
 | 4 | L5a observability · T5 packaged build | L3b · L4b | — |
 | 5 | L6a imports · T3 cross-OS evidence | L5b observability | T3 ← T2 landed and one push run |
 | 6 | SH1 edge-stateless replay · SH2 observability shadow | L6b imports | SH1 ← L1b–L4b, T7 · SH2 ← L5b, T6 |
-| 7 | CO1 → WA1 (edge-stateless), then CO2 → WA2 (observability) | — | CO1 ← SH1, T2, T5, T8 or Q2, owner Phase 0 approval · CO2 ← SH2, WA1 |
+| 7 | CO1 → WA1 (edge-stateless), then CO2 → WA2 (observability) | — | CO1 ← SH1, T2, T5, T8, T10 (e2e smoke), owner Phase 0 approval · CO2 ← SH2, WA1 |
 | 8 | SH3 imports replay → CO3 → WA3 (only if Q3 allows) · T9 Phase 1 exit | — | SH3 ← L6b, T7 · CO3 ← SH3, WA2, Q3 · T9 ← WA2 (and WA3 if run) |
 
 ## Assignments
@@ -434,6 +434,18 @@ New diffs that are explained go to `server/KNOWN_DIFFERENCES.md` (owner-approved
 - [ ] **Step 2:** Any regression: roll back with the override, write the
   failing contract test first in the lane (a fix task), then repeat CO and WA.
 - [ ] **Step 3:** If clean, move the rows to `cut-over` and add a `LANDED.md` line. Commit `docs(shared): record <unit> cutover watch`.
+
+### Task T10: End-to-end smoke suite (design §9a)
+
+**Assignment:** Claude CLI Sonnet · **Reviewer:** Codex Luna/medium · **Needs:** T6 landed (`serve` hosts units) · **Blocks:** CO1, T9.
+
+**Files:** `web/e2e/` (Playwright config and journeys), `scripts/migration/e2e.sh`, Makefile target `e2e`, and a nightly CI job in `.github/workflows/migration-gates.yml`.
+
+- [ ] Write the design §9a journeys as Playwright specs. They run against Vite plus `evoflux-server` (Python behind it), with temporary `EVOFLUX_*_DIR`s and the T5 mock provider; no real keys.
+- [ ] Add the rollback drill (`EVOFLUX_ROUTE_OVERRIDE=<unit>=python`) and the crash drill (kill the Python child, then recover after the 502 window).
+- [ ] Check that each journey fails when its feature is broken: mutate one assertion target per journey and confirm the failure.
+- [ ] `bash scripts/migration/e2e.sh` passes 3 times in a row on Windows; the nightly job runs on all 3 OSes.
+- [ ] Commit (new CHANGELOG line only, no AI trailer).
 
 ### Task T9: Phase 1 exit report
 
