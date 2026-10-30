@@ -13,48 +13,71 @@ workflows run from the default branch (`main`), so the schedule does not run
 until this workflow is also present there. Other host activity was not
 controlled.
 
-Each row is one five-second run on a fresh copy of the v3.0.0 fixture. FIFO
-uses the exclusive lane; concurrent uses `BEGIN CONCURRENT`. The same-table
-case inserts into `chat_sessions`; cross-table distributes work over
+Each cell is the median of three five-second runs (2026-10-31), each on a
+fresh copy of the v3.0.0 fixture; raw runs are kept outside the repository.
+FIFO uses the exclusive lane; concurrent uses `BEGIN CONCURRENT`. The
+same-table case inserts into `chat_sessions`; cross-table distributes work over
 `chat_sessions`, `session_folders`, and `memory_facts` (one writer uses one
-table, two use two, and four or eight use all three). These are real schema
-rowid tables and use the production random-rowid insert helper. Throughput is
-acknowledged inserts divided by measured elapsed time; p99 includes retries
-and admission. The retry metric counts internal transaction retries, and the
-busy column counts outer retries after the DB API exhausted its retry budget.
+table, two use two, and four or eight use all three). The message case is a
+multi-statement chat turn per transaction: a user message, an assistant
+message carrying usage JSON, and an `UPDATE` of the session's `updated_at`,
+with one session per writer. Inserts use the production random-rowid helper.
+Throughput is acknowledged transactions divided by measured elapsed time; p99
+includes retries and admission. Transaction retries are internal retries after
+a lost commit; busy retries are outer retries after the DB API exhausted its
+retry budget (a `database_busy` response in production). WAL max is the
+largest `-wal` file seen during any of the three runs.
 
-| Lane | Workload | Writers | Writes/s | p99 ms | Transaction retries | Busy retries |
-|---|---|---:|---:|---:|---:|---:|
-| fifo | same-table | 1 | 2588 | 2.47 | 0 | 0 |
-| fifo | same-table | 2 | 2509 | 21.44 | 0 | 0 |
-| fifo | same-table | 4 | 2526 | 29.02 | 0 | 0 |
-| fifo | same-table | 8 | 2391 | 34.80 | 0 | 0 |
-| fifo | cross-table | 1 | 2428 | 3.27 | 0 | 0 |
-| fifo | cross-table | 2 | 3009 | 19.12 | 0 | 0 |
-| fifo | cross-table | 4 | 3004 | 25.48 | 0 | 0 |
-| fifo | cross-table | 8 | 3239 | 29.67 | 0 | 0 |
-| concurrent | same-table | 1 | 2669 | 2.44 | 0 | 0 |
-| concurrent | same-table | 2 | 445 | 9.48 | 633 | 0 |
-| concurrent | same-table | 4 | 398 | 134.93 | 1145 | 14 |
-| concurrent | same-table | 8 | 475 | 269.09 | 1912 | 27 |
-| concurrent | cross-table | 1 | 2659 | 2.45 | 0 | 0 |
-| concurrent | cross-table | 2 | 442 | 8.28 | 0 | 0 |
-| concurrent | cross-table | 4 | 470 | 33.13 | 167 | 8 |
-| concurrent | cross-table | 8 | 543 | 267.21 | 919 | 23 |
+| Lane | Workload | Writers | Writes/s | p99 ms | Transaction retries | Busy retries | WAL max MiB |
+|---|---|---:|---:|---:|---:|---:|---:|
+| fifo | same-table | 1 | 1793 | 2.45 | 0 | 0 | 7.9 |
+| fifo | same-table | 2 | 2441 | 19.54 | 0 | 0 | 7.9 |
+| fifo | same-table | 4 | 2334 | 34.37 | 0 | 0 | 7.9 |
+| fifo | same-table | 8 | 2702 | 30.03 | 0 | 0 | 7.9 |
+| fifo | cross-table | 1 | 2209 | 0.97 | 0 | 0 | 7.9 |
+| fifo | cross-table | 2 | 3354 | 3.01 | 0 | 0 | 7.9 |
+| fifo | cross-table | 4 | 3071 | 23.16 | 0 | 0 | 7.9 |
+| fifo | cross-table | 8 | 3259 | 33.10 | 0 | 0 | 7.9 |
+| fifo | message | 1 | 1753 | 0.96 | 0 | 0 | 7.9 |
+| fifo | message | 2 | 2087 | 16.37 | 0 | 0 | 7.9 |
+| fifo | message | 4 | 2065 | 36.89 | 0 | 0 | 7.9 |
+| fifo | message | 8 | 1944 | 54.02 | 0 | 0 | 7.9 |
+| concurrent | same-table | 1 | 2357 | 0.82 | 0 | 0 | 7.9 |
+| concurrent | same-table | 2 | 1619 | 17.25 | 482 | 1 | 15.8 |
+| concurrent | same-table | 4 | 1947 | 32.77 | 1276 | 4 | 15.8 |
+| concurrent | same-table | 8 | 1928 | 99.33 | 2356 | 25 | 15.8 |
+| concurrent | cross-table | 1 | 2079 | 0.97 | 0 | 0 | 7.9 |
+| concurrent | cross-table | 2 | 2940 | 6.28 | 0 | 0 | 15.8 |
+| concurrent | cross-table | 4 | 3010 | 18.01 | 421 | 1 | 15.8 |
+| concurrent | cross-table | 8 | 3065 | 38.07 | 1770 | 12 | 15.9 |
+| concurrent | message | 1 | 1609 | 2.28 | 0 | 0 | 7.9 |
+| concurrent | message | 2 | 1472 | 27.94 | 450 | 0 | 15.8 |
+| concurrent | message | 4 | 1444 | 50.17 | 1049 | 7 | 15.8 |
+| concurrent | message | 8 | 1601 | 120.29 | 2154 | 32 | 15.9 |
 
-On this run one concurrent writer had the highest throughput in both patterns
-and the lowest concurrent p99; `DbOptions.concurrent_writers` is therefore 1.
-Concurrent writes default to off while Python writes because the mixed-writer
-compatibility test failed on the fresh database; set
-`EVOFLUX_DB_CONCURRENT_WRITES=on` only for explicit testing until that failure
-is resolved.
-Four-writer tests explicitly request four connections so that conflict and
-retry coverage is preserved. The cross-table results with more writers did
-not show the expected benefit, even when two writers reported no conflicts;
-this measurement does not establish why. A single short trial, different table
-mixes, shared host activity, and one operating system are insufficient for a
-general performance conclusion. Repeat on representative workloads and all
-platforms before changing the pool again (and repeat in Phase 4).
+**WAL growth (fixed).** The 2026-10-30 run measured concurrent cross-table at
+442 writes/s with two writers and no conflicts. The cause was the WAL: with two
+or more `BEGIN CONCURRENT` connections one transaction is nearly always open,
+so SQLite's autocheckpoint can never reset the WAL. It grew without bound
+(29 → 109 MB in 4 s at two writers) and every commit paid for another
+checkpoint attempt. The write lanes now set `wal_autocheckpoint=0` and
+checkpoint themselves: `PASSIVE` every 1000 new frames under the commit mutex,
+and at 4000 frames new write transactions wait until open ones finish while a
+`TRUNCATE` checkpoint resets the WAL. The WAL now stays under 16 MiB in every
+cell; `db_stress` fails a run whose WAL exceeds 2 × 4000 frames, and the core
+test `concurrent_writes_keep_wal_bounded` asserts the bound.
+
+**Pool size.** With the WAL bounded, two concurrent writers lead cross-table
+work (2940 vs 2079 writes/s for one) without exhausting the retry budget in any
+workload, while four and eight writers add `database_busy` outcomes and p99
+without more throughput. `DbOptions.concurrent_writers` is therefore 2. The
+message workload conflicts on every multi-writer size because all sessions'
+`UPDATE`s land on the same `chat_sessions` leaf page; FIFO is faster there,
+and FIFO with two or more callers matches or beats the concurrent lane in every
+workload on this host. Concurrent writes stay off by default while Python
+writes (design §3.3); this table does not by itself justify turning them on.
+Repeat on representative workloads and all platforms before changing the pool
+again (and repeat in Phase 4).
 
 Run with `cargo build -p evoflux-core --release --example db_stress` and then
 `cargo bench -p evoflux-core write_lanes` from `server/`.

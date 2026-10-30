@@ -9,6 +9,7 @@ pub(crate) const POOL_WAIT: &str = "EVOFLUX_db_pool_wait_seconds";
 pub(crate) const POOL_TIMEOUTS: &str = "EVOFLUX_db_pool_timeouts_total";
 pub(crate) const CONFLICTS: &str = "EVOFLUX_db_concurrent_conflicts_total";
 pub(crate) const RETRIES: &str = "EVOFLUX_db_concurrent_retries_total";
+pub(crate) const CHECKPOINTS: &str = "EVOFLUX_db_wal_checkpoints_total";
 
 /// `DB_POOL_WAIT` buckets in `app/core/metrics.py`.
 const WAIT_BUCKETS: [f64; 13] = [
