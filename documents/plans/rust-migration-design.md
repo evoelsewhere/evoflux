@@ -73,9 +73,10 @@ Tauri shell ──spawns──> evoflux-server (Rust, the only port the UI sees)
 - **Ingress:** the gateway owns all ingress from Phase 0, including the remote
   path. The `evoflux-tailnet` helper is pointed at the gateway port, not
   Python's. *(My call.)*
-- **One direction only:** the gateway proxies UI/remote requests to Python.
-  Rust code never calls Python to reach unported state. A Rust area that
-  needs unported state belongs in the same cutover unit as that state. *(My call.)*
+- **Rust never calls Python.** The gateway proxies UI/remote requests to
+  Python, and Rust code never calls Python to reach unported state. **Python may
+  call Rust** for areas that have already moved, through temporary adapters
+  (§3.4, [ADR 0001](../architecture/decisions/0001-rust-migration-python-calls-rust.md)).
 - **Routing table** `server/routing.toml` maps each route family to an owner:
   `python`, `rust`, or `shadow` (Python answers; Rust also runs the read-only
   request and logs differences; GET routes only).
@@ -96,6 +97,14 @@ both join the agent-runtime unit. Phase 0 produces `server/CUTOVER_UNITS.md`:
 every route family **and every lifespan background service** assigned to
 exactly one unit, with the in-memory state that pins it there. A unit's routes
 flip to Rust and its Python services are disabled in one change, never piecemeal.
+
+### 3.1a Breaking pins with adapters (owner decision, 2026-10-30)
+
+Phase 0 mapping found 91 % of routes pinned to the agent-runtime unit,
+because Python agent tools share in-memory state with those routes. Units are
+therefore split again, and each split is made possible by §3.4: once a unit
+moves, Python's agent code reaches it through a Rust API adapter instead of
+the in-process object.
 
 ### 3.2 Database during the migration
 
@@ -202,6 +211,23 @@ Python stops writing (Phase 4).
 
 Note: in v3, database contention is already bounded at 5 s → `503`, so this
 improves throughput and is probably not the cause of the freezes.
+
+### 3.4 Python calls Rust for moved areas (ADR 0001)
+
+Owner decision, 2026-10-30. Full record:
+[ADR 0001](../architecture/decisions/0001-rust-migration-python-calls-rust.md).
+
+- When a unit cuts over, its in-process Python service object is replaced by
+  an adapter in `app/core/rust_bridge/<area>.py`. The adapter forwards to the
+  gateway's loopback API, sending the gateway secret and the desktop token.
+- An adapter is active only while its unit's owner is `rust`, so
+  `EVOFLUX_ROUTE_OVERRIDE` rollback also switches the adapter back.
+- The adapter ships in the unit's cutover PR, together with a contract test
+  proving the Python agent tool path reaches Rust.
+- Pins that are only locks become cross-process file locks (a `core` helper,
+  mirrored in Python).
+- Adapters are **temporary**. All are deleted when the agent-runtime unit moves
+  (Phase 3). The goal is a fully Rust backend (§9).
 
 ## 4. Repository layout and branches
 
@@ -354,6 +380,7 @@ run at real-world speed.
 ## 9. Done criteria for the v4 merge to `main`
 
 - `routing.toml` has no `python` entries; the backend no longer starts the Python sidecar. Python runs only on demand for §11.
+- `app/core/rust_bridge/` is gone: no ADR 0001 adapters remain.
 - Full contract suite, Rust tests and v3.x upgrade tests green on all three OSes.
 - Performance targets in §8 met; report committed under `documents/releases/`.
 - `KNOWN_DIFFERENCES.md` reviewed and approved by the owner.
