@@ -40,7 +40,10 @@ def normalize(obj: Any, rules: NormalizeRules = DEFAULT) -> Any:
 
     def walk(value: Any, path: str) -> Any:
         if isinstance(value, dict):
-            return {k: walk(v, f"{path}.{k}") for k, v in value.items()}
+            # Visit keys in sorted order so <uuid:N> numbering does not depend on
+            # serializer field order, which is not part of the contract.
+            walked = {k: walk(value[k], f"{path}.{k}") for k in sorted(value)}
+            return {k: walked[k] for k in value}
         if isinstance(value, list):
             items = [walk(v, f"{path}.*") for v in value]
             if _matches(path, rules.sort_paths):

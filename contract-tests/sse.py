@@ -32,20 +32,35 @@ def collect_events(
     timeout_s: float,
 ) -> list[Event]:
     """Read ``url`` until ``until(event)`` is true (that event is included) or the
-    stream ends. Raises ``TimeoutError`` once ``timeout_s`` seconds have passed."""
-    from httpx_sse import connect_sse
+    stream ends. Raises ``TimeoutError`` once ``timeout_s`` seconds have passed,
+    even if the server only sends comment keep-alives or nothing at all."""
+    # Not exported publicly; httpx-sse is pinned in uv.lock (0.4.3).
+    from httpx_sse._decoders import SSEDecoder
 
     deadline = time.monotonic() + timeout_s
+    decoder = SSEDecoder()
     events: list[Event] = []
-    timeout = httpx.Timeout(timeout_s)
-    with connect_sse(client, "GET", url, timeout=timeout) as source:
-        for sse in source.iter_sse():
-            event = Event(sse.event, _decode(sse.data))
-            events.append(event)
-            if until(event):
-                return events
-            if time.monotonic() > deadline:
-                raise TimeoutError(f"no terminating event from {url} in {timeout_s}s")
+    headers = {"Accept": "text/event-stream", "Cache-Control": "no-store"}
+    try:
+        with client.stream(
+            "GET", url, headers=headers, timeout=httpx.Timeout(timeout_s)
+        ) as response:
+            response.raise_for_status()
+            for line in response.iter_lines():
+                # Checked on every line, comments and blanks included.
+                if time.monotonic() > deadline:
+                    raise TimeoutError(
+                        f"no terminating event from {url} in {timeout_s}s"
+                    )
+                sse = decoder.decode(line.rstrip("\n"))
+                if sse is None:
+                    continue
+                event = Event(sse.event, _decode(sse.data))
+                events.append(event)
+                if until(event):
+                    return events
+    except httpx.ReadTimeout as exc:
+        raise TimeoutError(f"no data from {url} within {timeout_s}s") from exc
     return events
 
 

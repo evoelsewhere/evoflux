@@ -25,6 +25,13 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     )
 
 
+@pytest.hookimpl(wrapper=True, tryfirst=True)
+def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo):
+    report = yield
+    setattr(item, f"rep_{report.when}", report)
+    return report
+
+
 @pytest.fixture(scope="session")
 def target() -> Target:
     value = os.environ.get("TARGET", "python")
@@ -43,7 +50,10 @@ def db_fixture() -> Path | None:
 
 @pytest.fixture
 def backend(
-    target: Target, tmp_path: Path, db_fixture: Path | None
+    request: pytest.FixtureRequest,
+    target: Target,
+    tmp_path: Path,
+    db_fixture: Path | None,
 ) -> Iterator[Backend]:
     try:
         started = start_backend(target, tmp_path, db_fixture)
@@ -51,11 +61,11 @@ def backend(
         pytest.fail(str(exc), pytrace=False)
     try:
         yield started
-    except BaseException:
-        print(f"--- {target} backend log tail ---\n{started.log_tail()}")
-        raise
     finally:
         started.stop()
+        report = getattr(request.node, "rep_call", None)
+        if report is not None and report.failed:
+            print(f"--- {target} backend log tail ---\n{started.log_tail()}")
 
 
 @pytest.fixture
@@ -85,6 +95,9 @@ class Snapshots:
 
 
 @pytest.fixture
-def snapshot(request: pytest.FixtureRequest) -> Snapshots:
+def snapshot(request: pytest.FixtureRequest, target: Target) -> Snapshots:
+    update = bool(request.config.getoption("--snapshot-update"))
+    if update and target != "python":
+        raise pytest.UsageError("--snapshot-update records from TARGET=python only")
     directory = Path(str(request.node.path)).parent / "snapshots"
-    return Snapshots(directory, bool(request.config.getoption("--snapshot-update")))
+    return Snapshots(directory, update)
