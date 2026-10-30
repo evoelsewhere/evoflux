@@ -39,12 +39,16 @@ from perf_seed import (
 
 Scenario = Callable[[Backend], ContextManager[None]]
 FREEZE_SCENARIOS: dict[str, Scenario] = {}
-# Names whose v3.1.1 behaviour is a known stall. Filled from measurements and,
-# later, from the freeze diagnosis (analysis page of task 1).
+# Names whose v3.1.1 behaviour is a known stall, measured with the open-loop
+# probes of ``perf_measure.probe_open_loop``. ``cold_start`` is not a
+# ``FREEZE_SCENARIOS`` entry (it needs a fresh backend) but is gated the same way.
 V3_STALLS: dict[str, str] = {
-    "large_repo_open": "v3 stall: history p99 > 2x idle while a 20k-file repo opens (4/4 runs, Windows reference machine)",
-    "large_history_page": "v3 stall: history p99 > 2x idle under repeated large history reads (4/4 runs)",
-    "concurrent_history_reads": "v3 stall: /api/health/live p99 > 50 ms with 20 concurrent history readers (4/4 runs)",
+    "cold_start": "v3 stall: the MCP SDK import blocks the event loop for 1.1-1.9 s after the handshake (T1 analysis; 3/3 open-loop runs)",
+    "large_repo_open": "v3 stall: /api/health/live p99 110-280 ms and history p99 > 2x idle while a 20k-file repo opens (3/3 open-loop runs, Windows reference machine)",
+    "long_tool_run": "v3 stall: /api/health/live p99 60-180 ms while an MCP tool runs for 20 s (3/3 open-loop runs)",
+    "large_history_page": "v3 stall: /api/health/live p99 170-390 ms under repeated large history reads (3/3 open-loop runs)",
+    "concurrent_history_reads": "v3 stall: /api/health/live p99 270-370 ms with 20 concurrent history readers (3/3 open-loop runs)",
+    "hung_mcp_server": "v3 stall: /api/health/live p99 74-97 ms while a hung MCP server is restarted (2 of 3 open-loop runs; the first passed)",
 }
 
 HISTORY_PATH = f"/api/team/{BIG_SESSION_ID}/history"
