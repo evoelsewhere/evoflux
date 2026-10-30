@@ -90,6 +90,13 @@ model ladder); [Phase 0 exit report](../analysis/phase-0-exit-report-2026-10-31.
 
 ---
 
+## Owner decisions (2026-10-31)
+
+- **Q1:** yes. POST render routes (commands, snippets) are checked by a dual-backend replay (T7) instead of live shadow; GET routes still get live shadow.
+- **Q2:** port first. T8 (remote claim on Rust routes) runs, and CO1 waits for it.
+- **Q3:** wait. `import` is ported and replay-checked in Phase 1, but SH3/CO3/WA3 move to Phase 2, together with the units that cache its files.
+- **Q4:** yes. `remote-access` stays on Python through Phase 1.
+
 ## Waves and dependencies
 
 Waves are dependency layers, not timeboxes: a task starts when its "needs" have
