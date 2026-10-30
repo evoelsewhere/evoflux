@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import httpx
 
-from conftest import configure_backend_provider
+from provider_setup import configure_backend_provider
 from sse import Event, collect_events
 
 
