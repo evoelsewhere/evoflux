@@ -31,6 +31,7 @@ so the gateway target relies on the gateway's own tree kill (Phase 0 task 10).
 | `normalize.py` | `normalize(obj, rules)`: UUIDs become `<uuid:N>`, ISO-8601 timestamps `<ts>`, lists are sorted only at JSON paths a rule names. |
 | `sse.py` | `collect_events(...)` and `assert_same_sequence(a, b)`; SSE is compared as event sequences, never raw bytes. |
 | `harness/` | Tests of the harness itself (isolation, SSE timeout, normalizer, `openapi_diff.py`). |
+| `mock_provider/` | `server.py` is a replaying model provider (OpenAI Chat Completions and Anthropic Messages streaming); `recordings/*.jsonl` are its scripts. |
 | `<area>/` | One directory per area, with `test_*.py` and `snapshots/`. |
 | `openapi/python-v3.1.1.json` | Pinned `GET /openapi.json` from v3.1.1. |
 
@@ -53,3 +54,30 @@ It cuts the pinned spec and the candidate down to the paths the `[[unit]]` named
 `<area>` owns in `server/routing.toml` (or `--routes '/api/health/**'`), inlines
 component references so generated names do not matter, then runs `oasdiff breaking`
 when installed and a strict structural diff. Exit 1 on any difference.
+
+## Mock model provider
+
+Fixture `mock_provider` starts a `MockProvider` on `127.0.0.1` (port 0) per test:
+`base_url`, `load(recording)`, `requests` (streamed agent-turn requests, in
+order) and `side_requests` (non-streamed ones such as title generation, which get
+a fixed reply and never consume the recording). A recording is JSONL, one line
+per item: `{"response": n}` starts the n-th response (request k gets response k,
+the last repeats), `{"delay_ms": n}` sleeps, `{"event": "...", "data": {...}}`
+is one SSE event (`event` is omitted for OpenAI), and
+`{"status": 429, "headers": {...}, "body": {...}}` is a plain JSON error.
+Recordings are shared fixtures: add them through a shared PR, secrets scrubbed.
+
+`configure_backend_provider(client, mock, wire="openai"|"anthropic")` registers it
+through the UI's own settings API: `PUT /api/settings/providers/{id}` with a dummy
+`api_key` and the base URL override in `extra`, then `POST /api/settings/seed`
+with `provider_model` so the bundled agents use the mock model. `wire="openai"`
+registers the `router9` provider (`ROUTER9_BASE_URL`), because the `openai`
+provider itself calls the Responses API, not Chat Completions; `wire="anthropic"`
+registers `anthropic` (`ANTHROPIC_BASE_URL`). Chat goes in with
+`POST /api/team/chat` (form `message`, returns `202 {"session_id"}`) and the turn
+is read from `GET /api/team/{session_id}/stream` until `done`.
+
+v3 behaviour worth knowing: a retryable 429 produces `rate_limit` and
+`provider_status` events and no `error` event; a quota-style 429
+(`insufficient_quota`, which v3 treats as non-retryable) ends the turn with no
+event or message at all.
