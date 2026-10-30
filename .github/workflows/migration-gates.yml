@@ -3,9 +3,14 @@ name: Migration gates
 on:
   pull_request:
     branches: [migrate/rust-v4]
+  push:
+    branches: [migrate/rust-v4]
+  schedule:
+    - cron: "17 6 1 * *"
 
 jobs:
   gates:
+    if: github.event_name == 'pull_request'
     strategy:
       fail-fast: false
       matrix:
@@ -36,3 +41,122 @@ jobs:
             *) echo "Unexpected branch: $HEAD_BRANCH" >&2; exit 1 ;;
           esac
           bash scripts/migration/gates.sh "$area"
+
+  db-compat:
+    if: github.event_name != 'schedule'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: changes
+        shell: bash
+        env:
+          BEFORE: ${{ github.event.before }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          base="${PR_BASE:-$BEFORE}"
+          if [[ -z "$base" || "$base" =~ ^0+$ ]]; then base=HEAD^; fi
+          if git diff --name-only "$base" HEAD -- server/crates/core/src/db server/vendor server/crates/core/examples/db_stress.rs contract-tests/db contract-tests/fixtures/upgrade | grep -q .; then
+            echo 'needed=true' >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.changes.outputs.needed == 'true'
+        uses: dtolnay/rust-toolchain@stable
+      - if: steps.changes.outputs.needed == 'true'
+        uses: astral-sh/setup-uv@v5
+      - if: steps.changes.outputs.needed == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - if: steps.changes.outputs.needed == 'true'
+        name: Install latest official stock SQLite CLI
+        shell: bash
+        run: |
+          python - <<'PYCODE'
+          import hashlib, io, os, pathlib, platform, re, subprocess, urllib.request, zipfile
+          machine = platform.machine().lower()
+          system = platform.system()
+          if system == 'Windows':
+              platform_id = 'win-x64'
+          elif system == 'Darwin':
+              platform_id = 'osx-arm64' if machine in ('arm64', 'aarch64') else 'osx-x64'
+          elif system == 'Linux' and machine in ('x86_64', 'amd64'):
+              platform_id = 'linux-x64'
+          else:
+              raise SystemExit(f'Unsupported SQLite CLI platform: {system} {machine}')
+          def fetch(url):
+              request = urllib.request.Request(url, headers={'User-Agent': 'EvoFlux-SQLite-compat'})
+              with urllib.request.urlopen(request, timeout=90) as response:
+                  return response.read()
+          html = fetch('https://www.sqlite.org/download.html').decode('utf-8')
+          pattern = rf'^PRODUCT,([^,]+),([^,]*/sqlite-tools-{platform_id}-[0-9]+\.zip),[0-9]+,([0-9a-f]{{64}})$'
+          match = re.search(pattern, html, re.M)
+          if not match:
+              raise SystemExit(f'Cannot find latest official SQLite tools for {platform_id}')
+          version, path, digest = match.groups()
+          data = fetch('https://www.sqlite.org/' + path)
+          if hashlib.sha3_256(data).hexdigest() != digest:
+              raise SystemExit('SQLite tools SHA3-256 mismatch')
+          name = 'sqlite3.exe' if os.name == 'nt' else 'sqlite3'
+          with zipfile.ZipFile(io.BytesIO(data)) as archive:
+              names = [n for n in archive.namelist() if n.rsplit('/', 1)[-1] == name]
+              if len(names) != 1:
+                  raise SystemExit(f'Expected one {name}, found {names}')
+              binary = pathlib.Path(os.environ['RUNNER_TEMP']) / name
+              binary.write_bytes(archive.read(names[0]))
+          binary.chmod(0o755)
+          actual = subprocess.check_output([str(binary), '--version'], text=True).split()[0]
+          if actual != version:
+              raise SystemExit(f'SQLite version mismatch: {actual} != {version}')
+          with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as env:
+              env.write(f'EVOFLUX_SQLITE_CLI={binary}\n')
+          print(f'Using stock SQLite {version}')
+          PYCODE
+      - if: steps.changes.outputs.needed == 'true'
+        shell: bash
+        run: |
+          cd server
+          cargo build -p evoflux-core --example db_stress
+          cd ..
+          uv run --group contract pytest contract-tests/db -q --no-cov
+
+  sqlite-release-check:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compare SQLite release and open an issue if the pin is behind
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          python - <<'PYCODE'
+          import json, os, re, subprocess, tomllib, urllib.request
+          with open('server/vendor/SQLITE_BRANCH.toml', 'rb') as f:
+              pinned = tomllib.load(f)['based_on_release']
+          request = urllib.request.Request('https://www.sqlite.org/download.html', headers={'User-Agent': 'EvoFlux-SQLite-version-check'})
+          with urllib.request.urlopen(request, timeout=30) as response:
+              html = response.read().decode('utf-8')
+          match = re.search(r'sqlite-autoconf-(\d+)\.tar\.gz', html)
+          if not match:
+              raise SystemExit('Cannot determine the latest SQLite release')
+          n = int(match.group(1))
+          latest_parts = (n // 1000000, (n // 10000) % 100, (n // 100) % 100, n % 100)
+          latest = '.'.join(map(str, latest_parts if latest_parts[-1] else latest_parts[:3]))
+          pinned_parts = tuple(map(int, pinned.split('.')))
+          pinned_parts += (0,) * (4 - len(pinned_parts))
+          if pinned_parts >= latest_parts:
+              print(f'SQLite pin {pinned} is current (latest {latest})')
+              raise SystemExit(0)
+          title = f'Update pinned SQLite branch for release {latest}'
+          issues = json.loads(subprocess.check_output(['gh', 'issue', 'list', '--state', 'open', '--search', f'"{title}" in:title', '--json', 'title'], text=True))
+          if not any(item['title'] == title for item in issues):
+              subprocess.run(['gh', 'issue', 'create', '--title', title, '--body', f'Pinned base: {pinned}. Latest SQLite release: {latest}. Review security fixes and update the begin-concurrent build.'], check=True)
+          PYCODE

@@ -89,10 +89,10 @@ pub struct DbOptions {
 }
 
 impl DbOptions {
-    /// Whether a value of `EVOFLUX_DB_CONCURRENT_WRITES` leaves concurrent
-    /// writes on: anything but `off` does.
+    /// Concurrent writes stay off by default while Python also writes; an
+    /// explicit value other than `off` opts into the experimental lane.
     pub fn concurrent_writes_from_env(value: Option<&str>) -> bool {
-        !value.is_some_and(|v| v.trim().eq_ignore_ascii_case("off"))
+        value.is_some_and(|v| !v.trim().eq_ignore_ascii_case("off"))
     }
 }
 
@@ -101,7 +101,8 @@ impl Default for DbOptions {
         let switch = std::env::var(CONCURRENT_WRITES_ENV).ok();
         DbOptions {
             readers: 5,
-            concurrent_writers: 4,
+            // Windows Phase 0 benchmark: one writer had the best throughput.
+            concurrent_writers: 1,
             admission_timeout: Duration::from_secs(5),
             max_retries: 5,
             concurrent_enabled: DbOptions::concurrent_writes_from_env(switch.as_deref()),
@@ -205,8 +206,9 @@ impl Db {
         self.readers.run(move |conn| f(conn)).await
     }
 
-    /// Ordinary write on the concurrent lane (`BEGIN CONCURRENT`). `f` may run
-    /// more than once: database work only, no I/O or events inside it.
+    /// Ordinary write on the concurrent lane (`BEGIN CONCURRENT`) when enabled;
+    /// otherwise use the exclusive FIFO lane. `f` may run more than once:
+    /// database work only, no I/O or events inside it.
     pub async fn write<T, F>(&self, f: F) -> Result<T, DbError>
     where
         T: Send + 'static,

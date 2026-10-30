@@ -22,6 +22,13 @@ fn temp_db() -> (tempfile::TempDir, PathBuf) {
     (dir, path)
 }
 
+fn concurrent_options() -> DbOptions {
+    DbOptions {
+        concurrent_enabled: true,
+        ..DbOptions::default()
+    }
+}
+
 fn open(path: &Path, opts: DbOptions) -> Db {
     Db::open(path, opts).unwrap()
 }
@@ -48,7 +55,7 @@ fn count(db_path: &Path, table: &str) -> i64 {
 async fn begin_concurrent_available() {
     let (_dir, path) = temp_db();
     create_tables(&path, &["t"]);
-    let db = open(&path, DbOptions::default());
+    let db = open(&path, concurrent_options());
     db.write(|tx| {
         tx.execute("INSERT INTO t (id, n) VALUES ('a', 1)", [])?;
         Ok(())
@@ -76,7 +83,7 @@ async fn refuses_wal2() {
     bytes[18] = 3;
     bytes[19] = 3;
     std::fs::write(&path, &bytes).unwrap();
-    let err = Db::open(&path, DbOptions::default()).err().unwrap();
+    let err = Db::open(&path, concurrent_options()).err().unwrap();
     assert!(matches!(err, DbError::Wal2), "{err:?}");
 }
 
@@ -84,7 +91,7 @@ async fn refuses_wal2() {
 async fn admission_timeout_returns_busy() {
     let (_dir, path) = temp_db();
     create_tables(&path, &["t"]);
-    let db = Arc::new(open(&path, DbOptions::default()));
+    let db = Arc::new(open(&path, concurrent_options()));
     let holder = {
         let db = db.clone();
         tokio::spawn(async move {
@@ -111,7 +118,13 @@ async fn different_tables_commit_in_parallel() {
     let (_dir, path) = temp_db();
     let tables = ["t0", "t1", "t2", "t3"];
     create_tables(&path, &tables);
-    let db = Arc::new(open(&path, DbOptions::default()));
+    let db = Arc::new(open(
+        &path,
+        DbOptions {
+            concurrent_writers: 4,
+            ..concurrent_options()
+        },
+    ));
     let mut tasks = Vec::new();
     for table in tables {
         let db = db.clone();
@@ -147,7 +160,13 @@ async fn different_tables_commit_in_parallel() {
 async fn same_table_conflict_retries_to_success() {
     let (_dir, path) = temp_db();
     create_tables(&path, &["t"]);
-    let db = Arc::new(open(&path, DbOptions::default()));
+    let db = Arc::new(open(
+        &path,
+        DbOptions {
+            concurrent_writers: 4,
+            ..concurrent_options()
+        },
+    ));
     // Every writer reads and appends to the same last page, then all commit
     // together on the first attempt, so all but one must retry.
     let writers = 4;
@@ -184,7 +203,7 @@ async fn same_table_conflict_retries_to_success() {
 async fn retry_scenario(inject: bool) -> (Vec<(String, i64)>, u32, usize) {
     let (_dir, path) = temp_db();
     create_tables(&path, &["t"]);
-    let db = open(&path, DbOptions::default());
+    let db = open(&path, concurrent_options());
     db.inject_busy_snapshot_on_first_commit(inject);
     let side_effects = AtomicUsize::new(0);
     let calls = Arc::new(AtomicU32::new(0));
@@ -241,7 +260,7 @@ async fn random_rowid_insert_never_sequential() {
     }
     let (_dir, path) = temp_db();
     create_tables(&path, &["t"]);
-    let db = open(&path, DbOptions::default());
+    let db = open(&path, concurrent_options());
     db.write(|tx| {
         for i in 0..1000_i64 {
             let id = format!("id-{i}");
@@ -275,7 +294,7 @@ async fn off_switch_uses_fifo() {
     create_tables(&path, &["t"]);
     let opts = DbOptions {
         concurrent_enabled: false,
-        ..DbOptions::default()
+        ..concurrent_options()
     };
     let db = open(&path, opts);
     db.write(|tx| {
@@ -289,7 +308,7 @@ async fn off_switch_uses_fifo() {
     assert_eq!(db.metric(wait, &[("lane", "write")]), 0.0);
     assert!(!DbOptions::concurrent_writes_from_env(Some("off")));
     assert!(DbOptions::concurrent_writes_from_env(Some("on")));
-    assert!(DbOptions::concurrent_writes_from_env(None));
+    assert!(!DbOptions::concurrent_writes_from_env(None));
 }
 
 #[test]
@@ -316,7 +335,7 @@ async fn rowid_alias_primary_key_keeps_sqlite_ids() {
     )
     .unwrap();
     drop(conn);
-    let db = open(&path, DbOptions::default());
+    let db = open(&path, concurrent_options());
     db.write(|tx| {
         for i in 0..5 {
             let session = format!("s{i}");
@@ -348,7 +367,7 @@ async fn rowid_alias_primary_key_keeps_sqlite_ids() {
 async fn read_lane_is_query_only() {
     let (_dir, path) = temp_db();
     create_tables(&path, &["t"]);
-    let db = open(&path, DbOptions::default());
+    let db = open(&path, concurrent_options());
     let query_only: i64 = db
         .read(|conn| Ok(conn.query_row("PRAGMA query_only", [], |r| r.get(0))?))
         .await
