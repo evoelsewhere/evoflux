@@ -25,7 +25,7 @@ in-process (agent tools, hooks, the team manager, the stream store).
 | `import` | 2 | importing conversations from other tools into the database |
 | `remote-access` | 2 | remote use: embedded tailnet node and the single-device claim |
 | `agent-runtime` | 3 | the agent loop and everything that shares its in-memory state |
-| `platform-meta` | 4 | FastAPI's own docs and the Python process metrics |
+| `platform-meta` | 4 | FastAPI's own docs, the Python process metrics and the packaged web UI mount |
 
 `agent-runtime` holds most of the API (see
 [Split candidates](#split-candidates)). That is what the code requires today,
@@ -52,6 +52,7 @@ The longest matching prefix wins. `/api/health/live/**` is carved out of
 | `/docs` | platform-meta | FastAPI Swagger UI, built from `/openapi.json` |
 | `/docs/oauth2-redirect` | platform-meta | FastAPI Swagger UI helper |
 | `/redoc` | platform-meta | FastAPI ReDoc, built from `/openapi.json` |
+| `/**` | platform-meta | the packaged web UI: `static_web.mount_web_ui` adds a `Mount("/")` catch-all (SPA fallback to `index.html`) only when a `web/dist` bundle exists, after every router. The checks refuse to let it cover an `/api` route |
 | `/api/team/**` | agent-runtime | `team_manager` (live teams, session-to-team map), `stream_store` (SSE frames per running session), `webbridge_manager` (extension connections, policy cache), `terminal_manager`, `lsp_manager`, `change_set_service._change_sets`, `problems_service._problems`, `motion_review_service._pending`, `office_runtime`, and the process and preview registries of the `process` and `preview` agent tools. Detail per route module below |
 | `/api/health/**` | agent-runtime | `/ready` and `/diagnostics` read `team_manager.validate_agents_dir`, `team_manager.has_active_team_turn` and `mcp_manager.list_status`; `/diagnostics/actions/db_reclaim` checks for an active team turn |
 | `/api/diagnostics/**` | agent-runtime | `team_manager.current_team` and `mcp_manager.server_names` |

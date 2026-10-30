@@ -42,14 +42,24 @@ def unit(name: str, routes: list[str], services: list[str] | None = None):
     return check_board.Unit(name, "python", tuple(routes), tuple(services or ()))
 
 
+@pytest.fixture
+def app_paths(tmp_path, monkeypatch) -> list[str]:
+    """Route paths of an app that always has the web UI mounted."""
+    (tmp_path / "index.html").write_text("<html></html>", encoding="utf-8")
+    monkeypatch.setenv("EVOFLUX_WEB_DIST", str(tmp_path))
+    from app.api.app import create_app
+
+    paths = check_board.registered_route_paths(create_app())
+    assert "/" in paths  # the SPA mount reports an empty path; it is normalised
+    return paths
+
+
 # --- the real repository files ------------------------------------------------
 
 
-def test_registered_routes_each_resolve_to_one_unit() -> None:
-    from app.api.app import create_app
-
+def test_registered_routes_each_resolve_to_one_unit(app_paths: list[str]) -> None:
     units = check_board.load_routing(check_board.ROUTING)
-    paths = check_board.registered_route_paths(create_app())
+    paths = app_paths
 
     assert len(paths) > 250
     assert check_board.check_routes_assigned(units, paths) == []
@@ -91,12 +101,12 @@ def test_board_lane_owned_paths_do_not_overlap() -> None:
     assert check_board.check_overlaps(rows) == []
 
 
-def test_every_registered_route_is_owned_by_a_lane_of_its_unit() -> None:
-    from app.api.app import create_app
-
+def test_every_registered_route_is_owned_by_a_lane_of_its_unit(
+    app_paths: list[str],
+) -> None:
     units = check_board.load_routing(check_board.ROUTING)
     rows = check_board.parse_board(check_board.BOARD.read_text(encoding="utf-8"))
-    paths = check_board.registered_route_paths(create_app())
+    paths = app_paths
 
     assert check_board.check_lane_coverage(rows, units, paths) == []
 
@@ -154,10 +164,10 @@ def test_check_rows_flags_bad_status_unit_and_claim() -> None:
     units = [unit("edge-stateless", ["/api/quote/**"])]
     rows = check_board.parse_board(
         board_text(
-            row(lane="a", status="done"),
-            row(lane="b", unit="nowhere"),
-            row(lane="c", status="claimed"),
-            row(lane="d", status="blocked:phase-0"),
+            row(lane="a", status="done", routes="-"),
+            row(lane="b", unit="nowhere", routes="-"),
+            row(lane="c", status="claimed", routes="-"),
+            row(lane="d", status="blocked:phase-0", routes="-"),
             row(lane="e", unit="none", routes="-"),
         )
     )
@@ -289,3 +299,35 @@ def test_status_counts() -> None:
         "claimed": 1,
         "blocked": 1,
     }
+
+
+def test_check_rows_flags_a_route_claimed_by_two_lanes() -> None:
+    units = [unit("edge-stateless", ["/api/quote/**", "/api/commands/**"])]
+    rows = check_board.parse_board(
+        board_text(
+            row(lane="quote"),
+            row(lane="commands", routes="`/api/commands/**`, `/api/quote/**`"),
+        )
+    )
+
+    errors = check_board.check_rows(rows, units)
+
+    assert any("/api/quote/**" in e and "also claimed" in e for e in errors)
+
+
+def test_web_ui_catch_all_never_covers_an_api_route() -> None:
+    units = [
+        unit("meta", ["/**"]),
+        unit("runtime", ["/api/team/**"]),
+    ]
+    rows = check_board.parse_board(
+        board_text(
+            row(lane="web-ui", unit="meta", routes="`/**`", owned="`a/**`"),
+            row(lane="team", unit="runtime", routes="`/api/team/**`", owned="`b/**`"),
+        )
+    )
+
+    assert check_board.check_routes_assigned(units, ["/", "/app", "/api/team/x"]) == []
+    assert check_board.check_lane_coverage(rows, units, ["/", "/api/team/x"]) == []
+    assert check_board.check_routes_assigned(units, ["/api/new"])
+    assert check_board.check_lane_coverage(rows, units, ["/api/new"])

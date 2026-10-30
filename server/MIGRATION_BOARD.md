@@ -17,8 +17,11 @@ unit a lane belongs to is explained in [CUTOVER_UNITS.md](CUTOVER_UNITS.md).
 - **`owned_paths`**: comma-separated globs. CI (`check_paths.py`) rejects a lane
   PR that touches anything else. `server/MIGRATION_BOARD.md` itself is allowed
   for the lane's own row. Phase 0 rows (`p0-*`, area `shared`) list only files
-  the task creates or edits alone; files several tasks edit (`Makefile`,
-  `server/Cargo.toml`, `contract-tests/conftest.py`) are not owned by anyone.
+  the task creates or edits alone, so the task that creates `server/Cargo.toml`
+  or `contract-tests/conftest.py` owns it; files that later tasks also edit
+  (`Makefile`, `.gitignore`, `pyproject.toml`, CI workflow additions) are not
+  owned by anyone. The `web-ui` lane's `/**` is the catch-all for the packaged
+  web UI; it never counts as owning an `/api` route.
   Phase 0 `claimed_by` shows `(assigned)` while the row is still `open`.
 - **`python_sources`**: where to read the behaviour. Not checked by CI.
 - **`gate_report`**: link to the latest gate report, `-` until there is one.
@@ -29,7 +32,7 @@ unit a lane belongs to is explained in [CUTOVER_UNITS.md](CUTOVER_UNITS.md).
 |---|---|---|---|---|---|---|---|---|
 | p0-t1-freeze-diagnosis | none | `app/server.py` | - | `scripts/migration/diagnose_freeze.py`, `documents/analysis/v3-freeze-diagnosis-*.md` | open | codex (assigned) | 2026-10-30 | - |
 | p0-t2-workspace-gates | none | `-` | - | `server/Cargo.toml`, `server/rust-toolchain.toml`, `server/clippy.toml`, `server/deny.toml`, `server/crates/core/Cargo.toml`, `server/crates/api-types/Cargo.toml`, `server/crates/gateway/Cargo.toml`, `server/crates/server/Cargo.toml`, `server/lint-fixtures/**`, `scripts/migration/gates.sh`, `scripts/migration/check_paths.py`, `.github/workflows/migration-gates.yml` | open | codex (assigned) | 2026-10-30 | - |
-| p0-t3-contract-harness | none | `tests/api/**` | - | `contract-tests/conftest.py`, `contract-tests/backends.py`, `contract-tests/normalize.py`, `contract-tests/sse.py`, `contract-tests/README.md`, `contract-tests/health/**`, `scripts/migration/openapi_diff.py` | claimed | claude | 2026-10-30 | - |
+| p0-t3-contract-harness | none | `tests/api/**` | - | `contract-tests/conftest.py`, `contract-tests/backends.py`, `contract-tests/normalize.py`, `contract-tests/sse.py`, `contract-tests/README.md`, `contract-tests/health/**`, `contract-tests/openapi/**`, `scripts/migration/openapi_diff.py` | claimed | claude | 2026-10-30 | - |
 | p0-t4-upgrade-fixtures | none | `app/migrations/**` | - | `contract-tests/fixtures/**`, `contract-tests/upgrade/**` | open | codex (assigned) | 2026-10-30 | - |
 | p0-t5-mock-provider | none | `app/agent/providers/**` | - | `contract-tests/mock_provider/**` | open | claude (assigned) | 2026-10-30 | - |
 | p0-t6-gateway-mode | none | `app/api/app.py`, `app/core/desktop_auth.py`, `app/services/remote_use_service.py` | - | `app/core/gateway_mode.py`, `app/api/app.py`, `app/core/desktop_auth.py`, `app/services/remote_use_service.py`, `tests/api/test_gateway_mode.py`, `tests/services/test_remote_use_gateway_target.py` | claimed | claude | 2026-10-30 | - |
@@ -76,3 +79,4 @@ unit a lane belongs to is explained in [CUTOVER_UNITS.md](CUTOVER_UNITS.md).
 | health-diagnostics | agent-runtime | `app/api/routes/{health,diagnostics}.py (except live)` | `/api/health/**`, `/api/diagnostics/**` | `server/crates/area-health-diagnostics/**`, `contract-tests/health-diagnostics/**`, `server/crates/api-types/src/health_diagnostics.rs` | blocked:phase-2 | - | 2026-10-30 | - |
 | agent-loop-chat | agent-runtime | `app/api/routes/team/{chat,folders,suggested_tasks,todos,questions,permissions}.py`, `app/services/{team_manager,chat_service,goal_service,title_service,stream_envelope,interactive_message_service,session_folder_service,suggested_task_service}.py`, `app/agent/agent_loop/**`, `app/agent/{state,checkpointer,ask_user}.py` | `/api/team/chat/**`, `/api/team/leads/**`, `/api/team/agents/**`, `/api/team/commands/**`, `/api/team/sessions/**`, `/api/team/session-folders/**`, `/api/team/suggested-tasks/**`, `/api/team/{session_id}/history/**`, `/api/team/{session_id}/side-chat/**`, `/api/team/{session_id}/stream/**`, `/api/team/{session_id}/goal/**`, `/api/team/{session_id}/permissions/**`, `/api/team/{session_id}/questions/**` | `server/crates/area-agent-loop-chat/**`, `contract-tests/agent-loop-chat/**`, `server/crates/api-types/src/agent_loop_chat.rs` | blocked:phase-2 | - | 2026-10-30 | - |
 | platform-meta | platform-meta | `app/api/app.py (docs, openapi)`, `app/core/metrics.py` | `/metrics`, `/openapi.json`, `/docs`, `/docs/oauth2-redirect`, `/redoc` | `server/crates/area-platform-meta/**`, `contract-tests/platform-meta/**`, `server/crates/api-types/src/platform_meta.rs` | blocked:phase-3 | - | 2026-10-30 | - |
+| web-ui | platform-meta | `app/api/static_web.py` | `/**` | `server/crates/area-web-ui/**`, `contract-tests/web-ui/**`, `server/crates/api-types/src/web_ui.rs` | blocked:phase-3 | - | 2026-10-30 | - |
