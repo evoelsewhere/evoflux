@@ -151,3 +151,27 @@ def test_cutover_changelog_still_unreleased_only():
     assert not check_paths.valid_changelog(
         CHANGELOG, CHANGELOG.replace("- released", "- changed")
     )
+
+
+def test_explicit_push_base_used_for_diff_and_changelog(monkeypatch, capsys):
+    calls = []
+
+    def fake_git(*args):
+        calls.append(args)
+        if args[:2] == ("diff", "--name-only"):
+            return "CHANGELOG.md\n"
+        if args[0] == "show":
+            return (
+                CHANGELOG
+                if args[1].startswith("before:")
+                else CHANGELOG.replace("- existing\n", "- existing\n- added\n")
+            )
+        raise AssertionError(args)
+
+    monkeypatch.setenv("GATES_DIFF_BASE", "before")
+    monkeypatch.setattr(check_paths, "git", fake_git)
+    monkeypatch.setattr(check_paths.sys, "argv", ["check_paths.py", "shared"])
+    assert check_paths.main() == 0
+    assert ("diff", "--name-only", "before..HEAD") in calls
+    assert ("show", "before:CHANGELOG.md") in calls
+    assert "CHANGELOG.md" in capsys.readouterr().out

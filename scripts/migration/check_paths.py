@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import difflib
 import fnmatch
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -120,8 +121,9 @@ def main() -> int:
     if len(sys.argv) != 2:
         raise SystemExit("usage: check_paths.py <area>")
     area = sys.argv[1]
-    base = "origin/migrate/rust-v4"
-    paths = git("diff", "--name-only", f"{base}...HEAD").splitlines()
+    explicit_base = os.environ.get("GATES_DIFF_BASE")
+    base = explicit_base or git("merge-base", "origin/migrate/rust-v4", "HEAD").strip()
+    paths = git("diff", "--name-only", f"{base}..HEAD").splitlines()
     if "CHANGELOG.md" in paths and not valid_changelog(
         git("show", f"{base}:CHANGELOG.md"), git("show", "HEAD:CHANGELOG.md")
     ):

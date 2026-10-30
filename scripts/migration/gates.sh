@@ -3,6 +3,18 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 area="${1:?usage: gates.sh <area>}"
+base="${GATES_DIFF_BASE:-origin/migrate/rust-v4}"
+if [[ -n "${GATES_DIFF_BASE:-}" ]]; then diff_range="$base..HEAD"; else diff_range="$base...HEAD"; fi
+if [[ "${GATES_DRY_RUN:-0}" == 1 ]]; then
+  echo "shared gates"
+  echo "check_paths $area"
+  case "$area" in
+    shared) ;;
+    cutover-*) echo "contract-all gateway" ;;
+    *) echo "nextest evoflux-area-$area"; echo "mutants evoflux-area-$area"; echo "openapi $area" ;;
+  esac
+  exit 0
+fi
 fixture=$(mktemp -d)
 output=$(mktemp)
 cleanup() { rm -rf "$fixture"; rm -f "$output"; }
@@ -37,23 +49,26 @@ for expected in 'std::thread::sleep' 'std::fs::read' '#unwrap_used' 'std::proces
   fi
 done
 (cd server && cargo fmt --check && cargo clippy --workspace --all-targets -- -D warnings && cargo nextest run --workspace --no-tests=warn && cargo deny check)
-if [[ "$area" != shared ]]; then
+if [[ "$area" != shared && "$area" != cutover-* ]]; then
   (cd server && cargo nextest list -p "evoflux-area-$area" --message-format json) |
     python -c 'import json, sys; n = json.load(sys.stdin)["test-count"]; sys.exit(0 if n > 0 else "error: lane has no tests")'
 fi
 python scripts/migration/check_paths.py "$area"
 # The compatibility gate is mandatory whenever the DB implementation or its
 # pinned SQLite changes, including local unstaged/staged changes.
-db_changes=$(git diff --name-only origin/migrate/rust-v4...HEAD -- server/crates/core/src/db server/vendor server/crates/core/examples/db_stress.rs contract-tests/db contract-tests/fixtures/upgrade)
+db_changes=$(git diff --name-only "$diff_range" -- server/crates/core/src/db server/vendor server/crates/core/examples/db_stress.rs contract-tests/db contract-tests/fixtures/upgrade)
 db_changes+=$(git diff --name-only HEAD -- server/crates/core/src/db server/vendor server/crates/core/examples/db_stress.rs contract-tests/db contract-tests/fixtures/upgrade)
 if [[ -n "$db_changes" ]]; then
   (cd server && cargo build -p evoflux-core --example db_stress)
   uv run --group contract pytest contract-tests/db -q --no-cov
 fi
-if [[ "$area" != shared ]]; then
+if [[ "$area" == cutover-* ]]; then
+  (cd server && cargo build -p evoflux-server && cargo build -p evoflux-gateway --bin evoflux-gateway-harness && cargo build -p evoflux-core --example db_stress)
+  TARGET=gateway uv run --group contract pytest contract-tests -q --no-cov
+elif [[ "$area" != shared ]]; then
   diff=$(mktemp)
   trap 'cleanup; rm -f "$diff"' EXIT
-  git diff origin/migrate/rust-v4...HEAD > "$diff"
+  git diff "$diff_range" > "$diff"
   (cd server && cargo mutants --in-diff "$diff" --package "evoflux-area-$area")
   # The lane's routes come from its server/MIGRATION_BOARD.md row.
   if [[ ! -f scripts/migration/openapi_diff.py ]]; then
