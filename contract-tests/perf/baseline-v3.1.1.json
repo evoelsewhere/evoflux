@@ -1,4 +1,5 @@
 {
+  "notes": "Median of 5 python-v3.1.1 runs, each on fresh backends. floor_ms (and the *_floor_* fields) is the spread of that figure across the runs: the python-vs-python noise baseline (workflow 5.3). The compare limit is max(1.1 x p99, p99 + floor_ms), a measured per-endpoint floor in place of the plan's flat 10 % (orchestrator decision). sse_first_event_ms is chat POST to first SSE event, with the replaying mock provider.",
   "version": "3.1.1",
   "target": "python",
   "machine": {
@@ -8,132 +9,165 @@
     "cpu": "AMD64 Family 25 Model 80 Stepping 0, AuthenticAMD",
     "cpu_count": 16
   },
-  "git_commit": "5c4dd3e96794003ec739955e94a2ec1257911008",
-  "samples_per_endpoint": 200,
-  "cold_start_ms": 5956.3,
-  "idle_rss_mb": 223.7,
+  "git_commit": "05c9d4ce278b547301a3f6ba2ebd39cc76222349",
+  "samples_per_endpoint": "up to 200 (at least 30, 12 s budget)",
+  "noise_runs": 5,
+  "cold_start_ms": 7008.2,
+  "cold_start_floor_ms": 3380.0,
+  "idle_rss_mb": 225.6,
+  "idle_rss_floor_mb": 2.8,
+  "sse_first_event_ms": 332.41,
+  "sse_first_event_floor_ms": 112.48,
   "endpoints": {
     "/api/health/live": {
-      "p50_ms": 1.7,
-      "p99_ms": 2.32
+      "p50_ms": 1.79,
+      "p99_ms": 2.6,
+      "floor_ms": 3.37
     },
     "/api/health/ready": {
-      "p50_ms": 3.52,
-      "p99_ms": 4.26
+      "p50_ms": 4.73,
+      "p99_ms": 6.35,
+      "floor_ms": 25.23
     },
     "/api/health/diagnostics": {
-      "p50_ms": 6.56,
-      "p99_ms": 7.38
+      "p50_ms": 7.14,
+      "p99_ms": 8.17,
+      "floor_ms": 11.78
     },
     "/api/agents": {
-      "p50_ms": 22.77,
-      "p99_ms": 39.05
+      "p50_ms": 23.72,
+      "p99_ms": 42.0,
+      "floor_ms": 90.35
     },
     "/api/skills": {
-      "p50_ms": 61.86,
-      "p99_ms": 175.3
+      "p50_ms": 54.14,
+      "p99_ms": 104.03,
+      "floor_ms": 61.16
     },
     "/api/commands": {
-      "p50_ms": 3.44,
-      "p99_ms": 5.5
+      "p50_ms": 3.07,
+      "p99_ms": 3.96,
+      "floor_ms": 2.42
     },
     "/api/mcp/servers": {
-      "p50_ms": 3.04,
-      "p99_ms": 4.94
+      "p50_ms": 2.99,
+      "p99_ms": 4.51,
+      "floor_ms": 1.54
     },
     "/api/plugins": {
-      "p50_ms": 2.71,
-      "p99_ms": 3.44
+      "p50_ms": 2.96,
+      "p99_ms": 3.98,
+      "floor_ms": 3.01
     },
     "/api/settings/providers": {
-      "p50_ms": 1338.99,
-      "p99_ms": 3132.51
+      "p50_ms": 1318.95,
+      "p99_ms": 2060.91,
+      "floor_ms": 2038.51
     },
     "/api/settings/context": {
-      "p50_ms": 8.56,
-      "p99_ms": 9.69
+      "p50_ms": 9.2,
+      "p99_ms": 16.16,
+      "floor_ms": 3.83
     },
     "/api/settings/sandbox": {
-      "p50_ms": 2.36,
-      "p99_ms": 2.93
+      "p50_ms": 2.62,
+      "p99_ms": 3.58,
+      "floor_ms": 4.09
     },
     "/api/settings/version-control": {
-      "p50_ms": 8.68,
-      "p99_ms": 14.54
+      "p50_ms": 9.19,
+      "p99_ms": 12.96,
+      "floor_ms": 7.58
     },
     "/api/settings/response-style": {
-      "p50_ms": 8.73,
-      "p99_ms": 14.83
+      "p50_ms": 9.11,
+      "p99_ms": 14.52,
+      "floor_ms": 7.84
     },
     "/api/settings/follow-up": {
-      "p50_ms": 8.79,
-      "p99_ms": 14.68
+      "p50_ms": 9.07,
+      "p99_ms": 15.6,
+      "floor_ms": 7.93
     },
     "/api/settings/team-spawn": {
-      "p50_ms": 8.64,
-      "p99_ms": 9.24
+      "p50_ms": 8.93,
+      "p99_ms": 13.35,
+      "floor_ms": 4.54
     },
     "/api/settings/background-tasks": {
-      "p50_ms": 8.51,
-      "p99_ms": 9.75
+      "p50_ms": 9.0,
+      "p99_ms": 15.48,
+      "floor_ms": 5.66
     },
     "/api/scheduler/tasks": {
-      "p50_ms": 5.3,
-      "p99_ms": 11.22
+      "p50_ms": 5.05,
+      "p99_ms": 5.91,
+      "floor_ms": 4.54
     },
     "/api/team/leads": {
-      "p50_ms": 34.77,
-      "p99_ms": 60.53
+      "p50_ms": 36.12,
+      "p99_ms": 66.11,
+      "floor_ms": 6.15
     },
     "/api/team/sessions": {
-      "p50_ms": 5.23,
-      "p99_ms": 6.1
+      "p50_ms": 5.83,
+      "p99_ms": 7.94,
+      "floor_ms": 3.83
     },
     "/api/team/session-folders": {
-      "p50_ms": 4.84,
-      "p99_ms": 5.92
+      "p50_ms": 4.29,
+      "p99_ms": 6.26,
+      "floor_ms": 4.25
     },
     "/api/team/projects": {
-      "p50_ms": 4.04,
-      "p99_ms": 4.95
+      "p50_ms": 4.58,
+      "p99_ms": 6.55,
+      "floor_ms": 4.95
     },
     "/api/team/processes": {
-      "p50_ms": 1.91,
-      "p99_ms": 2.36
+      "p50_ms": 2.06,
+      "p99_ms": 2.79,
+      "floor_ms": 4.29
     },
     "/api/team/office-runtime/status": {
-      "p50_ms": 2.1,
-      "p99_ms": 2.49
+      "p50_ms": 2.27,
+      "p99_ms": 2.82,
+      "floor_ms": 3.42
     },
     "/api/team/reviews/connections": {
-      "p50_ms": 3.84,
-      "p99_ms": 4.7
+      "p50_ms": 4.25,
+      "p99_ms": 6.24,
+      "floor_ms": 2.82
     },
     "/api/team/webbridge/status": {
-      "p50_ms": 2.05,
-      "p99_ms": 2.71
+      "p50_ms": 2.18,
+      "p99_ms": 2.93,
+      "floor_ms": 1.51
     },
     "/api/observability/summary": {
-      "p50_ms": 2.99,
-      "p99_ms": 4.21
+      "p50_ms": 3.14,
+      "p99_ms": 4.03,
+      "floor_ms": 2.77
     },
     "/api/wiki/tree": {
-      "p50_ms": 8.65,
-      "p99_ms": 9.52
+      "p50_ms": 9.12,
+      "p99_ms": 10.95,
+      "floor_ms": 6.99
     },
     "/api/team/00000000-0000-7000-8000-00000000b16b/history": {
-      "p50_ms": 43.87,
-      "p99_ms": 84.37
+      "p50_ms": 46.24,
+      "p99_ms": 81.39,
+      "floor_ms": 12.23
     },
     "/api/team/sessions/00000000-0000-7000-8000-00000000b16b": {
-      "p50_ms": 60.03,
-      "p99_ms": 138.21
+      "p50_ms": 44.64,
+      "p99_ms": 90.62,
+      "floor_ms": 34.32
     },
     "/api/team/00000000-0000-7000-8000-00000000b16b/goal": {
-      "p50_ms": 7.15,
-      "p99_ms": 17.24
+      "p50_ms": 6.55,
+      "p99_ms": 9.71,
+      "floor_ms": 9.18
     }
-  },
-  "sse_first_event_ms": null,
-  "sse_idle_open_ms": 3.6
+  }
 }

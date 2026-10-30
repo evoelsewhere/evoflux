@@ -92,7 +92,8 @@ make perf-baseline MACHINE="<name>"      # re-record the baseline from Python
 ```
 
 - `perf/baseline-v3.1.1.json` names the machine it was recorded on; compare only on comparable hardware.
-- `make perf` fails when an endpoint p99 is more than 10 % (and more than 2 ms) above the baseline. `AREA=all` also checks cold start and idle memory.
+- `make perf` fails when an endpoint p99 exceeds `max(1.1 x baseline, baseline + floor_ms)`. `floor_ms` is that endpoint's measured python-vs-python noise (the spread of three repeated recordings, stored in the baseline), used in place of a flat 10 %. `AREA=all` also checks cold start, idle memory and first-event latency the same way.
+- The gate probes on a fixed-rate schedule and measures each probe from its scheduled send time, so a stall cannot hide as one slow sample. `/api/health/live` (50 Hz) and the history page (10 Hz) run concurrently; both must stay under 1 s max, live under 50 ms p99, history within 2x its idle p99. `cold_start` is probed right after the handshake, before optional services are ready; the other scenarios wait for them first.
 - The gate runs every scenario in `perf/scenarios.py:FREEZE_SCENARIOS`. To add one from the freeze diagnosis, register a factory with `@freeze_scenario("name")`; if v3.1.1 stalls under it, add its name and reason to `V3_STALLS` so `TARGET=python` expects the failure (`xfail(strict=True)`).
 - The large test repository is built once under `D:\evoelsewhere\.tmp-perf\` (set `EVOFLUX_PERF_ROOT` to move it); it is never created inside the checkout.
-- `sse_first_event_ms` is `null` until the mock provider (task 5) can start a turn; `sse_idle_open_ms` records the open time of an idle stream meanwhile.
+- `sse_first_event_ms` is the time from a chat `POST` to the first SSE event of its turn, with the replaying mock provider.
