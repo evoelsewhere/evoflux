@@ -18,6 +18,12 @@ If something is unclear, stop and escalate (§9). Don't guess.
 
 ## 1. Branch rules
 
+> **Superseded for landing work (owner decision, 2026-10-30):** tasks now land
+> directly on `migrate/rust-v4` through local `wip/<agent>/<task>` branches,
+> local review by a second agent, and `--ff-only` merges. No PR per task. See
+> [`documents/plans/rust-migration-execution.md`](../documents/plans/rust-migration-execution.md).
+> The rest of this section still applies where it doesn't conflict with that document.
+
 | Branch | Who writes | How |
 |---|---|---|
 | `main` | nobody during the migration | frozen; only owner-approved critical fixes, then merged forward |
