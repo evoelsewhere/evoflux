@@ -49,6 +49,7 @@ COLUMNS = (
 )
 STATUSES = ("open", "claimed", "in-review", "merged", "cut-over")
 OWNERS = ("python", "rust", "shadow")
+CATCH_ALL = "/**"  # the packaged web UI mount
 NO_UNIT = "none"  # lanes with no HTTP routes (CLI, plugin host, skill scripts)
 EMPTY = "-"
 
@@ -131,7 +132,8 @@ def load_routing(path: Path) -> list[Unit]:
 
 
 def registered_route_paths(app: Any) -> list[str]:
-    return sorted({route.path for route in app.routes})
+    # A Mount at "/" (the packaged web UI) reports an empty path.
+    return sorted({route.path or "/" for route in app.routes})
 
 
 # --- route matching ----------------------------------------------------------
@@ -147,13 +149,27 @@ def _specificity(pattern: str, path: str) -> int | None:
     return len(pattern) + 1 if path == pattern else None
 
 
-def _best(patterns: list[tuple[str, str]], path: str) -> str | None:
-    best: tuple[int, str] | None = None
+def _best_match(patterns: list[tuple[str, str]], path: str) -> tuple[str, str] | None:
+    best: tuple[int, str, str] | None = None
     for pattern, tag in patterns:
         score = _specificity(pattern, path)
         if score is not None and (best is None or score > best[0]):
-            best = (score, tag)
-    return best[1] if best else None
+            best = (score, tag, pattern)
+    return (best[1], best[2]) if best else None
+
+
+def _best(patterns: list[tuple[str, str]], path: str) -> str | None:
+    match = _best_match(patterns, path)
+    return match[0] if match else None
+
+
+def _only_catch_all(match: tuple[str, str] | None, path: str) -> bool:
+    """True when an API path is covered only by the ``/**`` web UI catch-all.
+
+    The catch-all serves the packaged web UI; it must never hide an /api route
+    that nobody assigned.
+    """
+    return match is not None and match[1] == CATCH_ALL and path.startswith("/api")
 
 
 def owner_for(units: list[Unit], path: str) -> str | None:
@@ -177,8 +193,10 @@ def check_routes_assigned(units: list[Unit], paths: list[str]) -> list[str]:
     for route, names in sorted(seen.items()):
         if len(set(names)) > 1:
             errors.append(f"route {route} is in more than one unit: {sorted(names)}")
+    unit_patterns = [(r, u.name) for u in units for r in u.routes]
     for path in paths:
-        if owner_for(units, path) is None:
+        match = _best_match(unit_patterns, path)
+        if match is None or _only_catch_all(match, path):
             errors.append(f"route {path} has no unit in routing.toml")
     return errors
 
@@ -204,6 +222,7 @@ def check_rows(rows: list[dict[str, str]], units: list[Unit]) -> list[str]:
     errors = []
     unit_names = {u.name for u in units}
     seen_lanes: set[str] = set()
+    route_claims: dict[str, str] = {}
     for r in rows:
         lane = r["lane"]
         if not _LANE_RE.match(lane):
@@ -246,6 +265,12 @@ def check_rows(rows: list[dict[str, str]], units: list[Unit]) -> list[str]:
         if unit == NO_UNIT and routes:
             errors.append(f"{lane}: a lane in unit none cannot own routes")
         for route in routes:
+            if route in route_claims and route_claims[route] != lane:
+                errors.append(
+                    f"{lane}: route {route} is also claimed by lane "
+                    f"{route_claims[route]}"
+                )
+            route_claims.setdefault(route, lane)
             if not route.startswith("/"):
                 errors.append(f"{lane}: route {route!r} must start with /")
             elif unit in unit_names and owner_for(units, _pattern_base(route)) != unit:
@@ -296,8 +321,9 @@ def check_lane_coverage(
             patterns += [(x.strip(), r["lane"]) for x in r["routes"].split(",")]
     errors = []
     for path in paths:
-        lane = _best(patterns, path)
-        if lane is None:
+        match = _best_match(patterns, path)
+        lane = match[0] if match else None
+        if lane is None or _only_catch_all(match, path):
             errors.append(f"route {path} is not owned by any lane")
             continue
         unit = owner_for(units, path)

@@ -48,6 +48,9 @@ routes = [
   "/docs",
   "/docs/oauth2-redirect",
   "/redoc",
+  # Packaged web UI (app/api/static_web.py), mounted last as the catch-all.
+  # Checks refuse to let it cover an /api route.
+  "/**",
 ]
 services = []
 
