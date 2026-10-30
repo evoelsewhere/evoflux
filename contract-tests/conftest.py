@@ -15,6 +15,9 @@ import httpx
 import pytest
 
 from backends import Backend, BackendStartError, Target, start_backend
+from mock_provider.server import MockProvider
+
+MOCK_MODEL = "mock-model"
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -101,3 +104,39 @@ def snapshot(request: pytest.FixtureRequest, target: Target) -> Snapshots:
         raise pytest.UsageError("--snapshot-update records from TARGET=python only")
     directory = Path(str(request.node.path)).parent / "snapshots"
     return Snapshots(directory, update)
+
+
+@pytest.fixture
+def mock_provider() -> Iterator[MockProvider]:
+    """A replaying model provider on 127.0.0.1; see ``mock_provider/server.py``."""
+    provider = MockProvider()
+    try:
+        yield provider
+    finally:
+        provider.close()
+
+
+def configure_backend_provider(
+    client: httpx.Client, mock: MockProvider, *, wire: str = "openai"
+) -> None:
+    """Register ``mock`` through the settings API the UI uses.
+
+    ``wire`` picks the protocol: ``openai`` is Chat Completions, served to the
+    9Router provider (the OpenAI provider itself uses the Responses API);
+    ``anthropic`` is the Messages API. ``PUT /api/settings/providers/{id}``
+    stores a dummy key and the base URL override, then ``POST /api/settings/seed``
+    installs the bundled agents pointed at ``<provider>:mock-model``.
+    """
+    provider, var, base = {
+        "openai": ("router9", "ROUTER9_BASE_URL", f"{mock.base_url}/v1"),
+        "anthropic": ("anthropic", "ANTHROPIC_BASE_URL", mock.base_url),
+    }[wire]
+    saved = client.put(
+        f"/api/settings/providers/{provider}",
+        json={"api_key": "mock-key", "extra": {var: base}},
+    )
+    saved.raise_for_status()
+    seeded = client.post(
+        "/api/settings/seed", json={"provider_model": f"{provider}:{MOCK_MODEL}"}
+    )
+    seeded.raise_for_status()

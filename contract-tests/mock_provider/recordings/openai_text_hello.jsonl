@@ -1,0 +1,7 @@
+{"data":{"id":"chatcmpl-mock1","object":"chat.completion.chunk","created":1,"model":"mock-model","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}}
+{"data":{"id":"chatcmpl-mock1","object":"chat.completion.chunk","created":1,"model":"mock-model","choices":[{"index":0,"delta":{"content":"Hello "},"finish_reason":null}]}}
+{"delay_ms":20}
+{"data":{"id":"chatcmpl-mock1","object":"chat.completion.chunk","created":1,"model":"mock-model","choices":[{"index":0,"delta":{"content":"from mock."},"finish_reason":null}]}}
+{"data":{"id":"chatcmpl-mock1","object":"chat.completion.chunk","created":1,"model":"mock-model","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}}
+{"data":{"id":"chatcmpl-mock1","object":"chat.completion.chunk","created":1,"model":"mock-model","choices":[],"usage":{"prompt_tokens":10,"completion_tokens":4,"total_tokens":14}}}
+{"data":"[DONE]"}
