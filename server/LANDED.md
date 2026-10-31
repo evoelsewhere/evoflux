@@ -15,3 +15,4 @@ One line per landed task: date · task · author agent · reviewer · commit ran
 2026-10-31 · T16 Phase 0 exit report (awaiting owner daily-use approval) · Claude CLI Sonnet + orchestrator checks · owner · 2d7b4874..HEAD
 2026-10-31 · P1-T1 board/units for Phase 1, merged rows release paths · Claude CLI Haiku · Codex Luna (APPROVE) · d5c69e1b..HEAD
 2026-10-31 · P1-T2 CI on push + 3-OS contract job · Codex Terra · Claude CLI Sonnet (APPROVE fdc94af5) · 83e867bf..HEAD
+2026-10-31 · P1-T6 serve hosts area units + shadow wiring · Codex Terra · Claude CLI Sonnet (APPROVE 7322598d) · a46b44e7..HEAD
