@@ -292,6 +292,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "evoflux-area-health-live"
+version = "0.1.0"
+dependencies = [
+ "axum",
+]
+
+[[package]]
+name = "evoflux-area-quote"
+version = "0.1.0"
+dependencies = [
+ "axum",
+]
+
+[[package]]
 name = "evoflux-area-snippets"
 version = "0.1.0"
 dependencies = [
