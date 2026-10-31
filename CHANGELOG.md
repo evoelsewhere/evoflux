@@ -14,6 +14,7 @@ All notable changes to EvoFlux are documented in this file.
 ### Changed
 
 - Recorded the Phase 1 automated checkpoint smoke run (app, chat and the Rust-served health-live and quote routes through the gateway); documentation only.
+- Added the `evoflux-net` crate to the v4 Rust server: one shared HTTPS client (rustls with the OS trust store, system proxy, gzip, connect and read timeouts, no total timeout) that units receive through `UnitState`, with `cargo deny` and clippy rules that ban other HTTP clients. No app behaviour changes.
 - Recorded the v4 Rust HTTPS client choice (one shared `reqwest` 0.13 client, rustls with the OS trust store) and a re-check of the other Rust library picks; documentation only, no app behaviour changes.
 - The contract suite's responsiveness gate can now run with `TARGET=rust` (it routes the edge-stateless unit to Rust); before, it stopped with a usage error.
 - The v4 Rust server now mounts the ported `health-live` and `quote` routes and reads `EVOFLUX_CACHE_DIR`; both units stay Python-owned until cutover, so nothing changes in the app.

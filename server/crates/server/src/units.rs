@@ -11,6 +11,8 @@ pub struct UnitState {
     pub settings: Arc<Settings>,
     pub paths: Arc<Paths>,
     pub db: Option<Arc<Db>>,
+    /// The one shared HTTPS client (`evoflux-net`); units clone it, never build their own.
+    pub http: evoflux_net::Client,
 }
 pub fn router(_state: &UnitState) -> Router {
     #[cfg(test)]
@@ -98,6 +100,7 @@ mod tests {
             paths: Arc::new(Paths::resolve(&settings)),
             settings: Arc::new(settings),
             db: None,
+            http: evoflux_net::build_client().unwrap(),
         };
         let request = Request::builder().uri(uri).body(Body::empty()).unwrap();
         let response = router(&state).oneshot(request).await.unwrap();

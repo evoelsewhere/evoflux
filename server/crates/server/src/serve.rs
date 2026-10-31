@@ -157,6 +157,7 @@ fn prepare(args: ServeArgs, settings: &Settings) -> Result<Prepared, String> {
             settings: Arc::new(settings.clone()),
             paths: Arc::new(Paths::resolve(settings)),
             db: None,
+            http: evoflux_net::build_client().map_err(|e| e.to_string())?,
         },
         state_file: std::env::var_os("EVOFLUX_GATEWAY_STATE_FILE").map(PathBuf::from),
     })
@@ -513,6 +514,7 @@ mod tests {
             paths: Arc::new(Paths::resolve(&settings)),
             settings: Arc::new(settings),
             db: None,
+            http: evoflux_net::build_client().unwrap(),
         };
         let table = RoutingTable::from_toml("[[unit]]\nname='test-unit'\nowner='rust'\nroutes=['/test-unit']\nservices=['test-service']\n", None).unwrap();
         let prepared = Prepared {

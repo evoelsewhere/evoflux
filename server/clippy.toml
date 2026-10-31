@@ -7,4 +7,6 @@ disallowed-methods = [
   { path = "std::fs::File::create", reason = "blocks the async runtime; use tokio or core::blocking" },
   { path = "std::process::Command::new", reason = "blocks the async runtime; use tokio or core::blocking" },
   { path = "std::net::TcpStream::connect", reason = "blocks the async runtime; use tokio or core::blocking" },
+  { path = "reqwest::Client::new", reason = "build the one shared client in evoflux-net and take it from UnitState" },
+  { path = "reqwest::get", reason = "build the one shared client in evoflux-net and take it from UnitState" },
 ]
