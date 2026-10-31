@@ -6,6 +6,7 @@ All notable changes to EvoFlux are documented in this file.
 
 ### Changed
 
+- Added a regression check for v4 area routes and services during server startup.
 - The v4 migration plan now ends with removing the Python backend from the repository, and adds user-level checks at every milestone: an automated end-to-end smoke suite through the real app, an exploratory run as a first-time user, and owner daily use. No app behaviour changes.
 - The v4 server now hosts migrated area routes and supports safe GET-only shadow comparisons during normal startup, while Python continues to answer shadowed requests.
 - Added the Phase 1 (pilot) plan for the v4 migration (`documents/plans/rust-migration-phase-1-plan.md`). It covers porting and cutting over the `edge-stateless` and `observability` units, with `import` cut over only if the owner clears it. Each task has its lanes, shadow or replay runs, cutovers, 24 h watches, the Phase 0 follow-ups those need (shadow mode in `serve`, database metrics, CI on pushes and on Linux/macOS, a packaged build with the web UI), and an agent, model and reviewer. No app behaviour changes.

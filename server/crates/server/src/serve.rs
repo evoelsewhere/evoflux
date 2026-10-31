@@ -429,3 +429,98 @@ async fn write_state(sup: Arc<PythonSupervisor>, path: PathBuf) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::disallowed_methods
+    )]
+    use super::*;
+    use std::collections::HashMap;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn run_mounts_units_and_starts_and_stops_services() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
+        let entry = root.join("contract-tests/gateway/fake_upstream.py");
+        let venv_python = if cfg!(windows) {
+            root.join(".venv/Scripts/python.exe")
+        } else {
+            root.join(".venv/bin/python")
+        };
+        let python = std::env::var_os("EVOFLUX_TEST_PYTHON")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| {
+                if venv_python.is_file() {
+                    venv_python
+                } else if cfg!(windows) {
+                    PathBuf::from("python")
+                } else {
+                    PathBuf::from("python3")
+                }
+            });
+        let mut parent = tokio::process::Command::new(&python)
+            .args(["-c", "import time; time.sleep(120)"])
+            .kill_on_drop(true)
+            .spawn()
+            .unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+        let mut vars = HashMap::new();
+        vars.insert("APP_ENV".to_owned(), "serve-test-unit".to_owned());
+        let settings = Settings::from_vars(&vars, Some(tmp.path()), tmp.path()).unwrap();
+        let state = UnitState {
+            paths: Arc::new(Paths::resolve(&settings)),
+            settings: Arc::new(settings),
+            db: None,
+        };
+        let table = RoutingTable::from_toml("[[unit]]\nname='test-unit'\nowner='rust'\nroutes=['/test-unit']\nservices=['test-service']\n", None).unwrap();
+        let prepared = Prepared {
+            args: ServeArgs {
+                port,
+                parent_pid: parent.id(),
+                ..ServeArgs::default()
+            },
+            python: PythonPaths {
+                bin: python,
+                site_packages: entry.parent().unwrap().to_path_buf(),
+                cli_entry: entry,
+            },
+            python_wait: Duration::from_secs(30),
+            handshake_token: None,
+            auth_token: None,
+            table,
+            state,
+            state_file: None,
+        };
+        units::test_support::reset();
+        let server = tokio::spawn(run(prepared));
+        let response = tokio::time::timeout(Duration::from_secs(30), async {
+            loop {
+                if let Ok(mut stream) = tokio::net::TcpStream::connect(("127.0.0.1", port)).await {
+                    stream.write_all(b"GET /test-unit HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n").await.unwrap();
+                    let mut response = String::new();
+                    stream.read_to_string(&mut response).await.unwrap();
+                    break response;
+                }
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+        }).await.unwrap();
+        assert!(response.contains("test unit response"), "{response}");
+        assert!(units::test_support::started());
+        parent.kill().await.unwrap();
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(20), server)
+                .await
+                .unwrap()
+                .unwrap(),
+            EXIT_STARTUP
+        );
+        assert!(units::test_support::stopped());
+    }
+}
