@@ -23,9 +23,15 @@ pub fn router(_state: &UnitState) -> Router {
         );
     }
     Router::new()
-        .merge(evoflux_area_health_live::router())
+        .merge(evoflux_area_health_live::router(crate::handshake::version()))
         .merge(evoflux_area_quote::router(
             _state.settings.cache_dir.clone(),
+            _state
+                .settings
+                .ninja_api_key
+                .as_ref()
+                .map(|key| key.expose().to_owned()),
+            _state.http.clone(),
         ))
         .fallback(not_found)
 }
@@ -113,7 +119,13 @@ mod tests {
     async fn serves_health_live() {
         let (status, body) = get("/api/health/live").await;
         assert_eq!(status, StatusCode::OK);
-        assert!(body.starts_with(r#"{"status":"ok","version":""#), "{body}");
+        assert_eq!(
+            body,
+            format!(
+                r#"{{"status":"ok","version":"{}"}}"#,
+                crate::handshake::version()
+            )
+        );
     }
 
     #[tokio::test]
