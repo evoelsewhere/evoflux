@@ -24,7 +24,9 @@ use evoflux_core::config::Settings;
 use evoflux_core::paths::Paths;
 use evoflux_core::{telemetry, watchdog};
 use evoflux_gateway::proxy::GatewayOptions;
-use evoflux_gateway::routing::{openapi_operations, Owner, RoutingTable};
+use evoflux_gateway::routing::{
+    openapi_operations, parse_rust_ready, rust_forward_enabled, Owner, RoutingTable,
+};
 use evoflux_gateway::supervisor::{PythonConfig, PythonSupervisor};
 use tokio::io::AsyncWriteExt;
 use tokio::sync::watch;
@@ -47,6 +49,7 @@ const STALL_THRESHOLD: Duration = Duration::from_millis(100);
 /// How long open connections (SSE streams) may delay shutdown.
 const SHUTDOWN_GRACE: Duration = Duration::from_secs(5);
 const ROUTING_TOML: &str = include_str!("../../../routing.toml");
+const RUST_READY_TOML: &str = include_str!("../../../rust-ready.toml");
 const PYTHON_OPENAPI: &str = include_str!("../../../../contract-tests/openapi/python-v3.1.1.json");
 
 struct Prepared {
@@ -138,8 +141,13 @@ fn prepare(args: ServeArgs, settings: &Settings) -> Result<Prepared, String> {
         Some(path) => read_text(Path::new(&path))?,
         None => ROUTING_TOML.to_owned(),
     };
-    let table = RoutingTable::from_toml(&routing_text, env("EVOFLUX_ROUTE_OVERRIDE").as_deref())
-        .map_err(|e| format!("routing table: {e}"))?;
+    let forward = forward_requested(args.rust_forward, env("EVOFLUX_RUST_FORWARD").as_deref());
+    let table = build_table(
+        &routing_text,
+        RUST_READY_TOML,
+        env("EVOFLUX_ROUTE_OVERRIDE").as_deref(),
+        forward,
+    )?;
     let operations =
         openapi_operations(PYTHON_OPENAPI).map_err(|e| format!("routing table: {e}"))?;
     table
@@ -161,6 +169,32 @@ fn prepare(args: ServeArgs, settings: &Settings) -> Result<Prepared, String> {
         },
         state_file: std::env::var_os("EVOFLUX_GATEWAY_STATE_FILE").map(PathBuf::from),
     })
+}
+
+/// Rust-forward is on when `--rust-forward` is passed or `EVOFLUX_RUST_FORWARD` says so.
+fn forward_requested(flag: bool, env_value: Option<&str>) -> bool {
+    flag || rust_forward_enabled(env_value)
+}
+
+/// The routing table with `override_env` applied and, when `forward` is set,
+/// every unit in `rust_ready_text` on Rust first (design §9a).
+fn build_table(
+    routing_text: &str,
+    rust_ready_text: &str,
+    override_env: Option<&str>,
+    forward: bool,
+) -> Result<RoutingTable, String> {
+    let ready = if forward {
+        parse_rust_ready(rust_ready_text).map_err(|e| format!("rust-ready.toml: {e}"))?
+    } else {
+        Vec::new()
+    };
+    let table = RoutingTable::from_toml_forward(routing_text, override_env, &ready)
+        .map_err(|e| format!("routing table: {e}"))?;
+    if forward {
+        tracing::info!(units = ?table.forwarded_units(), "rust_forward_enabled");
+    }
+    Ok(table)
 }
 
 /// Startup-only synchronous read, before the async runtime starts.
@@ -477,6 +511,51 @@ mod tests {
     use super::*;
     use std::collections::HashMap;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    const TABLE: &str = "[[unit]]
+name='a'
+owner='python'
+routes=['/a']
+
+[[unit]]
+name='b'
+owner='python'
+routes=['/b']
+";
+
+    #[test]
+    fn forward_is_requested_by_the_flag_or_the_env() {
+        assert!(!forward_requested(false, None));
+        assert!(!forward_requested(false, Some("0")));
+        assert!(forward_requested(true, None));
+        assert!(forward_requested(false, Some("1")));
+        assert!(forward_requested(true, Some("1")));
+    }
+
+    #[test]
+    fn build_table_only_forwards_when_asked() {
+        let ready = "units = ['a']";
+        let off = build_table(TABLE, ready, None, false).unwrap();
+        assert_eq!(off.owner_for("/a"), Owner::Python);
+        let on = build_table(TABLE, ready, None, true).unwrap();
+        assert_eq!(on.owner_for("/a"), Owner::Rust);
+        assert_eq!(on.owner_for("/b"), Owner::Python);
+        let kept = build_table(TABLE, ready, Some("a=python"), true).unwrap();
+        assert_eq!(kept.owner_for("/a"), Owner::Python);
+    }
+
+    #[test]
+    fn build_table_rejects_an_unknown_ready_unit_only_when_forwarding() {
+        let err = build_table(TABLE, "units = ['nope']", None, true).unwrap_err();
+        assert!(err.contains("nope"), "{err}");
+        assert!(build_table(TABLE, "units = ['nope']", None, false).is_ok());
+        assert!(build_table(TABLE, "units = 3", None, true).is_err());
+    }
+
+    #[test]
+    fn embedded_rust_ready_units_exist_in_the_embedded_routing_table() {
+        build_table(ROUTING_TOML, RUST_READY_TOML, None, true).unwrap();
+    }
 
     #[tokio::test(flavor = "multi_thread")]
     async fn run_mounts_units_and_starts_and_stops_services() {

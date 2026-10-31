@@ -9,6 +9,8 @@
 //! then literal segment count, then exact over `/**`; on a full tie the first
 //! route in the table wins. Unmatched paths go to Python.
 //! `EVOFLUX_ROUTE_OVERRIDE=<unit>=<owner>,...` overrides owners at runtime.
+//! Rust-forward (`server/rust-ready.toml`, design §9a) first puts every listed
+//! unit on Rust; an explicit override entry for a unit still wins.
 
 use percent_encoding::percent_decode_str;
 use serde::Deserialize;
@@ -83,6 +85,28 @@ pub enum RoutingError {
     InvalidOverride(String),
     #[error("EVOFLUX_ROUTE_OVERRIDE names unknown unit {0:?}")]
     UnknownOverrideUnit(String),
+    #[error("rust-ready.toml lists unit {0:?}, which routing.toml does not define")]
+    UnknownRustReadyUnit(String),
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RustReady {
+    units: Vec<String>,
+}
+
+/// The unit names in `server/rust-ready.toml`.
+pub fn parse_rust_ready(text: &str) -> Result<Vec<String>, RoutingError> {
+    Ok(toml::from_str::<RustReady>(text)?.units)
+}
+
+/// Whether an `EVOFLUX_RUST_FORWARD` value switches Rust-forward on:
+/// `1`, `true` or `on` (any case); anything else is off.
+pub fn rust_forward_enabled(value: Option<&str>) -> bool {
+    value.is_some_and(|raw| {
+        let raw = raw.trim();
+        raw == "1" || raw.eq_ignore_ascii_case("true") || raw.eq_ignore_ascii_case("on")
+    })
 }
 
 #[derive(Debug, Deserialize)]
@@ -187,6 +211,7 @@ impl Pattern {
 pub struct RoutingTable {
     units: Vec<Unit>,
     patterns: Vec<(Pattern, usize)>,
+    forwarded: Vec<String>,
 }
 
 impl RoutingTable {
@@ -204,6 +229,18 @@ impl RoutingTable {
 
     /// Parse a routing table from TOML text and apply `override_env`.
     pub fn from_toml(text: &str, override_env: Option<&str>) -> Result<Self, RoutingError> {
+        Self::from_toml_forward(text, override_env, &[])
+    }
+
+    /// Like [`Self::from_toml`], but first puts each unit in `rust_ready` on Rust.
+    ///
+    /// `override_env` is applied afterwards, so an explicit entry wins. A name in
+    /// `rust_ready` that the table does not define is an error.
+    pub fn from_toml_forward(
+        text: &str,
+        override_env: Option<&str>,
+        rust_ready: &[String],
+    ) -> Result<Self, RoutingError> {
         let file: File = toml::from_str(text)?;
         let mut units = file.unit;
         let mut names = HashSet::new();
@@ -233,10 +270,31 @@ impl RoutingTable {
                 patterns.push((pattern, index));
             }
         }
-        if let Some(raw) = override_env {
-            apply_override(&mut units, raw)?;
+        let mut forwarded = Vec::new();
+        for name in rust_ready {
+            let unit = units
+                .iter_mut()
+                .find(|unit| unit.name == *name)
+                .ok_or_else(|| RoutingError::UnknownRustReadyUnit(name.clone()))?;
+            if unit.owner != Owner::Rust {
+                unit.owner = Owner::Rust;
+                forwarded.push(name.clone());
+            }
         }
-        Ok(Self { units, patterns })
+        if let Some(raw) = override_env {
+            let overridden = apply_override(&mut units, raw)?;
+            forwarded.retain(|name| !overridden.contains(name));
+        }
+        Ok(Self {
+            units,
+            patterns,
+            forwarded,
+        })
+    }
+
+    /// The units Rust-forward moved to Rust: listed, not already Rust, not overridden.
+    pub fn forwarded_units(&self) -> &[String] {
+        &self.forwarded
     }
 
     /// The unit whose route matches `path` most specifically, if any.
@@ -345,7 +403,9 @@ fn concrete_path(path: &str) -> String {
         .join("/")
 }
 
-fn apply_override(units: &mut [Unit], raw: &str) -> Result<(), RoutingError> {
+/// Apply `raw`; returns the names of the units it named.
+fn apply_override(units: &mut [Unit], raw: &str) -> Result<Vec<String>, RoutingError> {
+    let mut named = Vec::new();
     for entry in raw.split(',').map(str::trim).filter(|e| !e.is_empty()) {
         let (name, owner) = entry
             .split_once('=')
@@ -358,6 +418,7 @@ fn apply_override(units: &mut [Unit], raw: &str) -> Result<(), RoutingError> {
             .find(|unit| unit.name == name)
             .ok_or_else(|| RoutingError::UnknownOverrideUnit(name.to_owned()))?;
         unit.owner = owner;
+        named.push(name.to_owned());
     }
-    Ok(())
+    Ok(named)
 }
