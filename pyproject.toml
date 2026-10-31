@@ -89,6 +89,7 @@ contract = [
     "httpx-sse==0.4.3",
     "psutil>=6.0.0",
     "pytest>=9.0.3",
+    "pytest-xdist>=3.6.0",
 ]
 dev = [
     "mutmut>=3.7.0",

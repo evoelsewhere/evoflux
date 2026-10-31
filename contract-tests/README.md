@@ -6,7 +6,7 @@ and the strangler gateway; a Rust lane counts as ported only when its area passe
 against `TARGET=rust` as well as `TARGET=python`.
 
 ```bash
-make contract AREA=health TARGET=python      # one area, one backend
+make contract AREA=health TARGET=python      # one area, one backend, 8 xdist workers (JOBS=n)
 make contract-all TARGET=python              # everything under contract-tests/
 ```
 
@@ -15,6 +15,20 @@ make contract-all TARGET=python              # everything under contract-tests/
 then those targets fail at start-up with a message naming the missing binary.
 `make` needs the `contract` dependency group, which `uv run --group contract`
 installs.
+
+Every test starts its own backend (under `TARGET=rust`, a gateway plus a Python
+sidecar), so run an area in parallel with pytest-xdist. Each test keeps its own
+temp dir and backend, so isolation is unchanged:
+
+```bash
+TARGET=rust uv run --group contract pytest contract-tests/<area> -q --no-cov -n 8
+```
+
+Use a fixed `-n` (8 fits a 16-thread machine) rather than `-n auto`: each worker
+runs a Python sidecar start-up of several seconds, so more workers than cores
+only lengthens start-up and risks handshake timeouts. `contract-tests/perf` and
+`contract-tests/db` measure latency and stress the database, so run them without
+`-n`.
 
 `make replay-diff UNIT=<unit> OUT=<dir> [RECORDINGS=<dir>] [NOISE=1]`
 runs the unit's contract tests against both targets and compares their HTTP
@@ -49,7 +63,7 @@ so the gateway target relies on the gateway's own tree kill (Phase 0 task 10).
 
 - A new test must pass against Python before it is merged.
 - Never loosen an assertion, add a skip or widen normalization to make Rust pass.
-- Snapshots are recorded from Python only: `uv run --group contract pytest contract-tests/<area> --snapshot-update`
+- Snapshots are recorded from Python only: `uv run --group contract pytest contract-tests/<area> --snapshot-update -n 8`
   with `TARGET=python`, then reviewed in the diff.
 - To start from a fixture database, override the `db_fixture` fixture in the area's `conftest.py`.
 - Tests leave no state behind: every test gets its own temporary directories.
