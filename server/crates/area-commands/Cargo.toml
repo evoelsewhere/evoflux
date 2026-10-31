@@ -1,0 +1,11 @@
+[package]
+name = "evoflux-area-commands"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+
+[lints]
+workspace = true
+
+[dependencies]
+axum = { version = "0.8", default-features = false, features = ["http1", "tokio"] }
