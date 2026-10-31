@@ -7,6 +7,7 @@ All notable changes to EvoFlux are documented in this file.
 ### Fixed
 
 - The contract-test harness now runs an area in parallel (`pytest -n 8`, `make contract JOBS=n`), finds the backend handshake even when the sidecar's log text shares its line (the cause of intermittent "gave no handshake" errors), and treats a backend that has already exited as a clean stop on Windows. It affects tests only, so nothing changes in the app.
+- Ported the `commands` routes (`GET /api/commands`, `POST /api/commands/{name}/render`) to the v4 Rust server, reproducing the Python results, error bodies and validation order, and added a contract test that an invalid body is reported before an invalid `workspace`. Python still serves them until cutover, so nothing changes in the app yet.
 - The v4 Rust `quote` route now treats any non-2xx answer from API Ninjas, redirects included, as a failed fetch and serves the fallback quote, like Python. Python still serves the route, so nothing changes in the app.
 - The v4 Rust shared HTTPS client no longer follows redirects (as with Python), so an API key header can never be forwarded to another host, and clippy now bans building any other HTTP client outside `evoflux-net`. Python still serves every route, so nothing changes in the app.
 - The v4 Rust `quote` route now answers `/api/quote//` (repeated trailing slashes) with a 307 to `/api/quote`, like Python. Python still serves the route, so nothing changes in the app.
