@@ -18,3 +18,4 @@ One line per landed task: date · task · author agent · reviewer · commit ran
 2026-10-31 · P1-T6 serve hosts area units + shadow wiring · Codex Terra · Claude CLI Sonnet (APPROVE 7322598d) · a46b44e7..HEAD
 2026-10-31 · P1-L1a health-live + L2a quote contract tests · Claude CLI Sonnet · Claude CLI Sonnet (fresh reviewer, APPROVE) · 6b683862..HEAD
 2026-10-31 · P1-L3a commands + L4a snippets contract tests (111) · Claude CLI Sonnet · Claude CLI Sonnet (fresh reviewer, APPROVE; follow-ups: commands 422 order, snippets render file-workspace) · 5c8258e7..HEAD
+2026-10-31 · P1-T8 remote device claim on Rust routes (health exempt from claim, not from identity) · Codex Terra draft + Claude CLI Opus · Claude CLI Opus (fresh reviewer, APPROVE); gateway contract 11/11 x4 · 8e53ec2e..HEAD
