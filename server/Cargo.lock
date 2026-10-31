@@ -296,6 +296,10 @@ name = "evoflux-area-health-live"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "evoflux-core",
+ "serde_json",
+ "tokio",
+ "tower",
 ]
 
 [[package]]
@@ -310,6 +314,12 @@ name = "evoflux-area-quote"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "evoflux-core",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tower",
+ "tracing",
 ]
 
 [[package]]
@@ -373,6 +383,8 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "base64",
+ "evoflux-area-health-live",
+ "evoflux-area-quote",
  "evoflux-core",
  "evoflux-gateway",
  "getrandom",
@@ -383,6 +395,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-util",
+ "tower",
  "tower-http",
  "tracing",
  "yaml-rust2",

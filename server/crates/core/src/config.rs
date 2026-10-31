@@ -23,6 +23,7 @@ pub struct Settings {
     pub data_dir: PathBuf,
     pub config_dir: PathBuf,
     pub state_dir: PathBuf,
+    pub cache_dir: PathBuf,
     pub log_level: String,
     pub api_host: String,
     pub api_port: u16,
@@ -108,6 +109,7 @@ impl Settings {
             sqlite_database_path,
             config_dir: dir("EVOFLUX_CONFIG_DIR", defaults.config),
             state_dir: dir("EVOFLUX_STATE_DIR", defaults.state),
+            cache_dir: dir("EVOFLUX_CACHE_DIR", defaults.cache),
             log_level: get("LOG_LEVEL").unwrap_or_else(|| "INFO".to_owned()),
             api_host: get("API_HOST").unwrap_or_else(|| "0.0.0.0".to_owned()),
             api_port,
@@ -120,6 +122,7 @@ struct DefaultDirs {
     data: PathBuf,
     config: PathBuf,
     state: PathBuf,
+    cache: PathBuf,
 }
 
 /// `_default_dirs`: XDG-style roots under the home directory in production,
@@ -131,6 +134,7 @@ fn default_dirs(app_env: &str, home: Option<&Path>, cwd: &Path) -> DefaultDirs {
             data: home.join(".local").join("share").join("evoflux"),
             config: home.join(".config").join("evoflux"),
             state: home.join(".local").join("state").join("evoflux"),
+            cache: home.join(".cache").join("evoflux"),
         };
     }
     let root = cwd.join(".evoflux").join("dev");
@@ -138,6 +142,7 @@ fn default_dirs(app_env: &str, home: Option<&Path>, cwd: &Path) -> DefaultDirs {
         data: root.join("data"),
         config: root.join("config"),
         state: root.join("state"),
+        cache: root.join("cache"),
     }
 }
 

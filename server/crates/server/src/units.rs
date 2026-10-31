@@ -21,6 +21,16 @@ pub fn router(_state: &UnitState) -> Router {
         );
     }
     Router::new()
+        .merge(evoflux_area_health_live::router())
+        .merge(evoflux_area_quote::router(
+            _state.settings.cache_dir.clone(),
+        ))
+        .fallback(not_found)
+}
+
+/// FastAPI's 404 for a path inside a Rust-owned unit prefix that no route serves.
+async fn not_found() -> evoflux_core::ApiError {
+    evoflux_core::ApiError::new(axum::http::StatusCode::NOT_FOUND, "Not Found")
 }
 pub fn start_rust_services(
     _table: &RoutingTable,
@@ -64,5 +74,58 @@ pub(crate) mod test_support {
     }
     pub fn stopped() -> bool {
         STOPPED.load(Ordering::SeqCst)
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod tests {
+    use super::*;
+    use axum::body::{to_bytes, Body};
+    use axum::http::{Request, StatusCode};
+    use std::collections::HashMap;
+    use tower::ServiceExt;
+
+    async fn get(uri: &str) -> (StatusCode, String) {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut vars = HashMap::new();
+        vars.insert(
+            "EVOFLUX_CACHE_DIR".to_owned(),
+            tmp.path().to_string_lossy().into_owned(),
+        );
+        let settings = Settings::from_vars(&vars, Some(tmp.path()), tmp.path()).unwrap();
+        let state = UnitState {
+            paths: Arc::new(Paths::resolve(&settings)),
+            settings: Arc::new(settings),
+            db: None,
+        };
+        let request = Request::builder().uri(uri).body(Body::empty()).unwrap();
+        let response = router(&state).oneshot(request).await.unwrap();
+        let status = response.status();
+        let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        (status, String::from_utf8(bytes.to_vec()).unwrap())
+    }
+
+    #[tokio::test]
+    async fn serves_health_live() {
+        let (status, body) = get("/api/health/live").await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(body.starts_with(r#"{"status":"ok","version":""#), "{body}");
+    }
+
+    #[tokio::test]
+    async fn serves_quote_from_the_configured_cache_dir() {
+        let (status, body) = get("/api/quote").await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(body.contains("John Johnson"), "{body}");
+    }
+
+    #[tokio::test]
+    async fn unserved_paths_answer_python_404_body() {
+        for uri in ["/api/health/live/x", "/api/quote/x"] {
+            let (status, body) = get(uri).await;
+            assert_eq!(status, StatusCode::NOT_FOUND, "{uri}");
+            assert_eq!(body, r#"{"detail":"Not Found"}"#, "{uri}");
+        }
     }
 }
