@@ -40,6 +40,8 @@ pub struct Settings {
     pub config_dir: PathBuf,
     pub state_dir: PathBuf,
     pub cache_dir: PathBuf,
+    /// `Path.home()`; empty when the home directory is unknown.
+    pub home_dir: PathBuf,
     pub log_level: String,
     pub api_host: String,
     pub api_port: u16,
@@ -127,6 +129,7 @@ impl Settings {
             config_dir: dir("EVOFLUX_CONFIG_DIR", defaults.config),
             state_dir: dir("EVOFLUX_STATE_DIR", defaults.state),
             cache_dir: dir("EVOFLUX_CACHE_DIR", defaults.cache),
+            home_dir: home.map(Path::to_path_buf).unwrap_or_default(),
             log_level: get("LOG_LEVEL").unwrap_or_else(|| "INFO".to_owned()),
             api_host: get("API_HOST").unwrap_or_else(|| "0.0.0.0".to_owned()),
             api_port,

@@ -22,6 +22,10 @@ pub fn router(_state: &UnitState) -> Router {
             axum::routing::get(|| async { "test unit response" }),
         );
     }
+    let roots = evoflux_area_commands::Roots {
+        config_dir: _state.paths.config_dir.clone(),
+        home: _state.settings.home_dir.clone(),
+    };
     Router::new()
         .merge(evoflux_area_health_live::router(crate::handshake::version()))
         .merge(evoflux_area_quote::router(
@@ -33,6 +37,8 @@ pub fn router(_state: &UnitState) -> Router {
                 .map(|key| key.expose().to_owned()),
             _state.http.clone(),
         ))
+        .merge(evoflux_area_commands::router(roots.clone()))
+        .merge(evoflux_area_snippets::router(roots))
         .fallback(not_found)
 }
 
@@ -133,6 +139,18 @@ mod tests {
         let (status, body) = get("/api/quote").await;
         assert_eq!(status, StatusCode::OK);
         assert!(body.contains("John Johnson"), "{body}");
+    }
+
+    #[tokio::test]
+    async fn serves_commands_and_snippets() {
+        let (status, body) = get("/api/commands").await;
+        assert_eq!(
+            (status, body.as_str()),
+            (StatusCode::OK, r#"{"commands":[]}"#)
+        );
+        let (status, body) = get("/api/snippets").await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(body, r#"{"detail":"Snippet workspace is required."}"#);
     }
 
     #[tokio::test]

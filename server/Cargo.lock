@@ -429,12 +429,22 @@ dependencies = [
 [[package]]
 name = "evoflux-api-types"
 version = "0.1.0"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "evoflux-area-commands"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "evoflux-api-types",
+ "evoflux-core",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tower",
+ "yaml-rust2",
 ]
 
 [[package]]
@@ -474,6 +484,13 @@ name = "evoflux-area-snippets"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "evoflux-api-types",
+ "evoflux-area-commands",
+ "evoflux-core",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tower",
 ]
 
 [[package]]
@@ -544,8 +561,10 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "base64 0.22.1",
+ "evoflux-area-commands",
  "evoflux-area-health-live",
  "evoflux-area-quote",
+ "evoflux-area-snippets",
  "evoflux-core",
  "evoflux-gateway",
  "evoflux-net",
