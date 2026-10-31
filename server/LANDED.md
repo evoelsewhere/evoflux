@@ -13,3 +13,4 @@ One line per landed task: date · task · author agent · reviewer · commit ran
 2026-10-31 · T12 desktop launches evoflux-server · Claude CLI Opus · Codex Luna review (APPROVE) · cf76bdfa..HEAD
 2026-10-31 · T9 SQLite compat gate, two-process stress, benchmark, WAL checkpoint fix, concurrent writes default off · Codex + Claude (desktop Opus, CLI Sonnet/Haiku) · Claude Opus reviewer + Codex Luna (APPROVE) · 0416e7b7..HEAD
 2026-10-31 · T16 Phase 0 exit report (awaiting owner daily-use approval) · Claude CLI Sonnet + orchestrator checks · owner · 2d7b4874..HEAD
+2026-10-31 · P1-T1 board/units for Phase 1, merged rows release paths · Claude CLI Haiku · Codex Luna (APPROVE) · d5c69e1b..HEAD
