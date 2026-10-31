@@ -251,3 +251,32 @@ API_HOST=\"1.2.3.4\"
     assert_eq!(s.log_level, "warn");
     assert_eq!(s.api_host, "1.2.3.4");
 }
+
+#[test]
+fn ninja_api_key_is_optional_and_kept_secret() {
+    let none = Settings::from_vars(&vars(&[]), None, Path::new("/cwd")).unwrap();
+    assert!(none.ninja_api_key.is_none());
+
+    let some = Settings::from_vars(
+        &vars(&[("ninja_api_key", "sekret-123")]),
+        None,
+        Path::new("/cwd"),
+    )
+    .unwrap();
+    assert_eq!(
+        some.ninja_api_key.as_ref().map(|key| key.expose()),
+        Some("sekret-123")
+    );
+    assert!(!format!("{some:?}").contains("sekret-123"));
+    assert!(!format!("{:?}", some.ninja_api_key).contains("sekret-123"));
+}
+
+#[test]
+fn an_empty_ninja_api_key_is_still_a_key_like_pydantic_secretstr() {
+    let settings =
+        Settings::from_vars(&vars(&[("NINJA_API_KEY", "")]), None, Path::new("/cwd")).unwrap();
+    assert_eq!(
+        settings.ninja_api_key.as_ref().map(|key| key.expose()),
+        Some("")
+    );
+}

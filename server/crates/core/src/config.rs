@@ -16,7 +16,23 @@ pub enum ConfigError {
     CurrentDir(#[from] std::io::Error),
 }
 
-/// Resolved settings (`APP_ENV`, `EVOFLUX_*_DIR`, `LOG_LEVEL`, `API_HOST`, `API_PORT`).
+/// A `SecretStr` setting: `Debug` never prints the value.
+#[derive(Clone, PartialEq, Eq)]
+pub struct Secret(String);
+
+impl Secret {
+    pub fn expose(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Debug for Secret {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Secret(**********)")
+    }
+}
+
+/// Resolved settings (`APP_ENV`, `EVOFLUX_*_DIR`, `LOG_LEVEL`, `API_HOST`, `API_PORT`, `NINJA_API_KEY`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Settings {
     pub app_env: String,
@@ -27,6 +43,7 @@ pub struct Settings {
     pub log_level: String,
     pub api_host: String,
     pub api_port: u16,
+    pub ninja_api_key: Option<Secret>,
     sqlite_database_path: Option<PathBuf>,
 }
 
@@ -113,6 +130,7 @@ impl Settings {
             log_level: get("LOG_LEVEL").unwrap_or_else(|| "INFO".to_owned()),
             api_host: get("API_HOST").unwrap_or_else(|| "0.0.0.0".to_owned()),
             api_port,
+            ninja_api_key: get("NINJA_API_KEY").map(Secret),
             app_env,
         })
     }

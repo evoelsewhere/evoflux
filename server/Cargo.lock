@@ -461,6 +461,7 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "evoflux-core",
+ "evoflux-net",
  "serde_json",
  "tempfile",
  "tokio",
