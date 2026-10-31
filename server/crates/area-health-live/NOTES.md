@@ -25,8 +25,9 @@ any area lock (design §6.3).
 
 - The auth exemption for this path lives in the desktop auth middleware, not in
   the route; the Rust gateway/core auth already carries the same exempt list.
-- `version` comes from the build; contract tests only require a non-empty
-  string, so Python and Rust need not share a version string.
+- `version` is `app/version.txt`, stripped (`app.core.version.VERSION`; `"unknown"`
+  only when the file is missing). The packaged sidecar ships that file inside the
+  `app` package (hatch wheel), so the packaged build reports the same string.
 
 ## Pins check
 
@@ -67,15 +68,18 @@ no pagination, writes, SSE or WS).
   `{"detail": "Not Found"}` for `/api/health/live/<x>` is the one fallback in
   `crates/server/src/units.rs` (axum cannot merge two routers that both set a
   fallback), so it is covered by a `units` test, not a lane test.
-- `version` is the Rust crate version (`CARGO_PKG_VERSION`), not
-  `app/version.txt` (Python), which the contract allows (see pre-cutover item below).
+- `version` is the string `router(version)` is given: the server passes
+  `handshake::version()`, `app/version.txt` read at compile time with
+  `include_str!` (as the handshake does), so Rust and Python report the same string.
+  The crate takes it as a parameter because `cargo mutants` copies only `server/`,
+  where `app/version.txt` does not exist.
 - Unit tests: `routes::tests` (body and content type, ignored query, 405) and
   `units::tests` in `evoflux-server` (mounted in the unit router, 404 body).
-- `/api/health/live/` answers `307` to `/api/health/live` for any method (FastAPI
+- `/api/health/live/` and `/api/health/live//...` (only slashes) answer `307` to `/api/health/live` for any method (FastAPI
   `redirect_slashes`), and HEAD on the route is `405` like Python (axum would
   otherwise answer HEAD from the GET handler); both are unit-tested.
-- **Pre-cutover item:** `version` is the crate version, not `app/version.txt`
-  (`app.core.version.VERSION`). Make them agree (or accept the difference in
-  `KNOWN_DIFFERENCES.md`) before the unit is cut over.
+  Starlette strips every trailing slash before retrying the route, so
+  `/api/health/live//` gets the same 307 to the slashless URL; a sub-path with
+  anything else in it is the `404`.
 - Perf: `/api/health/live` is in the baseline; the SH task runs
   `make perf AREA=health-live TARGET=rust` and the responsiveness gate.
