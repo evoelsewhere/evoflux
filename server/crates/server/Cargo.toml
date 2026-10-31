@@ -10,8 +10,10 @@ workspace = true
 [dependencies]
 axum = { version = "0.8", default-features = false, features = ["http1", "tokio"] }
 base64 = "0.22"
+evoflux-area-commands = { path = "../area-commands" }
 evoflux-area-health-live = { path = "../area-health-live" }
 evoflux-area-quote = { path = "../area-quote" }
+evoflux-area-snippets = { path = "../area-snippets" }
 evoflux-core = { path = "../core" }
 evoflux-gateway = { path = "../gateway" }
 evoflux-net = { path = "../net" }

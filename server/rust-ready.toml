@@ -2,4 +2,4 @@
 # `EVOFLUX_RUST_FORWARD=1` / `serve --rust-forward` and `scripts/migration/checkpoint.sh`
 # route exactly these units to Rust. Add a unit in the same landing as its last `Lb`
 # (design §9a, "Rust-forward build"). An explicit EVOFLUX_ROUTE_OVERRIDE entry wins.
-units = []
+units = ["edge-stateless"]

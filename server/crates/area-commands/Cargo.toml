@@ -9,3 +9,13 @@ workspace = true
 
 [dependencies]
 axum = { version = "0.8", default-features = false, features = ["http1", "tokio"] }
+evoflux-api-types = { path = "../api-types" }
+evoflux-core = { path = "../core" }
+serde_json = { version = "1", features = ["preserve_order"] }
+tokio = { version = "1", features = ["rt"] }
+yaml-rust2 = "0.10"
+
+[dev-dependencies]
+tempfile = "3"
+tokio = { version = "1", features = ["rt", "macros"] }
+tower = { version = "0.5", features = ["util"] }
