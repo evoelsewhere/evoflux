@@ -156,6 +156,16 @@ def test_workspace_that_is_a_file_is_rejected(client, tmp_path) -> None:
     }
 
 
+def test_render_rejects_workspace_that_is_a_file(client, tmp_path) -> None:
+    target = tmp_path / "a-file"
+    target.write_text("x", encoding="utf-8")
+    response = client.post("/api/snippets/x/render", params={"workspace": str(target)})
+    assert response.status_code == 422
+    assert response.json() == {
+        "detail": f"Workspace does not exist or is not a directory: {target.resolve()}"
+    }
+
+
 def test_workspace_tilde_expands_to_home(client, tmp_path) -> None:
     write(tmp_path / "home" / "proj" / ".evoflux" / "snippets", "from-home", "x")
     response = client.get("/api/snippets", params={"workspace": "~/proj"})
