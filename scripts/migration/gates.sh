@@ -68,7 +68,9 @@ if [[ "$area" == cutover-* ]]; then
 elif [[ "$area" != shared ]]; then
   diff=$(mktemp)
   trap 'cleanup; rm -f "$diff"' EXIT
-  git diff "$diff_range" > "$diff"
+  # cargo mutants runs inside server/, so diff paths must be relative to it
+  # (repo-relative paths match no files and the gate passes vacuously).
+  git diff --relative=server "$diff_range" > "$diff"
   (cd server && cargo mutants --in-diff "$diff" --package "evoflux-area-$area")
   # The lane's routes come from its server/MIGRATION_BOARD.md row.
   if [[ ! -f scripts/migration/openapi_diff.py ]]; then
