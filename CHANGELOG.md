@@ -6,6 +6,7 @@ All notable changes to EvoFlux are documented in this file.
 
 ### Fixed
 
+- The v4 Rust `health-live` route now reports the app version from `app/version.txt` (as Python does) instead of its crate version, and `/api/health/live//` redirects with a 307 like Python. Python still serves the route, so nothing changes in the app.
 - The migration lane gate's mutation check now actually tests the lane's changed Rust code; before, it matched no files and passed without testing anything.
 - Rust migration traffic recordings now redact the values of sensitive JSON request-body keys (passwords, tokens, secrets, API keys, authorization, cookies), and the replay diff reports unapproved and approved differences separately.
 - Remote devices can use Rust-served HTTP routes under the same single-device lock as Python routes, while health probes remain available without a claim.

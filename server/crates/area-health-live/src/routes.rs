@@ -3,6 +3,7 @@
 //! The handler touches no database, lock, file or shared state, so an answer
 //! proves the runtime is alive (design §6.3).
 
+use axum::extract::{Path, State};
 use axum::http::{header, StatusCode};
 use axum::http::{HeaderMap, HeaderValue, Uri};
 use axum::response::{IntoResponse, Response};
@@ -10,7 +11,8 @@ use axum::routing::{any, on, MethodFilter};
 use axum::Router;
 use evoflux_core::ApiError;
 
-pub fn router() -> Router {
+/// `version` is `app.core.version.VERSION` (`app/version.txt`, stripped); the server owns it.
+pub fn router(version: &'static str) -> Router {
     // axum answers HEAD from the GET handler unless HEAD is routed explicitly; Python 405s it.
     Router::new()
         .route(
@@ -20,6 +22,18 @@ pub fn router() -> Router {
                 .fallback(method_not_allowed),
         )
         .route("/api/health/live/", any(redirect_to_slashless))
+        .route("/api/health/live/{*rest}", any(sub_path))
+        .with_state(version)
+}
+
+/// Starlette `redirect_slashes` strips every trailing slash, so `/api/health/live//`
+/// redirects too; any other sub-path is FastAPI's 404.
+async fn sub_path(Path(rest): Path<String>, headers: HeaderMap, uri: Uri) -> Response {
+    if rest.chars().all(|c| c == '/') {
+        redirect_to_slashless(headers, uri).await
+    } else {
+        ApiError::new(StatusCode::NOT_FOUND, "Not Found").into_response()
+    }
 }
 
 /// FastAPI `redirect_slashes`: 307 to the same URL without the slash, keeping the query.
@@ -39,13 +53,12 @@ async fn redirect_to_slashless(headers: HeaderMap, uri: Uri) -> Response {
     response
 }
 
-async fn health_live() -> Response {
+async fn health_live(State(version): State<&'static str>) -> Response {
     (
         [(header::CONTENT_TYPE, "application/json")],
-        concat!(
-            r#"{"status":"ok","version":""#,
-            env!("CARGO_PKG_VERSION"),
-            r#""}"#
+        format!(
+            r#"{{"status":"ok","version":{}}}"#,
+            serde_json::Value::String(version.to_owned())
         ),
     )
         .into_response()
@@ -73,6 +86,8 @@ mod tests {
     use axum::http::{Method, Request};
     use tower::ServiceExt;
 
+    const VERSION: &str = "9.8.7";
+
     async fn call(method: Method, uri: &str) -> Response {
         let request = Request::builder()
             .method(method)
@@ -80,7 +95,7 @@ mod tests {
             .header(header::HOST, "127.0.0.1:4082")
             .body(Body::empty())
             .unwrap();
-        router().oneshot(request).await.unwrap()
+        router(VERSION).oneshot(request).await.unwrap()
     }
 
     async fn json(response: Response) -> serde_json::Value {
@@ -96,7 +111,7 @@ mod tests {
         let body = json(response).await;
         assert_eq!(body.as_object().map(|o| o.len()), Some(2));
         assert_eq!(body["status"], "ok");
-        assert_eq!(body["version"], env!("CARGO_PKG_VERSION"));
+        assert_eq!(body["version"], VERSION);
     }
 
     #[tokio::test]
@@ -138,5 +153,47 @@ mod tests {
             json(response).await,
             serde_json::json!({"detail": "Method Not Allowed"})
         );
+    }
+
+    #[tokio::test]
+    async fn repeated_trailing_slashes_fold_into_one_307() {
+        for uri in [
+            "/api/health/live//",
+            "/api/health/live///",
+            "/api/health/live//?a=1&b=2",
+        ] {
+            for method in [Method::GET, Method::HEAD, Method::POST, Method::DELETE] {
+                let response = call(method.clone(), uri).await;
+                assert_eq!(
+                    response.status(),
+                    StatusCode::TEMPORARY_REDIRECT,
+                    "{method} {uri}"
+                );
+                let expected = match uri.split_once('?') {
+                    Some((_, query)) => format!("http://127.0.0.1:4082/api/health/live?{query}"),
+                    None => "http://127.0.0.1:4082/api/health/live".to_owned(),
+                };
+                assert_eq!(
+                    response.headers()[header::LOCATION],
+                    expected.as_str(),
+                    "{method} {uri}"
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn other_sub_paths_are_python_404s() {
+        for uri in [
+            "/api/health/live/x",
+            "/api/health/live//x",
+            "/api/health/live/x/",
+            "/api/health/live/x//",
+        ] {
+            let response = call(Method::GET, uri).await;
+            assert_eq!(response.status(), StatusCode::NOT_FOUND, "{uri}");
+            let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+            assert_eq!(&bytes[..], br#"{"detail":"Not Found"}"#, "{uri}");
+        }
     }
 }
