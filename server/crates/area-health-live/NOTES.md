@@ -68,11 +68,14 @@ no pagination, writes, SSE or WS).
   `crates/server/src/units.rs` (axum cannot merge two routers that both set a
   fallback), so it is covered by a `units` test, not a lane test.
 - `version` is the Rust crate version (`CARGO_PKG_VERSION`), not
-  `app/version.txt` (Python), which the contract allows.
+  `app/version.txt` (Python), which the contract allows (see pre-cutover item below).
 - Unit tests: `routes::tests` (body and content type, ignored query, 405) and
   `units::tests` in `evoflux-server` (mounted in the unit router, 404 body).
-- Open: Python's FastAPI would also redirect `/api/health/live/` (307) through
-  `redirect_slashes`; no contract test covers it and it is not ported here.
-  The quote route's redirect is ported because its contract test pins it.
+- `/api/health/live/` answers `307` to `/api/health/live` for any method (FastAPI
+  `redirect_slashes`), and HEAD on the route is `405` like Python (axum would
+  otherwise answer HEAD from the GET handler); both are unit-tested.
+- **Pre-cutover item:** `version` is the crate version, not `app/version.txt`
+  (`app.core.version.VERSION`). Make them agree (or accept the difference in
+  `KNOWN_DIFFERENCES.md`) before the unit is cut over.
 - Perf: `/api/health/live` is in the baseline; the SH task runs
   `make perf AREA=health-live TARGET=rust` and the responsiveness gate.
