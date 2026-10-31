@@ -436,6 +436,25 @@ and files each problem as a failing contract or e2e test before any fix.
 **3. Owner daily use.** At phase exits and before the v4 merge, the owner uses
 the app normally for at least half a day (3 days before v4, §9).
 
+**Rust-forward build (owner decision, 2026-10-31).** Every checkpoint tests the
+Rust code that exists, not only the Python path. One switch, `EVOFLUX_RUST_FORWARD=1`
+(or `evoflux-server serve --rust-forward`), routes every unit listed in
+`server/rust-ready.toml` to Rust. A unit is added to that file in the same landing as
+its last `Lb` port. An explicit `EVOFLUX_ROUTE_OVERRIDE` entry still wins, so a single
+unit can be rolled back.
+
+- **Automated, phase by phase:** `bash scripts/migration/checkpoint.sh <phase>` builds
+  the server, runs the e2e suite twice (default routing and Rust-forward), runs
+  `TARGET=gateway` contract tests in Rust-forward mode, and writes
+  `documents/analysis/checkpoint-<phase>-<date>.md`. That file lists which units were on Rust,
+  the pass/fail counts, and any failures. A failure blocks the checkpoint; it is fixed (test
+  first) before the phase advances. An optional `--real-model` pass repeats the chat journey with
+  the owner's own provider config, which is copied to a temp dir and deleted afterwards.
+- **Owner daily use** (item 3) is always on a Rust-forward build: the packaged installer
+  from T5 with the switch on, or the dev launcher in Rust-forward mode.
+- **Labels:** reports keep automated evidence and owner use apart. Owner use is recorded only
+  when the owner reports it.
+
 The checkpoint results go into the phase exit report: the suite results,
 the exploratory findings, and the owner's sign-off.
 

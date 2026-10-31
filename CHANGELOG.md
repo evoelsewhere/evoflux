@@ -17,6 +17,7 @@ All notable changes to EvoFlux are documented in this file.
 
 ### Changed
 
+- The v4 migration plan now tests every phase on a Rust-forward build (all ported units on Rust) with an automated checkpoint script, and the owner's daily-use check uses that build; documentation only.
 - Recorded the Phase 1 automated checkpoint smoke run (app, chat and the Rust-served health-live and quote routes through the gateway); documentation only.
 - The v4 Rust server now reads `NINJA_API_KEY` (never printed in logs or debug output), hands the shared HTTPS client to the `quote` unit (which has no remaining cutover blocker) and gives `health-live` the app version. Python still serves the route, so nothing changes in the app.
 - The v4 Rust `quote` route now fetches the quote of the day from API Ninjas through the shared HTTPS client, with the same request, cache file and fallback as Python. Python still serves the route, so nothing changes in the app.
