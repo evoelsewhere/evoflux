@@ -18,7 +18,7 @@ All notable changes to EvoFlux are documented in this file.
 ### Changed
 
 - Recorded the Phase 1 automated checkpoint smoke run (app, chat and the Rust-served health-live and quote routes through the gateway); documentation only.
-- The v4 Rust server now reads `NINJA_API_KEY` (never printed in logs or debug output) hands the shared HTTPS client to the `quote` unit (which has no remaining cutover blocker) and gives `health-live` the app version. Python still serves the route, so nothing changes in the app.
+- The v4 Rust server now reads `NINJA_API_KEY` (never printed in logs or debug output), hands the shared HTTPS client to the `quote` unit (which has no remaining cutover blocker) and gives `health-live` the app version. Python still serves the route, so nothing changes in the app.
 - The v4 Rust `quote` route now fetches the quote of the day from API Ninjas through the shared HTTPS client, with the same request, cache file and fallback as Python. Python still serves the route, so nothing changes in the app.
 - Added the `evoflux-net` crate to the v4 Rust server: one shared HTTPS client (rustls with the OS trust store, system proxy, gzip, connect and read timeouts, no total timeout) that units receive through `UnitState`, with `cargo deny` and clippy rules that ban other HTTP clients. No app behaviour changes.
 - Recorded the v4 Rust HTTPS client choice (one shared `reqwest` 0.13 client, rustls with the OS trust store) and a re-check of the other Rust library picks; documentation only, no app behaviour changes.
