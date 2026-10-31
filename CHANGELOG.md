@@ -17,6 +17,7 @@ All notable changes to EvoFlux are documented in this file.
 
 ### Changed
 
+- Added `server/rust-ready.toml`, the list of v4 units whose Rust ports are complete and that Rust-forward builds route to Rust (empty until the first unit's ports land).
 - The v4 migration plan now tests every phase on a Rust-forward build (all ported units on Rust) with an automated checkpoint script, and the owner's daily-use check uses that build; documentation only.
 - Recorded the Phase 1 automated checkpoint smoke run (app, chat and the Rust-served health-live and quote routes through the gateway); documentation only.
 - The v4 Rust server now reads `NINJA_API_KEY` (never printed in logs or debug output), hands the shared HTTPS client to the `quote` unit (which has no remaining cutover blocker) and gives `health-live` the app version. Python still serves the route, so nothing changes in the app.
