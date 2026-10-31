@@ -4,7 +4,7 @@
 //! come from the process environment, then `~/.config/evoflux/.env`, then
 //! `./.env` (earlier wins).
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
 /// Why settings could not be resolved.
@@ -47,9 +47,18 @@ pub struct Settings {
     pub api_port: u16,
     pub ninja_api_key: Option<Secret>,
     sqlite_database_path: Option<PathBuf>,
+    /// Every `*_API_KEY` and `*_BASE_URL` variable, by upper-case name, for
+    /// the model providers (`app/agent/providers/factory.py`).
+    provider_vars: BTreeMap<String, Secret>,
 }
 
 impl Settings {
+    /// A provider credential or endpoint variable such as `ROUTER9_API_KEY`
+    /// or `XIAOMI_BASE_URL`; `None` when it is not set.
+    pub fn provider_var(&self, name: &str) -> Option<&Secret> {
+        self.provider_vars.get(&name.to_uppercase())
+    }
+
     pub fn sqlite_database_path(&self) -> Option<PathBuf> {
         self.sqlite_database_path.clone()
     }
@@ -134,6 +143,7 @@ impl Settings {
             api_host: get("API_HOST").unwrap_or_else(|| "0.0.0.0".to_owned()),
             api_port,
             ninja_api_key: get("NINJA_API_KEY").map(Secret),
+            provider_vars: provider_vars(vars),
             app_env,
         })
     }
@@ -165,6 +175,14 @@ fn default_dirs(app_env: &str, home: Option<&Path>, cwd: &Path) -> DefaultDirs {
         state: root.join("state"),
         cache: root.join("cache"),
     }
+}
+
+fn provider_vars(vars: &HashMap<String, String>) -> BTreeMap<String, Secret> {
+    vars.keys()
+        .map(|key| key.to_uppercase())
+        .filter(|key| key.ends_with("_API_KEY") || key.ends_with("_BASE_URL"))
+        .filter_map(|key| lookup(vars, &key).map(|value| (key, Secret(value))))
+        .collect()
 }
 
 fn lookup(vars: &HashMap<String, String>, name: &str) -> Option<String> {

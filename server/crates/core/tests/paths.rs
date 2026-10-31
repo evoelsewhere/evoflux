@@ -272,6 +272,30 @@ fn ninja_api_key_is_optional_and_kept_secret() {
 }
 
 #[test]
+fn provider_vars_cover_api_keys_and_base_urls_only() {
+    let settings = Settings::from_vars(
+        &vars(&[
+            ("router9_api_key", "lower"),
+            ("ROUTER9_API_KEY", "exact"),
+            ("Xiaomi_Base_Url", "http://x/v1"),
+            ("EMPTY_API_KEY", ""),
+            ("API_PORT", "1"),
+        ]),
+        None,
+        Path::new("/cwd"),
+    )
+    .unwrap();
+    let get = |name: &str| settings.provider_var(name).map(|s| s.expose().to_owned());
+    assert_eq!(get("ROUTER9_API_KEY").as_deref(), Some("exact"));
+    assert_eq!(get("router9_api_key").as_deref(), Some("exact"));
+    assert_eq!(get("XIAOMI_BASE_URL").as_deref(), Some("http://x/v1"));
+    assert_eq!(get("EMPTY_API_KEY").as_deref(), Some(""));
+    assert_eq!(get("API_PORT"), None);
+    assert_eq!(get("MISSING_API_KEY"), None);
+    assert!(!format!("{settings:?}").contains("exact"));
+}
+
+#[test]
 fn an_empty_ninja_api_key_is_still_a_key_like_pydantic_secretstr() {
     let settings =
         Settings::from_vars(&vars(&[("NINJA_API_KEY", "")]), None, Path::new("/cwd")).unwrap();
