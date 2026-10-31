@@ -61,7 +61,18 @@ no pagination, writes, SSE or WS).
 
 - Must keep `make perf-responsiveness TARGET=rust` green, including the
   scenarios that are `xfail` for Python (`V3_STALLS`).
-- `server/Cargo.toml` `members` does not list `crates/area-health-live` yet:
-  that file is shared, so the orchestrator adds the member when L1b needs to
-  build the crate. The `src/lib.rs` stub needs `axum` (already in the
-  workspace through `evoflux-gateway`); no new crate version is introduced.
+- Ported in `src/routes.rs`. The handler is a constant response built at
+  compile time: no state, no DB, no lock, no `await` on anything shared. The
+  405 (`Allow: GET`, `{"detail": "Method Not Allowed"}`) is the lane's; the
+  `{"detail": "Not Found"}` for `/api/health/live/<x>` is the one fallback in
+  `crates/server/src/units.rs` (axum cannot merge two routers that both set a
+  fallback), so it is covered by a `units` test, not a lane test.
+- `version` is the Rust crate version (`CARGO_PKG_VERSION`), not
+  `app/version.txt` (Python), which the contract allows.
+- Unit tests: `routes::tests` (body and content type, ignored query, 405) and
+  `units::tests` in `evoflux-server` (mounted in the unit router, 404 body).
+- Open: Python's FastAPI would also redirect `/api/health/live/` (307) through
+  `redirect_slashes`; no contract test covers it and it is not ported here.
+  The quote route's redirect is ported because its contract test pins it.
+- Perf: `/api/health/live` is in the baseline; the SH task runs
+  `make perf AREA=health-live TARGET=rust` and the responsiveness gate.
