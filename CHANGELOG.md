@@ -6,6 +6,7 @@ All notable changes to EvoFlux are documented in this file.
 
 ### Fixed
 
+- Rust migration traffic recordings now redact the values of sensitive JSON request-body keys (passwords, tokens, secrets, API keys, authorization, cookies), and the replay diff reports unapproved and approved differences separately.
 - Remote devices can use Rust-served HTTP routes under the same single-device lock as Python routes, while health probes remain available without a claim.
 
 ### Changed

@@ -4,11 +4,20 @@
 //! are scrubbed and bounded. Run `scripts/migration/scrub.py` over a recording before
 //! sharing it.
 //!
-//! Only credentials in headers and the `_token` query value are removed here.
-//! Recorded GET bodies can still contain secrets, personal data and
-//! absolute paths (API keys echoed by a settings endpoint, for example), so
-//! `scripts/migration/scrub.py` must run over a recording before anything is
-//! shared or committed.
+//! Redaction rules applied here:
+//!
+//! - headers: authorization, cookie and token/secret/api-key headers;
+//! - the `_token` query value of recorded paths;
+//! - request bodies: values of sensitive JSON keys (`password`, `token`,
+//!   `secret`, `api_key`, `apikey`, `authorization`, `cookie`; any case, any
+//!   nesting depth), then private keys, API keys (`sk-`, `ghp_`,
+//!   `github_pat_`, `AKIA`, `AIza`, `xox`), Bearer/Basic tokens, `_token`
+//!   query values, email addresses and user names in home paths.
+//!
+//! Recorded GET bodies are not scrubbed here and can still contain secrets,
+//! personal data and absolute paths (API keys echoed by a settings endpoint,
+//! for example), so `scripts/migration/scrub.py` must run over a recording
+//! before anything is shared or committed.
 
 use crate::shadow::{Captured, Snapshot};
 use axum::http::HeaderMap;
@@ -23,8 +32,42 @@ pub const REMOVED: &str = "<removed>";
 
 const REQUEST_BODY_LIMIT: usize = 1024 * 1024;
 
-/// Scrub the same secret and personal-data patterns as the recording scrubber.
+const SENSITIVE_JSON_KEYS: [&str; 7] = [
+    "password",
+    "token",
+    "secret",
+    "api_key",
+    "apikey",
+    "authorization",
+    "cookie",
+];
+
+fn redact_json_keys(value: &mut Value) {
+    match value {
+        Value::Object(map) => {
+            for (key, child) in map.iter_mut() {
+                if SENSITIVE_JSON_KEYS.contains(&key.to_ascii_lowercase().as_str()) {
+                    *child = Value::String(REMOVED.to_owned());
+                } else {
+                    redact_json_keys(child);
+                }
+            }
+        }
+        Value::Array(items) => items.iter_mut().for_each(redact_json_keys),
+        _ => {}
+    }
+}
+
+/// Scrub the same secret and personal-data patterns as the recording scrubber,
+/// and the values of sensitive JSON keys when the body is JSON.
 pub fn scrub_request_body(text: &str) -> String {
+    let text = match serde_json::from_str::<Value>(text) {
+        Ok(mut value) => {
+            redact_json_keys(&mut value);
+            serde_json::to_string(&value).unwrap_or_else(|_| text.to_owned())
+        }
+        Err(_) => text.to_owned(),
+    };
     let rules = [
         (
             r"(?s)-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----",
@@ -53,7 +96,7 @@ pub fn scrub_request_body(text: &str) -> String {
         ),
         (r"(/(?:home|Users)/)[^/\\\s\x22']+", "${1}<user>"),
     ];
-    let mut cleaned = text.to_owned();
+    let mut cleaned = text;
     for (pattern, replacement) in rules {
         let Ok(regex) = regex::Regex::new(pattern) else {
             return "<redaction-error>".to_owned();

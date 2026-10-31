@@ -368,7 +368,10 @@ def main(argv: list[str] | None = None) -> int:
             finally:
                 first.stop()
         diff_count = len(output.read_text(encoding="utf-8").splitlines())
-        print(f"compared={compared} equal={equal} diff={diff_count}")
+        print(
+            f"compared={compared} equal={equal} "
+            f"unknown={diff} known={diff_count - diff}"
+        )
         if not compared:
             raise RuntimeError("no requests from the selected unit were compared")
         return int(diff != 0 or left_code != 0 or right_code != 0)
