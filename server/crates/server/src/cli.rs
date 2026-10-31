@@ -5,7 +5,7 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 
 pub const USAGE: &str = "usage: evoflux-server serve [--host HOST] [--port PORT] [--handshake] \
-[--generate-token] [--parent-pid PID] [--python-root DIR]";
+[--generate-token] [--parent-pid PID] [--python-root DIR] [--rust-forward]";
 
 /// Flags of `evoflux-server serve`; same meaning and defaults as Python's `serve`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -22,6 +22,8 @@ pub struct ServeArgs {
     pub parent_pid: Option<u32>,
     /// The sidecar root (`python/` and `site-packages/`); `EVOFLUX_SIDECAR_ROOT` otherwise.
     pub python_root: Option<PathBuf>,
+    /// Route every unit in `rust-ready.toml` to Rust (also `EVOFLUX_RUST_FORWARD=1`).
+    pub rust_forward: bool,
 }
 
 impl Default for ServeArgs {
@@ -33,6 +35,7 @@ impl Default for ServeArgs {
             generate_token: false,
             parent_pid: None,
             python_root: None,
+            rust_forward: false,
         }
     }
 }
@@ -80,13 +83,14 @@ pub fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Command, UsageE
             "--port" => parsed.port = number(flag, value(flag)?)?,
             "--parent-pid" => parsed.parent_pid = Some(number(flag, value(flag)?)?),
             "--python-root" => parsed.python_root = Some(PathBuf::from(value(flag)?)),
-            "--handshake" | "--generate-token" if inline.is_some() => {
+            "--handshake" | "--generate-token" | "--rust-forward" if inline.is_some() => {
                 return Err(UsageError(format!(
                     "argument {flag}: ignored explicit argument"
                 )));
             }
             "--handshake" => parsed.handshake = true,
             "--generate-token" => parsed.generate_token = true,
+            "--rust-forward" => parsed.rust_forward = true,
             _ => return Err(UsageError(format!("unrecognized arguments: {arg}"))),
         }
     }
@@ -105,4 +109,40 @@ fn number<T: std::str::FromStr>(flag: &str, value: OsString) -> Result<T, UsageE
         .trim()
         .parse()
         .map_err(|_| UsageError(format!("argument {flag}: invalid int value: {value:?}")))
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::panic)]
+    use super::*;
+
+    fn serve_args(args: &[&str]) -> Result<Command, UsageError> {
+        parse(
+            std::iter::once("serve")
+                .chain(args.iter().copied())
+                .map(OsString::from),
+        )
+    }
+
+    #[test]
+    fn rust_forward_flag_is_off_by_default_and_a_bare_switch() {
+        let Ok(Command::Serve(args)) = serve_args(&[]) else {
+            panic!("serve without flags must parse");
+        };
+        assert!(!args.rust_forward);
+        let Ok(Command::Serve(args)) = serve_args(&["--rust-forward"]) else {
+            panic!("--rust-forward must parse");
+        };
+        assert!(args.rust_forward);
+        assert!(serve_args(&["--rust-forward=1"]).is_err());
+    }
+
+    #[test]
+    fn python_root_takes_a_directory() {
+        let Ok(Command::Serve(args)) = serve_args(&["--python-root", "sidecar"]) else {
+            panic!("--python-root must parse");
+        };
+        assert_eq!(args.python_root, Some(PathBuf::from("sidecar")));
+        assert!(serve_args(&["--python-root"]).is_err());
+    }
 }

@@ -5,7 +5,9 @@
     clippy::indexing_slicing
 )]
 
-use evoflux_gateway::routing::{Owner, RoutingError, RoutingTable};
+use evoflux_gateway::routing::{
+    parse_rust_ready, rust_forward_enabled, Owner, RoutingError, RoutingTable,
+};
 use std::path::PathBuf;
 
 const SAMPLE: &str = r#"
@@ -468,4 +470,97 @@ services = []
 "#;
     let table = RoutingTable::from_toml(toml, None).unwrap();
     assert_eq!(table.units()[0].pin_breakers, vec!["file-lock"]);
+}
+
+fn forward(ready: &[&str], override_env: Option<&str>) -> Result<RoutingTable, RoutingError> {
+    let ready: Vec<String> = ready.iter().map(|s| (*s).to_owned()).collect();
+    RoutingTable::from_toml_forward(SAMPLE, override_env, &ready)
+}
+
+#[test]
+fn rust_forward_with_an_empty_list_is_a_no_op() {
+    let table = forward(&[], None).unwrap();
+    assert_eq!(table.owner_for("/api/scheduler/tasks"), Owner::Python);
+    assert_eq!(table.owner_for("/api/health/live"), Owner::Rust);
+    assert!(table.forwarded_units().is_empty());
+}
+
+#[test]
+fn rust_forward_flips_a_listed_unit_to_rust() {
+    let table = forward(&["scheduler"], None).unwrap();
+    assert_eq!(table.owner_for("/api/scheduler/tasks"), Owner::Rust);
+    assert_eq!(table.owner_for("/metrics"), Owner::Rust);
+    assert_eq!(table.owner_for("/api/team/x"), Owner::Python);
+    assert_eq!(table.forwarded_units(), ["scheduler"]);
+}
+
+#[test]
+fn explicit_override_beats_rust_forward() {
+    let table = forward(&["scheduler", "team"], Some("scheduler=python")).unwrap();
+    assert_eq!(table.owner_for("/api/scheduler/tasks"), Owner::Python);
+    assert_eq!(table.owner_for("/api/team/x"), Owner::Rust);
+    assert_eq!(table.forwarded_units(), ["team"]);
+}
+
+#[test]
+fn explicit_shadow_override_beats_rust_forward() {
+    let table = forward(&["team"], Some("team=shadow")).unwrap();
+    assert_eq!(table.owner_for("/api/team/x"), Owner::Shadow);
+}
+
+#[test]
+fn unit_already_on_rust_is_not_reported_as_forwarded() {
+    let table = forward(&["health-live", "team"], None).unwrap();
+    assert_eq!(table.forwarded_units(), ["team"]);
+}
+
+#[test]
+fn unknown_rust_ready_unit_is_an_error() {
+    match forward(&["scheduler", "nope"], None) {
+        Err(RoutingError::UnknownRustReadyUnit(name)) => assert_eq!(name, "nope"),
+        other => panic!("expected UnknownRustReadyUnit, got {other:?}"),
+    }
+}
+
+#[test]
+fn rust_ready_file_lists_units() {
+    assert!(parse_rust_ready("units = []").unwrap().is_empty());
+    assert_eq!(
+        parse_rust_ready(
+            "# note
+units = [\"a\", \"b\"]"
+        )
+        .unwrap(),
+        ["a", "b"]
+    );
+    assert!(matches!(
+        parse_rust_ready("units = 3"),
+        Err(RoutingError::Parse(_))
+    ));
+    assert!(matches!(
+        parse_rust_ready("unit = []"),
+        Err(RoutingError::Parse(_))
+    ));
+}
+
+#[test]
+fn rust_forward_env_values() {
+    for on in ["1", "true", "on", "TRUE", "On", " 1 "] {
+        assert!(rust_forward_enabled(Some(on)), "{on:?}");
+    }
+    for off in ["", "0", "false", "off", "yes", "2", "enabled"] {
+        assert!(!rust_forward_enabled(Some(off)), "{off:?}");
+    }
+    assert!(!rust_forward_enabled(None));
+}
+
+#[test]
+fn repository_rust_ready_units_exist_in_routing_toml() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    #[allow(clippy::disallowed_methods)] // sync test, no async runtime involved
+    let ready =
+        parse_rust_ready(&std::fs::read_to_string(root.join("rust-ready.toml")).unwrap()).unwrap();
+    #[allow(clippy::disallowed_methods)]
+    let text = std::fs::read_to_string(root.join("routing.toml")).unwrap();
+    RoutingTable::from_toml_forward(&text, None, &ready).unwrap();
 }

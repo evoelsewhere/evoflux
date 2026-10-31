@@ -105,6 +105,9 @@ claim → study → contract tests → implement → self-test → re-review
 13. **Watch.** 24 h of real use. Any regression: flip back with
     `EVOFLUX_ROUTE_OVERRIDE`, open a bug PR with a failing contract test first,
     fix it, then cut over again.
+    To test every finished port at once, use the Rust-forward switch
+    (`serve --rust-forward` or `EVOFLUX_RUST_FORWARD=1`), which routes the units in
+    `server/rust-ready.toml` to Rust; an explicit `EVOFLUX_ROUTE_OVERRIDE` entry wins.
 14. **Done.** Board row → `cut-over`, with links to the cutover PR and gate report.
 
 ## 3. Coding rules (Rust)
