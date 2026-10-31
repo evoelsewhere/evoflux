@@ -100,8 +100,11 @@ impl Fetcher for HttpFetcher {
                 .header("X-Api-Key", api_key)
                 .send()
                 .await
-                .and_then(|response| response.error_for_status())
                 .map_err(|_| FetchError)?;
+            // Only 2xx counts, as with `raise_for_status`; the shared client never follows a 3xx.
+            if !response.status().is_success() {
+                return Err(FetchError);
+            }
             response.json::<Value>().await.map_err(|_| FetchError)
         })
     }
@@ -770,6 +773,7 @@ mod tests {
     async fn http_errors_and_bad_bodies_fall_back_without_caching() {
         for (status, body) in [
             (500, r#"[{"quote": "q", "author": "a"}]"#),
+            (302, r#"[{"quote": "q", "author": "a"}]"#),
             (401, r#"{"error": "bad key"}"#),
             (404, r#"{"quote": "q"}"#),
             (200, "not json"),

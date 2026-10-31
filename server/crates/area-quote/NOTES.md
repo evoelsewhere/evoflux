@@ -89,10 +89,10 @@ redirected to, so it stays a Rust unit test with an injected base URL (a local m
   (`Settings::ninja_api_key`, case-insensitive, `.env` files as in Python; an
   empty value is still a key, as with pydantic `SecretStr`), and its `Debug`
   is redacted. The blocker on cutover is gone.
-- Known difference in the fetch: `httpx` does not follow redirects, so a 3xx
-  from the upstream is an error in Python, while the shared reqwest client
-  follows up to 10. API Ninjas does not redirect this endpoint; revisit if a
-  shared no-redirect policy is wanted.
+- Redirects: `httpx` does not follow them, and neither does the shared client
+  (`redirect::Policy::none()`, so `X-Api-Key` cannot reach another host). Any
+  non-2xx status, a 3xx included, is a `FetchError` and ends in the fallback, as
+  with `raise_for_status`.
 - `core::config::Settings` gained `cache_dir` (`EVOFLUX_CACHE_DIR`, default
   `~/.cache/evoflux` in production and `.evoflux/dev/cache` otherwise, as in
   `app/core/config.py`). That is a shared file, changed because the quote cache
