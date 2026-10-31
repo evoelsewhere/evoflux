@@ -108,3 +108,7 @@ gates: ## Run migration gates (usage: make gates AREA=shared)
 db-compat: ## Run SQLite compatibility and two-process stress gates
 	cd server && cargo build -p evoflux-core --example db_stress
 	uv run --group contract pytest contract-tests/db -q --no-cov
+
+.PHONY: e2e
+e2e: ## Run the Playwright end-to-end smoke suite (usage: make e2e [ROUTE_OVERRIDE=<unit>=<owner>])
+	bash scripts/migration/e2e.sh $(if $(ROUTE_OVERRIDE),--route-override "$(ROUTE_OVERRIDE)")
