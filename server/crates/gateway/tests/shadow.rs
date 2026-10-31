@@ -439,3 +439,44 @@ async fn record_removes_secrets_and_stores_sse_as_events() {
     assert!(events.len() >= 2, "{sse_row}");
     served.sup.shutdown().await;
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn recorder_captures_scrubbed_request_body_with_sequence() {
+    let dir = tempfile::tempdir().unwrap();
+    let recorder = Recorder::new(dir.path());
+    let served = serve_shadow(axum::Router::new(), false, Some(&recorder)).await;
+    let req = hyper::Request::post(format!("http://{}/fake/env", served.addr))
+        .body(Body::from("contact alice@example.com"))
+        .unwrap();
+    let response = client().request(req).await.unwrap();
+    response.into_body().collect().await.unwrap();
+    let path = dir.path().join("traffic.jsonl");
+    eventually(Duration::from_secs(10), "recording written", || {
+        let exists = path.exists();
+        async move { exists }
+    })
+    .await;
+    let line = std::fs::read_to_string(path).unwrap();
+    let row: Value = serde_json::from_str(&line).unwrap();
+    assert_eq!(row["seq"], 0);
+    assert_eq!(row["request_body"]["text"], "contact <email>");
+    served.sup.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn recorder_captures_empty_get_body() {
+    let dir = tempfile::tempdir().unwrap();
+    let recorder = Recorder::new(dir.path());
+    let served = serve_shadow(axum::Router::new(), false, Some(&recorder)).await;
+    get_json(&client(), format!("http://{}/fake/env", served.addr)).await;
+    let path = dir.path().join("traffic.jsonl");
+    eventually(Duration::from_secs(10), "recording written", || {
+        let exists = path.exists();
+        async move { exists }
+    })
+    .await;
+    let line = std::fs::read_to_string(path).unwrap();
+    let row: Value = serde_json::from_str(&line).unwrap();
+    assert_eq!(row["request_body"]["text"], "");
+    served.sup.shutdown().await;
+}

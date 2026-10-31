@@ -157,6 +157,7 @@ def start_backend(
     python: str | None = None,
     binary: Path | None = None,
     extra_env: dict[str, str] | None = None,
+    config_fixture: Path | None = None,
 ) -> Backend:
     """Start ``target`` with fresh data/config/state/cache dirs under ``data_dir``.
 
@@ -176,6 +177,8 @@ def start_backend(
     }
     for path in dirs.values():
         path.mkdir(parents=True, exist_ok=True)
+    if config_fixture is not None:
+        shutil.copytree(config_fixture, dirs["EVOFLUX_CONFIG_DIR"], dirs_exist_ok=True)
     if db_fixture is not None:
         shutil.copyfile(db_fixture, dirs["EVOFLUX_DATA_DIR"] / "evoflux.db")
 

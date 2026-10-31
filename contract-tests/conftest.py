@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -16,6 +17,23 @@ import pytest
 
 from backends import Backend, BackendStartError, Target, start_backend
 from mock_provider.server import MockProvider
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "scripts" / "migration"))
+from check_board import load_routing, owner_for, parse_board  # noqa: E402
+
+
+def unit_for_test(path: Path) -> str:
+    area = path.relative_to(ROOT / "contract-tests").parts[0]
+    rows = parse_board(
+        (ROOT / "server" / "MIGRATION_BOARD.md").read_text(encoding="utf-8")
+    )
+    units = [
+        row["unit"] for row in rows if row["lane"] == area and row["unit"] != "none"
+    ]
+    if len(units) != 1:
+        raise pytest.UsageError(f"no unique migration unit for contract area {area!r}")
+    return units[0]
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -57,16 +75,90 @@ def backend(
     db_fixture: Path | None,
 ) -> Iterator[Backend]:
     try:
-        started = start_backend(target, tmp_path, db_fixture)
+        extra_env = None
+        if target == "rust":
+            extra_env = {
+                "EVOFLUX_ROUTE_OVERRIDE": f"{unit_for_test(Path(str(request.node.path)))}=rust"
+            }
+        started = start_backend(target, tmp_path, db_fixture, extra_env=extra_env)
     except BackendStartError as exc:
         pytest.fail(str(exc), pytrace=False)
     try:
+        request.node._replay_backend_url = started.base_url
+        request.node._replay_backend_token = started.token
         yield started
     finally:
         started.stop()
         report = getattr(request.node, "rep_call", None)
         if report is not None and report.failed:
             print(f"--- {target} backend log tail ---\n{started.log_tail()}")
+
+
+@pytest.fixture(autouse=True)
+def replay_capture(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch):
+    transcript = os.environ.get("EVOFLUX_REPLAY_TRANSCRIPT")
+    if not transcript:
+        return
+    original = httpx.Client.send
+    routing = load_routing(ROOT / "server" / "routing.toml")
+    unit = os.environ["EVOFLUX_REPLAY_UNIT"]
+
+    def send(client, http_request, **kwargs):
+        response = original(client, http_request, **kwargs)
+        base = getattr(request.node, "_replay_backend_url", None)
+        if (
+            base
+            and str(http_request.url).startswith(base + "/")
+            and owner_for(routing, http_request.url.path) == unit
+        ):
+            response.read()
+            try:
+                body = response.json()
+            except ValueError:
+                body = response.text
+            token = getattr(request.node, "_replay_backend_token", "")
+            headers = {
+                k: v.replace(token, "<backend-token>") if token else v
+                for k, v in http_request.headers.items()
+                if k.lower()
+                not in {
+                    "host",
+                    "content-length",
+                    "connection",
+                    "user-agent",
+                    "accept-encoding",
+                }
+            }
+            try:
+                request_body = http_request.content.decode("utf-8")
+            except UnicodeDecodeError:
+                import base64
+
+                request_body = {
+                    "base64": base64.b64encode(http_request.content).decode("ascii")
+                }
+            row = {
+                "test": request.node.nodeid,
+                "method": http_request.method,
+                "path": http_request.url.raw_path.decode().replace(
+                    token, "<backend-token>"
+                )
+                if token
+                else http_request.url.raw_path.decode(),
+                "request_headers": headers,
+                "request_body": request_body,
+                "status": response.status_code,
+                "media_type": response.headers.get("content-type", "")
+                .split(";", 1)[0]
+                .strip()
+                .lower(),
+                "body": body,
+            }
+            with Path(transcript).open("a", encoding="utf-8") as stream:
+                stream.write(json.dumps(row, ensure_ascii=False) + "\n")
+        return response
+
+    monkeypatch.setattr(httpx.Client, "send", send)
 
 
 @pytest.fixture

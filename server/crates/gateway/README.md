@@ -53,6 +53,7 @@ tell noise from real differences.
 
 `EVOFLUX_GATEWAY_RECORD_DIR=<dir>` writes request/response pairs to
 `<dir>/traffic.jsonl` (SSE as event lists) without `Authorization`, cookie and
-`_token` values. **Recorded GET bodies can still hold secrets and personal
-data.** Run `make scrub FILE=<recording>` (`scripts/migration/scrub.py`) before
+`_token` values. Request bodies are scrubbed, with bodies over 1 MiB stored as
+SHA-256 and length only. `seq` records request order. **Recorded responses can
+still hold secrets and personal data.** Run `make scrub FILE=<recording>` (`scripts/migration/scrub.py`) before
 sharing or committing a recording.
