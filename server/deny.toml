@@ -5,8 +5,20 @@ allow = [
   "Apache-2.0 WITH LLVM-exception",
   "BSD-2-Clause",
   "BSD-3-Clause",
+  "CDLA-Permissive-2.0",
+  "ISC",
   "MIT",
   "Unicode-3.0",
   "Unlicense",
   "Zlib",
+]
+
+[bans]
+deny = [
+  { crate = "native-tls", reason = "TLS is rustls with the OS trust store (evoflux-net)" },
+  { crate = "webpki-roots", reason = "trust comes from the OS store through rustls-platform-verifier" },
+  { crate = "ureq", reason = "one shared HTTPS client: evoflux-net" },
+  { crate = "isahc", reason = "one shared HTTPS client: evoflux-net" },
+  { crate = "reqwest-eventsource", reason = "SSE is parsed by the project from reqwest's byte stream" },
+  { crate = "reqwest", deny-multiple-versions = true, reason = "a single reqwest major in the graph" },
 ]
