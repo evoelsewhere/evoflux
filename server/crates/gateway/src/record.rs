@@ -8,11 +8,17 @@
 //!
 //! - headers: authorization, cookie and token/secret/api-key headers;
 //! - the `_token` query value of recorded paths;
-//! - request bodies: values of sensitive JSON keys (`password`, `token`,
-//!   `secret`, `api_key`, `apikey`, `authorization`, `cookie`; any case, any
-//!   nesting depth), then private keys, API keys (`sk-`, `ghp_`,
-//!   `github_pat_`, `AKIA`, `AIza`, `xox`), Bearer/Basic tokens, `_token`
-//!   query values, email addresses and user names in home paths.
+//! - request bodies: values of sensitive JSON keys and of sensitive fields in
+//!   form-encoded bodies (`application/x-www-form-urlencoded`), then private
+//!   keys, API keys (`sk-`, `ghp_`, `github_pat_`, `AKIA`, `AIza`, `xox`),
+//!   Bearer/Basic tokens, `_token` query values, email addresses and user
+//!   names in home paths.
+//!
+//! A key or field name is sensitive when it contains, ignoring case,
+//! `password`, `passwd`, `secret`, `token`, `api_key`, `api-key`, `apikey`,
+//! `authorization`, `cookie` or `session`. Matching is by substring, so
+//! harmless names such as `tokens_used` or `session_count` are redacted too.
+//! That over-redaction is accepted.
 //!
 //! Recorded GET bodies are not scrubbed here and can still contain secrets,
 //! personal data and absolute paths (API keys echoed by a settings endpoint,
@@ -20,7 +26,7 @@
 //! before anything is shared or committed.
 
 use crate::shadow::{Captured, Snapshot};
-use axum::http::HeaderMap;
+use axum::http::{header::CONTENT_TYPE, HeaderMap};
 use percent_encoding::percent_decode_str;
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
@@ -32,21 +38,29 @@ pub const REMOVED: &str = "<removed>";
 
 const REQUEST_BODY_LIMIT: usize = 1024 * 1024;
 
-const SENSITIVE_JSON_KEYS: [&str; 7] = [
+const SENSITIVE_KEY_PARTS: [&str; 10] = [
     "password",
-    "token",
+    "passwd",
     "secret",
+    "token",
     "api_key",
+    "api-key",
     "apikey",
     "authorization",
     "cookie",
+    "session",
 ];
+
+fn is_sensitive_key(key: &str) -> bool {
+    let lower = key.to_ascii_lowercase();
+    SENSITIVE_KEY_PARTS.iter().any(|part| lower.contains(part))
+}
 
 fn redact_json_keys(value: &mut Value) {
     match value {
         Value::Object(map) => {
             for (key, child) in map.iter_mut() {
-                if SENSITIVE_JSON_KEYS.contains(&key.to_ascii_lowercase().as_str()) {
+                if is_sensitive_key(key) {
                     *child = Value::String(REMOVED.to_owned());
                 } else {
                     redact_json_keys(child);
@@ -58,15 +72,56 @@ fn redact_json_keys(value: &mut Value) {
     }
 }
 
+/// Replace the value of each sensitive field in a form-encoded body. Field
+/// names are percent-decoded before matching.
+fn redact_form_fields(text: &str) -> String {
+    text.split('&')
+        .map(|pair| match pair.split_once('=') {
+            Some((key, _)) if is_sensitive_key(&percent_decode_str(key).decode_utf8_lossy()) => {
+                format!("{key}={REMOVED}")
+            }
+            _ => pair.to_owned(),
+        })
+        .collect::<Vec<_>>()
+        .join("&")
+}
+
 /// Scrub the same secret and personal-data patterns as the recording scrubber,
 /// and the values of sensitive JSON keys when the body is JSON.
 pub fn scrub_request_body(text: &str) -> String {
-    let text = match serde_json::from_str::<Value>(text) {
-        Ok(mut value) => {
-            redact_json_keys(&mut value);
-            serde_json::to_string(&value).unwrap_or_else(|_| text.to_owned())
+    scrub_body(text, false)
+}
+
+/// As [`scrub_request_body`], for an `application/x-www-form-urlencoded` body:
+/// the values of sensitive fields are replaced instead of JSON keys.
+pub fn scrub_form_body(text: &str) -> String {
+    scrub_body(text, true)
+}
+
+/// Whether the request declares a form-encoded body (ignoring parameters).
+pub fn is_form_encoded(headers: &HeaderMap) -> bool {
+    headers
+        .get(CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.split(';').next())
+        .is_some_and(|media| {
+            media
+                .trim()
+                .eq_ignore_ascii_case("application/x-www-form-urlencoded")
+        })
+}
+
+fn scrub_body(text: &str, form: bool) -> String {
+    let text = if form {
+        redact_form_fields(text)
+    } else {
+        match serde_json::from_str::<Value>(text) {
+            Ok(mut value) => {
+                redact_json_keys(&mut value);
+                serde_json::to_string(&value).unwrap_or_else(|_| text.to_owned())
+            }
+            Err(_) => text.to_owned(),
         }
-        Err(_) => text.to_owned(),
     };
     let rules = [
         (
@@ -112,9 +167,16 @@ pub struct RequestBodyCapture {
     bytes: Vec<u8>,
     length: usize,
     hash: Sha256,
+    form: bool,
 }
 
 impl RequestBodyCapture {
+    pub fn new(form: bool) -> Self {
+        Self {
+            form,
+            ..Self::default()
+        }
+    }
     pub fn length(&self) -> usize {
         self.length
     }
@@ -131,7 +193,7 @@ impl RequestBodyCapture {
     pub fn finish(self) -> Value {
         if self.length <= REQUEST_BODY_LIMIT {
             if let Ok(text) = std::str::from_utf8(&self.bytes) {
-                return json!({"text": scrub_request_body(text)});
+                return json!({"text": scrub_body(text, self.form)});
             }
         }
         json!({"length": self.length, "sha256": format!("{:x}", self.hash.finalize())})

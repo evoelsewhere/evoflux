@@ -5,7 +5,9 @@
     clippy::indexing_slicing
 )]
 
-use evoflux_gateway::record::scrub_request_body;
+use evoflux_gateway::record::{
+    is_form_encoded, scrub_form_body, scrub_request_body, RequestBodyCapture,
+};
 
 #[test]
 fn request_body_redacts_secrets_and_personal_information() {
@@ -100,4 +102,56 @@ async fn sequence_continues_when_recording_is_reopened() {
     .unwrap();
     let recorder = evoflux_gateway::record::Recorder::new(temp.path());
     assert_eq!(recorder.next_sequence().await, 9);
+}
+
+#[test]
+fn json_keys_match_sensitive_substrings_in_any_case() {
+    let cleaned = scrub_request_body(
+        r#"{"access_token":"a","refresh_token":"b","client_secret":"c","api-key":"d","x-api-key":"e","Session_Id":"f","tokens_used":3,"user":"bob"}"#,
+    );
+    let value: serde_json::Value = serde_json::from_str(&cleaned).unwrap();
+    for key in [
+        "access_token",
+        "refresh_token",
+        "client_secret",
+        "api-key",
+        "x-api-key",
+        "Session_Id",
+        // Substring matching also removes harmless keys such as this one; accepted.
+        "tokens_used",
+    ] {
+        assert_eq!(value[key], "<removed>", "key: {key}");
+    }
+    assert_eq!(value["user"], "bob");
+}
+
+#[test]
+fn form_bodies_redact_sensitive_fields() {
+    let cleaned = scrub_form_body(
+        "contact=alice@example.com&username=bob&Password=hunter2&access_token=abc%2Fdef&%70asswd=x&n=1",
+    );
+    assert_eq!(
+        cleaned,
+        "contact=<email>&username=bob&Password=<removed>&access_token=<removed>&%70asswd=<removed>&n=1"
+    );
+}
+
+#[test]
+fn form_content_type_is_detected_with_parameters() {
+    use axum::http::{header::CONTENT_TYPE, HeaderMap, HeaderValue};
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        CONTENT_TYPE,
+        HeaderValue::from_static("Application/X-WWW-Form-Urlencoded; charset=utf-8"),
+    );
+    assert!(is_form_encoded(&headers));
+    headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+    assert!(!is_form_encoded(&headers));
+}
+
+#[test]
+fn captured_form_body_redacts_sensitive_fields() {
+    let mut capture = RequestBodyCapture::new(true);
+    capture.push(b"password=hunter2&a=1");
+    assert_eq!(capture.finish()["text"], "password=<removed>&a=1");
 }
