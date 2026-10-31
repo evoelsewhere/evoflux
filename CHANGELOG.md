@@ -6,6 +6,7 @@ All notable changes to EvoFlux are documented in this file.
 
 ### Fixed
 
+- The v4 Rust shared HTTPS client no longer follows redirects (as with Python), so an API key header can never be forwarded to another host, and clippy now bans building any other HTTP client outside `evoflux-net`. Python still serves every route, so nothing changes in the app.
 - The v4 Rust `quote` route now answers `/api/quote//` (repeated trailing slashes) with a 307 to `/api/quote`, like Python. Python still serves the route, so nothing changes in the app.
 - The v4 Rust `health-live` route now reports the app version from `app/version.txt` (as Python does) instead of its crate version, and `/api/health/live//` redirects with a 307 like Python. Python still serves the route, so nothing changes in the app.
 - The migration lane gate's mutation check now actually tests the lane's changed Rust code; before, it matched no files and passed without testing anything.

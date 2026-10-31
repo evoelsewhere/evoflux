@@ -5,6 +5,8 @@
 //! the OS trust store, honours the environment and system proxy, and has connect
 //! and read (idle) timeouts but no total timeout, so streaming responses can run
 //! as long as bytes keep arriving. A total timeout is a per-request choice.
+//! Redirects are never followed (as with Python httpx), so a request header such
+//! as `X-Api-Key` cannot be forwarded to another host; a 3xx is the caller's to handle.
 
 #![forbid(unsafe_code)]
 
@@ -50,11 +52,14 @@ pub fn build_client() -> Result<Client, BuildError> {
     build_client_with(Timeouts::default())
 }
 
+/// The only place a client is built; `clippy.toml` bans `Client::builder` everywhere else.
+#[allow(clippy::disallowed_methods)]
 pub fn build_client_with(timeouts: Timeouts) -> Result<Client, BuildError> {
     install_crypto_provider();
     Ok(Client::builder()
         .connect_timeout(timeouts.connect)
         .read_timeout(timeouts.read)
+        .redirect(reqwest::redirect::Policy::none())
         .build()?)
 }
 
@@ -197,6 +202,39 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(body, "xxxxxxxx");
+    }
+
+    /// Like httpx: a 3xx is returned as is, so `X-Api-Key` never follows a
+    /// redirect to another host.
+    #[tokio::test]
+    async fn a_redirect_is_not_followed() {
+        let hits = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let seen = hits.clone();
+        let app = Router::new()
+            .route(
+                "/r",
+                get(|| async { axum::response::Redirect::temporary("/target") }),
+            )
+            .route(
+                "/target",
+                get(move || {
+                    let seen = seen.clone();
+                    async move {
+                        seen.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+                            .to_string()
+                    }
+                }),
+            );
+        let addr = serve(app).await;
+        let response = build_client()
+            .unwrap()
+            .get(format!("http://{addr}/r"))
+            .header("X-Api-Key", "secret")
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), reqwest::StatusCode::TEMPORARY_REDIRECT);
+        assert_eq!(hits.load(std::sync::atomic::Ordering::SeqCst), 0);
     }
 
     #[tokio::test]
