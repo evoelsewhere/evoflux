@@ -43,9 +43,9 @@ dev-desktop: ## Start backend, web UI, and Tauri desktop app
 test: ## Run tests
 	uv run pytest -q
 
-contract: ## Run one area of the black-box contract suite (usage: make contract AREA=health TARGET=python|rust|gateway)
+contract: ## Run one area of the black-box contract suite (usage: make contract AREA=health TARGET=python|rust|gateway [JOBS=8])
 	@test -n "$(AREA)" || { echo "error: set AREA=<directory under contract-tests/>"; exit 1; }
-	TARGET=$(or $(TARGET),python) uv run --group contract pytest contract-tests/$(AREA) -q --no-cov
+	TARGET=$(or $(TARGET),python) uv run --group contract pytest contract-tests/$(AREA) -q --no-cov -n $(or $(JOBS),8)
 
 contract-all: ## Run the whole contract suite against one backend (usage: make contract-all TARGET=python|rust|gateway)
 	TARGET=$(or $(TARGET),python) uv run --group contract pytest contract-tests -q --no-cov

@@ -97,17 +97,23 @@ class Backend:
             if os.name == "nt":
                 # The venv launcher can own a Python child. Terminate the
                 # entire tree and wait before the temp directory is removed.
+                # taskkill reports "no running instance" when the process
+                # exits between poll() and the call; that is a clean stop, so
+                # only a process still alive after the wait is an error. (The
+                # gateway's ``python_exited status=exit code: 1`` log line is
+                # this tree kill: ``taskkill /F`` ends processes with code 1.)
                 result = subprocess.run(
                     ["taskkill", "/PID", str(self.process.pid), "/T", "/F"],
                     capture_output=True,
                     text=True,
                     check=False,
                 )
-                if result.returncode and self.process.poll() is None:
+                try:
+                    self.process.wait(timeout=15)
+                except subprocess.TimeoutExpired as exc:
                     raise RuntimeError(
                         f"backend tree termination failed: {result.stderr}"
-                    )
-                self.process.wait(timeout=15)
+                    ) from exc
             else:
                 self.process.terminate()
                 try:
@@ -233,8 +239,14 @@ def start_backend(
         for raw in process.stdout:
             line = raw.rstrip("\r\n")
             log.append(line)
-            if line.startswith(HANDSHAKE_PREFIX):
-                handshakes.put(json.loads(line[len(HANDSHAKE_PREFIX) :]))
+            # Under rust/gateway the sidecar inherits the gateway's stdout, so
+            # its unterminated log text can precede the handshake on one line.
+            start = line.find(HANDSHAKE_PREFIX)
+            if start >= 0:
+                payload, _ = json.JSONDecoder().raw_decode(
+                    line[start + len(HANDSHAKE_PREFIX) :]
+                )
+                handshakes.put(payload)
         handshakes.put(None)
 
     threading.Thread(target=pump, name="backend-log", daemon=True).start()
@@ -242,10 +254,22 @@ def start_backend(
         info = handshakes.get(timeout=HANDSHAKE_TIMEOUT_S)
     except queue.Empty:
         info = None
+        timed_out = True
+    else:
+        timed_out = False
     if info is None:
+        if timed_out:
+            reason = f"no handshake line within {HANDSHAKE_TIMEOUT_S:.0f}s"
+        else:
+            # EOF on stdout: the process is exiting, so its code is imminent.
+            try:
+                reason = f"the process exited with code {process.wait(timeout=10)}"
+            except subprocess.TimeoutExpired:
+                reason = "stdout closed but the process is still running"
         Backend("", "", process.pid, process, log).stop()
         raise BackendStartError(
-            f"{target} backend gave no handshake:\n" + "\n".join(log)
+            f"{target} backend gave no handshake ({reason}); log tail:\n"
+            + "\n".join(log)
         )
     return Backend(
         base_url=f"http://127.0.0.1:{info['port']}",
