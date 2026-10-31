@@ -104,12 +104,11 @@ async fn rust_routes_require_the_token() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn rust_routes_refuse_tailnet_requests() {
+async fn rust_routes_without_database_fail_closed_for_tailnet_requests() {
     let auth = DesktopAuth::new(Some("k".to_owned()), "remote-secret".to_owned())
         .with_embedded_proxy_required(true);
     let port = serve(app::rust_routes(ping_routes(), auth)).await;
-    // A trusted tailnet request: Python would claim the single-device lock
-    // first, which Rust does not do yet, so Rust refuses to serve it.
+    // A trusted remote request fails closed when no database is available.
     let trusted = [
         ("Tailscale-User-Login", "user@example.com"),
         ("X-EvoFlux-Remote-Proxy", "tsnet"),
@@ -117,9 +116,7 @@ async fn rust_routes_refuse_tailnet_requests() {
         ("Authorization", "Bearer k"),
     ];
     let (status, body) = http_get(port, "/api/ping", &trusted).await;
-    assert_eq!(status, 403, "{body}");
-    let json: serde_json::Value = serde_json::from_str(&body).unwrap();
-    assert_eq!(json["code"], "remote_route_unavailable");
+    assert_eq!(status, 500, "{body}");
     // An untrusted one is still rejected by the auth layer, as in Python.
     let untrusted = [
         ("Tailscale-User-Login", "user@example.com"),

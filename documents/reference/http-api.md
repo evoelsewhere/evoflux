@@ -125,6 +125,10 @@ HTTP 409:
 }
 ```
 
+On Rust-served HTTP routes the same lock applies, except that `/api/health/live`
+and `/api/health/ready` skip the desktop token and the claim. Remote WebSocket
+upgrades to Rust routes are refused until their authentication is ported.
+
 An optional `X-EvoFlux-Device-Label` header names the device (the
 `User-Agent` is the fallback). Sessions idle for 30 minutes are released
 automatically and never block the next claim. See

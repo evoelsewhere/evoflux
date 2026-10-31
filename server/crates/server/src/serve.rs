@@ -228,7 +228,7 @@ fn bundled_python(root: &Path) -> Result<PathBuf, String> {
         .ok_or_else(|| format!("no bundled Python interpreter under {}", python.display()))
 }
 
-async fn run(prepared: Prepared) -> u8 {
+async fn run(mut prepared: Prepared) -> u8 {
     let _watchdog = watchdog::spawn(STALL_THRESHOLD);
     let (shutdown_tx, mut shutdown) = watch::channel(false);
     let parent_died = Arc::new(AtomicBool::new(false));
@@ -316,6 +316,22 @@ async fn run(prepared: Prepared) -> u8 {
         }
     };
 
+    let db_path = prepared.state.settings.sqlite_database_path();
+    match tokio::task::spawn_blocking(move || {
+        if let Some(db_path) = db_path.filter(|path| path.is_file()) {
+            evoflux_core::db::Db::open(&db_path, evoflux_core::db::DbOptions::default())
+                .map(|db| Some(Arc::new(db)))
+        } else {
+            Ok(None)
+        }
+    })
+    .await
+    {
+        Ok(Ok(db)) => prepared.state.db = db,
+        Ok(Err(error)) => tracing::warn!(%error, "database_open_failed_remote_claim_unavailable"),
+        Err(error) => tracing::warn!(%error, "database_open_failed_remote_claim_unavailable"),
+    }
+
     if prepared.args.handshake {
         let line = handshake::line(
             port,
@@ -333,12 +349,13 @@ async fn run(prepared: Prepared) -> u8 {
     let auth = DesktopAuth::new(prepared.auth_token, remote_proxy_secret);
     let cancel = CancellationToken::new();
     let services = units::start_rust_services(&prepared.table, &prepared.state, cancel.clone());
-    let router = router_with_units(
+    let router = router_with_units_and_db(
         Arc::new(prepared.table),
         Arc::clone(&sup),
         auth,
         units::router(&prepared.state),
         prepared.state.paths.state_dir.clone(),
+        prepared.state.db.clone(),
     );
     let mut stop = shutdown.clone();
     let server = tokio::spawn(async move {
@@ -371,7 +388,25 @@ pub fn router_with_units(
     units: axum::Router,
     state_dir: PathBuf,
 ) -> axum::Router {
-    app::router_with_options(table, sup, auth, units, GatewayOptions::from_env(state_dir))
+    router_with_units_and_db(table, sup, auth, units, state_dir, None)
+}
+
+pub fn router_with_units_and_db(
+    table: Arc<RoutingTable>,
+    sup: Arc<PythonSupervisor>,
+    auth: DesktopAuth,
+    units: axum::Router,
+    state_dir: PathBuf,
+    db: Option<Arc<evoflux_core::db::Db>>,
+) -> axum::Router {
+    app::router_with_options_and_db(
+        table,
+        sup,
+        auth,
+        units,
+        GatewayOptions::from_env(state_dir),
+        db,
+    )
 }
 
 fn exit_code(parent_died: &AtomicBool) -> u8 {

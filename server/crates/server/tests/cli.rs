@@ -218,3 +218,25 @@ async fn first_stdout_line(server: &mut tokio::process::Child, limit: Duration) 
     }
     line
 }
+#[tokio::test(flavor = "multi_thread")]
+async fn unreadable_claim_database_keeps_local_gateway_available() {
+    let home = tempfile::tempdir().unwrap();
+    let data = home.path().join("data");
+    std::fs::create_dir_all(&data).unwrap();
+    std::fs::write(data.join("evoflux.db"), b"not sqlite").unwrap();
+    let mut server = spawn_server(&home, &fake_upstream(), &[], &[]);
+    let handshake = handshake_json(&mut server).await;
+    let port = handshake["port"].as_u64().unwrap();
+    assert_eq!(http_get(port, "/api/gateway/ping", &[]).await.0, 200);
+    assert_eq!(
+        http_get(
+            port,
+            "/api/gateway/ping",
+            &[("Tailscale-User-Login", "alice")]
+        )
+        .await
+        .0,
+        500
+    );
+    stop(server).await;
+}

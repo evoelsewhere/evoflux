@@ -4,6 +4,10 @@ All notable changes to EvoFlux are documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- Remote devices can use Rust-served HTTP routes under the same single-device lock as Python routes, while health probes remain available without a claim.
+
 ### Changed
 
 - Added contract tests for the `quote` migration lane (`GET /api/quote`: fallback, today's cached quote, the UTC day boundary, unreadable cache files, authentication, 405, concurrent reads) and its lane notes with the Python test map, so the Rust port can be checked against v3. No app behaviour changes.

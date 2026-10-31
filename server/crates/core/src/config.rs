@@ -26,9 +26,13 @@ pub struct Settings {
     pub log_level: String,
     pub api_host: String,
     pub api_port: u16,
+    sqlite_database_path: Option<PathBuf>,
 }
 
 impl Settings {
+    pub fn sqlite_database_path(&self) -> Option<PathBuf> {
+        self.sqlite_database_path.clone()
+    }
     /// Resolve settings from the process environment.
     pub fn from_env() -> Result<Self, ConfigError> {
         let vars: HashMap<String, String> = std::env::vars().collect();
@@ -83,8 +87,25 @@ impl Settings {
                 .map_err(|_| ConfigError::InvalidPort(raw.clone()))?,
             None => 4082,
         };
+        let data_dir = dir("EVOFLUX_DATA_DIR", defaults.data);
+        let sqlite_database_path = match get("DATABASE_URL").filter(|v| !v.is_empty()) {
+            None => Some(data_dir.join("evoflux.db")),
+            Some(url) => url
+                .strip_prefix("sqlite+aiosqlite:///")
+                .or_else(|| url.strip_prefix("sqlite:///"))
+                .filter(|path| {
+                    !path.is_empty()
+                        && *path != ":memory:"
+                        && !path.contains(['?', '#'])
+                        && !path.starts_with("file:")
+                })
+                .map(PathBuf::from),
+        };
+        let sqlite_database_path =
+            sqlite_database_path.filter(|path| !path.to_string_lossy().contains("${"));
         Ok(Self {
-            data_dir: dir("EVOFLUX_DATA_DIR", defaults.data),
+            data_dir,
+            sqlite_database_path,
             config_dir: dir("EVOFLUX_CONFIG_DIR", defaults.config),
             state_dir: dir("EVOFLUX_STATE_DIR", defaults.state),
             log_level: get("LOG_LEVEL").unwrap_or_else(|| "INFO".to_owned()),
