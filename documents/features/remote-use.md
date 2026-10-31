@@ -97,6 +97,14 @@ script; no test touches the network or a real tailscaled.
 
 ## Single-device session lock
 
+Rust-served HTTP routes share the same lock as Python routes. Rust-served
+`/api/health/live` and `/api/health/ready` are exempt from the desktop token
+and the lock, and do not access the database; an untrusted tailnet identity is
+still rejected with HTTP 401. Remote WebSocket upgrades to Rust
+routes remain unavailable. Remote access management remains on Python.
+Rust claims support file-backed SQLite database URLs; unsupported or unresolved
+database paths fail closed rather than using a different lock database.
+
 `remote_use_sessions` holds one *live* session at a time
 (`released_at IS NULL AND idle_expires_at > now`):
 

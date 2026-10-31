@@ -15,3 +15,5 @@ pub mod telemetry;
 pub mod watchdog;
 
 pub use error::ApiError;
+
+pub mod remote_claim;

@@ -98,7 +98,10 @@ transcript and then resume live streaming.
   per-process secret, while external Serve receives the equivalent identity
   from `tailscaled`. The `remote_use_sessions` lock admits one live device at
   a time — a second device gets HTTP 409 with the holder in the body. HTTP
-  and WebSocket boundaries both enforce the identity and lock.
+  and WebSocket boundaries both enforce the identity and lock. Rust-served
+  HTTP routes share the lock; Rust health probes skip the token and the claim
+  and never access the database, and remote WebSocket upgrades to Rust routes
+  are refused.
 
 ## Source-of-truth map
 
