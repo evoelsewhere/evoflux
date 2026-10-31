@@ -14,6 +14,7 @@ All notable changes to EvoFlux are documented in this file.
 ### Changed
 
 - Recorded the v4 Rust HTTPS client choice (one shared `reqwest` 0.13 client, rustls with the OS trust store) and a re-check of the other Rust library picks; documentation only, no app behaviour changes.
+- The v4 Rust server now mounts the ported `health-live` and `quote` routes and reads `EVOFLUX_CACHE_DIR`; both units stay Python-owned until cutover, so nothing changes in the app.
 - Ported `GET /api/quote` to the v4 Rust server (the `quote` unit): the cached quote of the day (UTC calendar day), the fallback quote, the 405 and the trailing-slash redirect. Fetching a new quote from API Ninjas is not ported yet, so Python keeps serving the route and nothing changes in the app.
 - Ported `GET /api/health/live` to the v4 Rust server (the `health-live` unit): it answers `{"status": "ok", "version": ...}` without touching the database, any lock or shared state. Python still serves the route until the unit is cut over, so nothing changes in the app yet.
 - Added contract tests for the `quote` migration lane (`GET /api/quote`: fallback, today's cached quote, the UTC day boundary, unreadable cache files, authentication, 405, concurrent reads) and its lane notes with the Python test map, so the Rust port can be checked against v3. No app behaviour changes.

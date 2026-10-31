@@ -10,6 +10,8 @@ workspace = true
 [dependencies]
 axum = { version = "0.8", default-features = false, features = ["http1", "tokio"] }
 base64 = "0.22"
+evoflux-area-health-live = { path = "../area-health-live" }
+evoflux-area-quote = { path = "../area-quote" }
 evoflux-core = { path = "../core" }
 evoflux-gateway = { path = "../gateway" }
 getrandom = "0.3"
@@ -25,4 +27,5 @@ yaml-rust2 = "0.10"
 [dev-dependencies]
 regex = "1"
 tempfile = "3"
+tower = { version = "0.5", default-features = false, features = ["util"] }
 tokio = { version = "1", features = ["process"] }
