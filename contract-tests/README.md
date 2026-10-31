@@ -16,6 +16,14 @@ then those targets fail at start-up with a message naming the missing binary.
 `make` needs the `contract` dependency group, which `uv run --group contract`
 installs.
 
+`make replay-diff UNIT=<unit> OUT=<dir> [RECORDINGS=<dir>] [NOISE=1]`
+runs the unit's contract tests against both targets and compares their HTTP
+requests and normalized responses. Recorded GETs can supplement those request
+sets; other recorded methods are not replayed. `NOISE=1` compares Python with
+Python. Approved differences in `server/KNOWN_DIFFERENCES.md` use table rows
+`unit | method | path | python JSON | rust JSON | reason`, with both JSON
+values containing `status`, `media_type` and `body`; other differences fail the command.
+
 The backend runs with an allow-listed environment, `HOME`/`APPDATA` and the
 working directory inside a per-test temp dir, so the developer's `.env`,
 `DATABASE_URL`, provider keys and skills never reach it. `Backend.stop()` ends

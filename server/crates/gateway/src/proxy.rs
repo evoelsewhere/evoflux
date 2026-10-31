@@ -7,11 +7,11 @@
 //! spliced at the byte level after the upstream answers `101`, so Python's own
 //! handshake answers (a pre-accept close is a `403`) reach the client as-is.
 
-use crate::record::Recorder;
+use crate::record::{Recorder, RequestBodyCapture};
 use crate::routing::{Owner, RoutingTable};
 use crate::shadow::{capture, tap_response, Shadow, Snapshot, BODY_LIMIT};
 use crate::supervisor::PythonSupervisor;
-use axum::body::Body;
+use axum::body::{Body, HttpBody};
 use axum::extract::{Request, State};
 use axum::http::header::{CONNECTION, UPGRADE};
 use axum::http::{HeaderName, HeaderValue, Method, StatusCode};
@@ -19,10 +19,13 @@ use axum::response::{IntoResponse, Response};
 use axum::Router;
 use axum_reverse_proxy::{HostBehaviour, ProxyError, ProxyPolicy, ReverseProxy, XForwardedFor};
 use evoflux_core::ApiError;
+use futures_util::StreamExt;
+use http_body_util::{BodyStream, StreamBody};
 use hyper_util::client::legacy::connect::HttpConnector;
 use hyper_util::client::legacy::Client;
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use std::net::SocketAddr;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tower::ServiceExt;
@@ -161,7 +164,7 @@ async fn forward_shadow(state: &Arc<ProxyState>, req: Request) -> Response {
 /// for after the client has received it.
 async fn forward_recorded(
     state: &Arc<ProxyState>,
-    req: Request,
+    mut req: Request,
     job: Option<ShadowJob>,
 ) -> Response {
     let recorder = state.options.recorder.clone();
@@ -169,6 +172,52 @@ async fn forward_recorded(
         return forward_to_python(state, req).await;
     }
     let snapshot = Snapshot::of(&req);
+    let sequence = match recorder.as_ref() {
+        Some(recorder) => Some(recorder.next_sequence().await),
+        None => None,
+    };
+    let capture = Arc::new(Mutex::new(RequestBodyCapture::default()));
+    let complete = Arc::new(AtomicBool::new(false));
+    if recorder.is_some() {
+        let (parts, body) = req.into_parts();
+        let expected = parts
+            .headers
+            .get("content-length")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.parse::<usize>().ok());
+        if expected == Some(0) || body.is_end_stream() {
+            complete.store(true, Ordering::Release);
+        }
+        let captured = Arc::clone(&capture);
+        let finished = Arc::clone(&complete);
+        let stream =
+            futures_util::stream::unfold(Box::pin(BodyStream::new(body)), move |mut inner| {
+                let captured = Arc::clone(&captured);
+                let finished = Arc::clone(&finished);
+                async move {
+                    match inner.next().await {
+                        Some(frame) => {
+                            if let Ok(frame) = &frame {
+                                if let Some(data) = frame.data_ref() {
+                                    if let Ok(mut capture) = captured.lock() {
+                                        capture.push(data);
+                                        if expected == Some(capture.length()) {
+                                            finished.store(true, Ordering::Release);
+                                        }
+                                    }
+                                }
+                            }
+                            Some((frame, inner))
+                        }
+                        None => {
+                            finished.store(true, Ordering::Release);
+                            None
+                        }
+                    }
+                }
+            });
+        req = Request::from_parts(parts, Body::new(StreamBody::new(stream)));
+    }
     let response = forward_to_python(state, req).await;
     if response.status() == StatusCode::SWITCHING_PROTOCOLS {
         return response;
@@ -182,8 +231,24 @@ async fn forward_recorded(
                 return;
             };
             handle.spawn(async move {
-                if let Some(recorder) = &recorder {
-                    recorder.record(&snapshot, &python).await;
+                if let (Some(recorder), Some(sequence)) = (&recorder, sequence) {
+                    let body = if complete.load(Ordering::Acquire) {
+                        let value = capture
+                            .lock()
+                            .ok()
+                            .map(|mut value| std::mem::take(&mut *value));
+                        match value {
+                            Some(value) => evoflux_core::blocking::run(move || value.finish())
+                                .await
+                                .unwrap_or_else(
+                                    |_| serde_json::json!({"error": "redaction_failed"}),
+                                ),
+                            None => serde_json::json!({"error": "capture_failed"}),
+                        }
+                    } else {
+                        serde_json::json!({"incomplete": true})
+                    };
+                    recorder.record(&snapshot, &python, sequence, body).await;
                 }
                 if let Some(job) = job {
                     job.shadow

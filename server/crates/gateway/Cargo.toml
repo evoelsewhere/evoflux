@@ -23,6 +23,8 @@ http-body-util = "0.1"
 hyper = { version = "1", features = ["client", "http1"] }
 hyper-util = { version = "0.1", features = ["client-legacy", "http1", "tokio"] }
 percent-encoding = "2"
+regex = { version = "1", default-features = false, features = ["std", "unicode-perl", "unicode-case"] }
+sha2 = { version = "0.10", default-features = false, features = ["std"] }
 process-wrap = { version = "10", default-features = false, features = ["tokio1", "job-object", "process-group", "creation-flags", "kill-on-drop"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

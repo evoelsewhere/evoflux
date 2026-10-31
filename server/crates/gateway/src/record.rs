@@ -1,7 +1,7 @@
 //! Traffic recording (`EVOFLUX_GATEWAY_RECORD_DIR`): request/response pairs
 //! that went to Python, appended as JSONL to `<dir>/traffic.jsonl` with
 //! credentials removed. SSE bodies are stored as event lists. Request bodies
-//! are not recorded. Run `scripts/migration/scrub.py` over a recording before
+//! are scrubbed and bounded. Run `scripts/migration/scrub.py` over a recording before
 //! sharing it.
 //!
 //! Only credentials in headers and the `_token` query value are removed here.
@@ -14,11 +14,86 @@ use crate::shadow::{Captured, Snapshot};
 use axum::http::HeaderMap;
 use percent_encoding::percent_decode_str;
 use serde_json::{json, Map, Value};
+use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
 /// Replaces a removed credential value.
 pub const REMOVED: &str = "<removed>";
+
+const REQUEST_BODY_LIMIT: usize = 1024 * 1024;
+
+/// Scrub the same secret and personal-data patterns as the recording scrubber.
+pub fn scrub_request_body(text: &str) -> String {
+    let rules = [
+        (
+            r"(?s)-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----",
+            "<private-key>",
+        ),
+        (r"\bsk-(?:ant-)?[A-Za-z0-9_-]{20,}", "<api-key>"),
+        (
+            r"\b(?:gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{30,})",
+            "<api-key>",
+        ),
+        (r"\bAKIA[0-9A-Z]{16}\b", "<api-key>"),
+        (r"\bAIza[0-9A-Za-z_-]{30,}", "<api-key>"),
+        (r"\bxox[abprs]-[A-Za-z0-9-]{10,}", "<api-key>"),
+        (r"(?i)\b(Bearer|Basic) [A-Za-z0-9._~+/=-]{8,}", "$1 <token>"),
+        (
+            r"(?i)([?&](?:_|%5f)(?:t|%74)(?:o|%6f)(?:k|%6b)(?:e|%65)(?:n|%6e)=)[^&\s\x22']+",
+            "${1}<token>",
+        ),
+        (
+            r"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+",
+            "<email>",
+        ),
+        (
+            r"([A-Za-z]:(?:\\\\|\\|/)Users(?:\\\\|\\|/))[^\\/\s\x22']+",
+            "${1}<user>",
+        ),
+        (r"(/(?:home|Users)/)[^/\\\s\x22']+", "${1}<user>"),
+    ];
+    let mut cleaned = text.to_owned();
+    for (pattern, replacement) in rules {
+        let Ok(regex) = regex::Regex::new(pattern) else {
+            return "<redaction-error>".to_owned();
+        };
+        cleaned = regex.replace_all(&cleaned, replacement).into_owned();
+    }
+    cleaned
+}
+
+/// Bounded capture and incremental digest of a forwarded request body.
+#[derive(Default)]
+pub struct RequestBodyCapture {
+    bytes: Vec<u8>,
+    length: usize,
+    hash: Sha256,
+}
+
+impl RequestBodyCapture {
+    pub fn length(&self) -> usize {
+        self.length
+    }
+    pub fn push(&mut self, data: &[u8]) {
+        self.length = self.length.saturating_add(data.len());
+        self.hash.update(data);
+        if self.length <= REQUEST_BODY_LIMIT {
+            self.bytes.extend_from_slice(data);
+        } else {
+            self.bytes.clear();
+        }
+    }
+
+    pub fn finish(self) -> Value {
+        if self.length <= REQUEST_BODY_LIMIT {
+            if let Ok(text) = std::str::from_utf8(&self.bytes) {
+                return json!({"text": scrub_request_body(text)});
+            }
+        }
+        json!({"length": self.length, "sha256": format!("{:x}", self.hash.finalize())})
+    }
+}
 
 /// Appends JSON lines to files; one writer at a time so lines never interleave.
 #[derive(Debug, Default)]
@@ -57,6 +132,7 @@ async fn write_line(path: &Path, entry: &Value) -> std::io::Result<()> {
 pub struct Recorder {
     file: PathBuf,
     writer: JsonlWriter,
+    sequence: tokio::sync::Mutex<Option<u64>>,
 }
 
 impl Recorder {
@@ -65,9 +141,11 @@ impl Recorder {
     }
 
     pub fn new(dir: &Path) -> Self {
+        let file = dir.join("traffic.jsonl");
         Self {
-            file: dir.join("traffic.jsonl"),
+            file,
             writer: JsonlWriter::default(),
+            sequence: tokio::sync::Mutex::new(None),
         }
     }
 
@@ -77,11 +155,41 @@ impl Recorder {
         Some(Self::new(Path::new(&dir)))
     }
 
-    pub async fn record(&self, request: &Snapshot, response: &Captured) {
+    pub async fn next_sequence(&self) -> u64 {
+        let mut slot = self.sequence.lock().await;
+        if slot.is_none() {
+            let mut max = None;
+            if let Ok(file) = tokio::fs::File::open(&self.file).await {
+                let mut lines = BufReader::new(file).lines();
+                while let Ok(Some(line)) = lines.next_line().await {
+                    if let Some(seq) = serde_json::from_str::<Value>(&line)
+                        .ok()
+                        .and_then(|v| v.get("seq").and_then(Value::as_u64))
+                    {
+                        max = Some(max.map_or(seq, |old: u64| old.max(seq)));
+                    }
+                }
+            }
+            *slot = Some(max.map_or(0, |v| v.saturating_add(1)));
+        }
+        let current = slot.unwrap_or(0);
+        *slot = Some(current.saturating_add(1));
+        current
+    }
+
+    pub async fn record(
+        &self,
+        request: &Snapshot,
+        response: &Captured,
+        sequence: u64,
+        body: Value,
+    ) {
         let entry = json!({
+            "seq": sequence,
             "method": request.method.as_str(),
             "path": redact_path(&request.path_and_query()),
             "request_headers": redact_headers(&request.headers),
+            "request_body": body,
             "status": response.status,
             "response_headers": redact_headers(&response.headers),
             "body": body_for_recording(response),

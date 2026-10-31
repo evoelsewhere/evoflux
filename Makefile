@@ -1,6 +1,6 @@
 # Makefile for evoflux
 
-.PHONY: all run dev dev-web dev-desktop kill-dev-ports test contract contract-all perf perf-responsiveness perf-baseline validate-skills coverage migrate revision build-web build dist clean help
+.PHONY: all run dev dev-web dev-desktop kill-dev-ports test contract contract-all replay-diff perf perf-responsiveness perf-baseline validate-skills coverage migrate revision build-web build dist clean help
 
 # Default target
 all: test
@@ -53,6 +53,10 @@ contract-all: ## Run the whole contract suite against one backend (usage: make c
 shadow: ## Replay recorded GETs of one unit through a running shadow-mode gateway (usage: make shadow UNIT=<unit> RECORDINGS=<dir> STATE_DIR=<dir> BASE_URL=<url> [TOKEN=<t>])
 	@test -n "$(UNIT)" -a -n "$(RECORDINGS)" -a -n "$(STATE_DIR)" -a -n "$(BASE_URL)" || { echo "error: set UNIT, RECORDINGS, STATE_DIR and BASE_URL"; exit 1; }
 	uv run python scripts/migration/shadow_replay.py "$(UNIT)" --recordings "$(RECORDINGS)" --state-dir "$(STATE_DIR)" --base-url "$(BASE_URL)" --token "$(TOKEN)"
+
+replay-diff: ## Compare a unit's contract requests and optional GET recordings (UNIT, OUT, optional RECORDINGS and NOISE=1)
+	@test -n "$(UNIT)" -a -n "$(OUT)" || { echo "error: set UNIT and OUT"; exit 1; }
+	uv run --group contract python scripts/migration/replay_diff.py "$(UNIT)" --out "$(OUT)" $(if $(RECORDINGS),--recordings "$(RECORDINGS)") $(if $(filter 1,$(NOISE)),--noise)
 
 scrub: ## Remove secrets and PII from a recording in place (usage: make scrub FILE=<recording.jsonl>)
 	@test -n "$(FILE)" || { echo "error: set FILE=<recording.jsonl>"; exit 1; }
