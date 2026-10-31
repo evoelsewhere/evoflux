@@ -1,0 +1,62 @@
+{
+  "case": {
+    "name": "error_401",
+    "model": "router9:mock-model",
+    "recording": "providers/error_401",
+    "messages": [
+      {
+        "role": "system",
+        "content": "You are a test."
+      },
+      {
+        "role": "user",
+        "content": "Say hello."
+      }
+    ],
+    "tools": [],
+    "options": {},
+    "refuse": false
+  },
+  "responses": [
+    [
+      {
+        "status": 401,
+        "body": {
+          "error": {
+            "message": "Invalid API key provided!",
+            "type": "authentication_error"
+          }
+        }
+      }
+    ]
+  ],
+  "expected": {
+    "requests": [
+      {
+        "model": "mock-model",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a test."
+          },
+          {
+            "role": "user",
+            "content": "Say hello."
+          }
+        ],
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      }
+    ],
+    "events": [
+      {
+        "type": "error",
+        "kind": "ProviderAuthenticationError",
+        "message": "router9:mock-model rejected the request \u2014 authentication failed (HTTP 401): Invalid API key provided! Check the provider's API key / login in Settings \u2192 Providers.",
+        "status_code": 401
+      }
+    ]
+  }
+}

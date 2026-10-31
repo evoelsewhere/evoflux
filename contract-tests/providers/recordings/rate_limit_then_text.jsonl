@@ -1,0 +1,9 @@
+{"response":1}
+{"status":429,"headers":{"retry-after":"2"},"body":{"error":{"message":"slow down"}}}
+{"response":2}
+{"status":429,"body":{"error":{"message":"Rate limited, try again in 1.5s"}}}
+{"response":3}
+{"status":429,"body":{"error":{"details":[{"metadata":{"retryDelay":"4s"}}]}}}
+{"response":4}
+{"data":{"id":"chatcmpl-p","object":"chat.completion.chunk","created":1,"model":"mock-model","choices":[{"index":0,"delta":{"content":"finally"},"finish_reason":"stop"}]}}
+{"data":"[DONE]"}

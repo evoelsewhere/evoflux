@@ -1,0 +1,191 @@
+{
+  "case": {
+    "name": "error_500_always",
+    "model": "router9:mock-model",
+    "recording": "providers/error_500_always",
+    "messages": [
+      {
+        "role": "system",
+        "content": "You are a test."
+      },
+      {
+        "role": "user",
+        "content": "Say hello."
+      }
+    ],
+    "tools": [],
+    "options": {},
+    "refuse": false
+  },
+  "responses": [
+    [
+      {
+        "status": 500,
+        "body": {
+          "error": {
+            "message": "upstream exploded"
+          }
+        }
+      }
+    ]
+  ],
+  "expected": {
+    "requests": [
+      {
+        "model": "mock-model",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a test."
+          },
+          {
+            "role": "user",
+            "content": "Say hello."
+          }
+        ],
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      {
+        "model": "mock-model",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a test."
+          },
+          {
+            "role": "user",
+            "content": "Say hello."
+          }
+        ],
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      {
+        "model": "mock-model",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a test."
+          },
+          {
+            "role": "user",
+            "content": "Say hello."
+          }
+        ],
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      {
+        "model": "mock-model",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a test."
+          },
+          {
+            "role": "user",
+            "content": "Say hello."
+          }
+        ],
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      {
+        "model": "mock-model",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a test."
+          },
+          {
+            "role": "user",
+            "content": "Say hello."
+          }
+        ],
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      }
+    ],
+    "events": [
+      {
+        "type": "retry",
+        "model": "router9:mock-model",
+        "attempt": 1,
+        "max_attempts": 5,
+        "delay_seconds": 1.0,
+        "error_type": "HTTPStatusError",
+        "status_code": 500,
+        "retry_after": 0
+      },
+      {
+        "type": "sleep",
+        "seconds": 1.0
+      },
+      {
+        "type": "retry",
+        "model": "router9:mock-model",
+        "attempt": 2,
+        "max_attempts": 5,
+        "delay_seconds": 3.0,
+        "error_type": "HTTPStatusError",
+        "status_code": 500,
+        "retry_after": 0
+      },
+      {
+        "type": "sleep",
+        "seconds": 3.0
+      },
+      {
+        "type": "retry",
+        "model": "router9:mock-model",
+        "attempt": 3,
+        "max_attempts": 5,
+        "delay_seconds": 9.0,
+        "error_type": "HTTPStatusError",
+        "status_code": 500,
+        "retry_after": 0
+      },
+      {
+        "type": "sleep",
+        "seconds": 9.0
+      },
+      {
+        "type": "retry",
+        "model": "router9:mock-model",
+        "attempt": 4,
+        "max_attempts": 5,
+        "delay_seconds": 27.0,
+        "error_type": "HTTPStatusError",
+        "status_code": 500,
+        "retry_after": 0
+      },
+      {
+        "type": "sleep",
+        "seconds": 27.0
+      },
+      {
+        "type": "exhausted",
+        "model": "router9:mock-model",
+        "max_attempts": 5,
+        "error_type": "HTTPStatusError",
+        "status_code": 500
+      },
+      {
+        "type": "error",
+        "kind": "HTTPStatusError",
+        "status_code": 500
+      }
+    ]
+  }
+}

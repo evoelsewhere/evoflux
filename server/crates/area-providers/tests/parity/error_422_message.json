@@ -1,0 +1,59 @@
+{
+  "case": {
+    "name": "error_422_message",
+    "model": "router9:mock-model",
+    "recording": "providers/error_422_message",
+    "messages": [
+      {
+        "role": "system",
+        "content": "You are a test."
+      },
+      {
+        "role": "user",
+        "content": "Say hello."
+      }
+    ],
+    "tools": [],
+    "options": {},
+    "refuse": false
+  },
+  "responses": [
+    [
+      {
+        "status": 422,
+        "body": {
+          "message": "  messages[1] is invalid  "
+        }
+      }
+    ]
+  ],
+  "expected": {
+    "requests": [
+      {
+        "model": "mock-model",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a test."
+          },
+          {
+            "role": "user",
+            "content": "Say hello."
+          }
+        ],
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      }
+    ],
+    "events": [
+      {
+        "type": "error",
+        "kind": "ProviderRequestError",
+        "message": "router9:mock-model rejected the request (HTTP 422): messages[1] is invalid.",
+        "status_code": 422
+      }
+    ]
+  }
+}

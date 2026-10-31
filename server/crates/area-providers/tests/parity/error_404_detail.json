@@ -1,0 +1,59 @@
+{
+  "case": {
+    "name": "error_404_detail",
+    "model": "router9:mock-model",
+    "recording": "providers/error_404_detail",
+    "messages": [
+      {
+        "role": "system",
+        "content": "You are a test."
+      },
+      {
+        "role": "user",
+        "content": "Say hello."
+      }
+    ],
+    "tools": [],
+    "options": {},
+    "refuse": false
+  },
+  "responses": [
+    [
+      {
+        "status": 404,
+        "body": {
+          "detail": "model mock-model not found"
+        }
+      }
+    ]
+  ],
+  "expected": {
+    "requests": [
+      {
+        "model": "mock-model",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a test."
+          },
+          {
+            "role": "user",
+            "content": "Say hello."
+          }
+        ],
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      }
+    ],
+    "events": [
+      {
+        "type": "error",
+        "kind": "ProviderRequestError",
+        "message": "router9:mock-model rejected the request (HTTP 404): model mock-model not found.",
+        "status_code": 404
+      }
+    ]
+  }
+}

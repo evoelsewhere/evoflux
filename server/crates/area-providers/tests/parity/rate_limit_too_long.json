@@ -1,0 +1,69 @@
+{
+  "case": {
+    "name": "rate_limit_too_long",
+    "model": "router9:mock-model",
+    "recording": "providers/rate_limit_too_long",
+    "messages": [
+      {
+        "role": "system",
+        "content": "You are a test."
+      },
+      {
+        "role": "user",
+        "content": "Say hello."
+      }
+    ],
+    "tools": [],
+    "options": {},
+    "refuse": false
+  },
+  "responses": [
+    [
+      {
+        "status": 429,
+        "headers": {
+          "retry-after": "120"
+        },
+        "body": {
+          "error": {
+            "message": "reset after 120s"
+          }
+        }
+      }
+    ]
+  ],
+  "expected": {
+    "requests": [
+      {
+        "model": "mock-model",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a test."
+          },
+          {
+            "role": "user",
+            "content": "Say hello."
+          }
+        ],
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      }
+    ],
+    "events": [
+      {
+        "type": "rate_limit",
+        "retry_after": 120,
+        "attempt": 1,
+        "max_attempts": 5
+      },
+      {
+        "type": "error",
+        "kind": "ProviderRateLimitError",
+        "message": "All configured LLM providers are rate-limited or quota-exhausted."
+      }
+    ]
+  }
+}

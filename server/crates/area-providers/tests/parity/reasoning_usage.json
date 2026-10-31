@@ -1,0 +1,187 @@
+{
+  "case": {
+    "name": "reasoning_usage",
+    "model": "router9:mock-model",
+    "recording": "providers/reasoning_then_text",
+    "messages": [
+      {
+        "role": "system",
+        "content": "You are a test."
+      },
+      {
+        "role": "user",
+        "content": "Say hello."
+      }
+    ],
+    "tools": [],
+    "options": {},
+    "refuse": false
+  },
+  "responses": [
+    [
+      {
+        "data": {
+          "id": "chatcmpl-p",
+          "object": "chat.completion.chunk",
+          "created": 1,
+          "model": "mock-model",
+          "choices": [
+            {
+              "index": 0,
+              "delta": {
+                "role": "assistant",
+                "content": null,
+                "reasoning_content": "Thinking "
+              },
+              "finish_reason": null
+            }
+          ]
+        }
+      },
+      {
+        "data": {
+          "id": "chatcmpl-p",
+          "object": "chat.completion.chunk",
+          "created": 1,
+          "model": "mock-model",
+          "choices": [
+            {
+              "index": 0,
+              "delta": {
+                "reasoning_content": "it over."
+              },
+              "finish_reason": null
+            }
+          ]
+        }
+      },
+      {
+        "data": {
+          "id": "chatcmpl-p",
+          "object": "chat.completion.chunk",
+          "created": 1,
+          "model": "mock-model",
+          "choices": [
+            {
+              "index": 0,
+              "delta": {
+                "reasoning_text": "Copilot style."
+              },
+              "finish_reason": null
+            }
+          ]
+        }
+      },
+      {
+        "data": {
+          "id": "chatcmpl-p",
+          "object": "chat.completion.chunk",
+          "created": 1,
+          "model": "mock-model",
+          "choices": [
+            {
+              "index": 0,
+              "delta": {
+                "content": "Answer."
+              },
+              "finish_reason": null
+            }
+          ]
+        }
+      },
+      {
+        "data": {
+          "id": "chatcmpl-p",
+          "object": "chat.completion.chunk",
+          "created": 1,
+          "model": "mock-model",
+          "choices": [
+            {
+              "index": 0,
+              "delta": {},
+              "finish_reason": "stop"
+            }
+          ]
+        }
+      },
+      {
+        "data": {
+          "id": "chatcmpl-p",
+          "object": "chat.completion.chunk",
+          "created": 1,
+          "model": "mock-model",
+          "choices": [],
+          "usage": {
+            "prompt_tokens": 40,
+            "completion_tokens": 12,
+            "total_tokens": 52,
+            "prompt_tokens_details": {
+              "cached_tokens": 30,
+              "cache_write_tokens": null,
+              "cache_creation_input_tokens": 5
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 7
+            }
+          }
+        }
+      },
+      {
+        "data": "[DONE]"
+      }
+    ]
+  ],
+  "expected": {
+    "requests": [
+      {
+        "model": "mock-model",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a test."
+          },
+          {
+            "role": "user",
+            "content": "Say hello."
+          }
+        ],
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      }
+    ],
+    "events": [
+      {
+        "type": "reasoning",
+        "text": "Thinking "
+      },
+      {
+        "type": "reasoning",
+        "text": "it over."
+      },
+      {
+        "type": "reasoning",
+        "text": "Copilot style."
+      },
+      {
+        "type": "text",
+        "text": "Answer."
+      },
+      {
+        "type": "usage",
+        "prompt_tokens": 40,
+        "completion_tokens": 12,
+        "total_tokens": 52,
+        "cached_tokens": 30,
+        "cache_write_tokens": 5,
+        "thoughts_tokens": 7,
+        "tool_use_tokens": null
+      },
+      {
+        "type": "done",
+        "finish_reason": "stop"
+      }
+    ]
+  }
+}

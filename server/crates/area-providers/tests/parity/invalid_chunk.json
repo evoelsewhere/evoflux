@@ -1,0 +1,78 @@
+{
+  "case": {
+    "name": "invalid_chunk",
+    "model": "router9:mock-model",
+    "recording": "providers/invalid_chunk",
+    "messages": [
+      {
+        "role": "system",
+        "content": "You are a test."
+      },
+      {
+        "role": "user",
+        "content": "Say hello."
+      }
+    ],
+    "tools": [],
+    "options": {},
+    "refuse": false
+  },
+  "responses": [
+    [
+      {
+        "data": {
+          "id": "chatcmpl-p",
+          "object": "chat.completion.chunk",
+          "created": 1,
+          "model": "mock-model",
+          "choices": [
+            {
+              "index": 0,
+              "delta": {
+                "content": "ok "
+              },
+              "finish_reason": null
+            }
+          ]
+        }
+      },
+      {
+        "data": {
+          "object": "chat.completion.chunk",
+          "choices": []
+        }
+      }
+    ]
+  ],
+  "expected": {
+    "requests": [
+      {
+        "model": "mock-model",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a test."
+          },
+          {
+            "role": "user",
+            "content": "Say hello."
+          }
+        ],
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      }
+    ],
+    "events": [
+      {
+        "type": "text",
+        "text": "ok "
+      },
+      {
+        "type": "error",
+        "kind": "ValidationError"
+      }
+    ]
+  }
+}

@@ -1,0 +1,156 @@
+{
+  "case": {
+    "name": "text_hello",
+    "model": "router9:mock-model",
+    "recording": "openai_text_hello",
+    "messages": [
+      {
+        "role": "system",
+        "content": "You are a test."
+      },
+      {
+        "role": "user",
+        "content": "Say hello."
+      }
+    ],
+    "tools": [],
+    "options": {},
+    "refuse": false
+  },
+  "responses": [
+    [
+      {
+        "data": {
+          "id": "chatcmpl-mock1",
+          "object": "chat.completion.chunk",
+          "created": 1,
+          "model": "mock-model",
+          "choices": [
+            {
+              "index": 0,
+              "delta": {
+                "role": "assistant",
+                "content": ""
+              },
+              "finish_reason": null
+            }
+          ]
+        }
+      },
+      {
+        "data": {
+          "id": "chatcmpl-mock1",
+          "object": "chat.completion.chunk",
+          "created": 1,
+          "model": "mock-model",
+          "choices": [
+            {
+              "index": 0,
+              "delta": {
+                "content": "Hello "
+              },
+              "finish_reason": null
+            }
+          ]
+        }
+      },
+      {
+        "delay_ms": 20
+      },
+      {
+        "data": {
+          "id": "chatcmpl-mock1",
+          "object": "chat.completion.chunk",
+          "created": 1,
+          "model": "mock-model",
+          "choices": [
+            {
+              "index": 0,
+              "delta": {
+                "content": "from mock."
+              },
+              "finish_reason": null
+            }
+          ]
+        }
+      },
+      {
+        "data": {
+          "id": "chatcmpl-mock1",
+          "object": "chat.completion.chunk",
+          "created": 1,
+          "model": "mock-model",
+          "choices": [
+            {
+              "index": 0,
+              "delta": {},
+              "finish_reason": "stop"
+            }
+          ]
+        }
+      },
+      {
+        "data": {
+          "id": "chatcmpl-mock1",
+          "object": "chat.completion.chunk",
+          "created": 1,
+          "model": "mock-model",
+          "choices": [],
+          "usage": {
+            "prompt_tokens": 10,
+            "completion_tokens": 4,
+            "total_tokens": 14
+          }
+        }
+      },
+      {
+        "data": "[DONE]"
+      }
+    ]
+  ],
+  "expected": {
+    "requests": [
+      {
+        "model": "mock-model",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a test."
+          },
+          {
+            "role": "user",
+            "content": "Say hello."
+          }
+        ],
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      }
+    ],
+    "events": [
+      {
+        "type": "text",
+        "text": "Hello "
+      },
+      {
+        "type": "text",
+        "text": "from mock."
+      },
+      {
+        "type": "usage",
+        "prompt_tokens": 10,
+        "completion_tokens": 4,
+        "total_tokens": 14,
+        "cached_tokens": null,
+        "cache_write_tokens": null,
+        "thoughts_tokens": null,
+        "tool_use_tokens": null
+      },
+      {
+        "type": "done",
+        "finish_reason": "stop"
+      }
+    ]
+  }
+}

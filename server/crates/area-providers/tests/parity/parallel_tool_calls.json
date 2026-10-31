@@ -1,0 +1,363 @@
+{
+  "case": {
+    "name": "parallel_tool_calls",
+    "model": "router9:mock-model",
+    "recording": "providers/parallel_tool_calls",
+    "messages": [
+      {
+        "role": "system",
+        "content": "You are a test."
+      },
+      {
+        "role": "user",
+        "content": "Say hello."
+      }
+    ],
+    "tools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "date",
+          "description": "Current date.",
+          "parameters": {
+            "type": "object",
+            "properties": {}
+          }
+        }
+      }
+    ],
+    "options": {},
+    "refuse": false
+  },
+  "responses": [
+    [
+      {
+        "data": {
+          "id": "chatcmpl-p",
+          "object": "chat.completion.chunk",
+          "created": 1,
+          "model": "mock-model",
+          "choices": [
+            {
+              "index": 0,
+              "delta": {
+                "role": "assistant",
+                "tool_calls": [
+                  {
+                    "index": 0,
+                    "id": "call_a",
+                    "type": "function",
+                    "function": {
+                      "name": "read",
+                      "arguments": "{\"pa"
+                    }
+                  }
+                ]
+              },
+              "finish_reason": null
+            }
+          ]
+        }
+      },
+      {
+        "data": {
+          "id": "chatcmpl-p",
+          "object": "chat.completion.chunk",
+          "created": 1,
+          "model": "mock-model",
+          "choices": [
+            {
+              "index": 0,
+              "delta": {
+                "tool_calls": [
+                  {
+                    "index": 1,
+                    "id": "call_b",
+                    "type": "function",
+                    "function": {
+                      "name": "write",
+                      "arguments": ""
+                    }
+                  }
+                ]
+              },
+              "finish_reason": null
+            }
+          ]
+        }
+      },
+      {
+        "data": {
+          "id": "chatcmpl-p",
+          "object": "chat.completion.chunk",
+          "created": 1,
+          "model": "mock-model",
+          "choices": [
+            {
+              "index": 0,
+              "delta": {
+                "tool_calls": [
+                  {
+                    "index": 0,
+                    "type": "",
+                    "function": {
+                      "arguments": "th\": \"a.txt\"}"
+                    }
+                  }
+                ]
+              },
+              "finish_reason": null
+            }
+          ]
+        }
+      },
+      {
+        "data": {
+          "id": "chatcmpl-p",
+          "object": "chat.completion.chunk",
+          "created": 1,
+          "model": "mock-model",
+          "choices": [
+            {
+              "index": 0,
+              "delta": {
+                "tool_calls": [
+                  {
+                    "index": 0,
+                    "function": {
+                      "arguments": "{\"again\":1}"
+                    }
+                  }
+                ]
+              },
+              "finish_reason": null
+            }
+          ]
+        }
+      },
+      {
+        "data": {
+          "id": "chatcmpl-p",
+          "object": "chat.completion.chunk",
+          "created": 1,
+          "model": "mock-model",
+          "choices": [
+            {
+              "index": 0,
+              "delta": {
+                "tool_calls": [
+                  {
+                    "index": 1,
+                    "id": "call_other",
+                    "function": {
+                      "arguments": "{\"x\": [1, 2]}"
+                    }
+                  }
+                ]
+              },
+              "finish_reason": null
+            }
+          ]
+        }
+      },
+      {
+        "data": {
+          "id": "chatcmpl-p",
+          "object": "chat.completion.chunk",
+          "created": 1,
+          "model": "mock-model",
+          "choices": [
+            {
+              "index": 0,
+              "delta": {
+                "tool_calls": [
+                  {
+                    "index": 2,
+                    "function": {
+                      "name": "noid",
+                      "arguments": "{}"
+                    }
+                  }
+                ]
+              },
+              "finish_reason": null
+            }
+          ]
+        }
+      },
+      {
+        "data": {
+          "id": "chatcmpl-p",
+          "object": "chat.completion.chunk",
+          "created": 1,
+          "model": "mock-model",
+          "choices": [
+            {
+              "index": 0,
+              "delta": {
+                "tool_calls": [
+                  {
+                    "index": 3,
+                    "id": "call_bad",
+                    "function": {
+                      "name": "broken",
+                      "arguments": "{\"unterminated"
+                    }
+                  }
+                ]
+              },
+              "finish_reason": null
+            }
+          ]
+        }
+      },
+      {
+        "data": {
+          "id": "chatcmpl-p",
+          "object": "chat.completion.chunk",
+          "created": 1,
+          "model": "mock-model",
+          "choices": [
+            {
+              "index": 0,
+              "delta": {
+                "tool_calls": [
+                  {
+                    "index": 4,
+                    "id": "call_noname",
+                    "function": {
+                      "arguments": "{}"
+                    }
+                  }
+                ]
+              },
+              "finish_reason": null
+            }
+          ]
+        }
+      },
+      {
+        "data": {
+          "id": "chatcmpl-p",
+          "object": "chat.completion.chunk",
+          "created": 1,
+          "model": "mock-model",
+          "choices": [
+            {
+              "index": 0,
+              "delta": {
+                "tool_calls": [
+                  {
+                    "function": {
+                      "name": "slot0_dupe"
+                    }
+                  }
+                ]
+              },
+              "finish_reason": null
+            }
+          ]
+        }
+      },
+      {
+        "data": {
+          "id": "chatcmpl-p",
+          "object": "chat.completion.chunk",
+          "created": 1,
+          "model": "mock-model",
+          "choices": [
+            {
+              "index": 0,
+              "delta": {},
+              "finish_reason": "tool_calls"
+            }
+          ],
+          "usage": {
+            "prompt_tokens": 9,
+            "completion_tokens": 8,
+            "total_tokens": 17,
+            "prompt_cache_hit_tokens": 4
+          }
+        }
+      },
+      {
+        "data": "[DONE]"
+      }
+    ]
+  ],
+  "expected": {
+    "requests": [
+      {
+        "model": "mock-model",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a test."
+          },
+          {
+            "role": "user",
+            "content": "Say hello."
+          }
+        ],
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "date",
+              "description": "Current date.",
+              "parameters": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        ],
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      }
+    ],
+    "events": [
+      {
+        "type": "usage",
+        "prompt_tokens": 9,
+        "completion_tokens": 8,
+        "total_tokens": 17,
+        "cached_tokens": 4,
+        "cache_write_tokens": null,
+        "thoughts_tokens": null,
+        "tool_use_tokens": null
+      },
+      {
+        "type": "tool_call",
+        "id": "call_a",
+        "name": "read",
+        "arguments": {
+          "path": "a.txt"
+        }
+      },
+      {
+        "type": "tool_call",
+        "id": "call_b",
+        "name": "write",
+        "arguments": {
+          "x": [
+            1,
+            2
+          ]
+        }
+      },
+      {
+        "type": "tool_call",
+        "id": "<synthesized>",
+        "name": "noid",
+        "arguments": {}
+      },
+      {
+        "type": "done",
+        "finish_reason": "tool_calls"
+      }
+    ]
+  }
+}

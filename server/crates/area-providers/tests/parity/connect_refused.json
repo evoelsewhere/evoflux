@@ -1,0 +1,93 @@
+{
+  "case": {
+    "name": "connect_refused",
+    "model": "router9:mock-model",
+    "recording": null,
+    "messages": [
+      {
+        "role": "system",
+        "content": "You are a test."
+      },
+      {
+        "role": "user",
+        "content": "Say hello."
+      }
+    ],
+    "tools": [],
+    "options": {},
+    "refuse": true
+  },
+  "responses": [],
+  "expected": {
+    "requests": [],
+    "events": [
+      {
+        "type": "retry",
+        "model": "router9:mock-model",
+        "attempt": 1,
+        "max_attempts": 5,
+        "delay_seconds": 1.0,
+        "error_type": "ConnectError",
+        "status_code": null,
+        "retry_after": null
+      },
+      {
+        "type": "sleep",
+        "seconds": 1.0
+      },
+      {
+        "type": "retry",
+        "model": "router9:mock-model",
+        "attempt": 2,
+        "max_attempts": 5,
+        "delay_seconds": 3.0,
+        "error_type": "ConnectError",
+        "status_code": null,
+        "retry_after": null
+      },
+      {
+        "type": "sleep",
+        "seconds": 3.0
+      },
+      {
+        "type": "retry",
+        "model": "router9:mock-model",
+        "attempt": 3,
+        "max_attempts": 5,
+        "delay_seconds": 9.0,
+        "error_type": "ConnectError",
+        "status_code": null,
+        "retry_after": null
+      },
+      {
+        "type": "sleep",
+        "seconds": 9.0
+      },
+      {
+        "type": "retry",
+        "model": "router9:mock-model",
+        "attempt": 4,
+        "max_attempts": 5,
+        "delay_seconds": 27.0,
+        "error_type": "ConnectError",
+        "status_code": null,
+        "retry_after": null
+      },
+      {
+        "type": "sleep",
+        "seconds": 27.0
+      },
+      {
+        "type": "exhausted",
+        "model": "router9:mock-model",
+        "max_attempts": 5,
+        "error_type": "ConnectError",
+        "status_code": null
+      },
+      {
+        "type": "error",
+        "kind": "ConnectError"
+      }
+    ]
+  }
+}

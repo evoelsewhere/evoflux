@@ -1,0 +1,63 @@
+{
+  "case": {
+    "name": "error_400_context",
+    "model": "router9:mock-model",
+    "recording": "providers/error_400_context",
+    "messages": [
+      {
+        "role": "system",
+        "content": "You are a test."
+      },
+      {
+        "role": "user",
+        "content": "Say hello."
+      }
+    ],
+    "tools": [],
+    "options": {},
+    "refuse": false
+  },
+  "responses": [
+    [
+      {
+        "status": 400,
+        "body": {
+          "error": {
+            "message": "This model's maximum context length is 8192 tokens",
+            "type": "invalid_request_error",
+            "code": "context_length_exceeded"
+          }
+        }
+      }
+    ]
+  ],
+  "expected": {
+    "requests": [
+      {
+        "model": "mock-model",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a test."
+          },
+          {
+            "role": "user",
+            "content": "Say hello."
+          }
+        ],
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      }
+    ],
+    "events": [
+      {
+        "type": "error",
+        "kind": "ContextOverflowError",
+        "message": "router9:mock-model rejected the request \u2014 the conversation is longer than the model's context window (HTTP 400): This model's maximum context length is 8192 tokens.",
+        "status_code": 400
+      }
+    ]
+  }
+}

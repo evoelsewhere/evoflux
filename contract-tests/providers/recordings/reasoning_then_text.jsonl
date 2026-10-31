@@ -1,0 +1,7 @@
+{"data":{"id":"chatcmpl-p","object":"chat.completion.chunk","created":1,"model":"mock-model","choices":[{"index":0,"delta":{"role":"assistant","content":null,"reasoning_content":"Thinking "},"finish_reason":null}]}}
+{"data":{"id":"chatcmpl-p","object":"chat.completion.chunk","created":1,"model":"mock-model","choices":[{"index":0,"delta":{"reasoning_content":"it over."},"finish_reason":null}]}}
+{"data":{"id":"chatcmpl-p","object":"chat.completion.chunk","created":1,"model":"mock-model","choices":[{"index":0,"delta":{"reasoning_text":"Copilot style."},"finish_reason":null}]}}
+{"data":{"id":"chatcmpl-p","object":"chat.completion.chunk","created":1,"model":"mock-model","choices":[{"index":0,"delta":{"content":"Answer."},"finish_reason":null}]}}
+{"data":{"id":"chatcmpl-p","object":"chat.completion.chunk","created":1,"model":"mock-model","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}}
+{"data":{"id":"chatcmpl-p","object":"chat.completion.chunk","created":1,"model":"mock-model","choices":[],"usage":{"prompt_tokens":40,"completion_tokens":12,"total_tokens":52,"prompt_tokens_details":{"cached_tokens":30,"cache_write_tokens":null,"cache_creation_input_tokens":5},"completion_tokens_details":{"reasoning_tokens":7}}}}
+{"data":"[DONE]"}

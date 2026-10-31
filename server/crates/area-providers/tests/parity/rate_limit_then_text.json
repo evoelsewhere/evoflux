@@ -1,0 +1,225 @@
+{
+  "case": {
+    "name": "rate_limit_then_text",
+    "model": "router9:mock-model",
+    "recording": "providers/rate_limit_then_text",
+    "messages": [
+      {
+        "role": "system",
+        "content": "You are a test."
+      },
+      {
+        "role": "user",
+        "content": "Say hello."
+      }
+    ],
+    "tools": [],
+    "options": {},
+    "refuse": false
+  },
+  "responses": [
+    [
+      {
+        "status": 429,
+        "headers": {
+          "retry-after": "2"
+        },
+        "body": {
+          "error": {
+            "message": "slow down"
+          }
+        }
+      }
+    ],
+    [
+      {
+        "status": 429,
+        "body": {
+          "error": {
+            "message": "Rate limited, try again in 1.5s"
+          }
+        }
+      }
+    ],
+    [
+      {
+        "status": 429,
+        "body": {
+          "error": {
+            "details": [
+              {
+                "metadata": {
+                  "retryDelay": "4s"
+                }
+              }
+            ]
+          }
+        }
+      }
+    ],
+    [
+      {
+        "data": {
+          "id": "chatcmpl-p",
+          "object": "chat.completion.chunk",
+          "created": 1,
+          "model": "mock-model",
+          "choices": [
+            {
+              "index": 0,
+              "delta": {
+                "content": "finally"
+              },
+              "finish_reason": "stop"
+            }
+          ]
+        }
+      },
+      {
+        "data": "[DONE]"
+      }
+    ]
+  ],
+  "expected": {
+    "requests": [
+      {
+        "model": "mock-model",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a test."
+          },
+          {
+            "role": "user",
+            "content": "Say hello."
+          }
+        ],
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      {
+        "model": "mock-model",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a test."
+          },
+          {
+            "role": "user",
+            "content": "Say hello."
+          }
+        ],
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      {
+        "model": "mock-model",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a test."
+          },
+          {
+            "role": "user",
+            "content": "Say hello."
+          }
+        ],
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      },
+      {
+        "model": "mock-model",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a test."
+          },
+          {
+            "role": "user",
+            "content": "Say hello."
+          }
+        ],
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      }
+    ],
+    "events": [
+      {
+        "type": "rate_limit",
+        "retry_after": 2,
+        "attempt": 1,
+        "max_attempts": 5
+      },
+      {
+        "type": "retry",
+        "model": "router9:mock-model",
+        "attempt": 1,
+        "max_attempts": 5,
+        "delay_seconds": 2,
+        "error_type": "HTTPStatusError",
+        "status_code": 429,
+        "retry_after": 2
+      },
+      {
+        "type": "sleep",
+        "seconds": 2
+      },
+      {
+        "type": "rate_limit",
+        "retry_after": 1,
+        "attempt": 2,
+        "max_attempts": 5
+      },
+      {
+        "type": "retry",
+        "model": "router9:mock-model",
+        "attempt": 2,
+        "max_attempts": 5,
+        "delay_seconds": 1,
+        "error_type": "HTTPStatusError",
+        "status_code": 429,
+        "retry_after": 1
+      },
+      {
+        "type": "sleep",
+        "seconds": 1
+      },
+      {
+        "type": "rate_limit",
+        "retry_after": 4,
+        "attempt": 3,
+        "max_attempts": 5
+      },
+      {
+        "type": "retry",
+        "model": "router9:mock-model",
+        "attempt": 3,
+        "max_attempts": 5,
+        "delay_seconds": 4,
+        "error_type": "HTTPStatusError",
+        "status_code": 429,
+        "retry_after": 4
+      },
+      {
+        "type": "sleep",
+        "seconds": 4
+      },
+      {
+        "type": "text",
+        "text": "finally"
+      },
+      {
+        "type": "done",
+        "finish_reason": "stop"
+      }
+    ]
+  }
+}

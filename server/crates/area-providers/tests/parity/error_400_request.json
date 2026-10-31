@@ -1,0 +1,63 @@
+{
+  "case": {
+    "name": "error_400_request",
+    "model": "router9:mock-model",
+    "recording": "providers/error_400_request",
+    "messages": [
+      {
+        "role": "system",
+        "content": "You are a test."
+      },
+      {
+        "role": "user",
+        "content": "Say hello."
+      }
+    ],
+    "tools": [],
+    "options": {},
+    "refuse": false
+  },
+  "responses": [
+    [
+      {
+        "status": 400,
+        "body": {
+          "error": {
+            "message": "Unsupported parameter: top_k",
+            "type": "invalid_request_error",
+            "code": null
+          }
+        }
+      }
+    ]
+  ],
+  "expected": {
+    "requests": [
+      {
+        "model": "mock-model",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a test."
+          },
+          {
+            "role": "user",
+            "content": "Say hello."
+          }
+        ],
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      }
+    ],
+    "events": [
+      {
+        "type": "error",
+        "kind": "ProviderRequestError",
+        "message": "router9:mock-model rejected the request (HTTP 400): Unsupported parameter: top_k.",
+        "status_code": 400
+      }
+    ]
+  }
+}

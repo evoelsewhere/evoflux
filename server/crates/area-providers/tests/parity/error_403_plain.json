@@ -1,0 +1,57 @@
+{
+  "case": {
+    "name": "error_403_plain",
+    "model": "router9:mock-model",
+    "recording": "providers/error_403_plain",
+    "messages": [
+      {
+        "role": "system",
+        "content": "You are a test."
+      },
+      {
+        "role": "user",
+        "content": "Say hello."
+      }
+    ],
+    "tools": [],
+    "options": {},
+    "refuse": false
+  },
+  "responses": [
+    [
+      {
+        "status": 403,
+        "body": "forbidden"
+      }
+    ]
+  ],
+  "expected": {
+    "requests": [
+      {
+        "model": "mock-model",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a test."
+          },
+          {
+            "role": "user",
+            "content": "Say hello."
+          }
+        ],
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      }
+    ],
+    "events": [
+      {
+        "type": "error",
+        "kind": "ProviderAuthenticationError",
+        "message": "router9:mock-model rejected the request \u2014 authentication failed (HTTP 403). Check the provider's API key / login in Settings \u2192 Providers.",
+        "status_code": 403
+      }
+    ]
+  }
+}

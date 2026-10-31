@@ -1,0 +1,61 @@
+{
+  "case": {
+    "name": "rate_limit_quota",
+    "model": "router9:mock-model",
+    "recording": "providers/rate_limit_quota",
+    "messages": [
+      {
+        "role": "system",
+        "content": "You are a test."
+      },
+      {
+        "role": "user",
+        "content": "Say hello."
+      }
+    ],
+    "tools": [],
+    "options": {},
+    "refuse": false
+  },
+  "responses": [
+    [
+      {
+        "status": 429,
+        "body": {
+          "error": {
+            "message": "You exceeded your current quota",
+            "code": "insufficient_quota"
+          }
+        }
+      }
+    ]
+  ],
+  "expected": {
+    "requests": [
+      {
+        "model": "mock-model",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a test."
+          },
+          {
+            "role": "user",
+            "content": "Say hello."
+          }
+        ],
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        }
+      }
+    ],
+    "events": [
+      {
+        "type": "error",
+        "kind": "ProviderRateLimitError",
+        "message": "All configured LLM providers are rate-limited or quota-exhausted."
+      }
+    ]
+  }
+}
