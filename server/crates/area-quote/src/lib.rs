@@ -11,10 +11,21 @@ use std::sync::Arc;
 
 use axum::Router;
 
-/// The production router: the real clock, the cache under `cache_dir`, and no
-/// API Ninjas client yet (see NOTES.md), so a cache miss answers the fallback.
-pub fn router(cache_dir: PathBuf) -> Router {
-    routes::router(Arc::new(service::QuoteService::production(cache_dir)))
+/// The production router: the real clock, the cache under `cache_dir`, and the
+/// API Ninjas client (the shared one from `UnitState`) when `api_key` is set.
+pub fn router(cache_dir: PathBuf, api_key: Option<String>, client: evoflux_net::Client) -> Router {
+    router_for(cache_dir, api_key, client, service::API_BASE_URL)
+}
+
+fn router_for(
+    cache_dir: PathBuf,
+    api_key: Option<String>,
+    client: evoflux_net::Client,
+    base_url: &str,
+) -> Router {
+    routes::router(Arc::new(service::QuoteService::production(
+        cache_dir, api_key, client, base_url,
+    )))
 }
 
 #[cfg(test)]
@@ -32,15 +43,55 @@ mod tests {
             .uri("/api/quote")
             .body(Body::empty())
             .unwrap();
-        let response = router(dir.path().to_path_buf())
-            .oneshot(request)
-            .await
-            .unwrap();
+        let response = router(
+            dir.path().to_path_buf(),
+            None,
+            evoflux_net::build_client().unwrap(),
+        )
+        .oneshot(request)
+        .await
+        .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
         let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
         assert_eq!(
             String::from_utf8(bytes.to_vec()).unwrap(),
             r#"{"quote":"First, solve the problem. Then, write the code.","author":"John Johnson"}"#
         );
+    }
+
+    #[tokio::test]
+    async fn the_route_fetches_through_the_injected_base_url() {
+        let app = axum::Router::new().route(
+            "/v2/quoteoftheday",
+            axum::routing::get(|| async {
+                (
+                    [("content-type", "application/json")],
+                    r#"[{"quote": "From upstream", "author": "Mock"}]"#,
+                )
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base_url = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let dir = tempfile::tempdir().unwrap();
+        let request = Request::builder()
+            .uri("/api/quote")
+            .body(Body::empty())
+            .unwrap();
+        let response = router_for(
+            dir.path().to_path_buf(),
+            Some("k".to_owned()),
+            evoflux_net::build_client().unwrap(),
+            &base_url,
+        )
+        .oneshot(request)
+        .await
+        .unwrap();
+        let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        assert_eq!(
+            String::from_utf8(bytes.to_vec()).unwrap(),
+            r#"{"quote":"From upstream","author":"Mock"}"#
+        );
+        assert!(dir.path().join("quoteoftheday.json").is_file());
     }
 }

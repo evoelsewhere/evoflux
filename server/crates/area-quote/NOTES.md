@@ -55,7 +55,7 @@ caller: **no adapter needed**. Both backends read and write the same
 boundary (yesterday, tomorrow, a year ago), each unreadable-cache shape, auth
 missing/wrong/query token, ignored parameters, 405, redirect, concurrent reads.
 The fetch path (step 3) needs a key and a fake upstream the URL cannot be
-redirected to, so it stays a Rust unit test with an injected HTTP client and clock (L2b).
+redirected to, so it stays a Rust unit test with an injected base URL (a local mock server) and clock (L2b).
 
 ## Test map
 
@@ -80,19 +80,19 @@ redirected to, so it stays a Rust unit test with an injected HTTP client and clo
 - Same-day parity: the contract tests seed today's UTC date, so Python and Rust
   are compared on the same day; the midnight-UTC boundary is a Rust unit test on
   an injected clock (day N-1 miss, day N hit, day N+1 miss).
-- **Blocked (workflow §9): step 3, the API Ninjas fetch.** It needs an HTTPS
-  client, and the workspace has none (`hyper`/`hyper-util` in `gateway` are
-  plain HTTP, there is no TLS crate: no `reqwest`, `rustls` or `native-tls` in
-  `Cargo.lock`). A new dependency goes through a shared PR (`cargo-deny`).
-  Until then the service takes a `Fetcher` trait and production wires an
-  `UnavailableFetcher`, so with a key configured and a cache miss Rust answers
-  the fallback where Python would fetch. **The unit must not be cut over until
-  a real fetcher lands.** Everything else (cache read, UTC day, fallback,
-  cache write, 10 s timeout, response parsing) is ported and unit-tested with a
-  stub fetcher.
-- `NINJA_API_KEY` is not read by `core::config` either, so production passes no
-  key. Adding it (and the client) is the shared follow-up; a `Debug` on
-  `Settings` must not print it.
+- **Step 3 (the API Ninjas fetch) is ported.** `service.rs` `HttpFetcher` sends
+  `GET https://api.api-ninjas.com/v2/quoteoftheday` with the `X-Api-Key` header
+  through the shared `evoflux-net` client (taken from `UnitState`), inside a 10 s
+  deadline (Python's httpx 10 s applies per phase, Rust's to the whole fetch, as
+  already ported). Any error, a non-2xx status or a body that
+  is not JSON ends in the fallback. The key is `NINJA_API_KEY`
+  (`Settings::ninja_api_key`, case-insensitive, `.env` files as in Python; an
+  empty value is still a key, as with pydantic `SecretStr`), and its `Debug`
+  is redacted. The blocker on cutover is gone.
+- Known difference in the fetch: `httpx` does not follow redirects, so a 3xx
+  from the upstream is an error in Python, while the shared reqwest client
+  follows up to 10. API Ninjas does not redirect this endpoint; revisit if a
+  shared no-redirect policy is wanted.
 - `core::config::Settings` gained `cache_dir` (`EVOFLUX_CACHE_DIR`, default
   `~/.cache/evoflux` in production and `.evoflux/dev/cache` otherwise, as in
   `app/core/config.py`). That is a shared file, changed because the quote cache

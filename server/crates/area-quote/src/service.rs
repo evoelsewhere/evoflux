@@ -11,6 +11,8 @@ use serde_json::Value;
 const FALLBACK_QUOTE: &str = "First, solve the problem. Then, write the code.";
 const FALLBACK_AUTHOR: &str = "John Johnson";
 const CACHE_FILENAME: &str = "quoteoftheday.json";
+pub(crate) const API_BASE_URL: &str = "https://api.api-ninjas.com";
+const API_PATH: &str = "/v2/quoteoftheday";
 const TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -47,7 +49,7 @@ pub(crate) type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 #[derive(Debug)]
 pub(crate) struct FetchError;
 
-/// `GET https://api.api-ninjas.com/v2/quoteoftheday` with `X-Api-Key`.
+/// The outbound call; failures of any kind are a [`FetchError`].
 pub(crate) trait Fetcher: Send + Sync {
     fn fetch<'a>(&'a self, api_key: &'a str) -> BoxFuture<'a, Result<Value, FetchError>>;
 }
@@ -74,12 +76,34 @@ impl Clock for SystemClock {
     }
 }
 
-/// There is no HTTPS client in the workspace yet (NOTES.md), so every fetch fails.
-struct UnavailableFetcher;
+/// The API Ninjas client: `GET {base_url}/v2/quoteoftheday` with `X-Api-Key`.
+struct HttpFetcher {
+    client: evoflux_net::Client,
+    url: String,
+}
 
-impl Fetcher for UnavailableFetcher {
-    fn fetch<'a>(&'a self, _api_key: &'a str) -> BoxFuture<'a, Result<Value, FetchError>> {
-        Box::pin(async { Err(FetchError) })
+impl HttpFetcher {
+    fn new(client: evoflux_net::Client, base_url: &str) -> Self {
+        Self {
+            client,
+            url: format!("{}{API_PATH}", base_url.trim_end_matches('/')),
+        }
+    }
+}
+
+impl Fetcher for HttpFetcher {
+    fn fetch<'a>(&'a self, api_key: &'a str) -> BoxFuture<'a, Result<Value, FetchError>> {
+        Box::pin(async move {
+            let response = self
+                .client
+                .get(&self.url)
+                .header("X-Api-Key", api_key)
+                .send()
+                .await
+                .and_then(|response| response.error_for_status())
+                .map_err(|_| FetchError)?;
+            response.json::<Value>().await.map_err(|_| FetchError)
+        })
     }
 }
 
@@ -98,11 +122,16 @@ impl QuoteService {
         }
     }
 
-    pub(crate) fn production(cache_dir: PathBuf) -> Self {
+    pub(crate) fn production(
+        cache_dir: PathBuf,
+        api_key: Option<String>,
+        client: evoflux_net::Client,
+        base_url: &str,
+    ) -> Self {
         Self::new(
             &cache_dir,
-            None,
-            Arc::new(UnavailableFetcher),
+            api_key,
+            Arc::new(HttpFetcher::new(client, base_url)),
             Arc::new(SystemClock),
         )
     }
@@ -629,5 +658,165 @@ mod tests {
         service.get_quote_of_the_day().await;
         let written = std::fs::read_to_string(cache_file(dir.path())).unwrap();
         assert!(written.starts_with(r#"{"date": "2026-11-01""#), "{written}");
+    }
+
+    /// The (uri, `X-Api-Key`) of every request received.
+    type Requests = Arc<std::sync::Mutex<Vec<(String, Option<String>)>>>;
+
+    /// A local API Ninjas stand-in that records every request it gets.
+    struct Upstream {
+        base_url: String,
+        requests: Requests,
+    }
+
+    impl Upstream {
+        async fn start(status: u16, body: &'static str) -> Self {
+            use axum::http::{header, HeaderMap, StatusCode, Uri};
+            let requests = Arc::new(std::sync::Mutex::new(Vec::new()));
+            let seen = requests.clone();
+            let app = axum::Router::new().fallback(move |uri: Uri, headers: HeaderMap| {
+                let seen = seen.clone();
+                async move {
+                    let key = headers
+                        .get("x-api-key")
+                        .and_then(|v| v.to_str().ok())
+                        .map(str::to_owned);
+                    seen.lock().unwrap().push((uri.to_string(), key));
+                    (
+                        StatusCode::from_u16(status).unwrap(),
+                        [(header::CONTENT_TYPE, "application/json")],
+                        body,
+                    )
+                }
+            });
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let base_url = format!("http://{}", listener.local_addr().unwrap());
+            tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+            Self { base_url, requests }
+        }
+
+        fn service(&self, dir: &Path, key: Option<&str>) -> QuoteService {
+            QuoteService::new(
+                dir,
+                key.map(str::to_owned),
+                Arc::new(HttpFetcher::new(
+                    evoflux_net::build_client().unwrap(),
+                    &self.base_url,
+                )),
+                clock_at(NOON),
+            )
+        }
+
+        fn requests(&self) -> Vec<(String, Option<String>)> {
+            self.requests.lock().unwrap().clone()
+        }
+    }
+
+    #[test]
+    fn the_production_url_is_the_api_ninjas_v2_endpoint() {
+        let client = evoflux_net::build_client().unwrap();
+        let fetcher = HttpFetcher::new(client.clone(), API_BASE_URL);
+        assert_eq!(fetcher.url, "https://api.api-ninjas.com/v2/quoteoftheday");
+        let trimmed = HttpFetcher::new(client, "http://h:1/");
+        assert_eq!(trimmed.url, "http://h:1/v2/quoteoftheday");
+    }
+
+    #[tokio::test]
+    async fn http_fetch_sends_get_with_the_api_key_header_and_caches_the_answer() {
+        let upstream = Upstream::start(
+            200,
+            r#"[{"quote": "Ünï “q” ✓", "author": "Ä", "category": "x"}]"#,
+        )
+        .await;
+        let dir = tempfile::tempdir().unwrap();
+        let service = upstream.service(dir.path(), Some("k-123"));
+        let got = service.get_quote_of_the_day().await;
+        assert_eq!(
+            got,
+            Quote {
+                quote: "Ünï “q” ✓".to_owned(),
+                author: "Ä".to_owned()
+            }
+        );
+        assert_eq!(
+            upstream.requests(),
+            vec![("/v2/quoteoftheday".to_owned(), Some("k-123".to_owned()))]
+        );
+        assert_eq!(
+            std::fs::read_to_string(cache_file(dir.path())).unwrap(),
+            r#"{"date": "2026-10-31", "quote": "Ünï “q” ✓", "author": "Ä"}"#
+        );
+        // The second request is a cache hit: no further call.
+        assert_eq!(service.get_quote_of_the_day().await, got);
+        assert_eq!(upstream.requests().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn http_fetch_accepts_a_dict_and_an_empty_key() {
+        let upstream = Upstream::start(200, r#"{"quote": "q"}"#).await;
+        let dir = tempfile::tempdir().unwrap();
+        let got = upstream
+            .service(dir.path(), Some(""))
+            .get_quote_of_the_day()
+            .await;
+        assert_eq!((got.quote.as_str(), got.author.as_str()), ("q", "Unknown"));
+        assert_eq!(
+            upstream.requests(),
+            vec![("/v2/quoteoftheday".to_owned(), Some(String::new()))]
+        );
+    }
+
+    #[tokio::test]
+    async fn http_errors_and_bad_bodies_fall_back_without_caching() {
+        for (status, body) in [
+            (500, r#"[{"quote": "q", "author": "a"}]"#),
+            (401, r#"{"error": "bad key"}"#),
+            (404, r#"{"quote": "q"}"#),
+            (200, "not json"),
+            (200, ""),
+            (204, ""),
+            (200, "[]"),
+            (200, r#"[{"author": "a"}]"#),
+        ] {
+            let upstream = Upstream::start(status, body).await;
+            let dir = tempfile::tempdir().unwrap();
+            let got = upstream
+                .service(dir.path(), Some("k"))
+                .get_quote_of_the_day()
+                .await;
+            assert_eq!(got, Quote::fallback(), "{status} {body}");
+            assert!(!cache_file(dir.path()).exists(), "{status} {body}");
+            assert_eq!(upstream.requests().len(), 1, "{status} {body}");
+        }
+    }
+
+    #[tokio::test]
+    async fn http_fetch_without_a_key_makes_no_request() {
+        let upstream = Upstream::start(200, r#"{"quote": "q"}"#).await;
+        let dir = tempfile::tempdir().unwrap();
+        let got = upstream
+            .service(dir.path(), None)
+            .get_quote_of_the_day()
+            .await;
+        assert_eq!(got, Quote::fallback());
+        assert!(upstream.requests().is_empty());
+    }
+
+    #[tokio::test]
+    async fn an_unreachable_server_falls_back() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base_url = format!("http://{}", listener.local_addr().unwrap());
+        drop(listener);
+        let dir = tempfile::tempdir().unwrap();
+        let service = QuoteService::new(
+            dir.path(),
+            Some("k".to_owned()),
+            Arc::new(HttpFetcher::new(
+                evoflux_net::build_client().unwrap(),
+                &base_url,
+            )),
+            clock_at(NOON),
+        );
+        assert_eq!(service.get_quote_of_the_day().await, Quote::fallback());
     }
 }
