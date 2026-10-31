@@ -80,7 +80,32 @@ redirected to, so it stays a Rust unit test with an injected HTTP client and clo
 - Same-day parity: the contract tests seed today's UTC date, so Python and Rust
   are compared on the same day; the midnight-UTC boundary is a Rust unit test on
   an injected clock (day N-1 miss, day N hit, day N+1 miss).
-- `server/Cargo.toml` `members` does not list `crates/area-quote` yet (shared
-  file); the orchestrator adds it when L2b builds the crate. Fetching needs an
-  HTTP client crate: a new dependency, so L2b stops (workflow §9) and lists it
-  here before adding it.
+- **Blocked (workflow §9): step 3, the API Ninjas fetch.** It needs an HTTPS
+  client, and the workspace has none (`hyper`/`hyper-util` in `gateway` are
+  plain HTTP, there is no TLS crate: no `reqwest`, `rustls` or `native-tls` in
+  `Cargo.lock`). A new dependency goes through a shared PR (`cargo-deny`).
+  Until then the service takes a `Fetcher` trait and production wires an
+  `UnavailableFetcher`, so with a key configured and a cache miss Rust answers
+  the fallback where Python would fetch. **The unit must not be cut over until
+  a real fetcher lands.** Everything else (cache read, UTC day, fallback,
+  cache write, 10 s timeout, response parsing) is ported and unit-tested with a
+  stub fetcher.
+- `NINJA_API_KEY` is not read by `core::config` either, so production passes no
+  key. Adding it (and the client) is the shared follow-up; a `Debug` on
+  `Settings` must not print it.
+- `core::config::Settings` gained `cache_dir` (`EVOFLUX_CACHE_DIR`, default
+  `~/.cache/evoflux` in production and `.evoflux/dev/cache` otherwise, as in
+  `app/core/config.py`). That is a shared file, changed because the quote cache
+  path has no other source; `crates/server/src/units.rs` mounts the route and
+  owns the single `{"detail": "Not Found"}` fallback.
+- Code map: `service.rs` is the port of `quote_service.py` (injectable `Clock`
+  and `Fetcher`); `routes.rs` the GET, 405 and slash redirect (a `Host` header
+  builds the absolute `Location` FastAPI sends).
+- Test map update: the fetch-path cases are Rust unit tests in
+  `service::tests` (`fetch_on_miss_returns_and_caches_the_quote`,
+  `dict_response_is_accepted_and_missing_author_is_unknown`,
+  `unusable_responses_fall_back_without_caching`,
+  `fetch_failure_falls_back_without_caching`,
+  `a_hanging_fetch_times_out_after_ten_seconds`, cache write cases) and the day
+  boundary is `cache_hits_only_on_the_same_utc_day` on a fixed clock (23:59:59Z
+  and 00:00:00Z around 2026-11-01).
