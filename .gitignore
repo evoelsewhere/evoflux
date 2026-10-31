@@ -290,3 +290,5 @@ server/target/
 # The standalone lint fixture is not a production workspace.
 server/lint-fixtures/bad-blocking/Cargo.lock
 !contract-tests/fixtures/upgrade/**/evoflux.db
+web/e2e/.dist/
+web/e2e/.results/

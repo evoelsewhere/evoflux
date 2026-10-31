@@ -89,6 +89,9 @@ def backend(
                     f"{unit}=rust" for unit in rust_units
                 )
             }
+        elif target == "gateway" and os.environ.get("EVOFLUX_ROUTE_OVERRIDE"):
+            # Rust-forward checkpoints (scripts/migration/checkpoint.sh).
+            extra_env = {"EVOFLUX_ROUTE_OVERRIDE": os.environ["EVOFLUX_ROUTE_OVERRIDE"]}
         started = start_backend(target, tmp_path, db_fixture, extra_env=extra_env)
     except BackendStartError as exc:
         pytest.fail(str(exc), pytrace=False)

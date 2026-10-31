@@ -145,6 +145,47 @@ jobs:
           path: contract-results.xml
           if-no-files-found: warn
 
+  e2e-smoke:
+    if: github.event_name == 'schedule' && github.event.schedule == '43 20 * * *'
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: oven-sh/setup-bun@v2
+      - name: Read Rust toolchain
+        id: rust
+        shell: bash
+        run: python -c 'import tomllib; print("channel=" + tomllib.load(open("server/rust-toolchain.toml", "rb"))["toolchain"]["channel"])' >> "$GITHUB_OUTPUT"
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.rust.outputs.channel }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: server
+      - run: uv sync --group contract
+      - name: Run the end-to-end smoke suite
+        shell: bash
+        env:
+          EVOFLUX_E2E_INSTALL_DEPS: "1"
+        run: bash scripts/migration/e2e.sh
+      - name: Upload Playwright results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-${{ matrix.os }}
+          path: web/e2e/.results
+          if-no-files-found: ignore
+
   db-compat:
     if: github.event_name != 'schedule'
     strategy:
@@ -228,7 +269,7 @@ jobs:
           uv run --group contract pytest contract-tests/db -q --no-cov
 
   sqlite-release-check:
-    if: github.event_name == 'schedule'
+    if: github.event_name == 'schedule' && github.event.schedule == '17 6 1 * *'
     runs-on: ubuntu-latest
     permissions:
       contents: read
