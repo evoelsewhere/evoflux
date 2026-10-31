@@ -7,7 +7,7 @@
 //! spliced at the byte level after the upstream answers `101`, so Python's own
 //! handshake answers (a pre-accept close is a `403`) reach the client as-is.
 
-use crate::record::{Recorder, RequestBodyCapture};
+use crate::record::{is_form_encoded, Recorder, RequestBodyCapture};
 use crate::routing::{Owner, RoutingTable};
 use crate::shadow::{capture, tap_response, Shadow, Snapshot, BODY_LIMIT};
 use crate::supervisor::PythonSupervisor;
@@ -176,7 +176,9 @@ async fn forward_recorded(
         Some(recorder) => Some(recorder.next_sequence().await),
         None => None,
     };
-    let capture = Arc::new(Mutex::new(RequestBodyCapture::default()));
+    let capture = Arc::new(Mutex::new(RequestBodyCapture::new(is_form_encoded(
+        req.headers(),
+    ))));
     let complete = Arc::new(AtomicBool::new(false));
     if recorder.is_some() {
         let (parts, body) = req.into_parts();
