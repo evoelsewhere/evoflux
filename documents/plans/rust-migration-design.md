@@ -528,6 +528,10 @@ depend on them wait rather than work around them.
 Full evidence: [rust-backend-stack-2026-10-30.md](../research/rust-backend-stack-2026-10-30.md). Versions are as of
 2026-10-30; pin exact versions for fast-moving crates (gix, rmcp, opentelemetry).
 
+**HTTPS client and 2026-10-31 re-check:** see [rust-http-client-and-stack-recheck-2026-10-31.md](../research/rust-http-client-and-stack-recheck-2026-10-31.md).
+In short: one shared `reqwest` 0.13 client in `evoflux-net`, using rustls with aws-lc-rs and the OS trust store
+(`rustls-platform-verifier`). `utoipa` 6.0 is pending a spike; `keyring` stays on 3.6 until the target names are checked. That doc supersedes this table where they differ.
+
 | Need | Pick | Why / production users | Risk and Phase 0 check |
 |---|---|---|---|
 | HTTP, SSE, WebSocket | **axum 0.8** + tokio + tower-http 0.7 | Largest ecosystem; Block's Goose server (`goosed`) is axum with HTTP+SSE+WS as a separate process from its desktop app, the same shape as EvoFlux | low |
