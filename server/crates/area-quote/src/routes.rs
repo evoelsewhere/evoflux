@@ -5,7 +5,7 @@ use std::sync::Arc;
 use axum::extract::State;
 use axum::http::{header, HeaderMap, HeaderValue, StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
-use axum::routing::get;
+use axum::routing::{any, on, MethodFilter};
 use axum::Router;
 use evoflux_core::ApiError;
 
@@ -13,8 +13,14 @@ use crate::service::QuoteService;
 
 pub(crate) fn router(service: Arc<QuoteService>) -> Router {
     Router::new()
-        .route("/api/quote", get(quote).fallback(method_not_allowed))
-        .route("/api/quote/", get(redirect_to_slashless))
+        // axum answers HEAD from the GET handler unless HEAD is routed explicitly; Python 405s it.
+        .route(
+            "/api/quote",
+            on(MethodFilter::GET, quote)
+                .head(method_not_allowed)
+                .fallback(method_not_allowed),
+        )
+        .route("/api/quote/", any(redirect_to_slashless))
         .with_state(service)
 }
 
@@ -93,6 +99,32 @@ mod tests {
         assert_eq!(response.status(), StatusCode::METHOD_NOT_ALLOWED);
         assert_eq!(response.headers()[header::ALLOW], "GET");
         assert_eq!(text(response).await, r#"{"detail":"Method Not Allowed"}"#);
+    }
+
+    #[tokio::test]
+    async fn head_gets_python_405_body() {
+        let dir = tempfile::tempdir().unwrap();
+        let response = call(Method::HEAD, "/api/quote", dir.path()).await;
+        assert_eq!(response.status(), StatusCode::METHOD_NOT_ALLOWED);
+        assert_eq!(response.headers()[header::ALLOW], "GET");
+    }
+
+    #[tokio::test]
+    async fn trailing_slash_redirects_every_method_with_307() {
+        let dir = tempfile::tempdir().unwrap();
+        for method in [Method::GET, Method::HEAD, Method::POST, Method::DELETE] {
+            let response = call(method.clone(), "/api/quote/", dir.path()).await;
+            assert_eq!(
+                response.status(),
+                StatusCode::TEMPORARY_REDIRECT,
+                "{method}"
+            );
+            assert_eq!(
+                response.headers()[header::LOCATION],
+                "http://127.0.0.1:4082/api/quote",
+                "{method}"
+            );
+        }
     }
 
     #[tokio::test]
