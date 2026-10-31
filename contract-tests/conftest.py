@@ -68,9 +68,16 @@ def db_fixture() -> Path | None:
 
 
 @pytest.fixture
+def rust_units(request: pytest.FixtureRequest) -> list[str]:
+    """Units routed to Rust under ``TARGET=rust``; areas that are not board lanes override it."""
+    return [unit_for_test(Path(str(request.node.path)))]
+
+
+@pytest.fixture
 def backend(
     request: pytest.FixtureRequest,
     target: Target,
+    rust_units: list[str],
     tmp_path: Path,
     db_fixture: Path | None,
 ) -> Iterator[Backend]:
@@ -78,7 +85,9 @@ def backend(
         extra_env = None
         if target == "rust":
             extra_env = {
-                "EVOFLUX_ROUTE_OVERRIDE": f"{unit_for_test(Path(str(request.node.path)))}=rust"
+                "EVOFLUX_ROUTE_OVERRIDE": ",".join(
+                    f"{unit}=rust" for unit in rust_units
+                )
             }
         started = start_backend(target, tmp_path, db_fixture, extra_env=extra_env)
     except BackendStartError as exc:

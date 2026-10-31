@@ -23,3 +23,9 @@ def seeded_db(tmp_path_factory: pytest.TempPathFactory) -> Path:
 @pytest.fixture
 def db_fixture(seeded_db: Path) -> Path:
     return seeded_db
+
+
+@pytest.fixture
+def rust_units() -> list[str]:
+    """The freeze gate probes ``/api/health/live``, so ``TARGET=rust`` routes edge-stateless to Rust."""
+    return ["edge-stateless"]
