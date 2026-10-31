@@ -98,6 +98,10 @@ redirected to, so it stays a Rust unit test with an injected HTTP client and clo
   `app/core/config.py`). That is a shared file, changed because the quote cache
   path has no other source; `crates/server/src/units.rs` mounts the route and
   owns the single `{"detail": "Not Found"}` fallback.
+- `HEAD /api/quote` is `405` and `/api/quote/` answers `307` for every method,
+  as in Python; unit-tested in `routes::tests`.
+- **Pre-cutover item (health-live, same release):** the `health-live` crate
+  reports its crate version, not `app/version.txt`; see its NOTES.md.
 - Code map: `service.rs` is the port of `quote_service.py` (injectable `Clock`
   and `Fetcher`); `routes.rs` the GET, 405 and slash redirect (a `Host` header
   builds the absolute `Location` FastAPI sends).

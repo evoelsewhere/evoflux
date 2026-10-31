@@ -115,7 +115,7 @@ impl QuoteService {
     async fn read_cache(&self) -> Option<Quote> {
         let bytes = tokio::fs::read(&self.cache_path).await.ok()?;
         let quote = parse_cache(&bytes, &self.today());
-        if quote.is_none() && !bytes.iter().all(u8::is_ascii_whitespace) {
+        if is_noteworthy_miss(&quote, &bytes) {
             tracing::debug!("quote_cache_read_failed");
         }
         quote
@@ -165,6 +165,11 @@ impl QuoteService {
         tracing::info!(author = %quote.author, "quote_of_the_day fetched");
         quote
     }
+}
+
+/// An empty or blank file is an ordinary miss; any other unparsable file is logged.
+fn is_noteworthy_miss(quote: &Option<Quote>, bytes: &[u8]) -> bool {
+    quote.is_none() && !bytes.iter().all(u8::is_ascii_whitespace)
 }
 
 /// A cache hit needs today's date (string equality) and string `quote` and `author`.
@@ -341,6 +346,71 @@ mod tests {
         assert_eq!(utc_date(1_735_689_600), "2025-01-01");
         assert_eq!(utc_date(1_793_491_199), "2026-10-31");
         assert_eq!(utc_date(1_793_491_200), "2026-11-01");
+    }
+
+    /// Days since the epoch, so every month length, both leap rules (4, 100, 400)
+    /// and the 1970 epoch are exercised.
+    #[test]
+    fn utc_date_handles_leap_years_and_month_ends() {
+        const DAY: i64 = 86_400;
+        for (days, date) in [
+            (0, "1970-01-01"),
+            (58, "1970-02-28"),
+            (59, "1970-03-01"),
+            (364, "1970-12-31"),
+            (365, "1971-01-01"),
+            (789, "1972-02-29"),
+            (790, "1972-03-01"),
+            (1_155, "1973-03-01"),
+            (4_382, "1981-12-31"),
+            (10_957, "2000-01-01"),
+            (11_016, "2000-02-29"),
+            (11_017, "2000-03-01"),
+            (11_322, "2000-12-31"),
+            (47_540, "2100-02-28"),
+            (47_541, "2100-03-01"),
+            (-1, "1969-12-31"),
+            (-365, "1969-01-01"),
+            (-25_203, "1900-12-31"),
+            (-25_509, "1900-02-28"),
+            (-25_508, "1900-03-01"),
+            (20_027, "2024-10-31"),
+            (20_028, "2024-11-01"),
+        ] {
+            assert_eq!(utc_date(days * DAY), date, "day {days}");
+            assert_eq!(
+                utc_date(days * DAY + DAY - 1),
+                date,
+                "last second of day {days}"
+            );
+        }
+    }
+
+    #[test]
+    fn system_clock_reports_the_current_time() {
+        let before = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+        let reported = SystemClock.unix_seconds();
+        let after = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+        assert!(before <= reported && reported <= after, "{reported}");
+        assert!(reported > 1_700_000_000);
+    }
+
+    /// The debug log fires only for a non-blank file that did not parse.
+    #[test]
+    fn miss_is_logged_only_for_non_blank_unparsable_files() {
+        let hit = Some(Quote::fallback());
+        assert!(!is_noteworthy_miss(&hit, b"{}"));
+        assert!(!is_noteworthy_miss(&hit, b""));
+        assert!(!is_noteworthy_miss(&None, b""));
+        assert!(!is_noteworthy_miss(&None, b" \n\t"));
+        assert!(is_noteworthy_miss(&None, b"not json"));
+        assert!(is_noteworthy_miss(&None, b" x "));
     }
 
     /// The day boundary is midnight UTC: N-1 and N+1 miss, N hits.
