@@ -49,3 +49,16 @@ Extra contract cases: auth (missing, wrong, `?_token=`), workspace validation
 case-sensitive names, no built-in `init`, commands are not snippets, other roots
 ignored, frontmatter and CRLF cases, cache refresh, code-point sort, 405s and
 concurrent reads.
+
+The contract suite also pins `POST /api/snippets/{name}/render` with a file as `workspace`.
+
+## Rust port (L4b)
+
+`routes.rs` (transport) and `service.rs` (the two roots) are thin: discovery, the
+frontmatter parser, workspace resolution and the Starlette 307/405/404 rules come from
+`evoflux-area-commands::support`, the same way Python's `snippets.py` imports `_iter_md`,
+`_md_tree_signature` and `_parse_frontmatter` from `commands.py`. The known differences
+listed in `area-commands/NOTES.md` (YAML 1.1 scalars, symlinks, `Location` encoding) apply
+here too. Unlike commands, `workspace` is required (`422 Snippet workspace is required.`)
+and the render route does not read the request body. Rust unit tests cover both roots and
+every route through the router.
