@@ -10,7 +10,7 @@ Unit `quote` (edge-stateless). Python sources: `app/api/routes/quote.py`,
 | GET | `/api/quote` | desktop token (bearer or `?_token=`); missing or wrong → `401 {"detail": "Unauthorized — EvoFlux access key required."}` | `200 {"quote": str, "author": str}` |
 
 - Query parameters are ignored (no validation error exists). Other methods: `405 {"detail": "Method Not Allowed"}` with `Allow: GET`.
-- `/api/quote/` redirects (`307`) to `/api/quote` (FastAPI `redirect_slashes`; the route is registered on the empty path).
+- `/api/quote/` redirects (`307`) to `/api/quote` (FastAPI `redirect_slashes`; the route is registered on the empty path). Starlette strips every trailing slash, so `/api/quote//` and `/api/quote///` get the same 307.
 - The endpoint has no error response: every failure inside the service returns the fallback.
 
 ## Resolution order (`get_quote_of_the_day`)
@@ -100,8 +100,6 @@ redirected to, so it stays a Rust unit test with an injected base URL (a local m
   owns the single `{"detail": "Not Found"}` fallback.
 - `HEAD /api/quote` is `405` and `/api/quote/` answers `307` for every method,
   as in Python; unit-tested in `routes::tests`.
-- **Pre-cutover item (health-live, same release):** the `health-live` crate
-  reports its crate version, not `app/version.txt`; see its NOTES.md.
 - Code map: `service.rs` is the port of `quote_service.py` (injectable `Clock`
   and `Fetcher`); `routes.rs` the GET, 405 and slash redirect (a `Host` header
   builds the absolute `Location` FastAPI sends).

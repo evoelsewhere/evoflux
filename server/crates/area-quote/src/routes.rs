@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use axum::extract::State;
+use axum::extract::{Path, State};
 use axum::http::{header, HeaderMap, HeaderValue, StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{any, on, MethodFilter};
@@ -21,6 +21,7 @@ pub(crate) fn router(service: Arc<QuoteService>) -> Router {
                 .fallback(method_not_allowed),
         )
         .route("/api/quote/", any(redirect_to_slashless))
+        .route("/api/quote/{*rest}", any(sub_path))
         .with_state(service)
 }
 
@@ -31,6 +32,16 @@ async fn quote(State(service): State<Arc<QuoteService>>) -> Response {
         quote.to_json(),
     )
         .into_response()
+}
+
+/// Starlette `redirect_slashes` strips every trailing slash, so `/api/quote//`
+/// redirects too; any other sub-path is FastAPI's 404.
+async fn sub_path(Path(rest): Path<String>, headers: HeaderMap, uri: Uri) -> Response {
+    if rest.chars().all(|c| c == '/') {
+        redirect_to_slashless(headers, uri).await
+    } else {
+        ApiError::new(StatusCode::NOT_FOUND, "Not Found").into_response()
+    }
 }
 
 /// FastAPI `redirect_slashes`: 307 to the same URL without the slash, keeping the query.
@@ -136,5 +147,45 @@ mod tests {
             response.headers()[header::LOCATION],
             "http://127.0.0.1:4082/api/quote?a=1"
         );
+    }
+
+    #[tokio::test]
+    async fn repeated_trailing_slashes_fold_into_one_307() {
+        let dir = tempfile::tempdir().unwrap();
+        for uri in ["/api/quote//", "/api/quote///", "/api/quote//?a=1&b=2"] {
+            for method in [Method::GET, Method::HEAD, Method::POST, Method::DELETE] {
+                let response = call(method.clone(), uri, dir.path()).await;
+                assert_eq!(
+                    response.status(),
+                    StatusCode::TEMPORARY_REDIRECT,
+                    "{method} {uri}"
+                );
+                let expected = match uri.split_once('?') {
+                    Some((_, query)) => format!("http://127.0.0.1:4082/api/quote?{query}"),
+                    None => "http://127.0.0.1:4082/api/quote".to_owned(),
+                };
+                assert_eq!(
+                    response.headers()[header::LOCATION],
+                    expected.as_str(),
+                    "{method} {uri}"
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn other_sub_paths_are_python_404s() {
+        let dir = tempfile::tempdir().unwrap();
+        for uri in [
+            "/api/quote/x",
+            "/api/quote//x",
+            "/api/quote/x/",
+            "/api/quote/x//",
+        ] {
+            let response = call(Method::GET, uri, dir.path()).await;
+            assert_eq!(response.status(), StatusCode::NOT_FOUND, "{uri}");
+            let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+            assert_eq!(&bytes[..], br#"{"detail":"Not Found"}"#, "{uri}");
+        }
     }
 }
