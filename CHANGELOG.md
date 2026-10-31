@@ -8,6 +8,7 @@ All notable changes to EvoFlux are documented in this file.
 
 - Added contract tests for the `quote` migration lane (`GET /api/quote`: fallback, today's cached quote, the UTC day boundary, unreadable cache files, authentication, 405, concurrent reads) and its lane notes with the Python test map, so the Rust port can be checked against v3. No app behaviour changes.
 - Added contract tests for the `health-live` migration lane (`GET /api/health/live`: body, no authentication needed, ignored parameters, 405, concurrent probes) and its lane notes with the Python test map, so the Rust port can be checked against v3. No app behaviour changes.
+- Added contract tests for the prompt-snippet routes (`GET /api/snippets`, `POST /api/snippets/{name}/render`) and a `snippets` area crate stub with its migration notes, so the v4 server port can be checked against the same behaviour. No app behaviour changes.
 - Added contract tests for the slash-command routes (`GET /api/commands`, `POST /api/commands/{name}/render`) and a `commands` area crate stub with its migration notes, so the v4 server's port can be checked against the same behaviour. No app behaviour changes.
 - Added a regression check for v4 area routes and services during server startup.
 - The v4 migration plan now ends with removing the Python backend from the repository, and adds user-level checks at every milestone: an automated end-to-end smoke suite through the real app, an exploratory run as a first-time user, and owner daily use. No app behaviour changes.

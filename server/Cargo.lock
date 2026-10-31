@@ -292,6 +292,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "evoflux-area-snippets"
+version = "0.1.0"
+dependencies = [
+ "axum",
+]
+
+[[package]]
 name = "evoflux-core"
 version = "0.1.0"
 dependencies = [
