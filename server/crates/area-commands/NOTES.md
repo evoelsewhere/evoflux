@@ -113,5 +113,28 @@ validation bodies, `~` workspace, workspace that is a file, URL-decoded and
 case-sensitive names, CRLF and frontmatter edge cases, cache refresh, built-in
 shadowing, code-point sort, 405s and concurrent reads.
 
-Rust unit tests for L3b (not yet written): frontmatter regex cases, `render_command`
-cases and the two-level walk, ported from the rows above.
+## Rust port (L3b)
+
+Layout: `routes.rs` (transport), `service.rs` (roots, render, built-in, body
+validation), `support.rs` (discovery, frontmatter, workspace and Starlette routing
+helpers that the `snippets` crate reuses, as Python's `snippets.py` imports them from
+`commands.py`), `pyjson.rs` (CPython `json.loads` error wording), `builtin.rs`.
+Rust unit tests cover the frontmatter regex and YAML cases, `render_command`, the
+one-level walk, workspace resolution, percent-decoding, route dispatch (405, 307, 404),
+body validation, and every route through the router.
+
+Rust re-reads the files on every request (no mtime cache); the visible result is the same.
+
+### Known differences (not covered by a contract test; owner decision needed)
+
+- YAML is parsed with `yaml-rust2` (YAML 1.2 core), `yaml.safe_load` is YAML 1.1: a plain
+  `description: yes`/`on`/`2024-01-01` is a bool/date in Python (so `""`) and a string in Rust.
+- A body that is not valid UTF-8 or has a BOM, a lone `\ud800` surrogate, or `NaN`/`Infinity`
+  makes `serde_json` fail where Python succeeds or words the error differently; `json_invalid`
+  then reports offset 0 and `Expecting value`.
+- Symlinked sub-folders are not followed (as `rglob`), and a symlink in the workspace path is
+  resolved after `..` is folded, not before. `*.MD` matches only on Windows in Python.
+- `Location` of the 307 is built from the `Host` header with the decoded path; non-ASCII paths
+  are UTF-8, Starlette sends latin-1.
+
+The Rust `home` is `Settings.home_dir` (Python: `Path.home()`), passed in through `Roots` by `server/src/units.rs`; the crate never reads the environment.

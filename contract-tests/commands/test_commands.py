@@ -419,6 +419,20 @@ def test_render_invalid_workspace_is_422_before_lookup(client, tmp_path) -> None
     }
 
 
+def test_render_invalid_body_is_422_before_workspace(client, tmp_path) -> None:
+    missing = (tmp_path / "gone").resolve()
+    response = client.post(
+        "/api/commands/init/render",
+        params={"workspace": str(missing)},
+        json={"arguments": 5},
+    )
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert [(d["type"], d["loc"]) for d in detail] == [
+        ("string_type", ["body", "arguments"])
+    ]
+
+
 @pytest.mark.parametrize("payload", [{"arguments": 5}, {"arguments": None}, {"arguments": ["a"]}])
 def test_render_validation_errors(client, payload) -> None:
     response = client.post("/api/commands/init/render", json=payload)
