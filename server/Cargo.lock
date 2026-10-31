@@ -285,6 +285,13 @@ name = "evoflux-api-types"
 version = "0.1.0"
 
 [[package]]
+name = "evoflux-area-commands"
+version = "0.1.0"
+dependencies = [
+ "axum",
+]
+
+[[package]]
 name = "evoflux-core"
 version = "0.1.0"
 dependencies = [
