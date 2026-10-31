@@ -19,6 +19,56 @@ fn request_body_redacts_secrets_and_personal_information() {
 }
 
 #[test]
+fn request_body_redacts_each_rule() {
+    let key = "-----BEGIN RSA PRIVATE KEY-----\nabc\n-----END RSA PRIVATE KEY-----";
+    let cases = [
+        (key.to_owned(), "<private-key>".to_owned()),
+        (format!("ghp_{}", "a".repeat(36)), "<api-key>".to_owned()),
+        (
+            format!("github_pat_{}", "A1_".repeat(12)),
+            "<api-key>".to_owned(),
+        ),
+        ("AKIAABCDEFGHIJKLMNOP".to_owned(), "<api-key>".to_owned()),
+        (format!("AIza{}", "b".repeat(35)), "<api-key>".to_owned()),
+        ("xoxb-1234567890-abcdef".to_owned(), "<api-key>".to_owned()),
+        (
+            "/x?_token=secret123&a=1".to_owned(),
+            "/x?_token=<token>&a=1".to_owned(),
+        ),
+        (
+            "/x?%5Ftoken=secret123".to_owned(),
+            "/x?%5Ftoken=<token>".to_owned(),
+        ),
+        (
+            r"C:\Users\alice\repo".to_owned(),
+            r"C:\Users\<user>\repo".to_owned(),
+        ),
+        (
+            "/Users/alice/repo".to_owned(),
+            "/Users/<user>/repo".to_owned(),
+        ),
+    ];
+    for (input, expected) in cases {
+        assert_eq!(scrub_request_body(&input), expected, "input: {input}");
+    }
+}
+
+#[test]
+fn json_values_of_sensitive_keys_are_redacted() {
+    let cleaned = scrub_request_body(
+        r#"{"user":"bob","Password":"hunter2","nested":{"api_key":"short","list":[{"Authorization":"x"}]},"cookie":{"a":1},"n":1}"#,
+    );
+    let value: serde_json::Value = serde_json::from_str(&cleaned).unwrap();
+    assert_eq!(value["user"], "bob");
+    assert_eq!(value["n"], 1);
+    assert_eq!(value["Password"], "<removed>");
+    assert_eq!(value["nested"]["api_key"], "<removed>");
+    assert_eq!(value["nested"]["list"][0]["Authorization"], "<removed>");
+    assert_eq!(value["cookie"], "<removed>");
+    assert!(!cleaned.contains("hunter2"));
+}
+
+#[test]
 fn oversized_body_is_only_hash_and_length() {
     use evoflux_gateway::record::RequestBodyCapture;
     let mut capture = RequestBodyCapture::default();

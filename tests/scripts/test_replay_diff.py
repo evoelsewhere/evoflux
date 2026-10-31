@@ -242,7 +242,10 @@ def test_cli_exit_and_jsonl_with_fake_backends(
         (output / "observability-replay.jsonl").read_text(encoding="utf-8").splitlines()
     )
     assert len(rows) == int(different)
-    assert "compared=1" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "compared=1" in out
+    assert f"unknown={int(different and not approved)}" in out
+    assert f"known={int(different and approved)}" in out
 
 
 def test_noise_uses_two_python_backends(replay, monkeypatch, tmp_path):
