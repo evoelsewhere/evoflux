@@ -9,4 +9,8 @@ disallowed-methods = [
   { path = "std::net::TcpStream::connect", reason = "blocks the async runtime; use tokio or core::blocking" },
   { path = "reqwest::Client::new", reason = "build the one shared client in evoflux-net and take it from UnitState" },
   { path = "reqwest::get", reason = "build the one shared client in evoflux-net and take it from UnitState" },
+  { path = "reqwest::blocking::Client::new", reason = "build the one shared client in evoflux-net and take it from UnitState", allow-invalid = true },
+  { path = "reqwest::blocking::get", reason = "build the one shared client in evoflux-net and take it from UnitState", allow-invalid = true },
+  { path = "reqwest::ClientBuilder::new", reason = "build the one shared client in evoflux-net and take it from UnitState" },
+  { path = "reqwest::Client::builder", reason = "build the one shared client in evoflux-net and take it from UnitState" },
 ]
