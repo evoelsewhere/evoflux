@@ -34,6 +34,8 @@ use evoflux_core::ApiError;
 const LOOPBACK_HOSTS: &[&str] = &["localhost", "127.0.0.1", "[::1]"];
 /// Ports of the app's loopback pages besides the gateway's own: the Vite dev
 /// server (`scripts/run_dev.py`, the Tauri `devUrl`) and Vite preview's default.
+/// Trusted only in a dev build or with `EVOFLUX_DEV=1` (see `dev_ports_enabled`):
+/// any other program on the machine can listen on them.
 const VITE_PORTS: &[u16] = &[5173, 4173];
 const SEC_FETCH_SITE: HeaderName = HeaderName::from_static("sec-fetch-site");
 /// The Tauri window: macOS/Linux, Windows, and Windows with the HTTPS scheme.
@@ -59,8 +61,8 @@ pub struct OriginPolicy {
     origins: Vec<String>,
     /// The bundled WebBridge extension plus `EVOFLUX_WEBBRIDGE_EXTENSION_IDS`.
     extension_ids: Vec<String>,
-    /// Ports a loopback or bound-host page may use: the Vite ports and,
-    /// once bound, the gateway's own.
+    /// Ports a loopback or bound-host page may use: the gateway's own once
+    /// bound and, in dev, the Vite ports.
     app_ports: Vec<u16>,
 }
 
@@ -94,8 +96,17 @@ impl OriginPolicy {
             origin_hosts,
             origins,
             extension_ids: ids,
-            app_ports: VITE_PORTS.to_vec(),
+            app_ports: Vec::new(),
         }
+    }
+
+    /// Also accept loopback and bound-host pages on the Vite ports, when `enabled`.
+    #[must_use]
+    pub fn with_dev_ports(mut self, enabled: bool) -> Self {
+        if enabled {
+            self.app_ports.extend_from_slice(VITE_PORTS);
+        }
+        self
     }
 
     /// Also accept loopback and bound-host pages on the gateway's own `port`.
@@ -156,6 +167,13 @@ impl OriginPolicy {
             _ => false,
         }
     }
+}
+
+/// Whether the Vite ports are trusted: in a debug build (`cfg!(debug_assertions)`
+/// at the call site), or when `EVOFLUX_DEV` is `1`. A release build trusts them
+/// only through `EVOFLUX_ALLOWED_ORIGINS`.
+pub fn dev_ports_enabled(debug_build: bool, env_dev: Option<&str>) -> bool {
+    debug_build || env_dev.is_some_and(|value| value.trim() == "1")
 }
 
 fn list(raw: Option<&str>) -> impl Iterator<Item = &str> {
@@ -395,7 +413,9 @@ mod tests {
     use tower::ServiceExt;
 
     fn policy() -> OriginPolicy {
-        OriginPolicy::new("127.0.0.1", None, None).with_gateway_port(4082)
+        OriginPolicy::new("127.0.0.1", None, None)
+            .with_dev_ports(true)
+            .with_gateway_port(4082)
     }
 
     #[test]
@@ -570,12 +590,40 @@ mod tests {
         assert_eq!(port("http", "[::1]x"), None);
         assert_eq!(port("http", "[::1"), None);
         assert_eq!(port("http", "localhost:x"), None);
-        let open = OriginPolicy::new("127.0.0.1", None, None);
+        let open = OriginPolicy::new("127.0.0.1", None, None).with_dev_ports(true);
         assert!(open.origin_allowed("http://localhost:5173", None, false));
         assert!(!open.origin_allowed("http://localhost:4082", None, false));
         assert!(open
             .with_gateway_port(80)
             .origin_allowed("http://localhost", None, false));
+    }
+
+    #[test]
+    fn vite_ports_are_untrusted_unless_dev_or_listed() {
+        let release = OriginPolicy::new("127.0.0.1", None, None).with_dev_ports(false);
+        for origin in ["http://localhost:5173", "http://127.0.0.1:4173"] {
+            assert!(!release.origin_allowed(origin, None, false), "{origin}");
+        }
+        let release = release.with_gateway_port(4082);
+        assert!(release.origin_allowed("http://localhost:4082", None, false));
+        let listed = OriginPolicy::new("127.0.0.1", Some("http://localhost:5173"), None)
+            .with_dev_ports(false);
+        assert!(listed.origin_allowed("http://localhost:5173", None, false));
+        assert!(!listed.origin_allowed("http://localhost:4173", None, false));
+        let dev = OriginPolicy::new("127.0.0.1", None, None).with_dev_ports(true);
+        assert!(dev.origin_allowed("http://localhost:5173", None, false));
+        assert!(dev.origin_allowed("http://localhost:4173", None, false));
+    }
+
+    #[test]
+    fn dev_ports_follow_the_build_or_evoflux_dev() {
+        assert!(dev_ports_enabled(true, None));
+        assert!(!dev_ports_enabled(false, None));
+        assert!(!dev_ports_enabled(false, Some("")));
+        assert!(!dev_ports_enabled(false, Some("0")));
+        assert!(!dev_ports_enabled(false, Some("true")));
+        assert!(dev_ports_enabled(false, Some("1")));
+        assert!(dev_ports_enabled(false, Some(" 1 ")));
     }
 
     #[test]

@@ -12,6 +12,8 @@ All notable changes to EvoFlux are documented in this file.
 
 - The v4 Rust chat now also refuses a session `workspace` in or above `~/.mozilla`, `~/.cargo`, `~/.claude`, `~/.codex`, `~/.gem`, `~/.terraform.d`, `~/snap`, `~/.var/app`, `~/.npmrc`, `~/.pypirc`, `~/.git-credentials`, `~/.vscode` or `~/NTUSER.DAT`, a folder that contains a system folder, `/private`, `/run`, `/opt`, `/srv` or `/snap`, and on Windows `C:\Users`, another user's profile, `C:\$Recycle.Bin` or `C:\System Volume Information`, with a 422; Python still runs chat, so nothing changes in the app yet.
 
+- The v4 `evoflux-server` gateway now trusts web pages on the Vite ports (5173, 4173) only in a development build or with `EVOFLUX_DEV=1`, so another program listening on those ports can no longer call your local API in a release build; list them in `EVOFLUX_ALLOWED_ORIGINS` if you need them.
+
 ### Upgrade notes
 
 - If you reach EvoFlux from another address than this computer (LAN through `--host 0.0.0.0`, or your own `tailscale serve`), list that page's origin in `EVOFLUX_ALLOWED_ORIGINS` (for example `https://evoflux.example.ts.net`). Phone access through **Settings → Remote Control** keeps working without it.

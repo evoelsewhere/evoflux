@@ -163,7 +163,11 @@ fn prepare(args: ServeArgs, settings: &Settings) -> Result<Prepared, String> {
         &args.host,
         env("EVOFLUX_ALLOWED_ORIGINS").as_deref(),
         env("EVOFLUX_WEBBRIDGE_EXTENSION_IDS").as_deref(),
-    );
+    )
+    .with_dev_ports(origin::dev_ports_enabled(
+        cfg!(debug_assertions),
+        env("EVOFLUX_DEV").as_deref(),
+    ));
     Ok(Prepared {
         args,
         python,
