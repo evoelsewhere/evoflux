@@ -1,6 +1,6 @@
 # Makefile for evoflux
 
-.PHONY: all run dev dev-web dev-desktop kill-dev-ports test contract contract-all replay-diff perf perf-responsiveness perf-baseline validate-skills coverage migrate revision build-web build dist clean help
+.PHONY: all run dev dev-web dev-desktop kill-dev-ports test contract contract-all replay-diff perf perf-responsiveness perf-baseline validate-skills coverage migrate revision build-web package build dist clean help
 
 # Default target
 all: test
@@ -86,6 +86,11 @@ revision: ## Create a new Alembic revision (usage: make revision MSG="message")
 
 build-web: ## Build web UI into web/dist/ for desktop packaging
 	cd web && bun install && bun run build
+
+package: ## Build the web UI, the sidecar bundle and the Tauri installer (never installs it)
+	cd web && bun install --frozen-lockfile && bun run build
+	uv run python scripts/build_sidecar.py --root . --out desktop/sidecar-bundle --no-build-web
+	cd desktop/src-tauri && cargo tauri build
 
 build: ## Build Python wheel (API server only)
 	uv build

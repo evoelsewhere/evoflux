@@ -91,6 +91,9 @@ STRIP_RELATIVE_DIRS = (
 
 IS_WINDOWS = platform.system() == "Windows"
 
+# ``shutil.which`` resolves bun.cmd-style shims that a bare name misses on Windows.
+BUN = shutil.which("bun") or "bun"
+
 # MSVC runtime DLLs that Windows native extensions import by name.
 # python-build-standalone ships only vcruntime140*.dll; C++ extensions such as
 # greenlet (required by SQLAlchemy's asyncio bridge) also import msvcp140.dll,
@@ -364,6 +367,13 @@ def bundle_web_dist(root: Path, site_packages: Path) -> int:
         shutil.rmtree(target)
     shutil.copytree(source, target)
     return sum(1 for path in target.rglob("*") if path.is_file())
+
+
+def build_web(root: Path) -> None:
+    """Install and build the React UI into ``web/dist``."""
+    web = root / "web"
+    run([BUN, "install", "--frozen-lockfile"], cwd=web)
+    run([BUN, "run", "build"], cwd=web)
 
 
 def strip_bundle(site_packages: Path) -> int:
@@ -934,7 +944,7 @@ def report_size(root: Path, label: str) -> None:
     print(f"  {label}: {human_bytes(total)}")
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
@@ -982,10 +992,25 @@ def main() -> int:
             "to the slow Python scan (development diagnostics only)."
         ),
     )
-    args = ap.parse_args()
+    ap.add_argument(
+        "--no-build-web",
+        action="store_true",
+        help="Do not build the web UI when web/dist/index.html is missing.",
+    )
+    args = ap.parse_args(argv)
 
     root = Path(args.root).resolve()
     out = Path(args.out).resolve()
+
+    # Fail before the slow Python/dependency steps when the UI is unavailable.
+    if not (root / "web" / "dist" / "index.html").is_file():
+        if args.no_build_web:
+            print(
+                f"web bundle missing: {root / 'web' / 'dist' / 'index.html'}",
+                file=sys.stderr,
+            )
+            return 1
+        build_web(root)
 
     if out.exists():
         print(f"removing existing {out}")
