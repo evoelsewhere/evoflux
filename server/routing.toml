@@ -126,9 +126,16 @@ routes = ["/api/health/**", "/api/diagnostics/**"]
 services = []
 
 [[unit]]
+name = "chat-core"
+owner = "python"
+pin_breakers = ["none"]
+routes = ["/api/team/chat", "/api/team/{session_id}/stream", "/api/team/{session_id}/history/**"]
+services = []
+
+[[unit]]
 name = "agent-runtime"
 owner = "python"
-routes = ["/api/team/workspace/git/ai/**", "/api/team/webbridge/sessions/**", "/api/team/webbridge/interactions/**", "/api/scheduler/**", "/api/dream/**", "/api/team/chat/**", "/api/team/leads/**", "/api/team/agents/**", "/api/team/commands/**", "/api/team/sessions/**", "/api/team/session-folders/**", "/api/team/suggested-tasks/**", "/api/team/{session_id}/history/**", "/api/team/{session_id}/side-chat/**", "/api/team/{session_id}/stream/**", "/api/team/{session_id}/goal/**", "/api/team/{session_id}/permissions/**", "/api/team/{session_id}/questions/**", "/api/team/**"]
+routes = ["/api/team/workspace/git/ai/**", "/api/team/webbridge/sessions/**", "/api/team/webbridge/interactions/**", "/api/scheduler/**", "/api/dream/**", "/api/team/leads/**", "/api/team/agents/**", "/api/team/commands/**", "/api/team/sessions/**", "/api/team/session-folders/**", "/api/team/suggested-tasks/**", "/api/team/{session_id}/side-chat/**", "/api/team/{session_id}/goal/**", "/api/team/{session_id}/permissions/**", "/api/team/{session_id}/questions/**", "/api/team/**"]
 services = ["model_registry_refresh", "scheduler", "dream_scheduler"]
 
 [[unit]]

@@ -39,6 +39,11 @@ pub fn router(_state: &UnitState) -> Router {
         ))
         .merge(evoflux_area_commands::router(roots.clone()))
         .merge(evoflux_area_snippets::router(roots))
+        .merge(evoflux_area_chat_core::router(
+            _state.settings.clone(),
+            _state.db.clone(),
+            _state.http.clone(),
+        ))
         .fallback(not_found)
 }
 

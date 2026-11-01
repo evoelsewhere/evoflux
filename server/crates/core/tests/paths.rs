@@ -370,3 +370,54 @@ fn an_empty_ninja_api_key_is_still_a_key_like_pydantic_secretstr() {
         Some("")
     );
 }
+
+#[test]
+fn workspace_dir_follows_python_defaults_and_override() {
+    let home = Path::new("/home/u");
+    let prod = Settings::from_vars(&vars(&[]), Some(home), Path::new("/cwd")).unwrap();
+    assert_eq!(
+        prod.workspace_dir,
+        home.join(".local").join("share").join("evoflux-workspace")
+    );
+    let dev =
+        Settings::from_vars(&vars(&[("APP_ENV", "dev")]), Some(home), Path::new("/cwd")).unwrap();
+    assert_eq!(
+        dev.workspace_dir,
+        Path::new("/cwd")
+            .join(".evoflux")
+            .join("dev")
+            .join("workspace")
+    );
+    let set = Settings::from_vars(
+        &vars(&[("EVOFLUX_WORKSPACE_DIR", "/w")]),
+        Some(home),
+        Path::new("/cwd"),
+    )
+    .unwrap();
+    assert_eq!(set.workspace_dir, Path::new("/w"));
+}
+
+#[test]
+fn with_provider_vars_replaces_only_provider_variables() {
+    let settings = Settings::from_vars(
+        &vars(&[("ROUTER9_API_KEY", "old"), ("API_PORT", "5")]),
+        None,
+        Path::new("/cwd"),
+    )
+    .unwrap();
+    let updated = settings.with_provider_vars([
+        ("router9_api_key", "new"),
+        ("ROUTER9_BASE_URL", "http://m/v1"),
+        ("API_PORT", "6"),
+        ("OTHER", "x"),
+    ]);
+    let get = |s: &Settings, name: &str| s.provider_var(name).map(|v| v.expose().to_owned());
+    assert_eq!(get(&updated, "ROUTER9_API_KEY").as_deref(), Some("new"));
+    assert_eq!(
+        get(&updated, "ROUTER9_BASE_URL").as_deref(),
+        Some("http://m/v1")
+    );
+    assert_eq!(get(&updated, "OTHER"), None);
+    assert_eq!(updated.api_port, 5);
+    assert_eq!(get(&settings, "ROUTER9_API_KEY").as_deref(), Some("old"));
+}

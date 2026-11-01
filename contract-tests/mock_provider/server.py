@@ -166,6 +166,8 @@ def _make_handler(provider: MockProvider) -> type[BaseHTTPRequestHandler]:
                 return
             entries = provider._next_response(payload)
             if entries and "status" in entries[0]:
+                if "delay_ms" in entries[0]:
+                    time.sleep(entries[0]["delay_ms"] / 1000)
                 self._json(
                     int(entries[0]["status"]),
                     entries[0].get("body", {}),

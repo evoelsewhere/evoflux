@@ -1,0 +1,8 @@
+{"delay_ms":400}
+{"data":{"id":"chatcmpl-mock4","object":"chat.completion.chunk","created":1,"model":"mock-model","choices":[{"index":0,"delta":{"role":"assistant","content":null,"reasoning_content":"Considering "},"finish_reason":null}]}}
+{"data":{"id":"chatcmpl-mock4","object":"chat.completion.chunk","created":1,"model":"mock-model","choices":[{"index":0,"delta":{"reasoning_content":"the question."},"finish_reason":null}]}}
+{"delay_ms":20}
+{"data":{"id":"chatcmpl-mock4","object":"chat.completion.chunk","created":1,"model":"mock-model","choices":[{"index":0,"delta":{"content":"Answer after thinking."},"finish_reason":null}]}}
+{"data":{"id":"chatcmpl-mock4","object":"chat.completion.chunk","created":1,"model":"mock-model","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}}
+{"data":{"id":"chatcmpl-mock4","object":"chat.completion.chunk","created":1,"model":"mock-model","choices":[],"usage":{"prompt_tokens":12,"completion_tokens":9,"total_tokens":21,"completion_tokens_details":{"reasoning_tokens":5}}}}
+{"data":"[DONE]"}

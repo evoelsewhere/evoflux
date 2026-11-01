@@ -480,6 +480,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "evoflux-area-chat-core"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "chrono",
+ "evoflux-area-providers",
+ "evoflux-area-tools",
+ "evoflux-core",
+ "evoflux-net",
+ "fastrand",
+ "form_urlencoded",
+ "futures-util",
+ "reqwest",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+ "tower",
+ "tracing",
+]
+
+[[package]]
 name = "evoflux-area-commands"
 version = "0.1.0"
 dependencies = [
@@ -640,6 +664,7 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "base64 0.22.1",
+ "evoflux-area-chat-core",
  "evoflux-area-commands",
  "evoflux-area-health-live",
  "evoflux-area-quote",

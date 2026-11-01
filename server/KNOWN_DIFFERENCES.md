@@ -100,3 +100,58 @@ they need a decision before these tools run agents.
   `File not found: <path>` where Python prints `[WinError 123] ...`.
 - **The workspace directory is not created** when it is missing; Python's
   `SandboxConfig` creates it.
+
+## chat-core (AR3, `server/crates/area-chat-core`: `POST /api/team/chat`, `GET /api/team/{session_id}/stream`, `GET /api/team/{session_id}/history`)
+
+Parity is checked by `contract-tests/chat-core` (15 cases, Python-recorded SSE and
+history snapshots, and Python reading the rows Rust wrote). Differences:
+
+- **Unported tools end the turn.** A call to one of Python's built-in tools that
+  Rust does not run (`shell`, `edit`, `web_search`, `get_goal`, ... the
+  `PYTHON_ONLY_TOOLS` list in `turn.rs`) gets the tool result Python gives an
+  unknown tool (`Error: Tool '<name>' not found.`), and the turn then ends with
+  Python's lead-failure event: `error` with `Lead agent '<agent>' failed: Tool
+  '<name>' not found.` and `exception: ToolNotFoundError`, then `agent_status`
+  `error`. Python runs the tool. A name Python does not know either gets the same
+  result and the loop goes on, as in Python. Only `read`, `ls`, `glob`, `grep`
+  and `date` run.
+- **Work-mode text turns only.** These answer 422 `... not available in the Rust
+  server yet.`: Coding sessions (new or persisted), shell commands (`shell=true`),
+  file uploads, and `/goal`. A message while a turn is running answers 409 instead
+  of being queued; a session with an undo boundary (`revert`) answers 409 instead
+  of cleaning up the reverted tail. `@path` mentions attach nothing. `fast_mode`
+  is ignored, and `thinking_level` is not checked against the model.
+- **Model check.** `model` is accepted when the provider factory resolves it
+  (configured provider, AR1 provider list) rather than when the model registry
+  lists it.
+- **Prompt and tools sent to the model.** The system prompt is the lead agent
+  file's prompt text (or a one-line default); Python composes a much larger
+  prompt from hooks, skills, memory and the team protocol. Only the five ported
+  tools are offered. No session prefix snapshot (`session_prefix_snapshots`) is
+  written; Python creates one on its next turn.
+- **Hooks.** Only title generation is ported (non-streamed request through the
+  AR1 provider settings, `reasoning_effort: "none"` first, then without it).
+  Memory, summarization, telemetry, goal and skills hooks do not run; there is
+  no context compaction, so a long session can overflow the model window.
+- **Streaming order.** `tool_call` events are published when the provider
+  finishes the call (AR1 assembles tool calls), just before that call's `usage`
+  event; Python publishes them on the call's first delta, so a model that streams
+  text after a tool call's first delta shows the text first in Rust. The `model`
+  in event metadata is the configured model without its provider prefix, not
+  the name each chunk reports. Tool-call arguments are stored and published as
+  compact JSON re-encoded from the parsed value, not the provider's exact text.
+- **Usage cost.** `cost` is always `null` and `usage` carries no `cost`: there is
+  no models.dev pricing catalog in Rust.
+- **Retries and interrupts.** When every provider stays rate-limited the turn
+  ends idle (like Python) but is not re-activated later. Provider fallback is not
+  configured. An interrupt stops the stream and any remaining tool calls and ends
+  the turn; partial text is not persisted and the last reply is not marked
+  interrupted. Transient transport errors are retried by AR1's retry layer only,
+  without the agent loop's resume budget.
+- **Stream ownership.** The turn journal lives in the Rust process. Python's own
+  readers do not see Rust turns: the sessions list reports `running: false`, and
+  `POST /api/team/commands` (Python) cannot continue or compact a Rust turn while
+  it runs.
+- **Provider settings per turn.** Each turn reads `<config>/.env` (where Settings
+  → Providers saves keys) on top of the startup settings, so a key saved while the
+  server runs applies to the next turn, as Python's `os.environ` update does.

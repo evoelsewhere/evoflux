@@ -104,6 +104,8 @@ pub struct Settings {
     pub config_dir: PathBuf,
     pub state_dir: PathBuf,
     pub cache_dir: PathBuf,
+    /// `EVOFLUX_WORKSPACE_DIR`: the root of the per-session Work workspaces.
+    pub workspace_dir: PathBuf,
     /// `Path.home()`; empty when the home directory is unknown.
     pub home_dir: PathBuf,
     pub log_level: String,
@@ -121,6 +123,23 @@ impl Settings {
     /// or `XIAOMI_BASE_URL`; `None` when it is not set.
     pub fn provider_var(&self, name: &str) -> Option<&Secret> {
         self.provider_vars.get(&name.to_uppercase())
+    }
+
+    /// These settings with provider variables (`*_API_KEY`, `*_BASE_URL`)
+    /// replaced by `vars`, as Python's settings API updates `os.environ`
+    /// when a provider is saved. Other names are ignored.
+    pub fn with_provider_vars<'a>(
+        &self,
+        vars: impl IntoIterator<Item = (&'a str, &'a str)>,
+    ) -> Settings {
+        let mut settings = self.clone();
+        for (key, value) in vars {
+            let key = key.to_uppercase();
+            if key.ends_with("_API_KEY") || key.ends_with("_BASE_URL") {
+                settings.provider_vars.insert(key, Secret(value.to_owned()));
+            }
+        }
+        settings
     }
 
     pub fn sqlite_database_path(&self) -> Option<PathBuf> {
@@ -208,6 +227,7 @@ impl Settings {
             config_dir: dir("EVOFLUX_CONFIG_DIR", defaults.config),
             state_dir: dir("EVOFLUX_STATE_DIR", defaults.state),
             cache_dir: dir("EVOFLUX_CACHE_DIR", defaults.cache),
+            workspace_dir: dir("EVOFLUX_WORKSPACE_DIR", defaults.workspace),
             home_dir: home.map(Path::to_path_buf).unwrap_or_default(),
             log_level: get("LOG_LEVEL").unwrap_or_else(|| "INFO".to_owned()),
             api_host: get("API_HOST").unwrap_or_else(|| "0.0.0.0".to_owned()),
@@ -224,6 +244,7 @@ struct DefaultDirs {
     config: PathBuf,
     state: PathBuf,
     cache: PathBuf,
+    workspace: PathBuf,
 }
 
 /// `_default_dirs`: XDG-style roots under the home directory in production,
@@ -236,6 +257,7 @@ fn default_dirs(app_env: &str, home: Option<&Path>, cwd: &Path) -> DefaultDirs {
             config: home.join(".config").join("evoflux"),
             state: home.join(".local").join("state").join("evoflux"),
             cache: home.join(".cache").join("evoflux"),
+            workspace: home.join(".local").join("share").join("evoflux-workspace"),
         };
     }
     let root = cwd.join(".evoflux").join("dev");
@@ -244,6 +266,7 @@ fn default_dirs(app_env: &str, home: Option<&Path>, cwd: &Path) -> DefaultDirs {
         config: root.join("config"),
         state: root.join("state"),
         cache: root.join("cache"),
+        workspace: root.join("workspace"),
     }
 }
 

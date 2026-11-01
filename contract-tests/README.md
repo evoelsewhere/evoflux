@@ -88,7 +88,7 @@ a fixed reply and never consume the recording). A recording is JSONL, one line
 per item: `{"response": n}` starts the n-th response (request k gets response k,
 the last repeats), `{"delay_ms": n}` sleeps, `{"event": "...", "data": {...}}`
 is one SSE event (`event` is omitted for OpenAI), and
-`{"status": 429, "headers": {...}, "body": {...}}` is a plain JSON error.
+`{"status": 429, "headers": {...}, "body": {...}}` is a plain JSON error (an optional `delay_ms` on it waits before answering).
 Recordings are shared fixtures: add them through a shared PR, secrets scrubbed.
 
 `configure_backend_provider(client, mock, wire="openai"|"anthropic")` registers it
