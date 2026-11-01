@@ -277,21 +277,27 @@ fn not_in_rust(what: &str) -> ApiError {
     unprocessable(format!("{what} not available in the Rust server yet."))
 }
 
+/// The 422 for a workspace `workspace.rs` refuses; it says how to allow one.
+fn workspace_refused(why: &str) -> ApiError {
+    unprocessable(format!(
+        "Workspace path is not allowed: it is {why}. {}",
+        workspace::ALLOW_HINT
+    ))
+}
+
 /// The first half of `_normalize_work_workspace_or_422`: expand `~`, require an
-/// absolute path and apply the Rust-only restriction in `workspace.rs`. The path
+/// absolute path and apply the Rust-only allowlist in `workspace.rs`. The path
 /// is resolved (`..` and links) and checked before anything is created; nothing
 /// is written to disk.
 fn resolve_work_workspace(
     requested: &str,
     home: &std::path::Path,
-    config_dir: &std::path::Path,
+    allowed: &workspace::Allowed,
 ) -> Result<PathBuf, ApiError> {
     let path = workspace::resolve(requested, home)
         .ok_or_else(|| unprocessable("Workspace path must be absolute."))?;
-    match workspace::Protected::current(home, config_dir).refusal(&path) {
-        Some(why) => Err(unprocessable(format!(
-            "Workspace path is not allowed: it is {why}."
-        ))),
+    match allowed.refusal(&path) {
+        Some(why) => Err(workspace_refused(why)),
         None => Ok(path),
     }
 }
@@ -302,8 +308,7 @@ fn resolve_work_workspace(
 /// turns out to be refused is removed (only when empty).
 async fn create_work_workspace(
     path: PathBuf,
-    home: &std::path::Path,
-    config_dir: &std::path::Path,
+    allowed: &workspace::Allowed,
 ) -> Result<String, ApiError> {
     let mut created = Vec::new();
     for ancestor in path.ancestors() {
@@ -320,16 +325,14 @@ async fn create_work_workspace(
             .await
             .unwrap_or_else(|_| path.clone()),
     );
-    if let Some(why) = workspace::Protected::current(home, config_dir).refusal(&resolved) {
+    if let Some(why) = allowed.refusal(&resolved) {
         for folder in created {
             // Not empty or not ours to remove: leave it.
             if tokio::fs::remove_dir(&folder).await.is_err() {
                 break;
             }
         }
-        return Err(unprocessable(format!(
-            "Workspace path is not allowed: it is {why}."
-        )));
+        return Err(workspace_refused(why));
     }
     Ok(resolved.to_string_lossy().into_owned())
 }
@@ -424,7 +427,7 @@ pub(crate) async fn team_chat(
                 Some(resolve_work_workspace(
                     ws,
                     &state.settings.home_dir,
-                    &state.settings.config_dir,
+                    &state.workspaces,
                 )?),
             ),
             None => (None, None),
@@ -493,9 +496,7 @@ pub(crate) async fn team_chat(
         ));
     }
     if let Some(path) = new_workspace {
-        match create_work_workspace(path, &state.settings.home_dir, &state.settings.config_dir)
-            .await
-        {
+        match create_work_workspace(path, &state.workspaces).await {
             Ok(created) => workspace = Some(created),
             Err(error) => {
                 state.finish_turn(&sid);
@@ -945,27 +946,58 @@ mod tests {
     async fn work_workspace_must_be_absolute_and_is_created() {
         let dir = tempfile::tempdir().unwrap();
         let config = dir.path().join("config");
-        let resolve = |ws: &str| resolve_work_workspace(ws, dir.path(), &config);
+        let home = dir.path().join("home");
+        let roots = home.join("roots");
+        let allowed = allowed(&home, &config, &[roots.clone(), home.join("w")]);
+        let resolve = |ws: &str| resolve_work_workspace(ws, &home, &allowed);
         assert!(resolve("relative/dir").is_err());
-        let target = dir.path().join("a").join("b");
+        let target = roots.join("a").join("b");
         let path = resolve(&target.to_string_lossy()).unwrap();
         assert!(!target.exists());
-        let made = create_work_workspace(path, dir.path(), &config)
-            .await
-            .unwrap();
+        let made = create_work_workspace(path, &allowed).await.unwrap();
         assert!(std::path::Path::new(&made).is_dir());
-        let home = resolve("~/w").unwrap();
-        assert!(create_work_workspace(home, dir.path(), &config)
+        let w = resolve("~/w").unwrap();
+        assert!(create_work_workspace(w, &allowed)
             .await
             .unwrap()
             .ends_with('w'));
     }
 
+    /// The allowlist of these settings: `roots` as `EVOFLUX_WORKSPACE_ROOTS`.
+    fn allowed(
+        home: &std::path::Path,
+        config: &std::path::Path,
+        roots: &[PathBuf],
+    ) -> workspace::Allowed {
+        let vars = std::collections::HashMap::from([
+            (
+                "EVOFLUX_CONFIG_DIR".to_owned(),
+                config.to_string_lossy().into_owned(),
+            ),
+            (
+                "EVOFLUX_WORKSPACE_ROOTS".to_owned(),
+                std::env::join_paths(roots)
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned(),
+            ),
+        ]);
+        let settings =
+            evoflux_core::config::Settings::from_vars(&vars, Some(home), config).unwrap();
+        workspace::Allowed::current(&settings)
+    }
+
     async fn chat_state(home: &std::path::Path, config: &std::path::Path) -> Arc<ChatState> {
-        let vars = std::collections::HashMap::from([(
-            "EVOFLUX_CONFIG_DIR".to_owned(),
-            config.to_string_lossy().into_owned(),
-        )]);
+        let vars = std::collections::HashMap::from([
+            (
+                "EVOFLUX_CONFIG_DIR".to_owned(),
+                config.to_string_lossy().into_owned(),
+            ),
+            (
+                "EVOFLUX_WORKSPACE_ROOTS".to_owned(),
+                home.join("ws").to_string_lossy().into_owned(),
+            ),
+        ]);
         let settings =
             evoflux_core::config::Settings::from_vars(&vars, Some(home), config).unwrap();
         let db =
@@ -980,6 +1012,7 @@ mod tests {
         .await
         .unwrap();
         Arc::new(ChatState {
+            workspaces: crate::workspace::Allowed::current(&settings),
             settings: Arc::new(settings),
             db: Some(Arc::new(db)),
             store: Arc::new(crate::stream_store::StreamStore::default()),
@@ -1011,7 +1044,7 @@ mod tests {
         let home = tempfile::tempdir().unwrap();
         let state = chat_state(home.path(), config.path()).await;
         let sid = "06ae6ab0-636d-720e-8000-b0d548016ce8";
-        // Inside the home folder, outside the config dir a workspace may not be in.
+        // A root of `EVOFLUX_WORKSPACE_ROOTS` (see `chat_state`).
         let workspace = home.path().join("ws");
 
         // No lead agent: 404, nothing created.
@@ -1041,6 +1074,7 @@ Hi
         let home = dir.path().join("home");
         let config = dir.path().join("config");
         std::fs::create_dir_all(&home).unwrap();
+        let allowed = allowed(&home, &config, &[home.join("projects")]);
         let root = dir
             .path()
             .ancestors()
@@ -1058,7 +1092,7 @@ Hi
             config.to_string_lossy().into_owned(),
             dir.path().to_string_lossy().into_owned(),
         ] {
-            let error = resolve_work_workspace(&bad, &home, &config).unwrap_err();
+            let error = resolve_work_workspace(&bad, &home, &allowed).unwrap_err();
             assert_eq!(error.status, StatusCode::UNPROCESSABLE_ENTITY, "{bad}");
             assert!(
                 error
@@ -1068,11 +1102,19 @@ Hi
                     .starts_with("Workspace path is not allowed"),
                 "{bad}"
             );
+            assert!(
+                error
+                    .detail
+                    .as_str()
+                    .unwrap()
+                    .contains("EVOFLUX_WORKSPACE_ROOTS"),
+                "{bad}"
+            );
         }
         assert!(!home.join(".ssh").exists());
         assert!(!home.join(".aws").exists());
-        let ok = resolve_work_workspace("~/projects/x", &home, &config).unwrap();
-        let ok = create_work_workspace(ok, &home, &config).await.unwrap();
+        let ok = resolve_work_workspace("~/projects/x", &home, &allowed).unwrap();
+        let ok = create_work_workspace(ok, &allowed).await.unwrap();
         assert!(std::path::Path::new(&ok).is_dir());
     }
 
@@ -1085,6 +1127,7 @@ Hi
         let home = dir.path().join("home");
         let config = dir.path().join("config");
         std::fs::create_dir_all(&home).unwrap();
+        let allowed = allowed(&home, &config, &[home.join("projects")]);
         let admin_share = home.to_string_lossy().replacen(':', "$", 1);
         let bad = [
             r"~\.ssh.".to_owned(),
@@ -1099,7 +1142,7 @@ Hi
             r"\\.\COM1".to_owned(),
         ];
         for requested in bad {
-            let error = resolve_work_workspace(&requested, &home, &config).unwrap_err();
+            let error = resolve_work_workspace(&requested, &home, &allowed).unwrap_err();
             assert_eq!(
                 error.status,
                 StatusCode::UNPROCESSABLE_ENTITY,
@@ -1115,14 +1158,15 @@ Hi
         let home = dir.path().join("home");
         let config = dir.path().join("config");
         std::fs::create_dir_all(&home).unwrap();
+        let allowed = allowed(&home, &config, &[home.join(".ssh")]);
         // Skips the pre-check on purpose: only the second check can catch this.
         let made = home.join(".ssh").join("new");
-        assert!(create_work_workspace(made, &home, &config).await.is_err());
+        assert!(create_work_workspace(made, &allowed).await.is_err());
         assert!(!home.join(".ssh").exists());
         // A folder that was already there stays, with what is in it.
         std::fs::create_dir_all(home.join(".aws").join("keep")).unwrap();
         let again = home.join(".aws").join("new");
-        assert!(create_work_workspace(again, &home, &config).await.is_err());
+        assert!(create_work_workspace(again, &allowed).await.is_err());
         assert!(home.join(".aws").join("keep").is_dir());
         assert!(!home.join(".aws").join("new").exists());
     }

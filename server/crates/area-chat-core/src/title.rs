@@ -374,8 +374,10 @@ mod tests {
     async fn generate_records_the_title_phase_and_retries_without_thinking() {
         let (base, seen) = stub(200).await;
         let dir = std::env::temp_dir();
+        let settings = Settings::from_vars(&Default::default(), Some(&dir), &dir).unwrap();
         let state = Arc::new(ChatState {
-            settings: Arc::new(Settings::from_vars(&Default::default(), Some(&dir), &dir).unwrap()),
+            workspaces: crate::workspace::Allowed::current(&settings),
+            settings: Arc::new(settings),
             db: None,
             http: evoflux_net::build_client().unwrap(),
             store: Arc::new(crate::stream_store::StreamStore::default()),

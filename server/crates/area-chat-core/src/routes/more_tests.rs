@@ -58,7 +58,13 @@ fn a_tilde_expands_only_as_a_whole_path_segment() {
     let dir = tempfile::tempdir().unwrap();
     let home = dir.path().join("home");
     let config = dir.path().join("config");
-    let resolve = |p: &str| resolve_work_workspace(p, &home, &config);
+    let vars = std::collections::HashMap::from([(
+        "EVOFLUX_WORKSPACE_ROOTS".to_owned(),
+        home.join("w").to_string_lossy().into_owned(),
+    )]);
+    let settings = evoflux_core::config::Settings::from_vars(&vars, Some(&home), &config).unwrap();
+    let allowed = workspace::Allowed::current(&settings);
+    let resolve = |p: &str| resolve_work_workspace(p, &home, &allowed);
     assert!(resolve("~foo").is_err());
     assert!(resolve("~/w").is_ok());
     assert!(resolve("~\\w").is_ok());

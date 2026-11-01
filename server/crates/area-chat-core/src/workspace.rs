@@ -2,14 +2,19 @@
 //!
 //! Rust-only restriction (KNOWN_DIFFERENCES): Python accepts any absolute
 //! path, so `workspace=~` lets the model read `~/.ssh/id_rsa` through the file
-//! tools. Here the path is resolved first (`~`, `..` and links), then refused
-//! when it is a filesystem root, a network (UNC) or device path, a name Windows
-//! rewrites (trailing `.` or space, `:`), the home directory or one of its
-//! ancestors, a system directory (or a folder above one), another user's
-//! profile on Windows, or equal to, inside or above a credential or config
-//! folder.
+//! tools. Here the path is resolved first (`~`, `..` and links) and accepted
+//! only when it is equal to or inside an allowed root: the default workspace
+//! folder (`EVOFLUX_WORKSPACE_DIR`) or a folder of `EVOFLUX_WORKSPACE_ROOTS`.
+//! A root the denylist refuses (a drive root, the home folder, a system or
+//! credentials folder) is ignored with a warning. Inside a root the denylist
+//! stays as a second layer: a network (UNC), device or non-disk verbatim path, a
+//! name Windows rewrites (trailing `.` or space, `:`), the home directory or one
+//! of its ancestors, a system directory (or a folder above one), another user's
+//! profile on Windows, or a credential or config folder, in or above.
 
 use std::path::{Component, Path, PathBuf};
+
+use evoflux_core::config::Settings;
 
 /// Folders under the home directory that hold credentials or application state.
 const HOME_SENSITIVE: [&str; 25] = [
@@ -65,8 +70,10 @@ pub(crate) struct Protected {
     /// Folders holding one profile per user (`C:\Users`): the folder itself,
     /// what is above it and every profile in it but the home folder are refused.
     profiles: Vec<PathBuf>,
-    /// Equal to, inside or above is refused.
-    sensitive: Vec<PathBuf>,
+    /// The config dir: equal to, inside or above is refused.
+    config: Vec<PathBuf>,
+    /// Credential folders under the home folder: equal to, inside or above is refused.
+    home_sensitive: Vec<PathBuf>,
 }
 
 impl Protected {
@@ -106,9 +113,9 @@ impl Protected {
     }
 
     pub(crate) fn new(home: &Path, config_dir: &Path, system: Vec<PathBuf>) -> Self {
-        let mut sensitive = vec![config_dir.to_path_buf()];
+        let mut home_sensitive = Vec::new();
         if !home.as_os_str().is_empty() {
-            sensitive.extend(HOME_SENSITIVE.iter().map(|name| home.join(name)));
+            home_sensitive.extend(HOME_SENSITIVE.iter().map(|name| home.join(name)));
         }
         let both = dedup_both;
         let home_paths = if home.as_os_str().is_empty() {
@@ -130,12 +137,20 @@ impl Protected {
             home: home_paths,
             profiles: both(profiles),
             system: both(system),
-            sensitive: both(sensitive),
+            config: both(vec![config_dir.to_path_buf()]),
+            home_sensitive: both(home_sensitive),
         }
     }
 
     /// Why `path` (already resolved) cannot be a workspace, if it cannot.
     pub(crate) fn refusal(&self, path: &Path) -> Option<&'static str> {
+        self.refusal_with(path, true)
+    }
+
+    /// [`Self::refusal`], optionally without the credential folders of the
+    /// home folder. The default workspace folder lives in `~/.local/share`, one
+    /// of them, so it is judged without them.
+    fn refusal_with(&self, path: &Path, home_credentials: bool) -> Option<&'static str> {
         let path = strip_verbatim(path.to_path_buf());
         if is_network_or_device(&path) {
             return Some("a network share or device path");
@@ -162,15 +177,110 @@ impl Protected {
         }) {
             return Some("the profiles folder or another user's profile");
         }
-        if self
-            .sensitive
+        let credentials = self
+            .config
             .iter()
+            .chain(self.home_sensitive.iter().filter(|_| home_credentials));
+        if credentials
+            .into_iter()
             .any(|dir| within(dir, &path) || within(&path, dir))
         {
             return Some("a credentials or configuration folder");
         }
         None
     }
+}
+
+/// The reason for a workspace that is in no allowed root.
+const OUTSIDE_ROOTS: &str = "outside the allowed workspace folders";
+
+/// What every refusal tells the user to do about it.
+pub(crate) const ALLOW_HINT: &str = "To allow a folder, add it to EVOFLUX_WORKSPACE_ROOTS (a list of folders, separated by ';' on Windows and ':' elsewhere).";
+
+/// One allowed root, resolved at startup.
+struct Root {
+    path: PathBuf,
+    /// The default workspace folder: judged without the home credential folders
+    /// it is itself inside (`~/.local/share`).
+    default: bool,
+}
+
+/// The folders a chat workspace may be in, with the denylist as a second layer.
+pub(crate) struct Allowed {
+    roots: Vec<Root>,
+    protected: Protected,
+}
+
+impl Allowed {
+    /// The allowed roots of these settings: `workspace_dir` plus
+    /// `workspace_roots`, each resolved (`~`, `..`, links) once, here. A root
+    /// that is not absolute or that the denylist refuses is ignored with a warning.
+    pub(crate) fn current(settings: &Settings) -> Self {
+        let protected = Protected::current(&settings.home_dir, &settings.config_dir);
+        let candidates = std::iter::once((settings.workspace_dir.as_path(), true)).chain(
+            settings
+                .workspace_roots
+                .iter()
+                .map(|root| (root.as_path(), false)),
+        );
+        let mut roots: Vec<Root> = Vec::new();
+        for (raw, default) in candidates {
+            let Some(path) = resolve(&raw.to_string_lossy(), &settings.home_dir) else {
+                tracing::warn!(root = %raw.display(), "workspace_root_ignored_not_absolute");
+                continue;
+            };
+            if let Some(why) = protected.refusal_with(&path, !default) {
+                tracing::warn!(root = %path.display(), why, "workspace_root_ignored_refused");
+                continue;
+            }
+            if !roots.iter().any(|known| known.path == path) {
+                roots.push(Root { path, default });
+            }
+        }
+        Self { roots, protected }
+    }
+
+    /// Why `path` (already resolved) cannot be a workspace, if it cannot: it
+    /// must be a local disk path, equal to or inside a root, and clear of the
+    /// denylist. The answer completes "it is ...".
+    pub(crate) fn refusal(&self, path: &Path) -> Option<&'static str> {
+        let path = strip_verbatim(path.to_path_buf());
+        if is_network_or_device(&path) {
+            return Some("a network share or device path");
+        }
+        if !path.is_absolute() {
+            return Some("not an absolute local path");
+        }
+        let mut reason = None;
+        for root in self.roots.iter().filter(|root| within(&root.path, &path)) {
+            let denied = self
+                .protected
+                .refusal_with(&path, !root.default)
+                .or_else(|| credential_inside(&root.path, &path));
+            // Clear of the denylist in one root is enough: accepted.
+            reason = Some(denied?);
+        }
+        // Outside every root, a denylist reason is the more useful one to give.
+        reason
+            .or_else(|| self.protected.refusal(&path))
+            .or(Some(OUTSIDE_ROOTS))
+    }
+}
+
+/// A credential folder name directly inside `root` (`<root>/.ssh`), whatever
+/// the root is.
+fn credential_inside(root: &Path, path: &Path) -> Option<&'static str> {
+    let relative = parts(path).split_off(parts(root).len());
+    HOME_SENSITIVE
+        .iter()
+        .any(|name| {
+            let name: Vec<String> = name
+                .split('/')
+                .map(|part| fold(part, CASE_INSENSITIVE))
+                .collect();
+            relative.starts_with(&name)
+        })
+        .then_some("a credentials or configuration folder")
 }
 
 /// A protected folder reached through a link is protected under both names.
@@ -218,16 +328,24 @@ pub(crate) fn resolve(raw: &str, home: &Path) -> Option<PathBuf> {
     Some(strip_verbatim(resolved))
 }
 
-/// Drop the `\\?\` prefix `canonicalize` adds on Windows.
+/// Drop the `\\?\` prefix `canonicalize` adds on Windows from a disk path
+/// (`\\?\C:\x` is `C:\x`) and from a share (`\\?\UNC\s\x` is `\\s\x`). Other
+/// verbatim paths (`\\?\Volume{GUID}\`, `\\?\GLOBALROOT\...`) keep their prefix,
+/// so they are still seen as device paths.
 pub(crate) fn strip_verbatim(path: PathBuf) -> PathBuf {
+    use std::path::Prefix;
     let text = path.to_string_lossy();
-    if let Some(rest) = text.strip_prefix(r"\\?\UNC\") {
-        return PathBuf::from(format!(r"\\{rest}"));
-    }
-    match text.strip_prefix(r"\\?\") {
-        Some(rest) => PathBuf::from(rest),
-        None => path,
-    }
+    let rest = match path.components().next() {
+        Some(Component::Prefix(prefix)) => match prefix.kind() {
+            Prefix::VerbatimUNC(..) => text
+                .strip_prefix(r"\\?\UNC\")
+                .map(|rest| format!(r"\\{rest}")),
+            Prefix::VerbatimDisk(_) => text.strip_prefix(r"\\?\").map(str::to_owned),
+            _ => None,
+        },
+        _ => None,
+    };
+    rest.map_or(path, PathBuf::from)
 }
 
 /// Anything but a plain drive or Unix root: `\\server\share`, `\\localhost\C$`, `\\.\COM1`.
@@ -626,5 +744,247 @@ mod tests {
         // `..` after a link pops the link's target, not the link's parent.
         let up = format!("{}/../x", link.to_string_lossy());
         assert_eq!(resolve(&up, &home).unwrap(), home.join("x"));
+    }
+
+    /// The allowlist of settings with this home folder and `roots` as
+    /// `EVOFLUX_WORKSPACE_ROOTS`; the config folder sits next to the home folder.
+    fn allowed(home: &Path, roots: &[PathBuf]) -> Allowed {
+        let config = home.with_file_name("evoflux-config");
+        let vars = std::collections::HashMap::from([
+            (
+                "EVOFLUX_CONFIG_DIR".to_owned(),
+                config.to_string_lossy().into_owned(),
+            ),
+            (
+                "EVOFLUX_WORKSPACE_ROOTS".to_owned(),
+                std::env::join_paths(roots)
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned(),
+            ),
+        ]);
+        let settings = Settings::from_vars(&vars, Some(home), &config).unwrap();
+        Allowed::current(&settings)
+    }
+
+    fn link(link: &Path, target: &Path) -> bool {
+        if cfg!(windows) {
+            #[allow(clippy::disallowed_methods)] // a test, nothing async runs here
+            return std::process::Command::new("cmd")
+                .args(["/C", "mklink", "/J"])
+                .arg(link)
+                .arg(target)
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false);
+        }
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(target, link).is_ok()
+        }
+        #[cfg(not(unix))]
+        {
+            false
+        }
+    }
+
+    #[test]
+    fn a_root_and_what_is_inside_it_are_accepted_a_sibling_is_refused() {
+        let (_dir, root, _guard) = protected();
+        let home = root.join("home");
+        let projects = home.join("projects");
+        let allowed = allowed(&home, std::slice::from_ref(&projects));
+        assert_eq!(allowed.refusal(&projects), None);
+        assert_eq!(allowed.refusal(&projects.join("a").join("b")), None);
+        let outside = Some("outside the allowed workspace folders");
+        assert_eq!(allowed.refusal(&home.join("projects2")), outside);
+        assert_eq!(allowed.refusal(&home.join("other")), outside);
+        assert_eq!(allowed.refusal(&home.join("x").join("projects")), outside);
+    }
+
+    #[test]
+    fn another_user_next_to_the_home_folder_is_refused() {
+        // The Linux /home/<other> gap: a folder next to the home folder.
+        let (_dir, root, _guard) = protected();
+        let home = root.join("home").join("me");
+        let other = root.join("home").join("other");
+        let projects = home.join("projects");
+        std::fs::create_dir_all(&projects).unwrap();
+        std::fs::create_dir_all(&other).unwrap();
+        let allowed = allowed(&home, std::slice::from_ref(&projects));
+        assert!(allowed.refusal(&other).is_some());
+        assert!(allowed.refusal(&other.join("work")).is_some());
+        assert!(allowed.refusal(&projects.join("x")).is_none());
+        if cfg!(unix) {
+            assert!(allowed.refusal(Path::new("/home/other/work")).is_some());
+            assert!(allowed.refusal(Path::new("/home/other")).is_some());
+        }
+    }
+
+    #[test]
+    fn a_link_inside_a_root_pointing_outside_is_refused() {
+        let (_dir, root, _guard) = protected();
+        let home = root.join("home");
+        let projects = home.join("projects");
+        let outside = home.join("outside");
+        std::fs::create_dir_all(&projects).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        if !link(&projects.join("door"), &outside) {
+            return;
+        }
+        let allowed = allowed(&home, std::slice::from_ref(&projects));
+        let through = projects.join("door").join("x");
+        let resolved = resolve(&through.to_string_lossy(), &home).unwrap();
+        assert_eq!(resolved, outside.join("x"));
+        assert!(allowed.refusal(&resolved).is_some());
+        assert!(allowed.refusal(&projects.join("real")).is_none());
+    }
+
+    #[test]
+    fn a_credential_folder_inside_a_root_is_still_refused() {
+        let (_dir, root, _guard) = protected();
+        let home = root.join("home");
+        let projects = home.join("projects");
+        let allowed = allowed(&home, &[projects.clone(), home.join("data")]);
+        for dir in [
+            projects.join(".ssh"),
+            projects.join(".ssh").join("keys"),
+            projects.join(".local").join("share").join("x"),
+            home.join("data").join(".aws"),
+        ] {
+            assert_eq!(
+                allowed.refusal(&dir),
+                Some("a credentials or configuration folder"),
+                "{}",
+                dir.display()
+            );
+        }
+        assert!(allowed.refusal(&home.join("data").join("a")).is_none());
+        assert!(allowed.refusal(&projects.join(".sshx")).is_none());
+        // Only a folder directly in a root counts: a project may hold its own .vscode.
+        assert!(allowed
+            .refusal(&home.join("data").join("a").join(".vscode"))
+            .is_none());
+        assert!(allowed
+            .refusal(&projects.join(".local").join("bin"))
+            .is_none());
+    }
+
+    #[test]
+    fn a_root_the_denylist_refuses_is_ignored() {
+        let (_dir, root, _guard) = protected();
+        let home = root.join("home");
+        let top = root.ancestors().last().unwrap().to_path_buf();
+        let bad_roots = [
+            top,
+            home.clone(),
+            root.clone(),
+            home.join(".ssh"),
+            home.join(".ssh").join("inner"),
+            root.join("evoflux-config"),
+            PathBuf::from("relative/root"),
+        ];
+        let allowed = allowed(&home, &bad_roots);
+        for path in [
+            home.join("projects"),
+            home.join(".ssh").join("inner").join("x"),
+            root.join("evoflux-config").join("x"),
+            root.join("elsewhere"),
+        ] {
+            assert!(allowed.refusal(&path).is_some(), "{}", path.display());
+        }
+        // Only the default workspace folder is left.
+        assert_eq!(allowed.roots.len(), 1);
+    }
+
+    #[test]
+    fn the_default_workspace_folder_is_allowed_inside_a_credentials_parent() {
+        let (_dir, root, _guard) = protected();
+        let home = root.join("home");
+        let allowed = allowed(&home, &[]);
+        let share = home.join(".local").join("share");
+        let default = share.join("evoflux-workspace");
+        assert_eq!(allowed.refusal(&default), None);
+        assert_eq!(allowed.refusal(&default.join("06ae6ab0")), None);
+        // Its surroundings stay refused, and so does a credentials folder in it.
+        assert!(allowed.refusal(&share).is_some());
+        assert!(allowed.refusal(&share.join("keyrings")).is_some());
+        assert!(allowed.refusal(&default.join(".ssh")).is_some());
+    }
+
+    #[test]
+    fn non_disk_verbatim_and_unrooted_paths_are_refused() {
+        let (_dir, root, _guard) = protected();
+        let home = root.join("home");
+        let allowed = allowed(&home, &[home.join("projects")]);
+        let guid = r"\\?\Volume{12345678-1234-1234-1234-123456789abc}\projects";
+        for path in [
+            guid,
+            r"\\?\Volume{12345678-1234-1234-1234-123456789abc}\",
+            r"\\?\GLOBALROOT\Device\HarddiskVolume1\projects",
+            r"\\.\PhysicalDrive0",
+            "projects/x",
+            "",
+        ] {
+            assert!(allowed.refusal(Path::new(path)).is_some(), "{path}");
+        }
+        if cfg!(windows) {
+            assert_eq!(
+                allowed.refusal(Path::new(guid)),
+                Some("a network share or device path")
+            );
+            // The prefix is kept, so the path is still a device path.
+            assert_eq!(resolve(guid, &home), Some(PathBuf::from(guid)));
+        }
+    }
+
+    #[test]
+    fn a_root_given_with_other_case_matches_on_windows() {
+        if !cfg!(windows) {
+            return;
+        }
+        let (_dir, root, _guard) = protected();
+        let home = root.join("home");
+        let projects = home.join("projects");
+        std::fs::create_dir_all(&projects).unwrap();
+        let shouted = PathBuf::from(projects.to_string_lossy().to_uppercase());
+        let allowed = allowed(&home, &[shouted]);
+        assert_eq!(allowed.refusal(&projects.join("x")), None);
+        assert_eq!(allowed.refusal(&projects), None);
+        let lowered = PathBuf::from(projects.join("x").to_string_lossy().to_lowercase());
+        assert_eq!(allowed.refusal(&lowered), None);
+        assert!(allowed.refusal(&home.join("projects2")).is_some());
+    }
+
+    #[test]
+    fn roots_are_canonicalised_once_and_repeats_are_dropped() {
+        let (_dir, root, _guard) = protected();
+        let home = root.join("home");
+        let projects = home.join("projects");
+        std::fs::create_dir_all(&projects).unwrap();
+        let dotted = projects.join("a").join("..");
+        let allowed = allowed(&home, &[projects.clone(), dotted, projects.clone()]);
+        assert_eq!(allowed.roots.len(), 2);
+        assert!(allowed.roots.iter().any(|r| r.path == projects));
+    }
+
+    #[test]
+    fn verbatim_prefixes_are_stripped_from_disk_and_share_paths_only() {
+        if !cfg!(windows) {
+            return;
+        }
+        let strip = |text: &str| strip_verbatim(PathBuf::from(text));
+        assert_eq!(strip(r"\\?\C:\work\x"), PathBuf::from(r"C:\work\x"));
+        assert_eq!(
+            strip(r"\\?\UNC\server\share\x"),
+            PathBuf::from(r"\\server\share\x")
+        );
+        for kept in [
+            r"\\?\Volume{12345678-1234-1234-1234-123456789abc}\x",
+            r"\\?\GLOBALROOT\Device\x",
+            r"C:\work\x",
+        ] {
+            assert_eq!(strip(kept), PathBuf::from(kept));
+        }
     }
 }

@@ -289,7 +289,9 @@ def test_unported_tool_ends_the_turn(chat, target) -> None:
 def test_restricted_workspace_is_refused(client, target) -> None:
     """Rust-only difference (KNOWN_DIFFERENCES): Python takes any absolute
     ``workspace``, so ``~`` gives the model the whole home folder. Rust refuses
-    the home folder, filesystem roots, credential folders and system folders."""
+    the home folder, filesystem roots, credential folders and system folders,
+    and any folder outside the roots of ``EVOFLUX_WORKSPACE_ROOTS`` (the harness
+    sets ``~/projects``)."""
     if target == "python":
         pytest.skip("Python accepts any absolute workspace")
     for workspace in (
@@ -307,6 +309,9 @@ def test_restricted_workspace_is_refused(client, target) -> None:
         "~/.var/app/org.example.App",
         "~/.git-credentials",
         "~/.vscode",
+        "~/projects/../other",
+        "~/projects2",
+        "~/projects/.ssh",
         *(
             (
                 os.environ.get("SystemDrive", "C:") + "\\Users",
@@ -327,6 +332,7 @@ def test_restricted_workspace_is_refused(client, target) -> None:
         assert sent.json()["detail"].startswith("Workspace path is not allowed"), (
             workspace
         )
+        assert "EVOFLUX_WORKSPACE_ROOTS" in sent.json()["detail"], workspace
     sent = send(client, {"message": "hi", "workspace": "~/projects/x"})
     assert sent.status_code == 202, sent.text
 

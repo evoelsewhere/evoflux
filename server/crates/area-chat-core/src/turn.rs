@@ -963,6 +963,7 @@ mod tests {
         )
         .unwrap();
         let state = Arc::new(ChatState {
+            workspaces: crate::workspace::Allowed::current(&settings),
             settings: Arc::new(settings),
             db: None,
             http: evoflux_net::build_client().unwrap(),
@@ -994,6 +995,7 @@ mod tests {
         )
         .unwrap();
         let state = Arc::new(ChatState {
+            workspaces: crate::workspace::Allowed::current(&settings),
             settings: Arc::new(settings),
             db: None,
             http: evoflux_net::build_client().unwrap(),

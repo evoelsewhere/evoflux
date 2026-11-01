@@ -37,6 +37,8 @@ use crate::stream_store::StreamStore;
 /// Shared state of the chat-core routes.
 pub struct ChatState {
     settings: Arc<Settings>,
+    /// Where a session workspace may be, resolved once at startup.
+    workspaces: workspace::Allowed,
     db: Option<Arc<Db>>,
     store: Arc<StreamStore>,
     /// The shared HTTPS client (`evoflux-net`), for the title request.
@@ -87,6 +89,7 @@ fn new_state(
     http: evoflux_net::Client,
 ) -> Arc<ChatState> {
     Arc::new(ChatState {
+        workspaces: workspace::Allowed::current(&settings),
         settings,
         db,
         http,
@@ -117,6 +120,7 @@ mod tests {
         let dir = std::env::temp_dir();
         let settings = Settings::from_vars(&HashMap::new(), Some(&dir), &dir).unwrap();
         ChatState {
+            workspaces: crate::workspace::Allowed::current(&settings),
             settings: Arc::new(settings),
             db: None,
             http: evoflux_net::build_client().unwrap(),
