@@ -299,6 +299,20 @@ def test_restricted_workspace_is_refused(client, target) -> None:
         "~/.ssh/new",
         os.path.abspath(os.sep),
         "~/projects/../.aws",
+        "~/.azure",
+        "~/Library",
+        *(
+            (
+                "~\\.ssh.",
+                "~\\.ssh ",
+                "~\\.kube::$INDEX_ALLOCATION",
+                "\\\\localhost\\C$\\Users",
+                "\\\\127.0.0.1\\C$\\Users",
+                "\\\\?\\UNC\\localhost\\C$\\Users",
+            )
+            if os.name == "nt"
+            else ()
+        ),
     ):
         sent = send(client, {"message": "hi", "workspace": workspace})
         assert sent.status_code == 422, (workspace, sent.text)

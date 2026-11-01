@@ -297,17 +297,41 @@ fn resolve_work_workspace(
 }
 
 /// The second half: create the directory and return its resolved path. Runs
-/// only once the request is certain to start a turn.
-async fn create_work_workspace(path: PathBuf) -> Result<String, ApiError> {
+/// only once the request is certain to start a turn. The created folder is
+/// resolved again and checked once more, and a folder this call created that
+/// turns out to be refused is removed (only when empty).
+async fn create_work_workspace(
+    path: PathBuf,
+    home: &std::path::Path,
+    config_dir: &std::path::Path,
+) -> Result<String, ApiError> {
+    let mut created = Vec::new();
+    for ancestor in path.ancestors() {
+        if tokio::fs::symlink_metadata(ancestor).await.is_ok() {
+            break;
+        }
+        created.push(ancestor.to_path_buf());
+    }
     tokio::fs::create_dir_all(&path)
         .await
         .map_err(|e| unprocessable(format!("Cannot create directory: {e}")))?;
-    let resolved = tokio::fs::canonicalize(&path).await.unwrap_or(path);
-    let text = resolved.to_string_lossy().into_owned();
-    Ok(text
-        .strip_prefix(r"\\?\")
-        .map(str::to_owned)
-        .unwrap_or(text))
+    let resolved = workspace::strip_verbatim(
+        tokio::fs::canonicalize(&path)
+            .await
+            .unwrap_or_else(|_| path.clone()),
+    );
+    if let Some(why) = workspace::Protected::current(home, config_dir).refusal(&resolved) {
+        for folder in created {
+            // Not empty or not ours to remove: leave it.
+            if tokio::fs::remove_dir(&folder).await.is_err() {
+                break;
+            }
+        }
+        return Err(unprocessable(format!(
+            "Workspace path is not allowed: it is {why}."
+        )));
+    }
+    Ok(resolved.to_string_lossy().into_owned())
 }
 
 pub(crate) async fn team_chat(
@@ -469,7 +493,9 @@ pub(crate) async fn team_chat(
         ));
     }
     if let Some(path) = new_workspace {
-        match create_work_workspace(path).await {
+        match create_work_workspace(path, &state.settings.home_dir, &state.settings.config_dir)
+            .await
+        {
             Ok(created) => workspace = Some(created),
             Err(error) => {
                 state.finish_turn(&sid);
@@ -924,10 +950,15 @@ mod tests {
         let target = dir.path().join("a").join("b");
         let path = resolve(&target.to_string_lossy()).unwrap();
         assert!(!target.exists());
-        let made = create_work_workspace(path).await.unwrap();
+        let made = create_work_workspace(path, dir.path(), &config)
+            .await
+            .unwrap();
         assert!(std::path::Path::new(&made).is_dir());
         let home = resolve("~/w").unwrap();
-        assert!(create_work_workspace(home).await.unwrap().ends_with('w'));
+        assert!(create_work_workspace(home, dir.path(), &config)
+            .await
+            .unwrap()
+            .ends_with('w'));
     }
 
     async fn chat_state(config: &std::path::Path) -> Arc<ChatState> {
@@ -1041,7 +1072,58 @@ Hi
         assert!(!home.join(".ssh").exists());
         assert!(!home.join(".aws").exists());
         let ok = resolve_work_workspace("~/projects/x", &home, &config).unwrap();
-        let ok = create_work_workspace(ok).await.unwrap();
+        let ok = create_work_workspace(ok, &home, &config).await.unwrap();
         assert!(std::path::Path::new(&ok).is_dir());
+    }
+
+    #[test]
+    fn windows_rewritten_names_and_network_paths_are_refused_before_anything_is_created() {
+        if !cfg!(windows) {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path().join("home");
+        let config = dir.path().join("config");
+        std::fs::create_dir_all(&home).unwrap();
+        let admin_share = home.to_string_lossy().replacen(':', "$", 1);
+        let bad = [
+            r"~\.ssh.".to_owned(),
+            r"~\.ssh ".to_owned(),
+            r"~\.kube::$INDEX_ALLOCATION".to_owned(),
+            r"~\.ssh\keys.".to_owned(),
+            r"~\ok:stream".to_owned(),
+            format!(r"\\localhost\{admin_share}"),
+            format!(r"\\127.0.0.1\{admin_share}"),
+            format!(r"\\?\UNC\localhost\{admin_share}"),
+            r"\\server\share\project".to_owned(),
+            r"\\.\COM1".to_owned(),
+        ];
+        for requested in bad {
+            let error = resolve_work_workspace(&requested, &home, &config).unwrap_err();
+            assert_eq!(
+                error.status,
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "{requested}"
+            );
+        }
+        assert_eq!(std::fs::read_dir(&home).unwrap().count(), 0);
+    }
+
+    #[tokio::test]
+    async fn a_refused_folder_found_after_creation_is_removed_only_if_this_call_made_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path().join("home");
+        let config = dir.path().join("config");
+        std::fs::create_dir_all(&home).unwrap();
+        // Skips the pre-check on purpose: only the second check can catch this.
+        let made = home.join(".ssh").join("new");
+        assert!(create_work_workspace(made, &home, &config).await.is_err());
+        assert!(!home.join(".ssh").exists());
+        // A folder that was already there stays, with what is in it.
+        std::fs::create_dir_all(home.join(".aws").join("keep")).unwrap();
+        let again = home.join(".aws").join("new");
+        assert!(create_work_workspace(again, &home, &config).await.is_err());
+        assert!(home.join(".aws").join("keep").is_dir());
+        assert!(!home.join(".aws").join("new").exists());
     }
 }

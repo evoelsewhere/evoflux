@@ -114,12 +114,20 @@ history snapshots, and Python reading the rows Rust wrote). Differences:
   or `~`, so `workspace=~` lets the model read `~/.ssh/id_rsa`. Rust resolves the
   path first (`~`, `..` and links, before anything is created) and answers 422
   `Workspace path is not allowed: it is <reason>.` for a filesystem or drive root
-  (UNC share roots too), the home folder or any folder above it, a system folder
+  (any UNC path is refused outright: `\\server\share`, `\\localhost\C$`,
+  `\\?\UNC\...`, and `\\.\` device paths), the home folder or any folder above
+  it, a system folder
   (Windows: `%WINDIR%`, `%ProgramFiles%`, `%ProgramFiles(x86)%`, `%ProgramData%`;
   Unix: `/etc /usr /bin /sbin /var /proc /sys /dev /boot /root /System /Library`)
   or anything inside one, and the EvoFlux config folder, `~/.ssh`, `~/.aws`,
-  `~/.gnupg`, `~/.config`, `~/.kube`, `~/.docker` and `~/AppData` (equal, inside
-  or above). Windows compares case-insensitively. Normal project folders work.
+  `~/.gnupg`, `~/.config`, `~/.kube`, `~/.docker`, `~/AppData`, `~/Library`,
+  `~/.local/share`, `~/.azure`, `~/.password-store` and `~/.netrc` (equal, inside
+  or above). On Windows a folder name ending in `.` or a space, or containing
+  `:` (`.ssh.`, `x::$INDEX_ALLOCATION`), is refused because Windows opens another
+  folder; after the folder is created the path is resolved and checked again, and
+  a folder this request made that is then refused is removed if empty. Windows
+  and macOS compare case-insensitively, Linux case-sensitively. Normal project
+  folders work.
   Sessions already stored with a workspace are not re-checked. The `commands` and
   `snippets` routes' `workspace` query is not covered. Test:
   `test_restricted_workspace_is_refused` (Rust only; Python is skipped).

@@ -3,15 +3,31 @@
 //! Rust-only restriction (KNOWN_DIFFERENCES): Python accepts any absolute
 //! path, so `workspace=~` lets the model read `~/.ssh/id_rsa` through the file
 //! tools. Here the path is resolved first (`~`, `..` and links), then refused
-//! when it is a filesystem root, the home directory or one of its ancestors, a
-//! system directory, or equal to, inside or above a credential or config folder.
+//! when it is a filesystem root, a network (UNC) or device path, a name Windows
+//! rewrites (trailing `.` or space, `:`), the home directory or one of its
+//! ancestors, a system directory, or equal to, inside or above a credential or
+//! config folder.
 
 use std::path::{Component, Path, PathBuf};
 
 /// Folders under the home directory that hold credentials or application state.
-const HOME_SENSITIVE: [&str; 7] = [
-    ".ssh", ".aws", ".gnupg", ".config", ".kube", ".docker", "AppData",
+const HOME_SENSITIVE: [&str; 12] = [
+    ".ssh",
+    ".aws",
+    ".gnupg",
+    ".config",
+    ".kube",
+    ".docker",
+    "AppData",
+    "Library",
+    ".local/share",
+    ".azure",
+    ".password-store",
+    ".netrc",
 ];
+
+/// Paths compare without regard to case where the filesystem usually does.
+const CASE_INSENSITIVE: bool = cfg!(any(windows, target_os = "macos"));
 
 /// System directories on Unix.
 const UNIX_SYSTEM: [&str; 12] = [
@@ -81,6 +97,12 @@ impl Protected {
     /// Why `path` (already resolved) cannot be a workspace, if it cannot.
     pub(crate) fn refusal(&self, path: &Path) -> Option<&'static str> {
         let path = strip_verbatim(path.to_path_buf());
+        if is_network_or_device(&path) {
+            return Some("a network share or device path");
+        }
+        if cfg!(windows) && has_rewritten_name(&path) {
+            return Some("a name Windows would rewrite (a trailing dot or space, or a ':')");
+        }
         if is_root(&path) {
             return Some("a filesystem root");
         }
@@ -145,6 +167,29 @@ pub(crate) fn strip_verbatim(path: PathBuf) -> PathBuf {
     }
 }
 
+/// Anything but a plain drive or Unix root: `\\server\share`, `\\localhost\C$`, `\\.\COM1`.
+/// A chat workspace has no use for one, and a loopback admin share names the
+/// same folder as a local path the protected list cannot match.
+fn is_network_or_device(path: &Path) -> bool {
+    use std::path::Prefix;
+    matches!(
+        path.components().next(),
+        Some(Component::Prefix(prefix)) if !matches!(prefix.kind(), Prefix::Disk(_))
+    )
+}
+
+/// A folder name Windows normalizes to another one: `.ssh.` and `.ssh ` open
+/// `.ssh`, and `x::$INDEX_ALLOCATION` opens the folder `x`.
+fn has_rewritten_name(path: &Path) -> bool {
+    path.components().any(|component| match component {
+        Component::Normal(name) => {
+            let name = name.to_string_lossy();
+            name.ends_with(['.', ' ']) || name.contains(':')
+        }
+        _ => false,
+    })
+}
+
 /// A path with no folder name: `/`, `C:\`, `\\server\share\`.
 fn is_root(path: &Path) -> bool {
     !path
@@ -152,7 +197,8 @@ fn is_root(path: &Path) -> bool {
         .any(|component| matches!(component, Component::Normal(_)))
 }
 
-/// `inner` is `outer` or inside it, by whole components; case-insensitive on Windows.
+/// `inner` is `outer` or inside it, by whole components; case-insensitive on
+/// Windows and macOS.
 fn within(outer: &Path, inner: &Path) -> bool {
     let outer = parts(outer);
     let inner = parts(inner);
@@ -161,15 +207,16 @@ fn within(outer: &Path, inner: &Path) -> bool {
 
 fn parts(path: &Path) -> Vec<String> {
     path.components()
-        .map(|component| {
-            let text = component.as_os_str().to_string_lossy().into_owned();
-            if cfg!(windows) {
-                text.to_lowercase()
-            } else {
-                text
-            }
-        })
+        .map(|component| fold(&component.as_os_str().to_string_lossy(), CASE_INSENSITIVE))
         .collect()
+}
+
+fn fold(text: &str, insensitive: bool) -> String {
+    if insensitive {
+        text.to_lowercase()
+    } else {
+        text.to_owned()
+    }
 }
 
 #[cfg(test)]
@@ -248,6 +295,81 @@ mod tests {
         assert!(guard.refusal(&root.join("elsewhere2")).is_none());
         assert!(guard.refusal(&home.join(".sshx")).is_none());
         assert!(guard.refusal(&home.join(".configs").join("x")).is_none());
+    }
+
+    #[test]
+    fn network_and_device_paths_are_refused_whatever_they_point_at() {
+        if !cfg!(windows) {
+            return;
+        }
+        let guard = Protected::new(
+            Path::new(r"C:\Users\Someone"),
+            Path::new(r"C:\Cfg"),
+            Vec::new(),
+        );
+        for path in [
+            r"\\localhost\C$\Users\Someone",
+            r"\\127.0.0.1\C$\Users\Someone\.ssh",
+            r"\\?\UNC\localhost\C$\Users\Someone",
+            r"\\server\share\project",
+            r"\\.\COM1",
+        ] {
+            assert_eq!(
+                guard.refusal(Path::new(path)),
+                Some("a network share or device path"),
+                "{path}"
+            );
+        }
+        assert!(guard.refusal(Path::new(r"D:\work")).is_none());
+    }
+
+    #[test]
+    fn windows_names_that_are_rewritten_are_refused() {
+        if !cfg!(windows) {
+            return;
+        }
+        let guard = Protected::new(
+            Path::new(r"C:\Users\Someone"),
+            Path::new(r"C:\Cfg"),
+            Vec::new(),
+        );
+        for path in [
+            r"D:\work\x.",
+            r"D:\work\x ",
+            r"D:\work\x.\y",
+            r"D:\work\x:y",
+            r"D:\work\x::$INDEX_ALLOCATION",
+        ] {
+            assert!(
+                guard.refusal(Path::new(path)).unwrap().contains("rewrite"),
+                "{path}"
+            );
+        }
+        assert!(guard.refusal(Path::new(r"D:\work\x.y\z")).is_none());
+    }
+
+    #[test]
+    fn the_added_credential_folders_are_protected() {
+        let (_dir, root, guard) = protected();
+        let home = root.join("home");
+        for rel in [
+            "Library",
+            ".local/share",
+            ".local/share/keyrings",
+            ".azure",
+            ".password-store",
+            ".netrc",
+        ] {
+            assert!(guard.refusal(&home.join(rel)).is_some(), "{rel}");
+        }
+        assert!(guard.refusal(&home.join(".local").join("bin")).is_none());
+    }
+
+    #[test]
+    fn case_is_folded_only_where_the_filesystem_is_insensitive() {
+        assert_eq!(fold("Library", true), "library");
+        assert_eq!(fold("Library", false), "Library");
+        assert_eq!(CASE_INSENSITIVE, cfg!(any(windows, target_os = "macos")));
     }
 
     #[test]
