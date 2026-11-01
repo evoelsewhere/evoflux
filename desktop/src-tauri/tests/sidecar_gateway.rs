@@ -42,7 +42,7 @@ mod sidecar_gateway_tests {
     #[test]
     fn gateway_args_match_the_python_serve_flags() {
         assert_eq!(
-            gateway_args(true, 4242),
+            gateway_args(true, 4242, None),
             [
                 "serve",
                 "--host",
@@ -53,9 +53,35 @@ mod sidecar_gateway_tests {
                 "--generate-token",
                 "--parent-pid",
                 "4242",
+                "--rust-forward",
             ]
         );
-        assert!(!gateway_args(false, 1).contains(&"--generate-token".to_string()));
+        assert!(!gateway_args(false, 1, None).contains(&"--generate-token".to_string()));
+    }
+
+    #[test]
+    fn rust_forward_is_the_default() {
+        assert!(gateway_args(true, 1, None).contains(&"--rust-forward".to_string()));
+    }
+
+    #[test]
+    fn rust_forward_opt_out_spellings_drop_the_flag() {
+        for off in ["0", "false", "FALSE", "False", "off", "OFF", "Off", " off "] {
+            assert!(
+                !gateway_args(true, 1, Some(off)).contains(&"--rust-forward".to_string()),
+                "{off:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn unrelated_rust_forward_values_keep_the_flag() {
+        for other in ["1", "true", "on", "", "banana", "2", "no"] {
+            assert!(
+                gateway_args(true, 1, Some(other)).contains(&"--rust-forward".to_string()),
+                "{other:?}"
+            );
+        }
     }
 
     #[test]

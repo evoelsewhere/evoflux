@@ -100,7 +100,12 @@ impl Sidecar {
         // ``PYTHONHOME``). Python inherits the gateway's environment, so the
         // desktop token, helper paths and ``APP_ENV`` set below still reach it.
         let mut cmd = Command::new(&gateway_bin);
-        cmd.args(gateway_args(desktop_token.is_none(), parent_pid));
+        let rust_forward_env = std::env::var("EVOFLUX_RUST_FORWARD").ok();
+        cmd.args(gateway_args(
+            desktop_token.is_none(),
+            parent_pid,
+            rust_forward_env.as_deref(),
+        ));
         for (name, value) in gateway_env(&sidecar_root, attempt) {
             cmd.env(name, value);
         }

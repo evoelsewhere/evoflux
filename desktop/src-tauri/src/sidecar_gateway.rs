@@ -33,8 +33,24 @@ pub fn resolve_gateway_bin(sidecar_root: &Path) -> Result<PathBuf> {
     }
 }
 
-/// `evoflux-server serve` takes the flags Python's `serve` took.
-pub fn gateway_args(generate_token: bool, parent_pid: u32) -> Vec<String> {
+/// Whether `EVOFLUX_RUST_FORWARD` opts out of Rust-forward: `0`, `false` or
+/// `off` (any case). The server only turns forwarding on for `1`, `true` or
+/// `on`, so an opted-out value leaves it Python-only too.
+pub fn rust_forward_opted_out(value: Option<&str>) -> bool {
+    value.is_some_and(|raw| {
+        let raw = raw.trim();
+        raw == "0" || raw.eq_ignore_ascii_case("false") || raw.eq_ignore_ascii_case("off")
+    })
+}
+
+/// `evoflux-server serve` takes the flags Python's `serve` took, plus
+/// `--rust-forward` unless `rust_forward_env` (the shell's
+/// `EVOFLUX_RUST_FORWARD`) opts out.
+pub fn gateway_args(
+    generate_token: bool,
+    parent_pid: u32,
+    rust_forward_env: Option<&str>,
+) -> Vec<String> {
     let mut args: Vec<String> = ["serve", "--host", "127.0.0.1", "--port", "0", "--handshake"]
         .into_iter()
         .map(String::from)
@@ -44,6 +60,9 @@ pub fn gateway_args(generate_token: bool, parent_pid: u32) -> Vec<String> {
     }
     args.push("--parent-pid".to_string());
     args.push(parent_pid.to_string());
+    if !rust_forward_opted_out(rust_forward_env) {
+        args.push("--rust-forward".to_string());
+    }
     args
 }
 
