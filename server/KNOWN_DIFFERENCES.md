@@ -168,10 +168,9 @@ history snapshots, and Python reading the rows Rust wrote). Differences:
   exception is logged.
 - **Same as Python, on purpose.** The session `workspace` is created if missing,
   only after the lead and running-turn checks; Python creates it before them.
-  Neither Python nor the Rust gateway checks `Origin` or `Host` on state-changing
-  requests (Python only adds `CORSMiddleware` with `CORS_ORIGINS = ["*"]`), so a
-  page the user opens in a browser can post to `/api/team/chat`; Rust still
-  refuses a restricted workspace (above). The step limit per turn is Python's
+  Python does not check `Origin` or `Host` (its `CORSMiddleware` allows
+  `CORS_ORIGINS = ["*"]`); the gateway now does, for every route (see "gateway:
+  Origin and Host checks" below). The step limit per turn is Python's
   `MAX_AGENT_ITERATIONS` (5000).
 - **Usage cost.** `cost` is always `null` and `usage` carries no `cost`: there is
   no models.dev pricing catalog in Rust.
@@ -188,3 +187,43 @@ history snapshots, and Python reading the rows Rust wrote). Differences:
 - **Provider settings per turn.** Each turn reads `<config>/.env` (where Settings
   → Providers saves keys) on top of the startup settings, so a key saved while the
   server runs applies to the next turn, as Python's `os.environ` update does.
+
+## gateway: Origin and Host checks (`server/crates/gateway/src/origin.rs`, every route)
+
+Owner decision 2026-11-01, Rust-only on purpose: the security review found no
+`Origin`/`Host` check and CORS `*`, so any website open in the user's browser
+could call the local API, and a DNS-rebound name could read its answers. The
+gateway checks every request before routing, so Rust- and Python-owned routes
+alike are covered. Python alone (`evoflux serve` without the gateway) is unchanged.
+
+- **Host.** `localhost`, `127.0.0.1` and `[::1]` on any port, the `--host` the
+  gateway is bound to (unless `0.0.0.0` or `::`), and the host of each
+  `EVOFLUX_ALLOWED_ORIGINS` entry. Anything else is 403
+  `{"detail":"Host not allowed.","code":"host_not_allowed"}`. A request with no
+  `Host` (HTTP/1.0 tools) is allowed. Requests carrying the bundled tsnet
+  proxy's verified identity (login, `tsnet` marker and this process's secret)
+  skip the Host check, because phone access keeps the tailnet name.
+- **Origin.** When present it must be a loopback page (`http(s)://localhost`,
+  `127.0.0.1` or `[::1]`, any port: the gateway's own origin, the Vite dev and
+  preview servers), the bound host, the Tauri window (`tauri://localhost`,
+  `http://tauri.localhost`, `https://tauri.localhost`), the WebBridge extension
+  (`chrome-extension://lghglpnddenmebbhkfachafichhglafi` plus
+  `EVOFLUX_WEBBRIDGE_EXTENSION_IDS`), an `EVOFLUX_ALLOWED_ORIGINS` entry, or,
+  behind the tsnet proxy, the page's own tailnet origin. Anything else
+  (including `null`) is 403 `{"detail":"Origin not allowed.","code":"origin_not_allowed"}`
+  for every method, SSE and WebSocket upgrades included. No `Origin` (CLI, curl,
+  tests, the Tauri shell's own requests) is allowed.
+- **CORS.** Every `Access-Control-*` header a route set (Python's
+  `CORSMiddleware` included) is removed. An allowed `Origin` is echoed with
+  `Access-Control-Allow-Credentials: true`, and every answer carries
+  `Vary: Origin`. The gateway answers preflights itself with Starlette's shape
+  (200 `OK`, all methods, the requested headers, max age 600), so Rust-owned
+  routes now pass preflight too. `CORS_ORIGINS` no longer has any effect behind
+  the gateway.
+- **Not covered.** LAN access through a wildcard bind and an external
+  `tailscale serve` (`EVOFLUX_REMOTE_USE_PROVIDER=external`) need their origin
+  in `EVOFLUX_ALLOWED_ORIGINS`.
+
+Tests: `origin::tests` (unit) and `contract-tests/origin` (no Origin, own and
+app origins on both backends; evil Origin, evil Host, SSE, stripped CORS and
+preflight on Rust only, skipped on Python).

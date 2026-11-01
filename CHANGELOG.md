@@ -8,6 +8,10 @@ All notable changes to EvoFlux are documented in this file.
 
 - The v4 `evoflux-server` gateway now answers 403 to any request whose `Origin` is not EvoFlux itself (a `localhost`/`127.0.0.1` page, the desktop window or the WebBridge extension) or whose `Host` is not this machine, for every route, so a website open in your browser can no longer call the local API, including through DNS rebinding. CORS now echoes only the allowed origin instead of `*`. Add other origins with `EVOFLUX_ALLOWED_ORIGINS`.
 
+### Upgrade notes
+
+- If you reach EvoFlux from another address than this computer (LAN through `--host 0.0.0.0`, or your own `tailscale serve`), list that page's origin in `EVOFLUX_ALLOWED_ORIGINS` (for example `https://evoflux.example.ts.net`). Phone access through **Settings → Remote Control** keeps working without it.
+
 ### Fixed
 
 - The v4 Rust chat loop (`POST /api/team/chat`) now creates a new session's workspace folder only once the request is accepted (no lead agent or a running turn no longer leaves a folder behind), always frees the session if a turn crashes, and limits oversized tool-call arguments (1 MiB, in `tool_start` and stored history) and the title reply (64 KiB); the `ls` tool now cuts a listing past 20,000 characters with a notice.

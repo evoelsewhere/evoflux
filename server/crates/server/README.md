@@ -39,6 +39,16 @@ The flags mean what they mean for Python's `serve` (`app/cli/commands/serve.py`)
 - `EVOFLUX_GATEWAY_STATE_FILE` (tests only) receives `{"pid":…,"port":…}` of the
   current Python child each time it becomes ready.
 
+## Origin and Host
+
+Before routing, every request passes `evoflux_gateway::origin`: a `Host` other
+than `localhost`, `127.0.0.1`, `[::1]` or the bound `--host`, and an `Origin`
+other than a loopback page, the Tauri window or the WebBridge extension, get
+403. `EVOFLUX_ALLOWED_ORIGINS` (comma-separated) adds origins, and their hosts.
+Requests from the bundled tsnet proxy keep their tailnet name. CORS echoes only
+the checked origin; Python's CORS headers are removed. Details and the reasons
+are in `server/KNOWN_DIFFERENCES.md` ("gateway: Origin and Host checks").
+
 ## Auth
 
 Python stays the auth authority for every route it serves. It gets the

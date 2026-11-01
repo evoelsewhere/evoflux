@@ -80,7 +80,8 @@ clear the override. This does not change EvoFlux's backend configuration.
 | `APP_ENV` | selects production versus repository-local development defaults |
 | `LOG_LEVEL` | `DEBUG`, `INFO`, `WARNING` or `ERROR` |
 | `SSL_VERIFY` | TLS verification for supported HTTP clients |
-| `CORS_ORIGINS` | allowed development/external API origins |
+| `CORS_ORIGINS` | allowed development/external API origins (Python alone; ignored behind the `evoflux-server` gateway) |
+| `EVOFLUX_ALLOWED_ORIGINS` | comma-separated extra browser origins the `evoflux-server` gateway accepts, e.g. `https://evoflux.example.ts.net`; their hosts are also accepted as `Host`. Loopback pages, the desktop window and the WebBridge extension are always allowed; any other `Origin` or `Host` gets 403 |
 | `EVOFLUX_MODEL_REGISTRY_REFRESH` | allow refreshed `models.dev` metadata |
 | `EVOFLUX_MODEL_REGISTRY_REFRESH_INTERVAL_HOURS` | background `models.dev` re-fetch interval (24, minimum 1) |
 | `EVOFLUX_DESKTOP_TOKEN` | random desktop-shell bearer token |
