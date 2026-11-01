@@ -17,6 +17,7 @@ mod stream_store;
 mod title;
 mod turn;
 mod usage;
+mod workspace;
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard};

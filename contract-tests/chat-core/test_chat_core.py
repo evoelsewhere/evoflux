@@ -18,6 +18,7 @@ checkpoint feature, also outside chat-core.
 from __future__ import annotations
 
 import copy
+import os
 import time
 import uuid
 from pathlib import Path
@@ -31,7 +32,15 @@ from normalize import normalize
 from provider_setup import configure_backend_provider
 from sse import Event, collect_events
 
-_TOTAL_KEYS = ("input", "output", "cache", "cache_write", "calls", "thoughts", "tool_use")
+_TOTAL_KEYS = (
+    "input",
+    "output",
+    "cache",
+    "cache_write",
+    "calls",
+    "thoughts",
+    "tool_use",
+)
 
 
 def _strip_title_phase(usage: dict[str, Any]) -> dict[str, Any] | None:
@@ -62,7 +71,9 @@ def canon_events(events: list[Event]) -> list[list[Any]]:
         data = copy.deepcopy(event.data)
         if event.event == "title_update":
             continue
-        if event.event == "agent_status" and data.get("metadata") == {"phase": "ingress"}:
+        if event.event == "agent_status" and data.get("metadata") == {
+            "phase": "ingress"
+        }:
             continue
         if event.event == "usage" and data.get("metadata", {}).get("turn_total"):
             meta = data["metadata"]
@@ -231,7 +242,9 @@ def test_tool_turn(chat, mock_provider, snapshot) -> None:
     assert sent[-1]["content"]
 
 
-def test_unknown_tool_gets_python_not_found_result(chat, mock_provider, snapshot) -> None:
+def test_unknown_tool_gets_python_not_found_result(
+    chat, mock_provider, snapshot
+) -> None:
     client = chat("chatcore_unknown_tool")
     sid, events = turn(client, "call a tool")
     snapshot.check("unknown_tool_events.json", canon_events(events))
@@ -271,6 +284,29 @@ def test_unported_tool_ends_the_turn(chat, target) -> None:
     messages = history(client, sid)["lead"]["messages"]
     assert [m["role"] for m in messages] == ["user", "assistant", "tool"]
     assert messages[2]["content"] == "Error: Tool 'get_goal' not found."
+
+
+def test_restricted_workspace_is_refused(client, target) -> None:
+    """Rust-only difference (KNOWN_DIFFERENCES): Python takes any absolute
+    ``workspace``, so ``~`` gives the model the whole home folder. Rust refuses
+    the home folder, filesystem roots, credential folders and system folders."""
+    if target == "python":
+        pytest.skip("Python accepts any absolute workspace")
+    for workspace in (
+        "~",
+        "~/",
+        "~/.ssh",
+        "~/.ssh/new",
+        os.path.abspath(os.sep),
+        "~/projects/../.aws",
+    ):
+        sent = send(client, {"message": "hi", "workspace": workspace})
+        assert sent.status_code == 422, (workspace, sent.text)
+        assert sent.json()["detail"].startswith("Workspace path is not allowed"), (
+            workspace
+        )
+    sent = send(client, {"message": "hi", "workspace": "~/projects/x"})
+    assert sent.status_code == 202, sent.text
 
 
 def test_provider_error_400(chat, mock_provider, snapshot) -> None:

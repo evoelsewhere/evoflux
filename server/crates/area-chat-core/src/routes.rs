@@ -23,6 +23,7 @@ use crate::agent::{select_lead, work_leads};
 use crate::store::{self, MessageRow, NewSession, SessionRow};
 use crate::stream_store::Frame;
 use crate::turn::{self, TurnInput};
+use crate::workspace;
 use crate::ChatState;
 
 /// sse_starlette's default ping interval.
@@ -274,19 +275,23 @@ fn not_in_rust(what: &str) -> ApiError {
     unprocessable(format!("{what} not available in the Rust server yet."))
 }
 
-/// The first half of `_normalize_work_workspace_or_422`: expand `~` and require
-/// an absolute path, touching nothing on disk.
-fn resolve_work_workspace(workspace: &str, home: &std::path::Path) -> Result<PathBuf, ApiError> {
-    let path = match workspace.strip_prefix('~') {
-        Some(rest) if rest.is_empty() || rest.starts_with(['/', '\\']) => {
-            home.join(rest.trim_start_matches(['/', '\\']))
-        }
-        _ => PathBuf::from(workspace),
-    };
-    if !path.is_absolute() {
-        return Err(unprocessable("Workspace path must be absolute."));
+/// The first half of `_normalize_work_workspace_or_422`: expand `~`, require an
+/// absolute path and apply the Rust-only restriction in `workspace.rs`. The path
+/// is resolved (`..` and links) and checked before anything is created; nothing
+/// is written to disk.
+fn resolve_work_workspace(
+    requested: &str,
+    home: &std::path::Path,
+    config_dir: &std::path::Path,
+) -> Result<PathBuf, ApiError> {
+    let path = workspace::resolve(requested, home)
+        .ok_or_else(|| unprocessable("Workspace path must be absolute."))?;
+    match workspace::Protected::current(home, config_dir).refusal(&path) {
+        Some(why) => Err(unprocessable(format!(
+            "Workspace path is not allowed: it is {why}."
+        ))),
+        None => Ok(path),
     }
-    Ok(path)
 }
 
 /// The second half: create the directory and return its resolved path. Runs
@@ -390,7 +395,11 @@ pub(crate) async fn team_chat(
         None => match form.workspace.as_deref() {
             Some(ws) => (
                 None,
-                Some(resolve_work_workspace(ws, &state.settings.home_dir)?),
+                Some(resolve_work_workspace(
+                    ws,
+                    &state.settings.home_dir,
+                    &state.settings.config_dir,
+                )?),
             ),
             None => (None, None),
         },
@@ -904,13 +913,15 @@ mod tests {
     #[tokio::test]
     async fn work_workspace_must_be_absolute_and_is_created() {
         let dir = tempfile::tempdir().unwrap();
-        assert!(resolve_work_workspace("relative/dir", dir.path()).is_err());
+        let config = dir.path().join("config");
+        let resolve = |ws: &str| resolve_work_workspace(ws, dir.path(), &config);
+        assert!(resolve("relative/dir").is_err());
         let target = dir.path().join("a").join("b");
-        let path = resolve_work_workspace(&target.to_string_lossy(), dir.path()).unwrap();
+        let path = resolve(&target.to_string_lossy()).unwrap();
         assert!(!target.exists());
         let made = create_work_workspace(path).await.unwrap();
         assert!(std::path::Path::new(&made).is_dir());
-        let home = resolve_work_workspace("~/w", dir.path()).unwrap();
+        let home = resolve("~/w").unwrap();
         assert!(create_work_workspace(home).await.unwrap().ends_with('w'));
     }
 
@@ -963,7 +974,9 @@ mod tests {
         let config = tempfile::tempdir().unwrap();
         let state = chat_state(config.path()).await;
         let sid = "06ae6ab0-636d-720e-8000-b0d548016ce8";
-        let workspace = config.path().join("ws");
+        // Outside the config dir, which a workspace may not be in.
+        let outside = tempfile::tempdir().unwrap();
+        let workspace = outside.path().join("ws");
 
         // No lead agent: 404, nothing created.
         assert_eq!(post_chat(&state, sid, &workspace).await, 404);
@@ -984,5 +997,46 @@ Hi
         assert!(state.begin_turn(sid));
         assert_eq!(post_chat(&state, sid, &workspace).await, 409);
         assert!(!workspace.exists());
+    }
+
+    #[tokio::test]
+    async fn restricted_workspaces_get_a_422_and_create_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path().join("home");
+        let config = dir.path().join("config");
+        std::fs::create_dir_all(&home).unwrap();
+        let root = dir
+            .path()
+            .ancestors()
+            .last()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        for bad in [
+            "~".to_owned(),
+            "~/".to_owned(),
+            root,
+            "~/.ssh".to_owned(),
+            "~/.ssh/keys/new".to_owned(),
+            "~/projects/../.aws".to_owned(),
+            config.to_string_lossy().into_owned(),
+            dir.path().to_string_lossy().into_owned(),
+        ] {
+            let error = resolve_work_workspace(&bad, &home, &config).unwrap_err();
+            assert_eq!(error.status, StatusCode::UNPROCESSABLE_ENTITY, "{bad}");
+            assert!(
+                error
+                    .detail
+                    .as_str()
+                    .unwrap()
+                    .starts_with("Workspace path is not allowed"),
+                "{bad}"
+            );
+        }
+        assert!(!home.join(".ssh").exists());
+        assert!(!home.join(".aws").exists());
+        let ok = resolve_work_workspace("~/projects/x", &home, &config).unwrap();
+        let ok = create_work_workspace(ok).await.unwrap();
+        assert!(std::path::Path::new(&ok).is_dir());
     }
 }
