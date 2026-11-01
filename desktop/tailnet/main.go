@@ -17,6 +17,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httputil"
+	"net/netip"
 	"net/url"
 	"os"
 	"os/signal"
@@ -25,6 +26,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -78,6 +80,7 @@ type tailnetApp struct {
 	target   *url.URL
 	stateDir string
 	proxyKey string
+	identity atomic.Pointer[hostIdentity]
 
 	desiredEnabled bool
 	listener       net.Listener
@@ -167,6 +170,9 @@ func (a *tailnetApp) reconcileLoop() {
 	for {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		status, err := a.localStatus(ctx)
+		if err == nil {
+			a.refreshIdentity(status)
+		}
 		if err == nil && status.BackendState == "Running" {
 			if a.isDesiredEnabled() {
 				if err := a.ensureServe(status); err != nil {
@@ -353,6 +359,77 @@ func tailnetHost(status *ipnstate.Status) string {
 	return "evoflux"
 }
 
+// hostIdentity is the set of Host values this node answers to: its own
+// MagicDNS name (full and short) and its own Tailscale addresses.
+type hostIdentity struct {
+	names map[string]bool
+	ips   map[netip.Addr]bool
+}
+
+func newHostIdentity(status *ipnstate.Status) *hostIdentity {
+	id := &hostIdentity{names: map[string]bool{}, ips: map[netip.Addr]bool{}}
+	if status == nil {
+		return id
+	}
+	if status.Self != nil {
+		if name := normalizeHost(status.Self.DNSName); name != "" {
+			id.names[name] = true
+			if short, _, ok := strings.Cut(name, "."); ok && short != "" {
+				id.names[short] = true
+			}
+		}
+		for _, ip := range status.Self.TailscaleIPs {
+			id.ips[ip.Unmap()] = true
+		}
+	}
+	for _, ip := range status.TailscaleIPs {
+		id.ips[ip.Unmap()] = true
+	}
+	return id
+}
+
+func (id *hostIdentity) empty() bool {
+	return len(id.names) == 0 && len(id.ips) == 0
+}
+
+// normalizeHost lowercases a host and drops a trailing dot and any brackets.
+func normalizeHost(host string) string {
+	host = strings.TrimSpace(host)
+	if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") {
+		host = host[1 : len(host)-1]
+	}
+	return strings.ToLower(strings.TrimSuffix(host, "."))
+}
+
+// allows reports whether a request Host header names this node. The port is
+// ignored; anything else, including other *.ts.net names, is refused.
+func (id *hostIdentity) allows(hostHeader string) bool {
+	if id == nil {
+		return false
+	}
+	host := hostHeader
+	if h, _, err := net.SplitHostPort(hostHeader); err == nil {
+		host = h
+	}
+	host = normalizeHost(host)
+	if host == "" {
+		return false
+	}
+	if ip, err := netip.ParseAddr(host); err == nil {
+		return id.ips[ip.Unmap()]
+	}
+	return id.names[host]
+}
+
+// refreshIdentity records the node's own names and addresses so the proxy
+// does not query tailscaled per request. It keeps the previous identity when
+// the status carries none.
+func (a *tailnetApp) refreshIdentity(status *ipnstate.Status) {
+	if id := newHostIdentity(status); !id.empty() {
+		a.identity.Store(id)
+	}
+}
+
 func (a *tailnetApp) proxyHandler() http.Handler {
 	proxy := httputil.NewSingleHostReverseProxy(a.target)
 	proxy.ErrorHandler = func(w http.ResponseWriter, _ *http.Request, err error) {
@@ -360,6 +437,11 @@ func (a *tailnetApp) proxyHandler() http.Handler {
 		http.Error(w, "EvoFlux backend is unavailable", http.StatusBadGateway)
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		if !a.identity.Load().allows(request.Host) {
+			log.Printf("refused Host %q from %s", request.Host, request.RemoteAddr)
+			http.Error(w, "Host is not this node", http.StatusForbidden)
+			return
+		}
 		a.mu.Lock()
 		lc := a.lc
 		a.mu.Unlock()

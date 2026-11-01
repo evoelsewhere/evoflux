@@ -8,6 +8,7 @@ All notable changes to EvoFlux are documented in this file.
 
 - The v4 `evoflux-server` gateway now answers 403 to any request whose `Origin` is not EvoFlux itself (a `localhost`/`127.0.0.1` page, the desktop window or the WebBridge extension) or whose `Host` is not this machine, for every route, so a website open in your browser can no longer call the local API, including through DNS rebinding. CORS now echoes only the allowed origin instead of `*`. Add other origins with `EVOFLUX_ALLOWED_ORIGINS`.
 - The v4 `evoflux-server` gateway now also refuses (403) phone-access requests whose address is not a Tailscale name (`*.ts.net`) or address, so a website that rebinds its own name to your tailnet IP can no longer act as you; pages on other local ports than EvoFlux's own and the Vite ports (5173, 4173); and requests your browser marks as coming from another website (`Sec-Fetch-Site: cross-site`, such as another site's image or form) unless they carry the desktop token.
+- Phone access through **Settings → Remote Control** now refuses (403) any request whose address is not this computer's own tailnet name or Tailscale address, so a website on another `*.ts.net` name can no longer reach EvoFlux through DNS rebinding.
 
 ### Upgrade notes
 

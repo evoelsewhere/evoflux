@@ -214,13 +214,12 @@ alike are covered. Python alone (`evoflux serve` without the gateway) is unchang
   `<node>.<tailnet>.ts.net`, a Tailscale address (`100.64.0.0/10`,
   `fd7a:115c:a1e0::/48`) or an `EVOFLUX_ALLOWED_ORIGINS` host, on any port; a
   tsnet request with any other `Host` (a DNS-rebound `evil.example`) or none is
-  403 `host_not_allowed`. The gateway cannot learn the box's exact tailnet name
-  (Python starts the tsnet child, which forwards the browser's `Host` unchanged,
-  and migration lanes may not edit `desktop/tailnet`), so another `*.ts.net`
-  name or Tailscale address is still accepted. Follow-up outside the migration:
-  have `desktop/tailnet/main.go` refuse a `Host` other than its own name or IP,
-  or send that name in a secret-protected header the gateway compares.
-  Short MagicDNS names (`http://box/`) are refused; use the URL Remote Control shows.
+  403 `host_not_allowed`. The bundled tsnet proxy itself (`desktop/tailnet`) now
+  answers 403 to any `Host` that is not its own MagicDNS name (full or short) or
+  one of its own Tailscale addresses, before proxying, so another `*.ts.net`
+  name or Tailscale address no longer reaches the gateway; the gap is closed.
+  The gateway keeps its own check as defence in depth.
+  The gateway alone refuses short MagicDNS names (`http://box/`); the proxy accepts the short name of its own node, so use the URL Remote Control shows.
 - **Origin.** When present it must be a loopback page (`http(s)://localhost`,
   `127.0.0.1` or `[::1]`) on the gateway's own port or a Vite port (5173 for
   `vite dev`, the Tauri `devUrl` and `make dev-web`; 4173 for `vite preview`;
