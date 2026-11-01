@@ -557,6 +557,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "evoflux-area-plugins-marketplace"
+version = "0.1.0"
+dependencies = [
+ "axum",
+]
+
+[[package]]
 name = "evoflux-area-providers"
 version = "0.1.0"
 dependencies = [
