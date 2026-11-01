@@ -247,12 +247,20 @@ fn usage_from_openai(u: &WireUsage) -> Usage {
     }
 }
 
+/// The most tool-call argument bytes in one response, over all its calls;
+/// Python has no cap.
+pub const MAX_TOTAL_ARGUMENTS_BYTES: usize = 32 << 20;
+
+/// The most distinct tool calls in one response; Python has no cap.
+pub const MAX_TOOL_CALLS: usize = 128;
+
 /// One tool call being assembled from deltas.
 #[derive(Debug, Default)]
 struct ToolBuffer {
     id: String,
     name: String,
     arguments: String,
+    progress: JsonProgress,
 }
 
 /// A different call landing in a slot that already has an id (logged only).
@@ -260,12 +268,37 @@ fn is_index_collision(existing_id: &str, new_id: &str) -> bool {
     !existing_id.is_empty() && new_id != existing_id
 }
 
-/// Grow one call's arguments, up to [`MAX_ARGUMENTS_BYTES`].
-fn append_arguments(arguments: &mut String, more: &str) -> Result<(), ProviderError> {
-    if arguments.len() + more.len() > MAX_ARGUMENTS_BYTES {
+/// Grow one call's arguments, up to [`MAX_ARGUMENTS_BYTES`] for the call and
+/// [`MAX_TOTAL_ARGUMENTS_BYTES`] for the response (`total`).
+fn append_arguments(
+    buf: &mut ToolBuffer,
+    total: &mut usize,
+    more: &str,
+) -> Result<(), ProviderError> {
+    if buf.arguments.len() + more.len() > MAX_ARGUMENTS_BYTES {
         return Err(too_large("a tool call's arguments", MAX_ARGUMENTS_BYTES));
     }
-    arguments.push_str(more);
+    if *total + more.len() > MAX_TOTAL_ARGUMENTS_BYTES {
+        return Err(too_large(
+            "the tool call arguments of a response",
+            MAX_TOTAL_ARGUMENTS_BYTES,
+        ));
+    }
+    buf.arguments.push_str(more);
+    *total += more.len();
+    Ok(())
+}
+
+/// Python appends a delta to a call's arguments unless they already parse as
+/// JSON (`json.loads(buf)`); the first delta always lands.
+fn extend_arguments(
+    buf: &mut ToolBuffer,
+    total: &mut usize,
+    more: &str,
+) -> Result<(), ProviderError> {
+    if buf.arguments.is_empty() || !buf.progress.is_complete(&buf.arguments) {
+        append_arguments(buf, total, more)?;
+    }
     Ok(())
 }
 
@@ -273,11 +306,130 @@ fn is_json(text: &str) -> bool {
     serde_json::from_str::<Value>(text).is_ok()
 }
 
+fn is_json_space(byte: u8) -> bool {
+    matches!(byte, b' ' | b'\t' | b'\n' | b'\r')
+}
+
+#[derive(Debug, Default, PartialEq, Clone, Copy)]
+enum Shape {
+    /// Only whitespace so far.
+    #[default]
+    Leading,
+    /// An object, an array or a string: scanned as bytes arrive.
+    Nested,
+    /// A number, `true`, `false`, `null` or garbage: parsed when asked.
+    Scalar,
+}
+
+/// Whether a call's arguments parse as JSON yet, which is what Python asks
+/// (`json.loads(buf)`) before each delta it appends. Re-parsing the buffer
+/// for every delta is quadratic, so this scans only the bytes added since the
+/// last question, and parses an object, array or string once, when its closing
+/// bracket or quote has arrived. Scalars are short when valid or still
+/// incomplete, so they are parsed whole.
+#[derive(Debug, Default)]
+struct JsonProgress {
+    /// Bytes of the buffer already looked at.
+    scanned: usize,
+    shape: Shape,
+    open: usize,
+    in_string: bool,
+    escaped: bool,
+    /// The top-level value has closed.
+    ended: bool,
+    /// The buffer can never parse, whatever is appended.
+    dead: bool,
+    /// The buffer parses now.
+    complete: bool,
+    /// The result of the one full parse of a closed container or string.
+    valid: Option<bool>,
+}
+
+impl JsonProgress {
+    /// Whether `text`, the buffer this was fed, parses as JSON right now.
+    fn is_complete(&mut self, text: &str) -> bool {
+        let bytes = text.as_bytes();
+        let new = bytes.get(self.scanned..).unwrap_or_default();
+        if new.is_empty() {
+            return self.complete;
+        }
+        self.scanned = bytes.len();
+        if self.shape != Shape::Scalar {
+            self.scan(new);
+        }
+        self.complete = match self.shape {
+            Shape::Leading => false,
+            Shape::Nested => {
+                self.ended && !self.dead && *self.valid.get_or_insert_with(|| is_json(text))
+            }
+            Shape::Scalar => match serde_json::from_str::<Value>(text) {
+                Ok(_) => true,
+                Err(error) => {
+                    // An error short of the end cannot be repaired by more text.
+                    if !error.is_eof() {
+                        self.dead = true;
+                    }
+                    false
+                }
+            },
+        };
+        self.complete
+    }
+
+    fn scan(&mut self, new: &[u8]) {
+        for &byte in new {
+            if self.ended {
+                if !is_json_space(byte) {
+                    self.dead = true;
+                    return;
+                }
+            } else if self.in_string {
+                if self.escaped {
+                    self.escaped = false;
+                } else if byte == b'\\' {
+                    self.escaped = true;
+                } else if byte == b'"' {
+                    self.in_string = false;
+                    self.ended = self.open == 0;
+                }
+            } else if self.shape == Shape::Leading {
+                match byte {
+                    _ if is_json_space(byte) => {}
+                    b'"' => {
+                        self.shape = Shape::Nested;
+                        self.in_string = true;
+                    }
+                    b'{' | b'[' => {
+                        self.shape = Shape::Nested;
+                        self.open = 1;
+                    }
+                    _ => {
+                        self.shape = Shape::Scalar;
+                        return;
+                    }
+                }
+            } else {
+                match byte {
+                    b'"' => self.in_string = true,
+                    b'{' | b'[' => self.open += 1,
+                    b'}' | b']' => {
+                        self.open = self.open.saturating_sub(1);
+                        self.ended = self.open == 0;
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+}
+
 /// Turns validated chunks into events and assembles tool calls the way
 /// `stream_and_assemble` does.
 #[derive(Debug, Default)]
 pub struct Assembler {
     tool_calls: BTreeMap<i64, ToolBuffer>,
+    /// Argument bytes held over all calls.
+    total_arguments: usize,
     finish_reason: Option<String>,
 }
 
@@ -317,16 +469,9 @@ impl Assembler {
     fn on_tool_call(&mut self, tc: ToolCallDelta) -> Result<(), ProviderError> {
         let idx = tc.index.unwrap_or(0);
         let id = tc.id.filter(|id| !id.is_empty());
-        let name = tc
-            .function
-            .as_ref()
-            .and_then(|f| f.name.clone())
-            .filter(|n| !n.is_empty());
-        let arguments = tc
-            .function
-            .as_ref()
-            .and_then(|f| f.arguments.clone())
-            .filter(|a| !a.is_empty());
+        let (name, arguments) = tc.function.map_or((None, None), |f| (f.name, f.arguments));
+        let name = name.filter(|n| !n.is_empty());
+        let arguments = arguments.filter(|a| !a.is_empty());
         if let (Some(new), Some(existing)) = (&id, self.tool_calls.get(&idx)) {
             if is_index_collision(&existing.id, new) {
                 tracing::warn!(
@@ -337,6 +482,15 @@ impl Assembler {
                 );
             }
         }
+        // Most deltas only carry more arguments for a call that exists.
+        if id.is_none() && name.is_none() {
+            if let Some(buf) = self.tool_calls.get_mut(&idx) {
+                if let Some(args) = arguments {
+                    extend_arguments(buf, &mut self.total_arguments, &args)?;
+                }
+                return Ok(());
+            }
+        }
         let last_idx = self.tool_calls.keys().next_back().copied();
         if !self.tool_calls.contains_key(&idx) {
             // Copilot streams arguments as separate chunks with distinct
@@ -345,18 +499,25 @@ impl Assembler {
                 if let Some(last) = self.tool_calls.values_mut().next_back() {
                     if let Some(args) = arguments {
                         if args != last.arguments {
-                            append_arguments(&mut last.arguments, &args)?;
+                            append_arguments(last, &mut self.total_arguments, &args)?;
                         }
                     }
                     return Ok(());
                 }
             }
+            if self.tool_calls.len() >= MAX_TOOL_CALLS {
+                return Err(too_large("the tool calls of a response", MAX_TOOL_CALLS));
+            }
             let mut buf = ToolBuffer {
                 id: id.unwrap_or_default(),
                 name: name.unwrap_or_default(),
-                arguments: String::new(),
+                ..ToolBuffer::default()
             };
-            append_arguments(&mut buf.arguments, &arguments.unwrap_or_default())?;
+            append_arguments(
+                &mut buf,
+                &mut self.total_arguments,
+                &arguments.unwrap_or_default(),
+            )?;
             self.tool_calls.insert(idx, buf);
             return Ok(());
         }
@@ -386,12 +547,8 @@ impl Assembler {
                 }
             }
         }
-        if let Some(args) = arguments {
-            if let Some(buf) = self.tool_calls.get_mut(&idx) {
-                if buf.arguments.is_empty() || !is_json(&buf.arguments) {
-                    append_arguments(&mut buf.arguments, &args)?;
-                }
-            }
+        if let (Some(args), Some(buf)) = (arguments, self.tool_calls.get_mut(&idx)) {
+            extend_arguments(buf, &mut self.total_arguments, &args)?;
         }
         Ok(())
     }
@@ -692,6 +849,223 @@ mod tests {
             )),
             Err(arguments_too_large())
         );
+    }
+
+    fn total_too_large() -> ProviderError {
+        ProviderError::TooLarge {
+            what: "the tool call arguments of a response".into(),
+            limit: MAX_TOTAL_ARGUMENTS_BYTES,
+        }
+    }
+
+    #[test]
+    fn many_calls_may_reach_the_total_cap_but_not_pass_it() {
+        assert_eq!(MAX_TOTAL_ARGUMENTS_BYTES, 32 * 1024 * 1024);
+        let full = "x".repeat(MAX_ARGUMENTS_BYTES);
+        let mut a = Assembler::default();
+        for idx in 0..2 {
+            a.on_payload(tool(Some(idx), Some("a"), Some("f"), Some(&full)))
+                .unwrap();
+        }
+        // Each call is under its own cap; the response is at its cap.
+        assert_eq!(
+            a.on_payload(tool(Some(2), Some("b"), Some("g"), Some("y"))),
+            Err(total_too_large())
+        );
+        // The Copilot path counts too; a full call hits its own cap first.
+        assert_eq!(
+            a.on_payload(tool(Some(3), None, None, Some("y"))),
+            Err(arguments_too_large())
+        );
+
+        let part = "p".repeat(MAX_TOTAL_ARGUMENTS_BYTES / 4);
+        let mut a = Assembler::default();
+        for idx in 0..4 {
+            a.on_payload(tool(Some(idx), Some("a"), Some("f"), Some(&part)))
+                .unwrap();
+        }
+        assert_eq!(
+            a.on_payload(tool(Some(0), None, None, Some("y"))),
+            Err(total_too_large())
+        );
+        assert_eq!(
+            a.on_payload(tool(Some(4), None, None, Some("y"))),
+            Err(total_too_large())
+        );
+        assert_eq!(
+            a.on_payload(tool(Some(5), Some("b"), Some("g"), Some("y"))),
+            Err(total_too_large())
+        );
+    }
+
+    #[test]
+    fn the_call_count_may_reach_the_cap_but_not_pass_it() {
+        assert_eq!(MAX_TOOL_CALLS, 128);
+        let mut a = Assembler::default();
+        for idx in 0..128 {
+            a.on_payload(tool(Some(idx), Some("a"), Some("f"), Some("{}")))
+                .unwrap();
+        }
+        let too_many = ProviderError::TooLarge {
+            what: "the tool calls of a response".into(),
+            limit: MAX_TOOL_CALLS,
+        };
+        assert_eq!(
+            a.on_payload(tool(Some(128), Some("b"), Some("g"), Some("{}"))),
+            Err(too_many)
+        );
+        // Deltas for a call that exists are not new calls.
+        a.on_payload(tool(Some(5), None, Some("h"), None)).unwrap();
+        a.on_payload(tool(Some(127), None, None, Some("{}")))
+            .unwrap();
+        // Neither are the repeats the Copilot path folds into the last call.
+        a.on_payload(tool(Some(200), None, None, Some("{}")))
+            .unwrap();
+        assert_eq!(a.finish().len(), 129);
+    }
+
+    /// The time `Assembler` spends on `head`, one-byte filler deltas and `tail`,
+    /// `total` bytes in all, as one call's arguments.
+    fn one_byte_deltas(head: &str, tail: &str, total: usize) -> std::time::Duration {
+        let delta = |arguments: &str, first: bool| ToolCallDelta {
+            index: Some(0),
+            id: first.then(|| "a".to_owned()),
+            function: Some(FunctionDelta {
+                name: first.then(|| "f".to_owned()),
+                arguments: Some(arguments.to_owned()),
+            }),
+        };
+        let mut a = Assembler::default();
+        let mut spent = std::time::Duration::ZERO;
+        let mut feed = |a: &mut Assembler, deltas: Vec<ToolCallDelta>| {
+            // Building the deltas is the test's cost, not the assembler's.
+            let start = std::time::Instant::now();
+            for d in deltas {
+                a.on_tool_call(d).unwrap();
+            }
+            spent += start.elapsed();
+        };
+        feed(&mut a, vec![delta(head, true)]);
+        let mut left = total - head.len() - tail.len();
+        while left > 0 {
+            let batch = left.min(4096);
+            feed(&mut a, (0..batch).map(|_| delta("x", false)).collect());
+            left -= batch;
+        }
+        feed(&mut a, vec![delta(tail, false)]);
+        assert_eq!(a.tool_calls[&0].arguments.len(), total);
+        // A closed value takes no more.
+        feed(&mut a, vec![delta("y", false)]);
+        assert_eq!(a.tool_calls[&0].arguments.len(), total);
+        spent
+    }
+
+    #[test]
+    fn sixteen_mebibytes_in_one_byte_deltas_is_fast() {
+        let limit = std::time::Duration::from_secs(2);
+        let spent = one_byte_deltas(" {\"k\":\"", "\"}", MAX_ARGUMENTS_BYTES);
+        assert!(spent < limit, "{spent:?}");
+        // Re-parsing the buffer per delta would take minutes for any of these.
+        for (head, tail) in [("\"", "\""), ("[[\"", "\"]]"), ("[\"", "\"]")] {
+            let spent = one_byte_deltas(head, tail, 1 << 20);
+            assert!(spent < limit, "{head}: {spent:?}");
+        }
+    }
+
+    /// Python's rule, as a reference: append a delta unless the buffer
+    /// already parses.
+    fn naive(deltas: &[String]) -> String {
+        let mut buf = String::new();
+        for d in deltas {
+            if buf.is_empty() || !is_json(&buf) {
+                buf.push_str(d);
+            }
+        }
+        buf
+    }
+
+    fn assembled(deltas: &[String]) -> String {
+        let mut a = Assembler::default();
+        for (n, d) in deltas.iter().enumerate() {
+            let first = n == 0;
+            let payload = tool(Some(0), first.then_some("a"), first.then_some("f"), Some(d));
+            a.on_payload(payload).unwrap();
+        }
+        a.tool_calls
+            .remove(&0)
+            .map(|b| b.arguments)
+            .unwrap_or_default()
+    }
+
+    #[test]
+    fn lazy_json_check_matches_parsing_every_delta() {
+        const PIECES: &[&str] = &[
+            "{", "}", "[", "]", "\"", "\\", ":", ",", "a", "1", "-", ".", "e", "+", " ", "\n", "t",
+            "r", "u", "true", "null", "0", "{}", "[]", "\"x\"", "\\\"", "é",
+        ];
+        let mut rng = fastrand::Rng::with_seed(7);
+        for _ in 0..30_000 {
+            let deltas: Vec<String> = (0..rng.usize(1..9))
+                .map(|_| {
+                    (0..rng.usize(1..4))
+                        .map(|_| PIECES[rng.usize(..PIECES.len())])
+                        .collect()
+                })
+                .collect();
+            assert_eq!(assembled(&deltas), naive(&deltas), "{deltas:?}");
+        }
+    }
+
+    #[test]
+    fn lazy_json_check_cases() {
+        let case = |deltas: &[&str]| {
+            let deltas: Vec<String> = deltas.iter().map(|d| (*d).to_owned()).collect();
+            let got = assembled(&deltas);
+            assert_eq!(got, naive(&deltas), "{deltas:?}");
+            got
+        };
+        assert_eq!(
+            case(&["{\"a\":\"}\\\"]\"", "}", "{}"]),
+            "{\"a\":\"}\\\"]\"}"
+        );
+        assert_eq!(case(&["\"s\"", "{}"]), "\"s\"");
+        assert_eq!(case(&["1", "2"]), "1");
+        assert_eq!(case(&["-", "1", "2"]), "-1");
+        assert_eq!(case(&["tru", "e", "x"]), "true");
+        assert_eq!(case(&["  ", " {", "}", " ", "{}"]), "   {}");
+        assert_eq!(case(&["{}x", "{}", "{}"]), "{}x{}{}");
+        assert_eq!(case(&["{,}", "}", "]"]), "{,}}]");
+        assert_eq!(case(&["{]", "1"]), "{]1");
+        assert_eq!(case(&["x", "{}"]), "x{}");
+        assert_eq!(case(&["[", "[", "]", "]", "1"]), "[[]]");
+    }
+
+    #[test]
+    fn copilot_appends_do_not_confuse_the_lazy_check() {
+        // `{}` closes, the Copilot path appends a non-space (so the buffer
+        // no longer parses), and the next delta is appended again.
+        let events = calls(vec![
+            tool(Some(0), Some("a"), Some("f"), Some("{}")),
+            tool(Some(1), None, None, Some("x")),
+            tool(Some(0), None, None, Some("y")),
+        ]);
+        assert_eq!(events, vec![done()]);
+        // A space keeps it valid, so later deltas are still dropped.
+        let events = calls(vec![
+            tool(Some(0), Some("a"), Some("f"), Some("{}")),
+            tool(Some(0), None, None, Some("{}")),
+            tool(Some(1), None, None, Some(" ")),
+            tool(Some(0), None, None, Some("{}")),
+        ]);
+        assert_eq!(events, vec![call("a", "f", json!({})), done()]);
+        // A closed number grows by Copilot appends and stays a number.
+        let events = calls(vec![
+            tool(Some(0), Some("a"), Some("f"), Some("1")),
+            tool(Some(0), None, None, Some("{}")),
+            tool(Some(1), None, None, Some("2")),
+            tool(Some(0), None, None, Some("3")),
+        ]);
+        assert_eq!(events, vec![call("a", "f", json!(12)), done()]);
     }
 
     #[test]
