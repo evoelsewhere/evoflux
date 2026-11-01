@@ -138,10 +138,12 @@ history snapshots, and Python reading the rows Rust wrote). Differences:
   `~/.password-store`, `~/.netrc`, `~/.mozilla`, `~/.cargo`, `~/.claude`,
   `~/.codex`, `~/.gem`, `~/.terraform.d`, `~/snap`, `~/.var/app`, `~/.npmrc`,
   `~/.pypirc`, `~/.git-credentials` and `~/.vscode`, and a folder with one of
-  those names directly inside a root (`<root>/.ssh`). On Windows a folder name
+  those names anywhere below a root (`<root>/sub/.ssh`, so a workspace inside a
+  `.vscode`, `Library` or `snap` folder is refused too). On Windows a folder name
   ending in `.` or a space, or containing `:`, is refused because Windows opens
-  another folder. The default workspace folder is judged without the home
-  credential folders, since it lives in `~/.local/share`. After the folder is
+  another folder. The default workspace folder is exempt from the `~/.local/share` rule
+  only, and only at `~/.local/share/evoflux-workspace`; a default that is any other
+  credential folder, or `~/.local/share/keyrings`, is ignored with a warning. After the folder is
   created the path is resolved and checked again, allowlist included, and a
   folder this request made that is then refused is removed if empty. Windows and
   macOS compare case-insensitively, Linux case-sensitively. This closes the Linux

@@ -317,24 +317,49 @@ async fn create_work_workspace(
         }
         created.push(ancestor.to_path_buf());
     }
-    tokio::fs::create_dir_all(&path)
-        .await
-        .map_err(|e| unprocessable(format!("Cannot create directory: {e}")))?;
+    // One folder at a time, each checked to be a real folder (not a link, which
+    // `create_dir_all` would follow) before the next is made inside it.
+    for folder in created.iter().rev() {
+        let made = match tokio::fs::create_dir(folder).await {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => Ok(()),
+            Err(e) => Err(unprocessable(format!("Cannot create directory: {e}"))),
+        };
+        let real = tokio::fs::symlink_metadata(folder)
+            .await
+            .is_ok_and(|meta| meta.is_dir() && !meta.file_type().is_symlink());
+        if let Err(e) = made {
+            remove_created(&created).await;
+            return Err(e);
+        }
+        if !real {
+            remove_created(&created).await;
+            return Err(unprocessable(
+                "Cannot create directory: a folder on the path is a link".to_owned(),
+            ));
+        }
+    }
     let resolved = workspace::strip_verbatim(
         tokio::fs::canonicalize(&path)
             .await
             .unwrap_or_else(|_| path.clone()),
     );
     if let Some(why) = allowed.refusal(&resolved) {
-        for folder in created {
-            // Not empty or not ours to remove: leave it.
-            if tokio::fs::remove_dir(&folder).await.is_err() {
-                break;
-            }
-        }
+        remove_created(&created).await;
         return Err(workspace_refused(why));
     }
     Ok(resolved.to_string_lossy().into_owned())
+}
+
+/// Remove the folders `create_work_workspace` found missing, deepest first
+/// (`created` is in that order), while they are empty and not links.
+async fn remove_created(created: &[PathBuf]) {
+    for folder in created {
+        // Not empty or not ours to remove: leave it.
+        if tokio::fs::remove_dir(folder).await.is_err() {
+            break;
+        }
+    }
 }
 
 pub(crate) async fn team_chat(

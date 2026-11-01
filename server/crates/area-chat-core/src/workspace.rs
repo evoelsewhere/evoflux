@@ -45,6 +45,13 @@ const HOME_SENSITIVE: [&str; 25] = [
     "NTUSER.DAT",
 ];
 
+/// The one `HOME_SENSITIVE` folder the default workspace folder may live in.
+const LOCAL_SHARE: &str = ".local/share";
+
+/// The default workspace folder, under the home folder: the only place in
+/// `LOCAL_SHARE` that is exempt from the credential folders.
+const DEFAULT_WORKSPACE: &str = ".local/share/evoflux-workspace";
+
 /// Paths compare without regard to case where the filesystem usually does.
 const CASE_INSENSITIVE: bool = cfg!(any(windows, target_os = "macos"));
 
@@ -74,6 +81,12 @@ pub(crate) struct Protected {
     config: Vec<PathBuf>,
     /// Credential folders under the home folder: equal to, inside or above is refused.
     home_sensitive: Vec<PathBuf>,
+    /// `~/.local/share`: a credential folder like the others, except for the
+    /// default workspace folder.
+    local_share: Vec<PathBuf>,
+    /// `~/.local/share/evoflux-workspace`: the one place `local_share` is not
+    /// applied to, for the default workspace folder.
+    default_workspace: Vec<PathBuf>,
 }
 
 impl Protected {
@@ -114,8 +127,17 @@ impl Protected {
 
     pub(crate) fn new(home: &Path, config_dir: &Path, system: Vec<PathBuf>) -> Self {
         let mut home_sensitive = Vec::new();
+        let mut local_share = Vec::new();
+        let mut default_workspace = Vec::new();
         if !home.as_os_str().is_empty() {
-            home_sensitive.extend(HOME_SENSITIVE.iter().map(|name| home.join(name)));
+            for name in HOME_SENSITIVE {
+                if name == LOCAL_SHARE {
+                    local_share.push(home.join(name));
+                } else {
+                    home_sensitive.push(home.join(name));
+                }
+            }
+            default_workspace.push(home.join(DEFAULT_WORKSPACE));
         }
         let both = dedup_both;
         let home_paths = if home.as_os_str().is_empty() {
@@ -139,6 +161,8 @@ impl Protected {
             system: both(system),
             config: both(vec![config_dir.to_path_buf()]),
             home_sensitive: both(home_sensitive),
+            local_share: both(local_share),
+            default_workspace: both(default_workspace),
         }
     }
 
@@ -147,10 +171,11 @@ impl Protected {
         self.refusal_with(path, true)
     }
 
-    /// [`Self::refusal`], optionally without the credential folders of the
-    /// home folder. The default workspace folder lives in `~/.local/share`, one
-    /// of them, so it is judged without them.
-    fn refusal_with(&self, path: &Path, home_credentials: bool) -> Option<&'static str> {
+    /// [`Self::refusal`] for the default workspace folder (`default`) or what is
+    /// inside it: `~/.local/share/evoflux-workspace` is exempt from the
+    /// `~/.local/share` rule and from nothing else, so `~/.local/share/keyrings`
+    /// and every other credential folder stay refused.
+    fn refusal_with(&self, path: &Path, default: bool) -> Option<&'static str> {
         let path = strip_verbatim(path.to_path_buf());
         if is_network_or_device(&path) {
             return Some("a network share or device path");
@@ -177,10 +202,9 @@ impl Protected {
         }) {
             return Some("the profiles folder or another user's profile");
         }
-        let credentials = self
-            .config
-            .iter()
-            .chain(self.home_sensitive.iter().filter(|_| home_credentials));
+        let exempt = default && self.default_workspace.iter().any(|dir| within(dir, &path));
+        let share: &[PathBuf] = if exempt { &[] } else { &self.local_share };
+        let credentials = self.config.iter().chain(&self.home_sensitive).chain(share);
         if credentials
             .into_iter()
             .any(|dir| within(dir, &path) || within(&path, dir))
@@ -200,8 +224,8 @@ pub(crate) const ALLOW_HINT: &str = "To allow a folder, add it to EVOFLUX_WORKSP
 /// One allowed root, resolved at startup.
 struct Root {
     path: PathBuf,
-    /// The default workspace folder: judged without the home credential folders
-    /// it is itself inside (`~/.local/share`).
+    /// The default workspace folder (`EVOFLUX_WORKSPACE_DIR`): exempt from the
+    /// `~/.local/share` rule only, and only at its real default location.
     default: bool,
 }
 
@@ -229,7 +253,7 @@ impl Allowed {
                 tracing::warn!(root = %raw.display(), "workspace_root_ignored_not_absolute");
                 continue;
             };
-            if let Some(why) = protected.refusal_with(&path, !default) {
+            if let Some(why) = protected.refusal_with(&path, default) {
                 tracing::warn!(root = %path.display(), why, "workspace_root_ignored_refused");
                 continue;
             }
@@ -255,7 +279,7 @@ impl Allowed {
         for root in self.roots.iter().filter(|root| within(&root.path, &path)) {
             let denied = self
                 .protected
-                .refusal_with(&path, !root.default)
+                .refusal_with(&path, root.default)
                 .or_else(|| credential_inside(&root.path, &path));
             // Clear of the denylist in one root is enough: accepted.
             reason = Some(denied?);
@@ -267,8 +291,9 @@ impl Allowed {
     }
 }
 
-/// A credential folder name directly inside `root` (`<root>/.ssh`), whatever
-/// the root is.
+/// A credential folder name anywhere below `root` (`<root>/sub/.ssh`,
+/// `<root>/backup/Users/old/.aws`), whatever the root is. A name of two parts
+/// (`.local/share`) matches two consecutive folders.
 fn credential_inside(root: &Path, path: &Path) -> Option<&'static str> {
     let relative = parts(path).split_off(parts(root).len());
     HOME_SENSITIVE
@@ -278,7 +303,7 @@ fn credential_inside(root: &Path, path: &Path) -> Option<&'static str> {
                 .split('/')
                 .map(|part| fold(part, CASE_INSENSITIVE))
                 .collect();
-            relative.starts_with(&name)
+            relative.windows(name.len()).any(|window| window == name)
         })
         .then_some("a credentials or configuration folder")
 }
@@ -861,13 +886,44 @@ mod tests {
         }
         assert!(allowed.refusal(&home.join("data").join("a")).is_none());
         assert!(allowed.refusal(&projects.join(".sshx")).is_none());
-        // Only a folder directly in a root counts: a project may hold its own .vscode.
-        assert!(allowed
-            .refusal(&home.join("data").join("a").join(".vscode"))
-            .is_none());
         assert!(allowed
             .refusal(&projects.join(".local").join("bin"))
             .is_none());
+    }
+
+    #[test]
+    fn a_credential_folder_deeper_below_a_root_is_refused() {
+        let (_dir, root, _guard) = protected();
+        let home = root.join("home");
+        let data = home.join("data");
+        let allowed = allowed(&home, std::slice::from_ref(&data));
+        let refused = Some("a credentials or configuration folder");
+        for dir in [
+            data.join("sub").join(".ssh"),
+            data.join("sub").join(".ssh").join("keys"),
+            data.join("backup").join("Users").join("old").join(".aws"),
+            data.join("a").join("b").join(".gnupg").join("x"),
+            data.join("a").join(".local").join("share").join("x"),
+            data.join("a").join(".vscode"),
+        ] {
+            assert_eq!(allowed.refusal(&dir), refused, "{}", dir.display());
+        }
+        // Whole names only, and a folder that merely holds them is fine.
+        for dir in [
+            data.join("sub").join(".sshx"),
+            data.join("sub").join("ssh"),
+            data.join("sub").join(".local").join("bin"),
+            data.join("sub").join("share"),
+        ] {
+            assert_eq!(allowed.refusal(&dir), None, "{}", dir.display());
+        }
+        if CASE_INSENSITIVE {
+            assert_eq!(allowed.refusal(&data.join("sub").join(".SSH")), refused);
+            assert_eq!(
+                allowed.refusal(&data.join("sub").join(".Aws").join("x")),
+                refused
+            );
+        }
     }
 
     #[test]
@@ -910,6 +966,62 @@ mod tests {
         assert!(allowed.refusal(&share).is_some());
         assert!(allowed.refusal(&share.join("keyrings")).is_some());
         assert!(allowed.refusal(&default.join(".ssh")).is_some());
+        assert!(allowed
+            .refusal(&default.join("a").join("b").join(".aws"))
+            .is_some());
+    }
+
+    /// The allowlist with `dir` as `EVOFLUX_WORKSPACE_DIR` and no other root.
+    fn allowed_default(home: &Path, dir: &Path) -> Allowed {
+        let config = home.with_file_name("evoflux-config");
+        let vars = std::collections::HashMap::from([
+            (
+                "EVOFLUX_CONFIG_DIR".to_owned(),
+                config.to_string_lossy().into_owned(),
+            ),
+            (
+                "EVOFLUX_WORKSPACE_DIR".to_owned(),
+                dir.to_string_lossy().into_owned(),
+            ),
+        ]);
+        let settings = Settings::from_vars(&vars, Some(home), &config).unwrap();
+        Allowed::current(&settings)
+    }
+
+    #[test]
+    fn a_default_workspace_dir_is_not_exempt_from_the_other_credential_folders() {
+        let (_dir, root, _guard) = protected();
+        let home = root.join("home");
+        let share = home.join(".local").join("share");
+        for dir in [
+            home.join(".ssh"),
+            home.join(".aws").join("x"),
+            home.join(".gnupg"),
+            home.join(".config").join("evoflux"),
+            home.join(".claude"),
+            share.clone(),
+            share.join("keyrings"),
+            share.join("keyrings").join("x"),
+            home.join(".local"),
+            home.clone(),
+            root.join("evoflux-config").join("ws"),
+        ] {
+            let allowed = allowed_default(&home, &dir);
+            assert!(allowed.roots.is_empty(), "{}", dir.display());
+            assert!(
+                allowed.refusal(&dir.join("sid")).is_some(),
+                "{}",
+                dir.display()
+            );
+        }
+        // The real default is still the one allowed place under `~/.local/share`.
+        let allowed = allowed_default(&home, &share.join("evoflux-workspace"));
+        assert_eq!(allowed.roots.len(), 1);
+        assert_eq!(
+            allowed.refusal(&share.join("evoflux-workspace").join("s")),
+            None
+        );
+        assert!(allowed.refusal(&share.join("keyrings")).is_some());
     }
 
     #[test]
