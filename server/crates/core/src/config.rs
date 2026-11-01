@@ -2,7 +2,7 @@
 //!
 //! Only the variables the Rust server needs are modelled. Like Python, values
 //! come from the process environment, then `~/.config/evoflux/.env`, then
-//! `./.env` (earlier wins).
+//! `./.env` (earlier wins); the files only set the fields Python declares.
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
@@ -15,6 +15,70 @@ pub enum ConfigError {
     #[error("cannot determine the working directory: {0}")]
     CurrentDir(#[from] std::io::Error),
 }
+
+/// Every field declared on Python's `Settings`, the only names a `.env` file
+/// can set. A test checks this list against `app/core/config.py`.
+pub const PYTHON_SETTINGS_FIELDS: &[&str] = &[
+    "ZAI_API_KEY",
+    "GOOGLE_API_KEY",
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_BASE_URL",
+    "OPENAI_API_KEY",
+    "OPENAI_BASE_URL",
+    "DASHSCOPE_API_KEY",
+    "DASHSCOPE_BASE_URL",
+    "OPENROUTER_API_KEY",
+    "NVIDIA_API_KEY",
+    "XAI_API_KEY",
+    "DEEPSEEK_API_KEY",
+    "XIAOMI_API_KEY",
+    "XIAOMI_BASE_URL",
+    "OPENCODE_API_KEY",
+    "OPENCODE_BASE_URL",
+    "OPENCODE_GO_API_KEY",
+    "OPENCODE_GO_BASE_URL",
+    "STEPFUN_API_KEY",
+    "STEPFUN_BASE_URL",
+    "MOONSHOT_API_KEY",
+    "MOONSHOT_BASE_URL",
+    "KIMI_CODE_K3_CONTEXT_WINDOW",
+    "FCI_API_KEY",
+    "FCI_BASE_URL",
+    "FOUNDRY_API_KEY",
+    "FOUNDRY_RESOURCE_NAME",
+    "NINJA_API_KEY",
+    "AWS_BEDROCK_REGION",
+    "AWS_BEDROCK_PROFILE",
+    "ROUTER9_API_KEY",
+    "ROUTER9_BASE_URL",
+    "CLIPROXY_API_KEY",
+    "CLIPROXY_BASE_URL",
+    "OLLAMA_API_KEY",
+    "OLLAMA_BASE_URL",
+    "VERTEXAI_API_KEY",
+    "GOOGLE_CLOUD_PROJECT",
+    "GOOGLE_CLOUD_LOCATION",
+    "APP_ENV",
+    "SSL_VERIFY",
+    "API_HOST",
+    "API_PORT",
+    "API_RELOAD",
+    "CORS_ORIGINS",
+    "EVOFLUX_DATA_DIR",
+    "EVOFLUX_CONFIG_DIR",
+    "EVOFLUX_STATE_DIR",
+    "EVOFLUX_CACHE_DIR",
+    "EVOFLUX_WORKSPACE_DIR",
+    "EVOFLUX_MODEL_REGISTRY_REFRESH",
+    "EVOFLUX_MODEL_REGISTRY_REFRESH_INTERVAL_HOURS",
+    "AGENTS_DIR",
+    "SKILLS_DIR",
+    "EVOFLUX_PLUGINS_DIRS",
+    "LOG_LEVEL",
+    "WEB_FETCH_ALLOW_PRIVATE_NETWORK",
+    "DATABASE_URL",
+    "EVOFLUX_WIKI_DIR",
+];
 
 /// A `SecretStr` setting: `Debug` never prints the value.
 #[derive(Clone, PartialEq, Eq)]
@@ -82,9 +146,15 @@ impl Settings {
             files.push(home.join(".config").join("evoflux").join(".env"));
         }
         // Later files win over earlier ones; the process environment wins over both.
+        // Like pydantic's `extra="ignore"`, a `.env` file only sets declared
+        // fields: any other name (`MISTRAL_BASE_URL`, ...) comes from the
+        // process environment alone.
         for file in files {
             for (key, value) in read_dotenv(&file) {
-                merged.insert(key.to_uppercase(), value);
+                let key = key.to_uppercase();
+                if PYTHON_SETTINGS_FIELDS.contains(&key.as_str()) {
+                    merged.insert(key, value);
+                }
             }
         }
         for (key, value) in vars {

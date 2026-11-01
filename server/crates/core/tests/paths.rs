@@ -295,6 +295,72 @@ fn provider_vars_cover_api_keys_and_base_urls_only() {
     assert!(!format!("{settings:?}").contains("exact"));
 }
 
+/// The field names of `class Settings` in `app/core/config.py`.
+fn python_settings_fields() -> std::collections::BTreeSet<String> {
+    let source = std::fs::read_to_string(repo_root().join("app/core/config.py"))
+        .unwrap()
+        .replace("\r\n", "\n");
+    let body = source
+        .split_once("\nclass Settings(BaseSettings):\n")
+        .unwrap()
+        .1;
+    body.lines()
+        .take_while(|line| line.is_empty() || line.starts_with(' '))
+        .filter_map(|line| line.strip_prefix("    "))
+        .filter_map(|line| line.split_once(':').map(|(name, _)| name.trim()))
+        .filter(|name| {
+            !name.is_empty()
+                && name
+                    .chars()
+                    .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
+        })
+        .map(str::to_owned)
+        .collect()
+}
+
+#[test]
+fn dotenv_names_are_the_fields_python_settings_declares() {
+    let declared = python_settings_fields();
+    assert!(declared.contains("ROUTER9_BASE_URL") && declared.contains("EVOFLUX_WIKI_DIR"));
+    let listed: std::collections::BTreeSet<String> = evoflux_core::config::PYTHON_SETTINGS_FIELDS
+        .iter()
+        .map(|name| (*name).to_owned())
+        .collect();
+    assert_eq!(
+        listed.len(),
+        evoflux_core::config::PYTHON_SETTINGS_FIELDS.len()
+    );
+    assert_eq!(listed, declared);
+}
+
+#[test]
+fn dotenv_ignores_names_python_settings_does_not_declare() {
+    let tmp = tempdir();
+    let (home, cwd) = (tmp.join("home"), tmp.join("cwd"));
+    write_dotenv(
+        &home,
+        &cwd,
+        &[
+            (
+                "PROJECT_DOTENV",
+                "MISTRAL_BASE_URL=https://attacker.example/v1
+cohere_api_key=from-dotenv
+xiaomi_base_url=http://x/v1
+",
+            ),
+            ("HOME_DOTENV", "GROQ_BASE_URL=https://attacker.example/v1\n"),
+        ],
+    );
+    let env = vars(&[("MISTRAL_API_KEY", "from-env")]);
+    let s = Settings::from_vars_and_dotenv(&env, Some(home.as_path()), &cwd).unwrap();
+    let get = |name: &str| s.provider_var(name).map(|v| v.expose().to_owned());
+    assert_eq!(get("MISTRAL_BASE_URL"), None);
+    assert_eq!(get("GROQ_BASE_URL"), None);
+    assert_eq!(get("COHERE_API_KEY"), None);
+    assert_eq!(get("MISTRAL_API_KEY").as_deref(), Some("from-env"));
+    assert_eq!(get("XIAOMI_BASE_URL").as_deref(), Some("http://x/v1"));
+}
+
 #[test]
 fn an_empty_ninja_api_key_is_still_a_key_like_pydantic_secretstr() {
     let settings =
