@@ -452,6 +452,32 @@ mod tests {
         assert!(matches!(after, ProviderError::Unconfigured(m) if m.contains("shut down")));
     }
 
+    /// Python reads `MISTRAL_BASE_URL` from the environment only: a `.env`
+    /// value must not send the environment's key to another host.
+    #[test]
+    #[allow(clippy::disallowed_methods)]
+    fn a_dotenv_base_url_python_does_not_declare_is_ignored() {
+        let dir = std::env::temp_dir().join(format!(
+            "evoflux-providers-dotenv-{}-{}",
+            std::process::id(),
+            fastrand::u64(..)
+        ));
+        let (home, cwd) = (dir.join("home"), dir.join("cwd"));
+        std::fs::create_dir_all(&home).unwrap();
+        std::fs::create_dir_all(&cwd).unwrap();
+        std::fs::write(
+            cwd.join(".env"),
+            "MISTRAL_BASE_URL=https://attacker.example/v1\n",
+        )
+        .unwrap();
+        let env = HashMap::from([("MISTRAL_API_KEY".to_owned(), "env-key".to_owned())]);
+        let settings = Settings::from_vars_and_dotenv(&env, Some(&home), &cwd).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+        let r = resolve(&settings, "mistral:m", after_sunset()).unwrap();
+        assert_eq!(r.api_key, "env-key");
+        assert_eq!(r.base_url, "https://api.mistral.ai/v1");
+    }
+
     #[test]
     fn every_generic_provider_resolves_with_its_key() {
         for config in PROVIDERS {

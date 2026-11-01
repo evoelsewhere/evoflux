@@ -232,6 +232,179 @@ async fn an_error_status_carries_body_and_retry_after() {
     assert_eq!(error.kind(), "HTTPStatusError");
 }
 
+/// A server that answers every request with `head`, `prefix`, then `period`
+/// repeated until the client hangs up.
+async fn endless_server(head: &'static [u8], prefix: Vec<u8>, period: Vec<u8>) -> String {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let batch = period.repeat((1 << 16) / period.len() + 1);
+    tokio::spawn(async move {
+        loop {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let (prefix, batch) = (prefix.clone(), batch.clone());
+            tokio::spawn(async move {
+                let mut buf = vec![0u8; 65536];
+                let _ = socket.read(&mut buf).await;
+                let _ = socket.write_all(head).await;
+                let _ = socket.write_all(&prefix).await;
+                while socket.write_all(&batch).await.is_ok() {}
+            });
+        }
+    });
+    format!("http://{addr}/v1")
+}
+
+/// Deflate bits, least significant first.
+#[derive(Default)]
+struct Bits {
+    bytes: Vec<u8>,
+    used: usize,
+}
+
+impl Bits {
+    fn put(&mut self, value: u32, count: usize) {
+        for i in 0..count {
+            if self.used.is_multiple_of(8) {
+                self.bytes.push(0);
+            }
+            if value >> i & 1 == 1 {
+                *self.bytes.last_mut().unwrap() |= 1 << (self.used % 8);
+            }
+            self.used += 1;
+        }
+    }
+
+    /// A Huffman code, most significant bit first.
+    fn code(&mut self, code: u32, count: usize) {
+        for i in (0..count).rev() {
+            self.put(code >> i & 1, 1);
+        }
+    }
+}
+
+/// A gzip stream that never ends and inflates to NUL bytes, about 160 times
+/// its size: a fixed-Huffman block with one literal 0, then copies of 258
+/// bytes at distance 1 (13 bits each), so the bytes repeat every 13.
+fn gzip_bomb() -> (Vec<u8>, Vec<u8>) {
+    let mut bits = Bits::default();
+    bits.put(0, 1); // not the final block
+    bits.put(1, 2); // fixed Huffman codes
+    bits.code(0b0011_0000, 8); // literal 0
+    for _ in 0..16 {
+        bits.code(0b1100_0101, 8); // length 258
+        bits.code(0, 5); // distance 1
+    }
+    let mut prefix = vec![0x1f, 0x8b, 8, 0, 0, 0, 0, 0, 0, 0xff];
+    prefix.extend_from_slice(&bits.bytes[..2]);
+    (prefix, bits.bytes[2..15].to_vec())
+}
+
+const LIMIT: Duration = Duration::from_secs(30);
+
+#[tokio::test]
+async fn an_endless_gzip_line_ends_the_stream_too_large() {
+    let (prefix, period) = gzip_bomb();
+    let head =
+        b"HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ncontent-encoding: gzip\r\n\r\n";
+    let url = endless_server(head, prefix, period).await;
+    let p = provider("router9", url, evoflux_net::build_client().unwrap());
+    let events = tokio::time::timeout(LIMIT, drain(&p, request("", Value::Null)))
+        .await
+        .unwrap();
+    assert_eq!(
+        events,
+        vec![Err(ProviderError::TooLarge {
+            what: "an SSE line".into(),
+            limit: crate::stream::MAX_LINE_BYTES,
+        })]
+    );
+}
+
+#[tokio::test]
+async fn endless_tool_call_arguments_end_the_stream_too_large() {
+    let line = |args: &str| {
+        let delta = serde_json::json!({"tool_calls": [{"index": 0, "id": "a", "function": {"name": "f", "arguments": args}}]});
+        let chunk = serde_json::json!({"id": "c", "created": 1, "model": "m", "choices": [{"index": 0, "delta": delta}]});
+        format!("data: {chunk}\n\n").into_bytes()
+    };
+    let head = b"HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\n\r\n";
+    let url = endless_server(head, line("x"), line(&"a".repeat(1 << 16))).await;
+    let p = provider("router9", url, evoflux_net::build_client().unwrap());
+    let events = tokio::time::timeout(LIMIT, drain(&p, request("", Value::Null)))
+        .await
+        .unwrap();
+    assert_eq!(
+        events,
+        vec![Err(ProviderError::TooLarge {
+            what: "a tool call's arguments".into(),
+            limit: crate::stream::MAX_ARGUMENTS_BYTES,
+        })]
+    );
+}
+
+#[tokio::test]
+async fn an_error_body_is_read_up_to_its_cap() {
+    let (prefix, period) = gzip_bomb();
+    let head = b"HTTP/1.1 500 Internal Server Error\r\ncontent-encoding: gzip\r\n\r\n";
+    let url = endless_server(head, prefix, period).await;
+    let p = provider("router9", url, evoflux_net::build_client().unwrap());
+    let error = tokio::time::timeout(LIMIT, p.stream(request("", Value::Null)))
+        .await
+        .unwrap()
+        .err()
+        .unwrap();
+    assert_eq!(MAX_ERROR_BODY_BYTES, 64 * 1024);
+    assert_eq!(
+        error,
+        ProviderError::Status {
+            status: 500,
+            body: "\0".repeat(MAX_ERROR_BODY_BYTES),
+            retry_after: None,
+        }
+    );
+
+    // A body exactly at the cap is kept whole.
+    let mut reply =
+        format!("HTTP/1.1 400 Bad Request\r\ncontent-length: {MAX_ERROR_BODY_BYTES}\r\n\r\n")
+            .into_bytes();
+    reply.extend(vec![b'e'; MAX_ERROR_BODY_BYTES]);
+    let p = provider(
+        "router9",
+        raw_server(reply.leak()).await,
+        evoflux_net::build_client().unwrap(),
+    );
+    let error = p.stream(request("", Value::Null)).await.err().unwrap();
+    assert!(
+        matches!(error, ProviderError::Status { body, .. } if body == "e".repeat(MAX_ERROR_BODY_BYTES))
+    );
+
+    // A full body is not read further: a server that then stalls is not awaited.
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        let (mut socket, _) = listener.accept().await.unwrap();
+        let mut buf = vec![0u8; 65536];
+        let _ = socket.read(&mut buf).await;
+        let mut reply = b"HTTP/1.1 400 Bad Request\r\n\r\n".to_vec();
+        reply.extend(vec![b'f'; MAX_ERROR_BODY_BYTES]);
+        let _ = socket.write_all(&reply).await;
+        tokio::time::sleep(Duration::from_secs(60)).await;
+    });
+    let p = provider(
+        "router9",
+        format!("http://{addr}/v1"),
+        evoflux_net::build_client().unwrap(),
+    );
+    let error = tokio::time::timeout(Duration::from_secs(5), p.stream(request("", Value::Null)))
+        .await
+        .unwrap()
+        .err()
+        .unwrap();
+    assert!(
+        matches!(error, ProviderError::Status { body, .. } if body == "f".repeat(MAX_ERROR_BODY_BYTES))
+    );
+}
+
 #[tokio::test]
 async fn a_redirect_is_read_as_an_empty_stream() {
     let reply = b"HTTP/1.1 307 Temporary Redirect\r\nlocation: /x\r\ncontent-length: 0\r\n\r\n";

@@ -40,6 +40,19 @@ pub fn classify_line(line: &str) -> SseLine {
     }
 }
 
+/// The longest SSE line buffered, in bytes; Python has no cap.
+pub const MAX_LINE_BYTES: usize = 16 << 20;
+
+/// The longest arguments of one tool call, in bytes; Python has no cap.
+pub const MAX_ARGUMENTS_BYTES: usize = 16 << 20;
+
+fn too_large(what: &str, limit: usize) -> ProviderError {
+    ProviderError::TooLarge {
+        what: what.to_owned(),
+        limit,
+    }
+}
+
 /// Splits a byte stream into lines like `httpx`'s `aiter_lines` (`\n`, `\r\n`
 /// and `\r` all end a line). The empty lines a `\r\n` split leaves are blank,
 /// and blank lines mean nothing to the SSE parser.
@@ -49,17 +62,27 @@ pub struct LineSplitter {
 }
 
 impl LineSplitter {
-    pub fn push(&mut self, bytes: &[u8]) -> Vec<String> {
+    /// The lines `bytes` completes. A line over [`MAX_LINE_BYTES`] ends the
+    /// list with an error, after the lines before it.
+    pub fn push(&mut self, bytes: &[u8]) -> Vec<Result<String, ProviderError>> {
         let mut lines = Vec::new();
-        for byte in bytes {
-            if matches!(byte, b'\n' | b'\r') {
-                lines.push(String::from_utf8_lossy(&self.pending).into_owned());
-                self.pending.clear();
-            } else {
-                self.pending.push(*byte);
+        let mut rest = bytes;
+        loop {
+            let end = rest.iter().position(|b| matches!(b, b'\n' | b'\r'));
+            let part = end.map_or(rest, |end| rest.get(..end).unwrap_or_default());
+            if self.pending.len() + part.len() > MAX_LINE_BYTES {
+                self.pending = Vec::new();
+                lines.push(Err(too_large("an SSE line", MAX_LINE_BYTES)));
+                return lines;
             }
+            self.pending.extend_from_slice(part);
+            let Some(end) = end else {
+                return lines;
+            };
+            lines.push(Ok(String::from_utf8_lossy(&self.pending).into_owned()));
+            self.pending.clear();
+            rest = rest.get(end + 1..).unwrap_or_default();
         }
-        lines
     }
 
     /// The unterminated last line, at the end of the body.
@@ -237,6 +260,15 @@ fn is_index_collision(existing_id: &str, new_id: &str) -> bool {
     !existing_id.is_empty() && new_id != existing_id
 }
 
+/// Grow one call's arguments, up to [`MAX_ARGUMENTS_BYTES`].
+fn append_arguments(arguments: &mut String, more: &str) -> Result<(), ProviderError> {
+    if arguments.len() + more.len() > MAX_ARGUMENTS_BYTES {
+        return Err(too_large("a tool call's arguments", MAX_ARGUMENTS_BYTES));
+    }
+    arguments.push_str(more);
+    Ok(())
+}
+
 fn is_json(text: &str) -> bool {
     serde_json::from_str::<Value>(text).is_ok()
 }
@@ -270,7 +302,7 @@ impl Assembler {
                 events.push(ProviderEvent::TextDelta(content));
             }
             for tc in delta.tool_calls.unwrap_or_default() {
-                self.on_tool_call(tc);
+                self.on_tool_call(tc)?;
             }
             if let Some(reason) = choice.finish_reason.filter(|r| !r.is_empty()) {
                 self.finish_reason = Some(reason);
@@ -282,7 +314,7 @@ impl Assembler {
         Ok(events)
     }
 
-    fn on_tool_call(&mut self, tc: ToolCallDelta) {
+    fn on_tool_call(&mut self, tc: ToolCallDelta) -> Result<(), ProviderError> {
         let idx = tc.index.unwrap_or(0);
         let id = tc.id.filter(|id| !id.is_empty());
         let name = tc
@@ -313,21 +345,20 @@ impl Assembler {
                 if let Some(last) = self.tool_calls.values_mut().next_back() {
                     if let Some(args) = arguments {
                         if args != last.arguments {
-                            last.arguments.push_str(&args);
+                            append_arguments(&mut last.arguments, &args)?;
                         }
                     }
-                    return;
+                    return Ok(());
                 }
             }
-            self.tool_calls.insert(
-                idx,
-                ToolBuffer {
-                    id: id.unwrap_or_default(),
-                    name: name.unwrap_or_default(),
-                    arguments: arguments.unwrap_or_default(),
-                },
-            );
-            return;
+            let mut buf = ToolBuffer {
+                id: id.unwrap_or_default(),
+                name: name.unwrap_or_default(),
+                arguments: String::new(),
+            };
+            append_arguments(&mut buf.arguments, &arguments.unwrap_or_default())?;
+            self.tool_calls.insert(idx, buf);
+            return Ok(());
         }
         let previous_unnamed = idx > 0
             && last_idx == Some(idx)
@@ -336,7 +367,7 @@ impl Assembler {
                 .get(&(idx - 1))
                 .is_some_and(|prev| prev.name.is_empty());
         let Some(buf) = self.tool_calls.get_mut(&idx) else {
-            return;
+            return Ok(());
         };
         // Only the first id wins.
         if let Some(id) = id {
@@ -357,13 +388,12 @@ impl Assembler {
         }
         if let Some(args) = arguments {
             if let Some(buf) = self.tool_calls.get_mut(&idx) {
-                if buf.arguments.is_empty() {
-                    buf.arguments = args;
-                } else if !is_json(&buf.arguments) {
-                    buf.arguments.push_str(&args);
+                if buf.arguments.is_empty() || !is_json(&buf.arguments) {
+                    append_arguments(&mut buf.arguments, &args)?;
                 }
             }
         }
+        Ok(())
     }
 
     /// The assembled tool calls and `Done`. Half-formed calls are dropped: no
@@ -442,8 +472,14 @@ pub struct EventDecoder {
 impl EventDecoder {
     /// Feed body bytes.
     pub fn push(&mut self, bytes: &[u8]) {
+        if self.done {
+            return;
+        }
         for line in self.lines.push(bytes) {
-            self.on_line(&line);
+            match line {
+                Ok(line) => self.on_line(&line),
+                Err(error) => self.fail(error),
+            }
         }
     }
 
@@ -542,14 +578,120 @@ mod tests {
         }
     }
 
+    fn ok_lines(lines: &[&str]) -> Vec<Result<String, ProviderError>> {
+        lines.iter().map(|l| Ok((*l).to_owned())).collect()
+    }
+
     #[test]
     fn lines_split_on_every_terminator() {
         let mut s = LineSplitter::default();
-        assert_eq!(s.push(b"a\r\nb"), vec!["a", ""]);
-        assert_eq!(s.push(b"c\rd\n"), vec!["bc", "d"]);
-        assert_eq!(s.push(b"tail"), Vec::<String>::new());
+        assert_eq!(s.push(b"a\r\nb"), ok_lines(&["a", ""]));
+        assert_eq!(s.push(b"c\rd\n"), ok_lines(&["bc", "d"]));
+        assert_eq!(s.push(b"tail"), ok_lines(&[]));
         assert_eq!(s.finish().as_deref(), Some("tail"));
         assert_eq!(s.finish(), None);
+    }
+
+    fn line_too_large() -> ProviderError {
+        ProviderError::TooLarge {
+            what: "an SSE line".into(),
+            limit: MAX_LINE_BYTES,
+        }
+    }
+
+    #[test]
+    fn a_line_may_reach_the_cap_but_not_pass_it() {
+        assert_eq!(MAX_LINE_BYTES, 16 * 1024 * 1024);
+        let mut s = LineSplitter::default();
+        let half = vec![b'x'; MAX_LINE_BYTES / 2];
+        assert_eq!(s.push(&half), ok_lines(&[]));
+        let mut rest = half.clone();
+        rest.extend_from_slice(b"\nab");
+        let lines = s.push(&rest);
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0].as_ref().map(String::len), Ok(MAX_LINE_BYTES));
+
+        // "ab" is pending: two lines complete before one byte too many fails.
+        let mut over = b"c\nd\n".to_vec();
+        over.extend(vec![b'y'; MAX_LINE_BYTES]);
+        over.extend_from_slice(b"\nnever");
+        let lines = s.push(&over);
+        let y = "y".repeat(MAX_LINE_BYTES);
+        assert_eq!(lines, ok_lines(&["abc", "d", &y]));
+        let mut s = LineSplitter::default();
+        s.push(b"z");
+        let lines = s.push(&vec![b'y'; MAX_LINE_BYTES]);
+        assert_eq!(lines, vec![Err(line_too_large())]);
+        assert_eq!(s.finish(), None);
+    }
+
+    #[test]
+    fn decoder_ends_with_an_error_on_an_over_long_line() {
+        let mut d = EventDecoder::default();
+        let mut body = format!("data: {}\n", chunk(json!({"content": "a"}))).into_bytes();
+        body.extend(vec![b' '; MAX_LINE_BYTES + 1]);
+        d.push(&body);
+        assert!(d.is_done());
+        d.finish();
+        assert_eq!(d.pop(), Some(Ok(ProviderEvent::TextDelta("a".into()))));
+        assert_eq!(d.pop(), Some(Err(line_too_large())));
+        assert_eq!(d.pop(), None);
+
+        // After `[DONE]` the rest of the body is not even buffered.
+        let mut d = EventDecoder::default();
+        d.push(b"data: [DONE]\n");
+        d.push(&vec![b' '; MAX_LINE_BYTES + 1]);
+        d.finish();
+        assert_eq!(d.pop(), Some(Ok(done())));
+        assert_eq!(d.pop(), None);
+    }
+
+    fn arguments_too_large() -> ProviderError {
+        ProviderError::TooLarge {
+            what: "a tool call's arguments".into(),
+            limit: MAX_ARGUMENTS_BYTES,
+        }
+    }
+
+    #[test]
+    fn arguments_may_reach_the_cap_but_not_pass_it() {
+        assert_eq!(MAX_ARGUMENTS_BYTES, 16 * 1024 * 1024);
+        let half = "x".repeat(MAX_ARGUMENTS_BYTES / 2);
+        // Appending to an existing call.
+        let mut a = Assembler::default();
+        a.on_payload(tool(Some(0), Some("a"), Some("f"), Some(&half)))
+            .unwrap();
+        a.on_payload(tool(Some(0), None, None, Some(&half)))
+            .unwrap();
+        assert_eq!(
+            a.on_payload(tool(Some(0), None, None, Some("y"))),
+            Err(arguments_too_large())
+        );
+        // The Copilot path: a new index with no id or name.
+        let mut a = Assembler::default();
+        a.on_payload(tool(Some(0), Some("a"), Some("f"), Some(&half)))
+            .unwrap();
+        a.on_payload(tool(Some(1), None, None, Some(&format!("{half}y"))))
+            .unwrap_err();
+        let mut a = Assembler::default();
+        a.on_payload(tool(Some(0), Some("a"), Some("f"), Some(&half)))
+            .unwrap();
+        a.on_payload(tool(Some(1), None, None, Some(&half)))
+            .unwrap();
+        // A first delta that is already too long.
+        let mut a = Assembler::default();
+        let full = "z".repeat(MAX_ARGUMENTS_BYTES);
+        a.on_payload(tool(Some(0), Some("a"), Some("f"), Some(&full)))
+            .unwrap();
+        assert_eq!(
+            a.on_payload(tool(
+                Some(1),
+                Some("b"),
+                Some("g"),
+                Some(&format!("{full}z"))
+            )),
+            Err(arguments_too_large())
+        );
     }
 
     #[test]

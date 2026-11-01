@@ -24,7 +24,7 @@ pub enum ProviderError {
     #[error("provider returned HTTP {status}")]
     Status {
         status: u16,
-        /// The response text, read in full like `response.text`.
+        /// The response text, up to `MAX_ERROR_BODY_BYTES` (Python reads it all).
         body: String,
         /// The raw `Retry-After` header, if any.
         retry_after: Option<String>,
@@ -65,6 +65,10 @@ pub enum ProviderError {
     /// `ProviderRateLimitError`: every provider stayed rate-limited.
     #[error("All configured LLM providers are rate-limited or quota-exhausted.")]
     RateLimited,
+    /// The stream sent more than this server buffers (an SSE line or one
+    /// tool call's arguments over its cap). Python has no cap; not retried.
+    #[error("The provider response was too large: {what} exceeded {limit} bytes.")]
+    TooLarge { what: String, limit: usize },
 }
 
 impl ProviderError {
@@ -81,6 +85,7 @@ impl ProviderError {
             Self::ContextOverflow { .. } => "ContextOverflowError",
             Self::Request { .. } => "ProviderRequestError",
             Self::RateLimited => "ProviderRateLimitError",
+            Self::TooLarge { .. } => "ResponseTooLarge",
         }
     }
 
@@ -167,6 +172,14 @@ mod tests {
                 Some(418),
             ),
             (E::RateLimited, "ProviderRateLimitError", None),
+            (
+                E::TooLarge {
+                    what: "an SSE line".into(),
+                    limit: 1,
+                },
+                "ResponseTooLarge",
+                None,
+            ),
         ];
         for (error, kind, status) in cases {
             assert_eq!(error.kind(), kind, "{error:?}");

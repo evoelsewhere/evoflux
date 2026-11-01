@@ -19,6 +19,9 @@ pub const STREAM_TIMEOUT: Duration = Duration::from_secs(120);
 /// How much of an error body is logged (`err_body[:500]`).
 const LOGGED_BODY_CHARS: usize = 500;
 
+/// The most of an error body read, in bytes after decompression; Python has no cap.
+pub const MAX_ERROR_BODY_BYTES: usize = 64 << 10;
+
 /// An OpenAI-compatible Chat Completions provider (`ChatCompletionsOnlyProvider`,
 /// `Router9Provider`, `XiaomiProvider`).
 pub struct CompatibleProvider {
@@ -133,10 +136,7 @@ impl Provider for CompatibleProvider {
                 .get("retry-after")
                 .and_then(|v| v.to_str().ok())
                 .map(str::to_owned);
-            let body = response
-                .text()
-                .await
-                .map_err(|e| transport_error(&e, true))?;
+            let body = error_body(response).await?;
             let logged: String = body.chars().take(LOGGED_BODY_CHARS).collect();
             tracing::error!(status, body = logged, "openai_stream_error");
             return Err(ProviderError::Status {
@@ -150,6 +150,22 @@ impl Provider for CompatibleProvider {
             .map(|chunk| chunk.map_err(|e| transport_error(&e, true)));
         Ok(events(body))
     }
+}
+
+/// The first [`MAX_ERROR_BODY_BYTES`] of an error body, after decompression,
+/// as lossy UTF-8; the rest is never read. Python reads it all (`response.text`).
+async fn error_body(response: reqwest::Response) -> Result<String, ProviderError> {
+    let mut body = Vec::new();
+    let mut chunks = response.bytes_stream();
+    while body.len() < MAX_ERROR_BODY_BYTES {
+        let Some(chunk) = chunks.next().await else {
+            break;
+        };
+        let chunk = chunk.map_err(|e| transport_error(&e, true))?;
+        body.extend_from_slice(&chunk);
+    }
+    body.truncate(MAX_ERROR_BODY_BYTES);
+    Ok(String::from_utf8_lossy(&body).into_owned())
 }
 
 /// Decode a response body into provider events. A body error ends the
