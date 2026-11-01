@@ -1,0 +1,102 @@
+{
+  "content_sha256": "11c763b618d1c01bce4c2fd64dc2d247a6ac226187bf44a9f223967fa1e866bf",
+  "diagnostics": [],
+  "extension_namespaces": [],
+  "manifest": {
+    "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+    "author": null,
+    "description": "The alpha plugin.",
+    "extensions": {},
+    "homepage": null,
+    "keywords": null,
+    "license": null,
+    "name": "alpha",
+    "repository": null,
+    "version": "1.0.0"
+  },
+  "mcp_servers": [
+    {
+      "config": {
+        "headers": {
+          "Authorization": "[REDACTED]"
+        },
+        "type": "streamable-http",
+        "url": "https://example.com/mcp?token=%5BREDACTED%5D&x=%5BREDACTED%5D"
+      },
+      "diagnostics": [],
+      "name": "remote",
+      "transport": "streamable-http",
+      "valid": true
+    },
+    {
+      "config": {
+        "args": [
+          "server.js",
+          "--token",
+          "[REDACTED]",
+          "--api-key=[REDACTED]"
+        ],
+        "command": "node",
+        "cwd": null,
+        "env": {
+          "API_TOKEN": "[REDACTED]"
+        },
+        "type": "stdio"
+      },
+      "diagnostics": [],
+      "name": "local",
+      "transport": "stdio",
+      "valid": true
+    }
+  ],
+  "root": "<tmp>/src/alpha",
+  "skills": [
+    {
+      "description": "Does a thing.",
+      "diagnostics": [],
+      "name": "sk",
+      "path": "skills/sk/SKILL.md",
+      "valid": true
+    }
+  ],
+  "trust": {
+    "capabilities": [
+      {
+        "name": "agent-skill",
+        "source": "sk"
+      },
+      {
+        "name": "mcp-streamable-http",
+        "source": "remote"
+      },
+      {
+        "name": "mcp-stdio",
+        "source": "local"
+      }
+    ],
+    "environment_fields": [
+      "API_TOKEN"
+    ],
+    "executable_commands": [
+      {
+        "args": [
+          "server.js",
+          "--token",
+          "hunter2",
+          "--api-key=k"
+        ],
+        "executable": "node",
+        "server": "local"
+      }
+    ],
+    "remote_hosts": [
+      {
+        "host": "example.com",
+        "server": "remote",
+        "transport": "streamable-http",
+        "url": "https://example.com/mcp?token=abc&x=1"
+      }
+    ]
+  },
+  "valid": true
+}

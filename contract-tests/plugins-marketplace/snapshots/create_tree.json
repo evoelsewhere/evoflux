@@ -1,0 +1,6 @@
+{
+  "plugin.json": "{\n  \"$schema\": \"https://agent-plugins.org/schemas/1.0.0/plugin.schema.json\",\n  \"name\": \"fresh\",\n  \"description\": \"Fresh.\",\n  \"version\": \"0.1.0\",\n  \"author\": {\n    \"name\": \"Ada\"\n  },\n  \"license\": \"MIT\"\n}\n",
+  "skills": null,
+  "skills/do-it": null,
+  "skills/do-it/SKILL.md": "---\nname: do-it\ndescription: \"Fresh.\"\n---\n\n# Do It\n\nDescribe the workflow, evidence requirements, and stop conditions here.\n"
+}
