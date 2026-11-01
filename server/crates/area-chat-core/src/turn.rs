@@ -33,6 +33,18 @@ type UsageKey = (i64, i64, i64, Option<i64>, Option<i64>);
 const MAX_ITERATIONS: usize = 5000;
 /// `max_empty_after_tool_continuations`.
 const MAX_EMPTY_AFTER_TOOL: usize = 3;
+/// Largest tool-call arguments text echoed in `tool_start` and stored for later
+/// turns (Python has no cap; KNOWN_DIFFERENCES).
+const MAX_ECHOED_ARGS_BYTES: usize = 1 << 20;
+
+/// The arguments text to publish and persist: as is up to the cap, else a
+/// valid JSON marker so a later request to the provider stays well-formed.
+fn echoed_args(args: &str) -> std::borrow::Cow<'_, str> {
+    if args.len() <= MAX_ECHOED_ARGS_BYTES {
+        return std::borrow::Cow::Borrowed(args);
+    }
+    std::borrow::Cow::Owned(json!({"truncated": true, "original_bytes": args.len()}).to_string())
+}
 
 /// The built-in tools of the Python lead that this server does not run. A
 /// call to one ends the turn; any other unknown name gets Python's
@@ -189,15 +201,35 @@ fn tool_calls_json(calls: &[(String, String, String)]) -> Value {
                 json!({
                     "id": id,
                     "type": "function",
-                    "function": {"name": name, "arguments": args, "thought": null, "thought_signature": null},
+                    "function": {"name": name, "arguments": echoed_args(args), "thought": null, "thought_signature": null},
                 })
             })
             .collect(),
     )
 }
 
+/// Releases the session when the turn task ends, including by a panic, so the
+/// session does not answer 409 forever and its stream readers end.
+struct TurnGuard {
+    state: Arc<ChatState>,
+    sid: String,
+}
+
+impl Drop for TurnGuard {
+    fn drop(&mut self) {
+        if std::thread::panicking() {
+            self.state.store.mark_done(&self.sid);
+        }
+        self.state.finish_turn(&self.sid);
+    }
+}
+
 pub(crate) async fn run(state: Arc<ChatState>, input: TurnInput) {
     let started = Instant::now();
+    let _guard = TurnGuard {
+        state: state.clone(),
+        sid: input.sid.clone(),
+    };
     let mut turn = Turn {
         state,
         input,
@@ -439,7 +471,7 @@ impl Turn {
                 let started = Instant::now();
                 self.push(
                     "tool_start",
-                    json!({"type": "tool_start", "agent": self.agent(), "tool_call_id": id, "name": name, "arguments": args, "metadata": {}}),
+                    json!({"type": "tool_start", "agent": self.agent(), "tool_call_id": id, "name": name, "arguments": echoed_args(args), "metadata": {}}),
                 );
                 let result = match self.tools.iter().find(|t| t.name() == name) {
                     Some(tool) => {
@@ -904,6 +936,88 @@ mod tests {
             )])),
             r#"[{"id": "c", "type": "function", "function": {"name": "date", "arguments": "{}", "thought": null, "thought_signature": null}}]"#
         );
+    }
+
+    #[test]
+    fn oversized_tool_arguments_are_replaced_by_a_json_marker() {
+        let small = "x".repeat(MAX_ECHOED_ARGS_BYTES);
+        assert_eq!(echoed_args(&small), small);
+        let big = "x".repeat(MAX_ECHOED_ARGS_BYTES + 1);
+        let echoed = echoed_args(&big).into_owned();
+        assert_eq!(echoed, r#"{"truncated":true,"original_bytes":1048577}"#);
+        let column = tool_calls_json(&[("c".into(), "date".into(), big)]);
+        assert_eq!(column[0]["function"]["arguments"], json!(echoed));
+    }
+
+    #[tokio::test]
+    #[allow(clippy::panic)]
+    async fn a_panicking_turn_still_releases_the_session() {
+        let dir = std::env::temp_dir();
+        let settings = evoflux_core::config::Settings::from_vars(
+            &std::collections::HashMap::new(),
+            Some(&dir),
+            &dir,
+        )
+        .unwrap();
+        let state = Arc::new(ChatState {
+            settings: Arc::new(settings),
+            db: None,
+            http: evoflux_net::build_client().unwrap(),
+            store: Arc::new(crate::stream_store::StreamStore::default()),
+            active: Mutex::new(std::collections::HashMap::new()),
+        });
+        assert!(state.begin_turn("s"));
+        state.store.init_turn("s", false);
+        let task_state = state.clone();
+        let task = tokio::spawn(async move {
+            let _guard = TurnGuard {
+                state: task_state,
+                sid: "s".into(),
+            };
+            panic!("boom");
+        });
+        assert!(task.await.unwrap_err().is_panic());
+        assert!(state.begin_turn("s"));
+        assert!(!state.store.is_running("s"));
+    }
+
+    #[tokio::test]
+    async fn a_finished_turn_releases_the_session() {
+        let dir = std::env::temp_dir();
+        let settings = evoflux_core::config::Settings::from_vars(
+            &std::collections::HashMap::new(),
+            Some(&dir),
+            &dir,
+        )
+        .unwrap();
+        let state = Arc::new(ChatState {
+            settings: Arc::new(settings),
+            db: None,
+            http: evoflux_net::build_client().unwrap(),
+            store: Arc::new(crate::stream_store::StreamStore::default()),
+            active: Mutex::new(std::collections::HashMap::new()),
+        });
+        assert!(state.begin_turn("s"));
+        state.store.init_turn("s", false);
+        let cancel = state.cancel_token("s");
+        cancel.cancel();
+        let input = TurnInput {
+            sid_hex: "s".into(),
+            sid: "s".into(),
+            content: "hi".into(),
+            lead: LeadAgent {
+                name: "lead".into(),
+                model: None,
+                thinking_level: None,
+                prompt: String::new(),
+            },
+            model: None,
+            thinking_level: None,
+            workspace: None,
+            cancel,
+        };
+        run(state.clone(), input).await;
+        assert!(state.begin_turn("s"));
     }
 
     #[test]

@@ -39,6 +39,9 @@ Parity is checked by `contract-tests/tools` (324 cases on fixture workspaces) an
   the machine never contacts the remote host (Python stats and resolves the path
   first, which makes Windows connect to that host).
 - **`grep` skips files over 64 MiB**; Python reads them whole.
+- **`ls` output is capped.** Python lists every entry. Rust cuts the listing to
+  the `read` tool's 20,000 characters and appends a truncation notice, so a huge
+  directory cannot flood the model context. Smaller listings are unchanged.
 
 ### Open confinement gaps (found in the AR2 security review, not fixed)
 
@@ -140,6 +143,22 @@ history snapshots, and Python reading the rows Rust wrote). Differences:
   in event metadata is the configured model without its provider prefix, not
   the name each chunk reports. Tool-call arguments are stored and published as
   compact JSON re-encoded from the parsed value, not the provider's exact text.
+- **Echoed tool-call arguments are capped.** Python publishes and stores a tool
+  call's arguments as they came. Rust replaces arguments over 1 MiB, in the
+  `tool_start` event and in the stored assistant row (so later turns do not
+  resend them), with `{"truncated":true,"original_bytes":N}`; the tool still runs
+  with the full arguments. The title reply is read up to 64 KiB (the providers'
+  error-body cap) and dropped beyond it; Python reads it all.
+- **A panic in a turn** releases the session (a later message is accepted, not
+  409) and ends its stream. Python's turn runs in an asyncio task whose
+  exception is logged.
+- **Same as Python, on purpose.** The session `workspace` comes from the request
+  form (a user choice) and is created if missing, only after the lead and
+  running-turn checks; Python creates it before them. Neither Python nor the Rust
+  gateway checks `Origin` or `Host` on state-changing requests (Python only adds
+  `CORSMiddleware` with `CORS_ORIGINS = ["*"]`), so a page the user opens in a
+  browser can post to `/api/team/chat` with any workspace. The step limit per
+  turn is Python's `MAX_AGENT_ITERATIONS` (5000).
 - **Usage cost.** `cost` is always `null` and `usage` carries no `cost`: there is
   no models.dev pricing catalog in Rust.
 - **Retries and interrupts.** When every provider stays rate-limited the turn

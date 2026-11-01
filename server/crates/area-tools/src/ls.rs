@@ -5,6 +5,8 @@ use serde_json::{json, Value};
 
 use crate::args::{self, Field, Kind, Val};
 use crate::fsutil::{exists, is_dir, is_file, size};
+use crate::pyfmt::{char_prefix, rstrip, thousands};
+use crate::read::MAX_CONTEXT_CHARS;
 use crate::sandbox::Sandbox;
 use crate::{definition, property, run_blocking, Tool, ToolCtx, ToolOutput};
 
@@ -56,8 +58,27 @@ pub(crate) fn run(sandbox: &Sandbox, path: &str) -> Result<String, String> {
     if lines.is_empty() {
         Ok("(empty directory)".to_owned())
     } else {
-        Ok(lines.join("\n"))
+        Ok(cap_listing(lines, &rel))
     }
+}
+
+/// The listing, cut to [`MAX_CONTEXT_CHARS`] with a notice. Python has no cap
+/// (KNOWN_DIFFERENCES); this keeps a huge directory out of the model context.
+fn cap_listing(lines: Vec<String>, rel: &str) -> String {
+    let count = lines.len();
+    let text = lines.join("\n");
+    let length = text.chars().count();
+    if length <= MAX_CONTEXT_CHARS {
+        return text;
+    }
+    let preview = rstrip(char_prefix(&text, MAX_CONTEXT_CHARS));
+    format!(
+        "{preview}\n\n[ls output truncated for LLM context: {rel} lists {} entries, {} \
+         characters; shown first {}. Use glob or grep for targeted lookup.]",
+        thousands(count),
+        thousands(length),
+        thousands(MAX_CONTEXT_CHARS)
+    )
 }
 
 #[async_trait]
@@ -115,6 +136,41 @@ mod tests {
             run(&s, ".").unwrap(),
             "[d] adir/\n[d] zdir/\n[f] Z.txt  (1 bytes)\n[f] a.txt  (0 bytes)\n[f] b.txt  (5 bytes)"
         );
+    }
+
+    #[test]
+    fn a_huge_listing_is_cut_with_a_notice() {
+        let (d, s) = workspace(&[]);
+        std::fs::create_dir(d.path().join("big")).unwrap();
+        // 900 lines of 26 characters join to 24,299 characters.
+        for i in 0..900 {
+            std::fs::create_dir(d.path().join("big").join(format!("d{i:020}"))).unwrap();
+        }
+        let out = run(&s, "big").unwrap();
+        let (preview, notice) = out
+            .split_once(
+                "
+
+[ls output truncated",
+            )
+            .unwrap();
+        assert!(preview.chars().count() <= MAX_CONTEXT_CHARS);
+        assert!(preview.starts_with(
+            "[d] d00000000000000000000/
+"
+        ));
+        assert_eq!(
+            notice,
+            " for LLM context: big lists 900 entries, 24,299 characters; shown first 20,000. Use glob or grep for targeted lookup.]"
+        );
+    }
+
+    #[test]
+    fn a_listing_at_the_cap_is_returned_whole() {
+        let at_cap = vec!["x".repeat(MAX_CONTEXT_CHARS)];
+        assert_eq!(cap_listing(at_cap.clone(), "r"), at_cap[0]);
+        let over = vec!["x".repeat(MAX_CONTEXT_CHARS + 1)];
+        assert!(cap_listing(over, "r").contains("[ls output truncated"));
     }
 
     #[test]

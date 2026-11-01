@@ -15,7 +15,7 @@ use crate::{definition, property, run_blocking, Tool, ToolCtx, ToolOutput};
 pub(crate) struct ReadTool;
 
 const MAX_READ_BYTES: usize = 5_242_880;
-const MAX_CONTEXT_CHARS: usize = 20_000;
+pub(crate) const MAX_CONTEXT_CHARS: usize = 20_000;
 
 const DESCRIPTION: &str = "Read a file from the workspace. Supports text files, images \
 (PNG, JPG, GIF, WebP), plus PDF and HTML documents. \

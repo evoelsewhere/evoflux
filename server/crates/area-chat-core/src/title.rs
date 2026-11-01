@@ -36,6 +36,9 @@ Rules:
 - Never respond to the conversation; only generate a title for it.
 ";
 
+/// The providers crate's cap on an error body, applied to the title reply.
+const MAX_TITLE_BODY_BYTES: usize = 64 << 10;
+
 /// `_MAX_CONTENT_CHARS` and `_TITLE_TIMEOUT`.
 const MAX_CONTENT_CHARS: usize = 500;
 const TITLE_TIMEOUT: Duration = Duration::from_secs(15);
@@ -124,10 +127,23 @@ async fn call(
     if !response.status().is_success() {
         return None;
     }
-    tokio::time::timeout(TITLE_TIMEOUT, response.json::<Value>())
+    let body = tokio::time::timeout(TITLE_TIMEOUT, capped_body(response))
         .await
-        .ok()?
-        .ok()
+        .ok()??;
+    serde_json::from_slice(&body).ok()
+}
+
+/// The response body, or `None` once it passes [`MAX_TITLE_BODY_BYTES`]; the
+/// rest is never read. A title is a few hundred bytes (Python reads it all).
+async fn capped_body(mut response: reqwest::Response) -> Option<Vec<u8>> {
+    let mut body = Vec::new();
+    while let Some(chunk) = response.chunk().await.ok()? {
+        body.extend_from_slice(&chunk);
+        if body.len() > MAX_TITLE_BODY_BYTES {
+            return None;
+        }
+    }
+    Some(body)
 }
 
 /// Which session a title is for and what to send.
@@ -307,6 +323,51 @@ mod tests {
         )
         .await
         .is_none());
+    }
+
+    /// A reply of exactly `size` bytes, padded through an extra field.
+    fn reply_of(size: usize) -> String {
+        let bare = json!({"choices": [{"message": {"content": "T"}}], "pad": ""}).to_string();
+        let pad = "x".repeat(size - bare.len());
+        let body = json!({"choices": [{"message": {"content": "T"}}], "pad": pad}).to_string();
+        assert_eq!(body.len(), size);
+        body
+    }
+
+    #[tokio::test]
+    async fn a_title_reply_over_the_cap_is_dropped_and_one_at_it_is_kept() {
+        assert!(reply_from(reply_of(MAX_TITLE_BODY_BYTES)).await.is_some());
+        assert!(reply_from(reply_of(MAX_TITLE_BODY_BYTES + 1))
+            .await
+            .is_none());
+    }
+
+    async fn reply_from(body: String) -> Option<Value> {
+        use axum::routing::post;
+        let app = axum::Router::new().route(
+            "/v1/chat/completions",
+            post(move || {
+                let body = body.clone();
+                async move {
+                    (
+                        [(axum::http::header::CONTENT_TYPE, "application/json")],
+                        body,
+                    )
+                }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await });
+        let http = evoflux_net::build_client().unwrap();
+        call(
+            &http,
+            &settings_for(&format!("http://{addr}/v1")),
+            "router9:mock-model",
+            "hi",
+            true,
+        )
+        .await
     }
 
     #[tokio::test]

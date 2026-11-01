@@ -6,6 +6,7 @@ All notable changes to EvoFlux are documented in this file.
 
 ### Fixed
 
+- The v4 Rust chat loop (`POST /api/team/chat`) now creates a new session's workspace folder only once the request is accepted (no lead agent or a running turn no longer leaves a folder behind), always frees the session if a turn crashes, and limits oversized tool-call arguments (1 MiB, in `tool_start` and stored history) and the title reply (64 KiB); the `ls` tool now cuts a listing past 20,000 characters with a notice.
 - The v4 Rust model providers now also stop a response whose tool-call arguments add up to more than 32 MiB or that has more than 128 tool calls, and no longer re-read a tool call's whole arguments for every streamed fragment, which grew slowly on large calls. Python still runs agents, so nothing changes in the app.
 - The v4 Rust agent file tools (`read`, `ls`, `glob`, `grep`) now refuse a path whose symlink chain is longer than 40 links instead of judging it by an unresolved link, `grep` skips pipes, sockets and devices instead of blocking on them, and the `.env` deny rule ignores case on every platform (`.ENV`, `.Env.local`). Python still runs agents, so nothing changes in the app yet.
 - The v4 Rust server settings read a `.env` file only for the settings Python declares, like Python does: provider variables such as `MISTRAL_BASE_URL` or `GROQ_API_KEY` now come from the process environment only, so a `.env` file can no longer redirect a key to another host. No app behaviour changes.

@@ -274,11 +274,9 @@ fn not_in_rust(what: &str) -> ApiError {
     unprocessable(format!("{what} not available in the Rust server yet."))
 }
 
-/// `_normalize_work_workspace_or_422`.
-async fn normalize_work_workspace(
-    workspace: &str,
-    home: &std::path::Path,
-) -> Result<String, ApiError> {
+/// The first half of `_normalize_work_workspace_or_422`: expand `~` and require
+/// an absolute path, touching nothing on disk.
+fn resolve_work_workspace(workspace: &str, home: &std::path::Path) -> Result<PathBuf, ApiError> {
     let path = match workspace.strip_prefix('~') {
         Some(rest) if rest.is_empty() || rest.starts_with(['/', '\\']) => {
             home.join(rest.trim_start_matches(['/', '\\']))
@@ -288,6 +286,12 @@ async fn normalize_work_workspace(
     if !path.is_absolute() {
         return Err(unprocessable("Workspace path must be absolute."));
     }
+    Ok(path)
+}
+
+/// The second half: create the directory and return its resolved path. Runs
+/// only once the request is certain to start a turn.
+async fn create_work_workspace(path: PathBuf) -> Result<String, ApiError> {
     tokio::fs::create_dir_all(&path)
         .await
         .map_err(|e| unprocessable(format!("Cannot create directory: {e}")))?;
@@ -381,11 +385,14 @@ pub(crate) async fn team_chat(
     if mode == "coding" {
         return Err(not_in_rust("Coding sessions are"));
     }
-    let workspace = match &existing {
-        Some(row) => row.workspace.clone(),
+    let (mut workspace, new_workspace) = match &existing {
+        Some(row) => (row.workspace.clone(), None),
         None => match form.workspace.as_deref() {
-            Some(ws) => Some(normalize_work_workspace(ws, &state.settings.home_dir).await?),
-            None => None,
+            Some(ws) => (
+                None,
+                Some(resolve_work_workspace(ws, &state.settings.home_dir)?),
+            ),
+            None => (None, None),
         },
     };
     let permission_mode = match (&existing, form.permission_mode.as_deref()) {
@@ -449,6 +456,15 @@ pub(crate) async fn team_chat(
             StatusCode::CONFLICT,
             "A turn is already running for this session; queued messages are not available in the Rust server yet.",
         ));
+    }
+    if let Some(path) = new_workspace {
+        match create_work_workspace(path).await {
+            Ok(created) => workspace = Some(created),
+            Err(error) => {
+                state.finish_turn(&sid);
+                return Err(error);
+            }
+        }
     }
     if existing.is_none() {
         let new = NewSession {
@@ -888,17 +904,85 @@ mod tests {
     #[tokio::test]
     async fn work_workspace_must_be_absolute_and_is_created() {
         let dir = tempfile::tempdir().unwrap();
-        assert!(normalize_work_workspace("relative/dir", dir.path())
-            .await
-            .is_err());
-        let made = normalize_work_workspace(
-            &dir.path().join("a").join("b").to_string_lossy(),
-            dir.path(),
-        )
+        assert!(resolve_work_workspace("relative/dir", dir.path()).is_err());
+        let target = dir.path().join("a").join("b");
+        let path = resolve_work_workspace(&target.to_string_lossy(), dir.path()).unwrap();
+        assert!(!target.exists());
+        let made = create_work_workspace(path).await.unwrap();
+        assert!(std::path::Path::new(&made).is_dir());
+        let home = resolve_work_workspace("~/w", dir.path()).unwrap();
+        assert!(create_work_workspace(home).await.unwrap().ends_with('w'));
+    }
+
+    async fn chat_state(config: &std::path::Path) -> Arc<ChatState> {
+        let vars = std::collections::HashMap::from([(
+            "EVOFLUX_CONFIG_DIR".to_owned(),
+            config.to_string_lossy().into_owned(),
+        )]);
+        let settings =
+            evoflux_core::config::Settings::from_vars(&vars, Some(config), config).unwrap();
+        let db =
+            evoflux_core::db::Db::open(&config.join("db"), evoflux_core::db::DbOptions::default())
+                .unwrap();
+        db.write_exclusive(|tx| {
+            tx.execute_batch(
+                "CREATE TABLE chat_sessions (id, parent_session_id, agent_name, title,                  scheduled_task_name, created_at, updated_at, mode, workspace, revert, model,                  thinking_level, permission_mode, project_id, tags, folder_id, source,                  imported_at)",
+            )?;
+            Ok(())
+        })
         .await
         .unwrap();
-        assert!(std::path::Path::new(&made).is_dir());
-        let home = normalize_work_workspace("~/w", dir.path()).await.unwrap();
-        assert!(home.ends_with('w'));
+        Arc::new(ChatState {
+            settings: Arc::new(settings),
+            db: Some(Arc::new(db)),
+            store: Arc::new(crate::stream_store::StreamStore::default()),
+            http: evoflux_net::build_client().unwrap(),
+            active: std::sync::Mutex::new(std::collections::HashMap::new()),
+        })
+    }
+
+    async fn post_chat(state: &Arc<ChatState>, sid: &str, workspace: &std::path::Path) -> u16 {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "content-type",
+            "application/x-www-form-urlencoded".parse().unwrap(),
+        );
+        let body = form_urlencoded::Serializer::new(String::new())
+            .append_pair("message", "hi")
+            .append_pair("session_id", sid)
+            .append_pair("workspace", &workspace.to_string_lossy())
+            .finish();
+        match team_chat(State(state.clone()), headers, Bytes::from(body)).await {
+            Ok(response) => response.status().as_u16(),
+            Err(error) => error.into_response().status().as_u16(),
+        }
+    }
+
+    #[tokio::test]
+    async fn the_workspace_is_created_only_after_the_lead_and_409_checks() {
+        let config = tempfile::tempdir().unwrap();
+        let state = chat_state(config.path()).await;
+        let sid = "06ae6ab0-636d-720e-8000-b0d548016ce8";
+        let workspace = config.path().join("ws");
+
+        // No lead agent: 404, nothing created.
+        assert_eq!(post_chat(&state, sid, &workspace).await, 404);
+        assert!(!workspace.exists());
+
+        // A lead exists but a turn is already running: 409, nothing created.
+        let agents = config.path().join("agents");
+        std::fs::create_dir(&agents).unwrap();
+        std::fs::write(
+            agents.join("lead.md"),
+            "---
+role: lead
+---
+Hi
+",
+        )
+        .unwrap();
+        assert!(state.begin_turn(sid));
+        assert_eq!(post_chat(&state, sid, &workspace).await, 409);
+        assert!(!workspace.exists());
     }
 }
