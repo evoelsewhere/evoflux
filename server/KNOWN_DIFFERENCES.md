@@ -210,17 +210,37 @@ alike are covered. Python alone (`evoflux serve` without the gateway) is unchang
   `{"detail":"Host not allowed.","code":"host_not_allowed"}`. A request with no
   `Host` (HTTP/1.0 tools) is allowed. Requests carrying the bundled tsnet
   proxy's verified identity (login, `tsnet` marker and this process's secret)
-  skip the Host check, because phone access keeps the tailnet name.
+  keep the tailnet name, so their `Host` must instead name a tailnet:
+  `<node>.<tailnet>.ts.net`, a Tailscale address (`100.64.0.0/10`,
+  `fd7a:115c:a1e0::/48`) or an `EVOFLUX_ALLOWED_ORIGINS` host, on any port; a
+  tsnet request with any other `Host` (a DNS-rebound `evil.example`) or none is
+  403 `host_not_allowed`. The gateway cannot learn the box's exact tailnet name
+  (Python starts the tsnet child, which forwards the browser's `Host` unchanged,
+  and migration lanes may not edit `desktop/tailnet`), so another `*.ts.net`
+  name or Tailscale address is still accepted. Follow-up outside the migration:
+  have `desktop/tailnet/main.go` refuse a `Host` other than its own name or IP,
+  or send that name in a secret-protected header the gateway compares.
+  Short MagicDNS names (`http://box/`) are refused; use the URL Remote Control shows.
 - **Origin.** When present it must be a loopback page (`http(s)://localhost`,
-  `127.0.0.1` or `[::1]`, any port: the gateway's own origin, the Vite dev and
-  preview servers), the bound host, the Tauri window (`tauri://localhost`,
+  `127.0.0.1` or `[::1]`) on the gateway's own port or a Vite port (5173 for
+  `vite dev`, the Tauri `devUrl` and `make dev-web`; 4173 for `vite preview`;
+  the default 80/443 when no port is given), the bound host on those ports,
+  the Tauri window (`tauri://localhost`,
   `http://tauri.localhost`, `https://tauri.localhost`), the WebBridge extension
   (`chrome-extension://lghglpnddenmebbhkfachafichhglafi` plus
   `EVOFLUX_WEBBRIDGE_EXTENSION_IDS`), an `EVOFLUX_ALLOWED_ORIGINS` entry, or,
   behind the tsnet proxy, the page's own tailnet origin. Anything else
   (including `null`) is 403 `{"detail":"Origin not allowed.","code":"origin_not_allowed"}`
-  for every method, SSE and WebSocket upgrades included. No `Origin` (CLI, curl,
-  tests, the Tauri shell's own requests) is allowed.
+  for every method, SSE and WebSocket upgrades included. A page served on
+  another loopback port (another local program, or Vite on a port of its own)
+  needs `EVOFLUX_ALLOWED_ORIGINS`.
+- **No Origin.** Allowed (CLI, curl, tests, the Tauri shell's own requests),
+  except when the browser marks it `Sec-Fetch-Site: cross-site` (another site's
+  `<img>`, link, form or navigation), whatever the method: 403
+  `{"detail":"Cross-site request not allowed.","code":"cross_site_not_allowed"}`,
+  unless it carries the desktop token (bearer or `_token`), as the desktop
+  window's own images and links to the API do. `same-origin`, `same-site` and
+  `none` pass.
 - **CORS.** Every `Access-Control-*` header a route set (Python's
   `CORSMiddleware` included) is removed. An allowed `Origin` is echoed with
   `Access-Control-Allow-Credentials: true`, and every answer carries
@@ -232,6 +252,8 @@ alike are covered. Python alone (`evoflux serve` without the gateway) is unchang
   `tailscale serve` (`EVOFLUX_REMOTE_USE_PROVIDER=external`) need their origin
   in `EVOFLUX_ALLOWED_ORIGINS`.
 
-Tests: `origin::tests` (unit) and `contract-tests/origin` (no Origin, own and
-app origins on both backends; evil Origin, evil Host, SSE, stripped CORS and
-preflight on Rust only, skipped on Python).
+Tests: `origin::tests` (unit, DNS rebinding through tsnet included) and
+`contract-tests/origin` (no Origin, own and app origins, fetch metadata other
+than `cross-site`, a cross-site request with the token on both backends; evil
+Origin, other loopback ports, cross-site without the token, evil Host, SSE,
+stripped CORS and preflight on Rust only, skipped on Python).

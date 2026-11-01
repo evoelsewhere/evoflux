@@ -12,6 +12,7 @@ All notable changes to EvoFlux are documented in this file.
 ### Upgrade notes
 
 - If you reach EvoFlux from another address than this computer (LAN through `--host 0.0.0.0`, or your own `tailscale serve`), list that page's origin in `EVOFLUX_ALLOWED_ORIGINS` (for example `https://evoflux.example.ts.net`). Phone access through **Settings → Remote Control** keeps working without it.
+- Open phone access with the full address **Settings → Remote Control** shows; a short tailnet name such as `http://mybox/` is now refused. A web UI served from another local port than 5173 or 4173 needs its origin in `EVOFLUX_ALLOWED_ORIGINS`.
 
 ### Fixed
 

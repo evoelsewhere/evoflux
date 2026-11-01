@@ -42,10 +42,13 @@ The flags mean what they mean for Python's `serve` (`app/cli/commands/serve.py`)
 ## Origin and Host
 
 Before routing, every request passes `evoflux_gateway::origin`: a `Host` other
-than `localhost`, `127.0.0.1`, `[::1]` or the bound `--host`, and an `Origin`
-other than a loopback page, the Tauri window or the WebBridge extension, get
+than `localhost`, `127.0.0.1`, `[::1]` or the bound `--host`, an `Origin`
+other than a loopback page on the gateway's port or a Vite port (5173, 4173),
+the Tauri window or the WebBridge extension, and an Origin-less request the
+browser marks `Sec-Fetch-Site: cross-site` without the desktop token, get
 403. `EVOFLUX_ALLOWED_ORIGINS` (comma-separated) adds origins, and their hosts.
-Requests from the bundled tsnet proxy keep their tailnet name. CORS echoes only
+Requests from the bundled tsnet proxy keep their `Host`, which must be a
+`*.ts.net` name or a Tailscale address. CORS echoes only
 the checked origin; Python's CORS headers are removed. Details and the reasons
 are in `server/KNOWN_DIFFERENCES.md` ("gateway: Origin and Host checks").
 
