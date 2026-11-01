@@ -1,0 +1,20 @@
+[package]
+name = "evoflux-area-tools"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+
+[lints]
+workspace = true
+
+[dependencies]
+async-trait = "0.1"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+evoflux-core = { path = "../core" }
+fancy-regex = "0.16"
+regex = "1"
+serde_json = { version = "1", features = ["preserve_order"] }
+
+[dev-dependencies]
+tempfile = "3"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

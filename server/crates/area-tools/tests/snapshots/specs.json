@@ -1,0 +1,173 @@
+{
+  "read": {
+    "type": "function",
+    "function": {
+      "name": "read",
+      "description": "Read a file from the workspace. Supports text files, images (PNG, JPG, GIF, WebP), plus PDF and HTML documents. DOCX, XLSX, and PPTX files are view-only in the workspace UI. Relative paths use the primary workspace; authorized sibling repositories require their displayed absolute path. Text lines are prefixed with 'NNNNN| ' line numbers — display-only metadata: NEVER include the prefix in edit old_string/new_string or write content. Preferred over shell cat, sed, head, or tail for reading files.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "description": "File path. Relative paths resolve against the primary workspace. For a file in an authorized non-primary repository, use the absolute path shown by the repository map or a prior search result.",
+            "type": "string"
+          },
+          "offset": {
+            "default": 1,
+            "description": "Line number to start from, 1-indexed (default 1).",
+            "type": "integer"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Max lines to return. Omit for all lines from offset."
+          }
+        },
+        "required": [
+          "path"
+        ]
+      }
+    }
+  },
+  "ls": {
+    "type": "function",
+    "function": {
+      "name": "ls",
+      "description": "List immediate children of a directory with type and size. Preferred over shell ls or dir.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "default": ".",
+            "description": "Directory path (default '.' = workspace root).",
+            "type": "string"
+          }
+        },
+        "required": []
+      }
+    }
+  },
+  "glob": {
+    "type": "function",
+    "function": {
+      "name": "glob",
+      "description": "Find files by glob pattern. Use match='path' (default) for full-path patterns like 'src/**/*.ts', or match='name' for filename-only like '*.py'. Results are sorted by modification time, newest first; a partial page ends with a notice giving the offset for the next page. Preferred over shell find or ls for locating files by name.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pattern": {
+            "description": "Glob pattern. Use '**/*.py' or 'src/**/*.ts' to match by full path, or '*.py' with match='name' to match filename only.",
+            "type": "string"
+          },
+          "directory": {
+            "default": ".",
+            "description": "Search root (default '.' = workspace root).",
+            "type": "string"
+          },
+          "match": {
+            "default": "path",
+            "description": "Match against 'path' (default) or 'name' (filename only).",
+            "type": "string"
+          },
+          "max_results": {
+            "default": 200,
+            "description": "Maximum number of results to return (default 200).",
+            "type": "integer"
+          },
+          "offset": {
+            "default": 0,
+            "description": "Skip this many files first. Use the offset a truncation notice gives to fetch the next page.",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "pattern"
+        ]
+      }
+    }
+  },
+  "grep": {
+    "type": "function",
+    "function": {
+      "name": "grep",
+      "description": "Search file contents by regex (ripgrep). output_mode 'content' (default) returns 'file:line: text'; 'files_with_matches' returns only paths, newest first — start there to locate code; 'count' returns matching lines per file plus a total. Filter with include (filename glob) or type (e.g. 'py'). A partial page ends with a notice giving the offset for the next page. Preferred over shell grep or rg for searching file contents.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pattern": {
+            "description": "Regex to match per line (e.g. 'def main', 'TODO|FIXME').",
+            "type": "string"
+          },
+          "directory": {
+            "default": ".",
+            "description": "Search root (default '.' = workspace root).",
+            "type": "string"
+          },
+          "include": {
+            "default": "*",
+            "description": "Filename glob to filter files (e.g. '*.py'). Default '*'.",
+            "type": "string"
+          },
+          "type": {
+            "default": "",
+            "description": "File type to search, as a ripgrep type name (e.g. 'py', 'ts', 'rust'). Faster and broader than include for a language.",
+            "type": "string"
+          },
+          "output_mode": {
+            "default": "content",
+            "description": "'content' (default): matching lines as 'file:line: text'. 'files_with_matches': only file paths, newest first — the cheapest way to locate code. 'count': matching lines per file plus a total.",
+            "enum": [
+              "content",
+              "files_with_matches",
+              "count"
+            ],
+            "type": "string"
+          },
+          "max_results": {
+            "default": 100,
+            "description": "Maximum entries per page: matching lines, files or per-file counts depending on output_mode (default 100, max 1000).",
+            "type": "integer"
+          },
+          "offset": {
+            "default": 0,
+            "description": "Skip this many entries first. Use the offset a truncation notice gives to fetch the next page.",
+            "type": "integer"
+          },
+          "case_insensitive": {
+            "default": false,
+            "description": "Case-insensitive matching (default false).",
+            "type": "boolean"
+          },
+          "fixed_strings": {
+            "default": false,
+            "description": "Treat pattern as a literal string, not a regex.",
+            "type": "boolean"
+          },
+          "multiline": {
+            "default": false,
+            "description": "Let the pattern span lines; '.' also matches newlines. Write \\r?\\n to also match Windows line endings (default false).",
+            "type": "boolean"
+          },
+          "context": {
+            "default": 0,
+            "description": "Lines of context to show around each match in content mode, like grep -C (default 0, max 10). Context lines use 'file-line-' prefixes.",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "pattern"
+        ]
+      }
+    }
+  },
+  "date": {
+    "type": "function",
+    "function": {
+      "name": "date",
+      "description": "Get the current local date, time, and timezone (e.g. '2026-04-06 14:30:00 ICT').",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    }
+  }
+}

@@ -1,0 +1,1298 @@
+{
+ "args/glob-max-results-text": {
+  "content": "Error: Invalid arguments for tool 'glob': 1 validation error for glob_parameters\nmax_results\n  Input should be a valid integer, unable to parse string as an integer [type=int_parsing, input_value='many', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.13/v/int_parsing",
+  "is_error": true
+ },
+ "args/glob-missing-pattern": {
+  "content": "Error: Invalid arguments for tool 'glob': 1 validation error for glob_parameters\npattern\n  Field required [type=missing, input_value={}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.13/v/missing",
+  "is_error": true
+ },
+ "args/glob-missing-pattern-with-extra": {
+  "content": "Error: Invalid arguments for tool 'glob': 1 validation error for glob_parameters\npattern\n  Field required [type=missing, input_value={'directory': 'src'}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.13/v/missing",
+  "is_error": true
+ },
+ "args/glob-offset-bool": {
+  "content": "many/f29.txt\n[Showing files 2-2 of 30, newest first. Pass offset=2 for the next page, or narrow the pattern or directory.]",
+  "is_error": false
+ },
+ "args/grep-bad-mode": {
+  "content": "Error: Invalid arguments for tool 'grep': 1 validation error for grep_parameters\noutput_mode\n  Input should be 'content', 'files_with_matches' or 'count' [type=literal_error, input_value='everything', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.13/v/literal_error",
+  "is_error": true
+ },
+ "args/grep-bad-mode-type": {
+  "content": "Error: Invalid arguments for tool 'grep': 1 validation error for grep_parameters\noutput_mode\n  Input should be 'content', 'files_with_matches' or 'count' [type=literal_error, input_value=3, input_type=int]\n    For further information visit https://errors.pydantic.dev/2.13/v/literal_error",
+  "is_error": true
+ },
+ "args/grep-bool-int": {
+  "content": "Error: Invalid arguments for tool 'grep': 1 validation error for grep_parameters\nmultiline\n  Input should be a valid boolean, unable to interpret input [type=bool_parsing, input_value=2, input_type=int]\n    For further information visit https://errors.pydantic.dev/2.13/v/bool_parsing",
+  "is_error": true
+ },
+ "args/grep-bool-null": {
+  "content": "Error: Invalid arguments for tool 'grep': 1 validation error for grep_parameters\nfixed_strings\n  Input should be a valid boolean [type=bool_type, input_value=None, input_type=NoneType]\n    For further information visit https://errors.pydantic.dev/2.13/v/bool_type",
+  "is_error": true
+ },
+ "args/grep-bool-one": {
+  "content": "case.txt:1: Needle\ncase.txt:2: NEEDLE\ncase.txt:3: needle",
+  "is_error": false
+ },
+ "args/grep-bool-text": {
+  "content": "Error: Invalid arguments for tool 'grep': 1 validation error for grep_parameters\ncase_insensitive\n  Input should be a valid boolean, unable to interpret input [type=bool_parsing, input_value='maybe', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.13/v/bool_parsing",
+  "is_error": true
+ },
+ "args/grep-context-text": {
+  "content": "Error: Invalid arguments for tool 'grep': 1 validation error for grep_parameters\ncontext\n  Input should be a valid integer, unable to parse string as an integer [type=int_parsing, input_value='lots', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.13/v/int_parsing",
+  "is_error": true
+ },
+ "args/grep-many-errors": {
+  "content": "Error: Invalid arguments for tool 'grep': 4 validation errors for grep_parameters\npattern\n  Field required [type=missing, input_value={'output_mode': 'x', 'con...: 'y', 'multiline': 'z'}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.13/v/missing\noutput_mode\n  Input should be 'content', 'files_with_matches' or 'count' [type=literal_error, input_value='x', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.13/v/literal_error\nmultiline\n  Input should be a valid boolean, unable to interpret input [type=bool_parsing, input_value='z', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.13/v/bool_parsing\ncontext\n  Input should be a valid integer, unable to parse string as an integer [type=int_parsing, input_value='y', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.13/v/int_parsing",
+  "is_error": true
+ },
+ "args/grep-missing-pattern": {
+  "content": "Error: Invalid arguments for tool 'grep': 1 validation error for grep_parameters\npattern\n  Field required [type=missing, input_value={}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.13/v/missing",
+  "is_error": true
+ },
+ "args/ls-path-int": {
+  "content": "Error: Invalid arguments for tool 'ls': 1 validation error for ls_parameters\npath\n  Input should be a valid string [type=string_type, input_value=5, input_type=int]\n    For further information visit https://errors.pydantic.dev/2.13/v/string_type",
+  "is_error": true
+ },
+ "args/read-dict-input": {
+  "content": "Error: Invalid arguments for tool 'read': 1 validation error for read_parameters\npath\n  Input should be a valid string [type=string_type, input_value={'a': [1, None, True, \"x'y\"]}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.13/v/string_type",
+  "is_error": true
+ },
+ "args/read-extra-args-ignored": {
+  "content": "[1-1/12]\n00001| # Demo project\n",
+  "is_error": false
+ },
+ "args/read-limit-fraction-text": {
+  "content": "Error: Invalid arguments for tool 'read': 1 validation error for read_parameters\nlimit\n  Input should be a valid integer, unable to parse string as an integer [type=int_parsing, input_value='1.5', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.13/v/int_parsing",
+  "is_error": true
+ },
+ "args/read-limit-text": {
+  "content": "Error: Invalid arguments for tool 'read': 1 validation error for read_parameters\nlimit\n  Input should be a valid integer, unable to parse string as an integer [type=int_parsing, input_value='abc', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.13/v/int_parsing",
+  "is_error": true
+ },
+ "args/read-long-input": {
+  "content": "Error: Invalid arguments for tool 'read': 1 validation error for read_parameters\npath\n  Input should be a valid string [type=string_type, input_value=[0, 1, 2, 3, 4, 5, 6, 7, ... 34, 35, 36, 37, 38, 39], input_type=list]\n    For further information visit https://errors.pydantic.dev/2.13/v/string_type",
+  "is_error": true
+ },
+ "args/read-missing-path": {
+  "content": "Error: Invalid arguments for tool 'read': 1 validation error for read_parameters\npath\n  Field required [type=missing, input_value={}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.13/v/missing",
+  "is_error": true
+ },
+ "args/read-offset-decimal-zero": {
+  "content": "[3-3/12]\n00003| A TODO list lives here.\n",
+  "is_error": false
+ },
+ "args/read-offset-empty": {
+  "content": "Error: Invalid arguments for tool 'read': 1 validation error for read_parameters\noffset\n  Input should be a valid integer, unable to parse string as an integer [type=int_parsing, input_value='', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.13/v/int_parsing",
+  "is_error": true
+ },
+ "args/read-offset-exponent": {
+  "content": "Error: Invalid arguments for tool 'read': 1 validation error for read_parameters\noffset\n  Input should be a valid integer, unable to parse string as an integer [type=int_parsing, input_value='1e3', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.13/v/int_parsing",
+  "is_error": true
+ },
+ "args/read-offset-fraction": {
+  "content": "Error: Invalid arguments for tool 'read': 1 validation error for read_parameters\noffset\n  Input should be a valid integer, got a number with a fractional part [type=int_from_float, input_value=2.5, input_type=float]\n    For further information visit https://errors.pydantic.dev/2.13/v/int_from_float",
+  "is_error": true
+ },
+ "args/read-offset-hex": {
+  "content": "Error: Invalid arguments for tool 'read': 1 validation error for read_parameters\noffset\n  Input should be a valid integer, unable to parse string as an integer [type=int_parsing, input_value='0x10', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.13/v/int_parsing",
+  "is_error": true
+ },
+ "args/read-offset-list": {
+  "content": "Error: Invalid arguments for tool 'read': 1 validation error for read_parameters\noffset\n  Input should be a valid integer [type=int_type, input_value=[1], input_type=list]\n    For further information visit https://errors.pydantic.dev/2.13/v/int_type",
+  "is_error": true
+ },
+ "args/read-offset-minus": {
+  "content": "[1-1/12]\n00001| # Demo project\n",
+  "is_error": false
+ },
+ "args/read-offset-null": {
+  "content": "Error: Invalid arguments for tool 'read': 1 validation error for read_parameters\noffset\n  Input should be a valid integer [type=int_type, input_value=None, input_type=NoneType]\n    For further information visit https://errors.pydantic.dev/2.13/v/int_type",
+  "is_error": true
+ },
+ "args/read-offset-plus": {
+  "content": "[2-2/12]\n00002| \n",
+  "is_error": false
+ },
+ "args/read-offset-spaces": {
+  "content": "[4-4/12]\n00004| Second TODO line.\n",
+  "is_error": false
+ },
+ "args/read-offset-text": {
+  "content": "Error: Invalid arguments for tool 'read': 1 validation error for read_parameters\noffset\n  Input should be a valid integer, unable to parse string as an integer [type=int_parsing, input_value='abc', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.13/v/int_parsing",
+  "is_error": true
+ },
+ "args/read-offset-trailing-dot": {
+  "content": "Error: Invalid arguments for tool 'read': 1 validation error for read_parameters\noffset\n  Input should be a valid integer, unable to parse string as an integer [type=int_parsing, input_value='5.', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.13/v/int_parsing",
+  "is_error": true
+ },
+ "args/read-offset-underscore": {
+  "content": "[1000-12/12]\n",
+  "is_error": false
+ },
+ "args/read-path-int": {
+  "content": "Error: Invalid arguments for tool 'read': 1 validation error for read_parameters\npath\n  Input should be a valid string [type=string_type, input_value=1, input_type=int]\n    For further information visit https://errors.pydantic.dev/2.13/v/string_type",
+  "is_error": true
+ },
+ "args/read-path-list": {
+  "content": "Error: Invalid arguments for tool 'read': 1 validation error for read_parameters\npath\n  Input should be a valid string [type=string_type, input_value=['a'], input_type=list]\n    For further information visit https://errors.pydantic.dev/2.13/v/string_type",
+  "is_error": true
+ },
+ "args/read-path-null": {
+  "content": "Error: Invalid arguments for tool 'read': 1 validation error for read_parameters\npath\n  Input should be a valid string [type=string_type, input_value=None, input_type=NoneType]\n    For further information visit https://errors.pydantic.dev/2.13/v/string_type",
+  "is_error": true
+ },
+ "args/read-two-errors": {
+  "content": "Error: Invalid arguments for tool 'read': 2 validation errors for read_parameters\npath\n  Field required [type=missing, input_value={'offset': 'x'}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.13/v/missing\noffset\n  Input should be a valid integer, unable to parse string as an integer [type=int_parsing, input_value='x', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.13/v/int_parsing",
+  "is_error": true
+ },
+ "confine/glob-absolute-root": {
+  "content": "Error: Path '<OUT>' is outside the allowed sandbox roots. Add it as an explicit project/read-only root before access.",
+  "is_error": true
+ },
+ "confine/glob-dotdot-root": {
+  "content": "Error: Path '<ROOT>' is outside the allowed sandbox roots. Add it as an explicit project/read-only root before access.",
+  "is_error": true
+ },
+ "confine/glob-nul-pattern": {
+  "content": "No files matching 'a\u0000b' in <WS>",
+  "is_error": false
+ },
+ "confine/glob-nul-pattern-name": {
+  "content": "No files matching 'a\u0000b' in <WS>",
+  "is_error": false
+ },
+ "confine/glob-nul-root": {
+  "content": "Error: lstat: embedded null character in path",
+  "is_error": true
+ },
+ "confine/glob-tilde-root": {
+  "content": "Error: Tilde paths are not allowed inside the sandbox: ~",
+  "is_error": true
+ },
+ "confine/glob-unc-root": {
+  "content": "Error: Path '//evil-host/share/' is outside the allowed sandbox roots. Add it as an explicit project/read-only root before access.",
+  "is_error": true
+ },
+ "confine/grep-absolute-root": {
+  "content": "Error: Path '<OUT>' is outside the allowed sandbox roots. Add it as an explicit project/read-only root before access.",
+  "is_error": true
+ },
+ "confine/grep-dotdot-root": {
+  "content": "Error: Path '<ROOT>' is outside the allowed sandbox roots. Add it as an explicit project/read-only root before access.",
+  "is_error": true
+ },
+ "confine/grep-drive-root": {
+  "content": "Error: Path 'C:/Windows' is outside the allowed sandbox roots. Add it as an explicit project/read-only root before access.",
+  "is_error": true
+ },
+ "confine/grep-nul-include": {
+  "content": "No matches for pattern 'x' in <WS> (include=a\u0000b)",
+  "is_error": false
+ },
+ "confine/grep-nul-pattern": {
+  "content": "No matches for pattern 'a\u0000b' in <WS> (include=*)",
+  "is_error": false
+ },
+ "confine/grep-nul-root": {
+  "content": "Error: lstat: embedded null character in path",
+  "is_error": true
+ },
+ "confine/grep-tilde-root": {
+  "content": "Error: Tilde paths are not allowed inside the sandbox: ~",
+  "is_error": true
+ },
+ "confine/grep-unc-root": {
+  "content": "Error: Path '//evil-host/share/' is outside the allowed sandbox roots. Add it as an explicit project/read-only root before access.",
+  "is_error": true
+ },
+ "confine/link-glob-root": {
+  "content": "Error: Path '<OUT>' is outside the allowed sandbox roots. Add it as an explicit project/read-only root before access.",
+  "is_error": true
+ },
+ "confine/link-grep-root": {
+  "content": "Error: Path '<OUT>' is outside the allowed sandbox roots. Add it as an explicit project/read-only root before access.",
+  "is_error": true
+ },
+ "confine/link-inside-ls": {
+  "content": "[f] main.py  (16 bytes)\n[f] util.py  (6 bytes)",
+  "is_error": false
+ },
+ "confine/link-inside-read": {
+  "content": "00001| print('linked')\n",
+  "is_error": false
+ },
+ "confine/link-ls": {
+  "content": "Error: Path '<OUT>' is outside the allowed sandbox roots. Add it as an explicit project/read-only root before access.",
+  "is_error": true
+ },
+ "confine/link-read-through-dir": {
+  "content": "Error: Path '<OUT>/secret.txt' is outside the allowed sandbox roots. Add it as an explicit project/read-only root before access.",
+  "is_error": true
+ },
+ "confine/ls-absolute": {
+  "content": "Error: Path '<OUT>' is outside the allowed sandbox roots. Add it as an explicit project/read-only root before access.",
+  "is_error": true
+ },
+ "confine/ls-dotdot": {
+  "content": "Error: Path '<ROOT>' is outside the allowed sandbox roots. Add it as an explicit project/read-only root before access.",
+  "is_error": true
+ },
+ "confine/ls-dotdot-outside": {
+  "content": "Error: Path '<OUT>' is outside the allowed sandbox roots. Add it as an explicit project/read-only root before access.",
+  "is_error": true
+ },
+ "confine/ls-drive-letter": {
+  "content": "Error: Path 'C:/' is outside the allowed sandbox roots. Add it as an explicit project/read-only root before access.",
+  "is_error": true
+ },
+ "confine/ls-nul": {
+  "content": "Error: lstat: embedded null character in path",
+  "is_error": true
+ },
+ "confine/ls-tilde": {
+  "content": "Error: Tilde paths are not allowed inside the sandbox: ~",
+  "is_error": true
+ },
+ "confine/ls-unc": {
+  "content": "Error: Path '//evil-host/share/' is outside the allowed sandbox roots. Add it as an explicit project/read-only root before access.",
+  "is_error": true
+ },
+ "confine/read-absolute": {
+  "content": "Error: Path '<OUT>/secret.txt' is outside the allowed sandbox roots. Add it as an explicit project/read-only root before access.",
+  "is_error": true
+ },
+ "confine/read-dotdot": {
+  "content": "Error: Path '<OUT>/secret.txt' is outside the allowed sandbox roots. Add it as an explicit project/read-only root before access.",
+  "is_error": true
+ },
+ "confine/read-dotdot-deep": {
+  "content": "Error: Path '<OUT>/secret.txt' is outside the allowed sandbox roots. Add it as an explicit project/read-only root before access.",
+  "is_error": true
+ },
+ "confine/read-dotdot-only": {
+  "content": "Error: Path '<ROOT>' is outside the allowed sandbox roots. Add it as an explicit project/read-only root before access.",
+  "is_error": true
+ },
+ "confine/read-dotdot-reenter": {
+  "content": "00001| # Demo project\n00002| \n00003| A TODO list lives here.\n00004| Second TODO line.\n00005| Unicode: café ✓ naïve\n00006| \n00007| ## Usage\n00008| \n00009| run `make`\n00010| \n00011| ## License\n00012| MIT\n",
+  "is_error": false
+ },
+ "confine/read-drive-letter": {
+  "content": "Error: Path 'C:/Windows/win.ini' is outside the allowed sandbox roots. Add it as an explicit project/read-only root before access.",
+  "is_error": true
+ },
+ "confine/read-drive-letter-slash": {
+  "content": "Error: Path 'C:/Windows/win.ini' is outside the allowed sandbox roots. Add it as an explicit project/read-only root before access.",
+  "is_error": true
+ },
+ "confine/read-drive-other": {
+  "content": "Error: Path 'Z:/nope/x.txt' is outside the allowed sandbox roots. Add it as an explicit project/read-only root before access.",
+  "is_error": true
+ },
+ "confine/read-nul": {
+  "content": "Error: lstat: embedded null character in path",
+  "is_error": true
+ },
+ "confine/read-nul-after-dir": {
+  "content": "Error: lstat: embedded null character in path",
+  "is_error": true
+ },
+ "confine/read-rooted-no-drive": {
+  "content": "Error: Path '<DRIVE>/Windows/win.ini' is outside the allowed sandbox roots. Add it as an explicit project/read-only root before access.",
+  "is_error": true
+ },
+ "confine/read-tilde": {
+  "content": "Error: Tilde paths are not allowed inside the sandbox: ~/secret.txt",
+  "is_error": true
+ },
+ "confine/read-tilde-bare": {
+  "content": "Error: Tilde paths are not allowed inside the sandbox: ~",
+  "is_error": true
+ },
+ "confine/read-tilde-middle-ok": {
+  "content": "Error: File not found: a~b",
+  "is_error": true
+ },
+ "confine/read-tilde-user": {
+  "content": "Error: Tilde paths are not allowed inside the sandbox: ~root/.ssh/id_rsa",
+  "is_error": true
+ },
+ "confine/read-unc": {
+  "content": "Error: Path '//evil-host/share/x.txt' is outside the allowed sandbox roots. Add it as an explicit project/read-only root before access.",
+  "is_error": true
+ },
+ "confine/read-unc-dotdot": {
+  "content": "Error: Path '//evil-host/share/x.txt' is outside the allowed sandbox roots. Add it as an explicit project/read-only root before access.",
+  "is_error": true
+ },
+ "confine/read-unc-slash": {
+  "content": "Error: Path '//evil-host/share/x.txt' is outside the allowed sandbox roots. Add it as an explicit project/read-only root before access.",
+  "is_error": true
+ },
+ "confine/read-verbatim-drive": {
+  "content": "Error: Path '//?/C:/Windows/win.ini' is outside the allowed sandbox roots. Add it as an explicit project/read-only root before access.",
+  "is_error": true
+ },
+ "glob/absolute-pattern": {
+  "content": "Error: Tool 'glob' raised NotImplementedError: Non-relative patterns are unsupported",
+  "is_error": true
+ },
+ "glob/bad-double-star": {
+  "content": "Error: Invalid pattern: '**' can only be an entire path component",
+  "is_error": true
+ },
+ "glob/class-in-directory-part": {
+  "content": "src/util.py\nsrc/main.py",
+  "is_error": false
+ },
+ "glob/dir-file-component": {
+  "content": "Error: glob search path has a file as a directory component: README.md is a file in 'README.md/sub'. Search its parent directory '<WS>' instead.",
+  "is_error": true
+ },
+ "glob/dir-is-file": {
+  "content": "Error: glob search root is a file, not a directory: README.md. Use `read` to inspect that file, or search its parent directory '<WS>' with a narrower pattern.",
+  "is_error": true
+ },
+ "glob/dir-missing": {
+  "content": "Error: glob search directory does not exist: nope. Check the path and use an existing directory.",
+  "is_error": true
+ },
+ "glob/dir-missing-nested": {
+  "content": "Error: glob search directory does not exist: src/nope/deeper. Check the path and use an existing directory.",
+  "is_error": true
+ },
+ "glob/dir-outside": {
+  "content": "Error: Path '<OUT>' is outside the allowed sandbox roots. Add it as an explicit project/read-only root before access.",
+  "is_error": true
+ },
+ "glob/dir-with-trailing-slash": {
+  "content": "src/util.py\nsrc/main.py",
+  "is_error": false
+ },
+ "glob/dot-file-skipped": {
+  "content": "No files matching '.*' in <WS>",
+  "is_error": false
+ },
+ "glob/dot-pattern": {
+  "content": "Error: Tool 'glob' raised IndexError: tuple index out of range",
+  "is_error": true
+ },
+ "glob/dot-pattern-path": {
+  "content": "No files matching '.hidden/*.txt' in <WS>",
+  "is_error": false
+ },
+ "glob/dotdot-inside": {
+  "content": "No files matching 'src/../README.md' in <WS>",
+  "is_error": false
+ },
+ "glob/dotdot-pattern": {
+  "content": "No files matching '../*' in <WS>",
+  "is_error": false
+ },
+ "glob/double-slash": {
+  "content": "src/util.py\nsrc/main.py",
+  "is_error": false
+ },
+ "glob/empty-pattern": {
+  "content": "Error: Unacceptable pattern: ''",
+  "is_error": true
+ },
+ "glob/file-named-build": {
+  "content": "nested/build",
+  "is_error": false
+ },
+ "glob/gi-a-name": {
+  "content": "gi_a/z.dat\ngi_a/x/sub/inner.txt\ngi_a/p/gen/b.txt\ngi_a/not.txt\ngi_a/keep.txt\ngi_a/gen/a.txt\ngi_a/#hash.txt",
+  "is_error": false
+ },
+ "glob/gi-a-path": {
+  "content": "gi_a/z.dat\ngi_a/x/sub/inner.txt\ngi_a/p/gen/b.txt\ngi_a/not.txt\ngi_a/keep.txt\ngi_a/gen/a.txt\ngi_a/#hash.txt",
+  "is_error": false
+ },
+ "glob/gi-b-name": {
+  "content": "gi_b/z.dat\ngi_b/x/sub/inner.txt\ngi_b/sub/inner.txt\ngi_b/p/gen/b.txt\ngi_b/not.txt\ngi_b/keep.txt\ngi_b/gen/a.txt\ngi_b/a/xb\ngi_b/a.tmp\ngi_b/#hash.txt",
+  "is_error": false
+ },
+ "glob/gi-b-path": {
+  "content": "gi_b/z.dat\ngi_b/x/sub/inner.txt\ngi_b/sub/inner.txt\ngi_b/p/gen/b.txt\ngi_b/not.txt\ngi_b/keep.txt\ngi_b/gen/a.txt\ngi_b/a/xb\ngi_b/a.tmp\ngi_b/#hash.txt",
+  "is_error": false
+ },
+ "glob/ign-name": {
+  "content": "ign/keep.txt\nign/docs/a.txt",
+  "is_error": false
+ },
+ "glob/ign-path": {
+  "content": "ign/keep.txt\nign/docs/a.txt",
+  "is_error": false
+ },
+ "glob/in-directory": {
+  "content": "src/util.py\nsrc/main.py",
+  "is_error": false
+ },
+ "glob/in-directory-abs": {
+  "content": "docs/guide.md",
+  "is_error": false
+ },
+ "glob/in-directory-name": {
+  "content": "src/app.ts\nsrc/app.test.ts",
+  "is_error": false
+ },
+ "glob/literal-dir-only": {
+  "content": "No files matching 'src' in <WS>",
+  "is_error": false
+ },
+ "glob/literal-hidden": {
+  "content": "No files matching '.env' in <WS>",
+  "is_error": false
+ },
+ "glob/literal-path": {
+  "content": "src/util.py",
+  "is_error": false
+ },
+ "glob/max-results-one": {
+  "content": "src/util.py\n[Showing files 1-1 of 3, newest first. Pass offset=1 for the next page, or narrow the pattern or directory.]",
+  "is_error": false
+ },
+ "glob/multi-dots": {
+  "content": "file.with.dots.tar.gz",
+  "is_error": false
+ },
+ "glob/name-class": {
+  "content": "many/f19.txt\nmany/f18.txt\nmany/f17.txt\nmany/f16.txt\nmany/f15.txt\nmany/f14.txt\nmany/f13.txt\nmany/f12.txt\nmany/f11.txt\nmany/f10.txt\nmany/f09.txt\nmany/f08.txt\nmany/f07.txt\nmany/f06.txt\nmany/f05.txt\nmany/f04.txt\nmany/f03.txt\nmany/f02.txt\nmany/f01.txt",
+  "is_error": false
+ },
+ "glob/name-exact": {
+  "content": "src/util.py",
+  "is_error": false
+ },
+ "glob/name-mode-path-pattern": {
+  "content": "No files matching 'src/util.py' in <WS>",
+  "is_error": false
+ },
+ "glob/name-mode-star-star": {
+  "content": "ties/c.txt\nties/a.txt\nties/b.txt",
+  "is_error": false
+ },
+ "glob/name-negated-class": {
+  "content": "many/f30.txt\nmany/f29.txt\nmany/f28.txt\nmany/f27.txt\nmany/f26.txt\nmany/f25.txt\nmany/f24.txt\nmany/f23.txt\nmany/f22.txt\nmany/f21.txt\nmany/f20.txt\nmany/f19.txt\nmany/f18.txt\nmany/f17.txt\nmany/f16.txt\nmany/f15.txt\nmany/f14.txt\nmany/f13.txt\nmany/f12.txt\nmany/f11.txt\nmany/f10.txt",
+  "is_error": false
+ },
+ "glob/name-no-match": {
+  "content": "No files matching '*.zzz' in <WS>",
+  "is_error": false
+ },
+ "glob/name-py": {
+  "content": "src/util.py\nsrc/main.py\nsrc/lib/helpers.py",
+  "is_error": false
+ },
+ "glob/name-question": {
+  "content": "many/f09.txt\nmany/f08.txt\nmany/f07.txt\nmany/f06.txt\nmany/f05.txt\nmany/f04.txt\nmany/f03.txt\nmany/f02.txt\nmany/f01.txt",
+  "is_error": false
+ },
+ "glob/name-txt": {
+  "content": "ties/c.txt\nties/a.txt\nties/b.txt\nmany/f30.txt\nmany/f29.txt\nmany/f28.txt\nmany/f27.txt\nmany/f26.txt\nmany/f25.txt\nmany/f24.txt\nmany/f23.txt\nmany/f22.txt\nmany/f21.txt\nmany/f20.txt\nmany/f19.txt\nmany/f18.txt\nmany/f17.txt\nmany/f16.txt\nmany/f15.txt\nmany/f14.txt\nmany/f13.txt\nmany/f12.txt\nmany/f11.txt\nmany/f10.txt\nmany/f09.txt\nmany/f08.txt\nmany/f07.txt\nmany/f06.txt\nmany/f05.txt\nmany/f04.txt\nmany/f03.txt\nmany/f02.txt\nmany/f01.txt\nünïcode.txt\nsep.txt\nregex.txt\nnonl.txt\nnested/ok.txt\nneg/out/x.txt\nneg/b.txt\nname with spaces.txt\nmulti.txt\nlong_lines.txt\nlines.txt\nlatin1.txt\nign/sub/rooted.txt\nign/rooted.txt\nign/keep.txt\nign/ignored_dir/x.txt\nign/docs/a.txt\ngi_b/x/sub/inner.txt\ngi_b/top.txt\ngi_b/sub/top.txt\ngi_b/sub/inner.txt\ngi_b/spaced.txt\ngi_b/p/gen/b.txt\ngi_b/not.txt\ngi_b/keep.txt\ngi_b/gen/a.txt\ngi_b/dir.d/f.txt\ngi_b/#hash.txt\ngi_a/x/sub/inner.txt\ngi_a/top.txt\ngi_a/sub/top.txt\ngi_a/sub/inner.txt\ngi_a/spaced.txt\ngi_a/p/gen/b.txt\ngi_a/not.txt\ngi_a/keep.txt\ngi_a/gen/a.txt\ngi_a/dir.d/f.txt\ngi_a/#hash.txt\ndocs/notes.txt\nctx.txt\ncrlf.txt\ncr_only.txt\ncase.txt\nbom.txt\nblank.txt\nbig.txt",
+  "is_error": false
+ },
+ "glob/name-with-spaces": {
+  "content": "name with spaces.txt",
+  "is_error": false
+ },
+ "glob/neg-name": {
+  "content": "neg/keep.log\nneg/b.txt",
+  "is_error": false
+ },
+ "glob/neg-path": {
+  "content": "neg/keep.log\nneg/b.txt",
+  "is_error": false
+ },
+ "glob/page-exact-end": {
+  "content": "many/f30.txt\nmany/f29.txt\nmany/f28.txt\nmany/f27.txt\nmany/f26.txt\nmany/f25.txt\nmany/f24.txt\nmany/f23.txt\nmany/f22.txt\nmany/f21.txt\nmany/f20.txt\nmany/f19.txt\nmany/f18.txt\nmany/f17.txt\nmany/f16.txt\nmany/f15.txt\nmany/f14.txt\nmany/f13.txt\nmany/f12.txt\nmany/f11.txt\nmany/f10.txt\nmany/f09.txt\nmany/f08.txt\nmany/f07.txt\nmany/f06.txt\nmany/f05.txt\nmany/f04.txt\nmany/f03.txt\nmany/f02.txt\nmany/f01.txt",
+  "is_error": false
+ },
+ "glob/page-first": {
+  "content": "many/f30.txt\nmany/f29.txt\nmany/f28.txt\nmany/f27.txt\nmany/f26.txt\n[Showing files 1-5 of 30, newest first. Pass offset=5 for the next page, or narrow the pattern or directory.]",
+  "is_error": false
+ },
+ "glob/page-last": {
+  "content": "many/f05.txt\nmany/f04.txt\nmany/f03.txt\nmany/f02.txt\nmany/f01.txt\n[Showing files 26-30 of 30.]",
+  "is_error": false
+ },
+ "glob/page-limit-negative": {
+  "content": "many/f30.txt\n[Showing files 1-1 of 30, newest first. Pass offset=1 for the next page, or narrow the pattern or directory.]",
+  "is_error": false
+ },
+ "glob/page-limit-zero": {
+  "content": "many/f30.txt\n[Showing files 1-1 of 30, newest first. Pass offset=1 for the next page, or narrow the pattern or directory.]",
+  "is_error": false
+ },
+ "glob/page-name-mode": {
+  "content": "many/f28.txt\nmany/f27.txt\nmany/f26.txt\nmany/f25.txt\n[Showing files 3-6 of 32, newest first. Pass offset=6 for the next page, or narrow the pattern or directory.]",
+  "is_error": false
+ },
+ "glob/page-offset-negative": {
+  "content": "many/f30.txt\nmany/f29.txt\n[Showing files 1-2 of 30, newest first. Pass offset=2 for the next page, or narrow the pattern or directory.]",
+  "is_error": false
+ },
+ "glob/page-past-end": {
+  "content": "No entries at offset 99 — only 30 files.",
+  "is_error": false
+ },
+ "glob/page-second": {
+  "content": "many/f25.txt\nmany/f24.txt\nmany/f23.txt\nmany/f22.txt\nmany/f21.txt\n[Showing files 6-10 of 30, newest first. Pass offset=10 for the next page, or narrow the pattern or directory.]",
+  "is_error": false
+ },
+ "glob/page-string-numbers": {
+  "content": "many/f29.txt\nmany/f28.txt\n[Showing files 2-3 of 30, newest first. Pass offset=3 for the next page, or narrow the pattern or directory.]",
+  "is_error": false
+ },
+ "glob/path-no-match": {
+  "content": "No files matching '**/*.zzz' in <WS>",
+  "is_error": false
+ },
+ "glob/py-recursive": {
+  "content": "src/util.py\nsrc/main.py\nsrc/lib/helpers.py",
+  "is_error": false
+ },
+ "glob/py-src": {
+  "content": "src/util.py\nsrc/main.py\nsrc/lib/helpers.py",
+  "is_error": false
+ },
+ "glob/py-top": {
+  "content": "No files matching '*.py' in <WS>",
+  "is_error": false
+ },
+ "glob/question-mark-path": {
+  "content": "src/util.py",
+  "is_error": false
+ },
+ "glob/skips-generated": {
+  "content": "No files matching '**/*.js' in <WS>",
+  "is_error": false
+ },
+ "glob/skips-generated-name": {
+  "content": "No files matching '*.js' in <WS>",
+  "is_error": false
+ },
+ "glob/star-directory-part": {
+  "content": "No files matching '*/helpers.py' in <WS>",
+  "is_error": false
+ },
+ "glob/star-star-all": {
+  "content": "ties/c.txt\nties/a.txt\nties/b.txt\nmany/f30.txt\nmany/f29.txt\nmany/f28.txt\nmany/f27.txt\nmany/f26.txt\nmany/f25.txt\nmany/f24.txt\nmany/f23.txt\nmany/f22.txt\nmany/f21.txt\nmany/f20.txt\nmany/f19.txt\nmany/f18.txt\nmany/f17.txt\nmany/f16.txt\nmany/f15.txt\nmany/f14.txt\nmany/f13.txt\nmany/f12.txt\nmany/f11.txt\nmany/f10.txt\nmany/f09.txt\nmany/f08.txt\nmany/f07.txt\nmany/f06.txt\nmany/f05.txt\nmany/f04.txt\nmany/f03.txt\nmany/f02.txt\nmany/f01.txt\nünïcode.txt\nsrc/util.py\nsrc/main.py\nsrc/lib/helpers.py\nsrc/app.ts\nsrc/app.test.ts\nsep.txt\nregex.txt\npic.png\nnonl.txt\nnested/ok.txt\nnested/build\nneg/out/x.txt\nneg/keep.log\nneg/b.txt\nneg/a.log\nname with spaces.txt\nmulti.txt\nlong_lines.txt\nlines.txt\nlatin1.txt\nign/sub/trace.log\nign/sub/rooted.txt\nign/rooted.txt\nign/keep.txt\nign/ignored_dir/x.txt\nign/docs/a.txt\nign/docs/a.tmp\nign/app.log\ngi_b/z.dat\ngi_b/x/sub/inner.txt\ngi_b/x.dat\ngi_b/top.txt\ngi_b/sub/top.txt\ngi_b/sub/inner.txt\ngi_b/sub/b.tmp\ngi_b/spaced.txt\ngi_b/p/gen/b.txt\ngi_b/not.txt\ngi_b/keep.txt\ngi_b/gen/a.txt\ngi_b/dir.d/f.txt\ngi_b/axb\ngi_b/a/xb\ngi_b/a.tmp\ngi_b/#hash.txt\ngi_a/z.dat\ngi_a/x/sub/inner.txt\ngi_a/x.dat\ngi_a/top.txt\ngi_a/sub/top.txt\ngi_a/sub/inner.txt\ngi_a/sub/b.tmp\ngi_a/spaced.txt\ngi_a/p/gen/b.txt\ngi_a/not.txt\ngi_a/keep.txt\ngi_a/gen/a.txt\ngi_a/dir.d/f.txt\ngi_a/axb\ngi_a/a/xb\ngi_a/a.tmp\ngi_a/#hash.txt\nfile.with.dots.tar.gz\ndocs/notes.txt\ndocs/guide.md\ndoc.docx\ndata.bin\nctx.txt\ncrlf.txt\ncr_only.txt\ncase.txt\nbom.txt\nblank.txt\nbig.txt\nREADME.md",
+  "is_error": false
+ },
+ "glob/star-star-middle": {
+  "content": "src/lib/helpers.py",
+  "is_error": false
+ },
+ "glob/star-star-then-name": {
+  "content": "src/lib/helpers.py",
+  "is_error": false
+ },
+ "glob/ties-by-path": {
+  "content": "ties/c.txt\nties/a.txt\nties/b.txt",
+  "is_error": false
+ },
+ "glob/trailing-slash": {
+  "content": "No files matching 'src/' in <WS>",
+  "is_error": false
+ },
+ "glob/ts-dot-test": {
+  "content": "src/app.test.ts",
+  "is_error": false
+ },
+ "glob/ts-src": {
+  "content": "src/app.ts\nsrc/app.test.ts",
+  "is_error": false
+ },
+ "glob/txt-recursive": {
+  "content": "ties/c.txt\nties/a.txt\nties/b.txt\nmany/f30.txt\nmany/f29.txt\nmany/f28.txt\nmany/f27.txt\nmany/f26.txt\nmany/f25.txt\nmany/f24.txt\nmany/f23.txt\nmany/f22.txt\nmany/f21.txt\nmany/f20.txt\nmany/f19.txt\nmany/f18.txt\nmany/f17.txt\nmany/f16.txt\nmany/f15.txt\nmany/f14.txt\nmany/f13.txt\nmany/f12.txt\nmany/f11.txt\nmany/f10.txt\nmany/f09.txt\nmany/f08.txt\nmany/f07.txt\nmany/f06.txt\nmany/f05.txt\nmany/f04.txt\nmany/f03.txt\nmany/f02.txt\nmany/f01.txt\nünïcode.txt\nsep.txt\nregex.txt\nnonl.txt\nnested/ok.txt\nneg/out/x.txt\nneg/b.txt\nname with spaces.txt\nmulti.txt\nlong_lines.txt\nlines.txt\nlatin1.txt\nign/sub/rooted.txt\nign/rooted.txt\nign/keep.txt\nign/ignored_dir/x.txt\nign/docs/a.txt\ngi_b/x/sub/inner.txt\ngi_b/top.txt\ngi_b/sub/top.txt\ngi_b/sub/inner.txt\ngi_b/spaced.txt\ngi_b/p/gen/b.txt\ngi_b/not.txt\ngi_b/keep.txt\ngi_b/gen/a.txt\ngi_b/dir.d/f.txt\ngi_b/#hash.txt\ngi_a/x/sub/inner.txt\ngi_a/top.txt\ngi_a/sub/top.txt\ngi_a/sub/inner.txt\ngi_a/spaced.txt\ngi_a/p/gen/b.txt\ngi_a/not.txt\ngi_a/keep.txt\ngi_a/gen/a.txt\ngi_a/dir.d/f.txt\ngi_a/#hash.txt\ndocs/notes.txt\nctx.txt\ncrlf.txt\ncr_only.txt\ncase.txt\nbom.txt\nblank.txt\nbig.txt",
+  "is_error": false
+ },
+ "glob/unicode": {
+  "content": "ünïcode.txt",
+  "is_error": false
+ },
+ "glob/unknown-match-mode-is-path": {
+  "content": "README.md",
+  "is_error": false
+ },
+ "glob/unterminated-class": {
+  "content": "No files matching '[a*.py' in <WS>",
+  "is_error": false
+ },
+ "glob/upper-case-name-windows": {
+  "content": "src/util.py\nsrc/main.py\nsrc/lib/helpers.py",
+  "is_error": false
+ },
+ "glob/upper-case-pattern-windows": {
+  "content": "src/util.py\nsrc/main.py",
+  "is_error": false
+ },
+ "glob/windows-separator": {
+  "content": "src/util.py",
+  "is_error": false
+ },
+ "grep/binary-skipped": {
+  "content": "No matches for pattern 'needle' in <WS> (include=data.bin)",
+  "is_error": false
+ },
+ "grep/blank-file": {
+  "content": "No matches for pattern '.*' in <WS> (include=blank.txt)",
+  "is_error": false
+ },
+ "grep/bom-file": {
+  "content": "No matches for pattern '^bom' in <WS> (include=bom.txt)",
+  "is_error": false
+ },
+ "grep/caret-only": {
+  "content": "ctx.txt:12\n[12 matching lines in 1 files.]",
+  "is_error": false
+ },
+ "grep/case-insensitive": {
+  "content": "case.txt:1: Needle\ncase.txt:2: NEEDLE\ncase.txt:3: needle",
+  "is_error": false
+ },
+ "grep/case-insensitive-string-flag": {
+  "content": "case.txt:1: Needle\ncase.txt:2: NEEDLE\ncase.txt:3: needle",
+  "is_error": false
+ },
+ "grep/case-sensitive": {
+  "content": "case.txt:3: needle",
+  "is_error": false
+ },
+ "grep/context-1": {
+  "content": "ctx.txt-2- two\nctx.txt:3: HIT a\nctx.txt-4- three\n--\nctx.txt-8- seven\nctx.txt:9: HIT b\nctx.txt-10- eight\nctx.txt:11: HIT c\nctx.txt-12- nine",
+  "is_error": false
+ },
+ "grep/context-2": {
+  "content": "ctx.txt-1- one\nctx.txt-2- two\nctx.txt:3: HIT a\nctx.txt-4- three\nctx.txt-5- four\n--\nctx.txt-7- six\nctx.txt-8- seven\nctx.txt:9: HIT b\nctx.txt-10- eight\nctx.txt:11: HIT c\nctx.txt-12- nine",
+  "is_error": false
+ },
+ "grep/context-big-clamped": {
+  "content": "ctx.txt-1- one\nctx.txt-2- two\nctx.txt-3- HIT a\nctx.txt-4- three\nctx.txt-5- four\nctx.txt-6- five\nctx.txt-7- six\nctx.txt-8- seven\nctx.txt:9: HIT b\nctx.txt-10- eight\nctx.txt-11- HIT c\nctx.txt-12- nine",
+  "is_error": false
+ },
+ "grep/context-negative": {
+  "content": "ctx.txt:3: HIT a\nctx.txt:9: HIT b\nctx.txt:11: HIT c",
+  "is_error": false
+ },
+ "grep/context-with-files-mode": {
+  "content": "ctx.txt",
+  "is_error": false
+ },
+ "grep/count-lines": {
+  "content": "lines.txt:250\n[250 matching lines in 1 files.]",
+  "is_error": false
+ },
+ "grep/count-page-first": {
+  "content": "case.txt:1\nign/app.log:1\nign/docs/a.tmp:1\n[19 matching lines in 18 files; showing files 1-3. Pass offset=3 for the next page.]",
+  "is_error": false
+ },
+ "grep/count-page-past": {
+  "content": "No entries at offset 500 — only 18 files.",
+  "is_error": false
+ },
+ "grep/count-page-second": {
+  "content": "ign/docs/a.txt:1\nign/ignored_dir/x.txt:1\nign/keep.txt:1\n[19 matching lines in 18 files; showing files 4-6. Pass offset=6 for the next page.]",
+  "is_error": false
+ },
+ "grep/cr-only-file": {
+  "content": "cr_only.txt:2: two",
+  "is_error": false
+ },
+ "grep/crlf-file": {
+  "content": "crlf.txt:2: two",
+  "is_error": false
+ },
+ "grep/digits": {
+  "content": "lines.txt:100: line 100 match\nlines.txt:101: line 101 match\nlines.txt:102: line 102 match\n[Showing matching lines 1-3; more exist. Pass offset=3 for the next page, or narrow directory/include/type.]",
+  "is_error": false
+ },
+ "grep/dir-file-component": {
+  "content": "Error: grep search path has a file as a directory component: README.md is a file in 'README.md/sub'. Search its parent directory '<WS>' instead.",
+  "is_error": true
+ },
+ "grep/dir-is-file": {
+  "content": "Error: grep search root is a file, not a directory: README.md. Use `read` to inspect that file, or search its parent directory '<WS>' with a narrower pattern.",
+  "is_error": true
+ },
+ "grep/dir-missing": {
+  "content": "Error: grep search directory does not exist: nope. Check the path and use an existing directory.",
+  "is_error": true
+ },
+ "grep/dir-outside": {
+  "content": "Error: Path '<OUT>' is outside the allowed sandbox roots. Add it as an explicit project/read-only root before access.",
+  "is_error": true
+ },
+ "grep/dot-matches-unicode": {
+  "content": "README.md:5: Unicode: café ✓ naïve",
+  "is_error": false
+ },
+ "grep/dot-star-all-lines": {
+  "content": "nonl.txt:2\n[2 matching lines in 1 files.]",
+  "is_error": false
+ },
+ "grep/empty-pattern": {
+  "content": "nonl.txt:1: first\nnonl.txt:2: last without newline",
+  "is_error": false
+ },
+ "grep/files-page-first": {
+  "content": "ünïcode.txt\nnested/ok.txt\nnested/build\n[Showing files 1-3 of 18. Pass offset=3 for the next page, or narrow directory/include/type.]",
+  "is_error": false
+ },
+ "grep/files-page-past": {
+  "content": "No entries at offset 500 — only 18 files.",
+  "is_error": false
+ },
+ "grep/files-page-second": {
+  "content": "neg/out/x.txt\nneg/keep.log\nneg/b.txt\n[Showing files 4-6 of 18. Pass offset=6 for the next page, or narrow directory/include/type.]",
+  "is_error": false
+ },
+ "grep/fixed-backslash-n-ok": {
+  "content": "No matches for pattern 'a\\nb' in <WS> (include=multi.txt)",
+  "is_error": false
+ },
+ "grep/fixed-newline": {
+  "content": "Error: grep is line-oriented and cannot match newline expressions. Pass multiline=true, search each line pattern separately, or use a scoped source search query for cross-line relationships.",
+  "is_error": true
+ },
+ "grep/fixed-parens": {
+  "content": "regex.txt:3: foo(bar)",
+  "is_error": false
+ },
+ "grep/fixed-strings": {
+  "content": "regex.txt:1: a.b",
+  "is_error": false
+ },
+ "grep/gi-a": {
+  "content": "gi_a/#hash.txt:1\ngi_a/gen/a.txt:1\ngi_a/keep.txt:1\ngi_a/not.txt:1\ngi_a/p/gen/b.txt:1\ngi_a/x/sub/inner.txt:1\ngi_a/z.dat:1\n[7 matching lines in 7 files.]",
+  "is_error": false
+ },
+ "grep/gi-b": {
+  "content": "gi_b/#hash.txt:1\ngi_b/a/xb:1\ngi_b/a.tmp:1\ngi_b/gen/a.txt:1\ngi_b/keep.txt:1\ngi_b/not.txt:1\ngi_b/p/gen/b.txt:1\ngi_b/sub/inner.txt:1\ngi_b/x/sub/inner.txt:1\ngi_b/z.dat:1\n[10 matching lines in 10 files.]",
+  "is_error": false
+ },
+ "grep/ign": {
+  "content": "ign/keep.txt\nign/docs/a.txt",
+  "is_error": false
+ },
+ "grep/ign-content": {
+  "content": "ign/keep.txt:1: needle keep\nign/docs/a.txt:1: needle doc",
+  "is_error": false
+ },
+ "grep/include-case-windows": {
+  "content": "src/main.py:5:     # TODO: wire up\nsrc/lib/helpers.py:2: # TODO later",
+  "is_error": false
+ },
+ "grep/include-class": {
+  "content": "README.md:3: A TODO list lives here.\nREADME.md:4: Second TODO line.\ndocs/guide.md:3: See the TODO list.\nsrc/main.py:5:     # TODO: wire up\nsrc/lib/helpers.py:2: # TODO later",
+  "is_error": false
+ },
+ "grep/include-empty": {
+  "content": "README.md:3: A TODO list lives here.\nREADME.md:4: Second TODO line.\ndocs/guide.md:3: See the TODO list.\nsrc/app.ts:4: // TODO: types\nsrc/main.py:5:     # TODO: wire up\nsrc/lib/helpers.py:2: # TODO later",
+  "is_error": false
+ },
+ "grep/include-md": {
+  "content": "README.md:3: A TODO list lives here.\nREADME.md:4: Second TODO line.\ndocs/guide.md:3: See the TODO list.",
+  "is_error": false
+ },
+ "grep/include-no-match": {
+  "content": "No matches for pattern 'TODO' in <WS> (include=*.zzz)",
+  "is_error": false
+ },
+ "grep/include-py": {
+  "content": "src/main.py:5:     # TODO: wire up\nsrc/lib/helpers.py:2: # TODO later",
+  "is_error": false
+ },
+ "grep/inline-flag": {
+  "content": "case.txt:1: Needle\ncase.txt:2: NEEDLE\ncase.txt:3: needle",
+  "is_error": false
+ },
+ "grep/leading-context-at-bof": {
+  "content": "ctx.txt:1: one\nctx.txt-2- two\nctx.txt-3- HIT a\nctx.txt-4- three",
+  "is_error": false
+ },
+ "grep/long-line": {
+  "content": "long_lines.txt:1: LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL\nlong_lines.txt:2: short needle",
+  "is_error": false
+ },
+ "grep/multiline": {
+  "content": "multi.txt:1: alpha\nmulti.txt:2: beta",
+  "is_error": false
+ },
+ "grep/multiline-anchors": {
+  "content": "multi.txt:2: beta",
+  "is_error": false
+ },
+ "grep/multiline-case": {
+  "content": "multi.txt:1: alpha\nmulti.txt:2: beta\nmulti.txt:5: alpha beta",
+  "is_error": false
+ },
+ "grep/multiline-context": {
+  "content": "multi.txt-2- beta\nmulti.txt:3: gamma\nmulti.txt:4: delta\nmulti.txt-5- alpha beta",
+  "is_error": false
+ },
+ "grep/multiline-count": {
+  "content": "multi.txt:5\n[5 matching lines in 1 files.]",
+  "is_error": false
+ },
+ "grep/multiline-dotall": {
+  "content": "multi.txt:2: beta\nmulti.txt:3: gamma\nmulti.txt:4: delta",
+  "is_error": false
+ },
+ "grep/multiline-escaped": {
+  "content": "multi.txt:1: alpha\nmulti.txt:2: beta",
+  "is_error": false
+ },
+ "grep/needle-count": {
+  "content": "case.txt:1\nign/app.log:1\nign/docs/a.tmp:1\nign/docs/a.txt:1\nign/ignored_dir/x.txt:1\nign/keep.txt:1\nign/rooted.txt:1\nign/sub/rooted.txt:1\nign/sub/trace.log:1\nlong_lines.txt:2\nname with spaces.txt:1\nneg/a.log:1\nneg/b.txt:1\nneg/keep.log:1\nneg/out/x.txt:1\nnested/build:1\nnested/ok.txt:1\nünïcode.txt:1\n[19 matching lines in 18 files.]",
+  "is_error": false
+ },
+ "grep/neg": {
+  "content": "neg/keep.log\nneg/b.txt",
+  "is_error": false
+ },
+ "grep/newline-escaped-backslash-ok": {
+  "content": "No matches for pattern 'alpha\\\\nbeta' in <WS> (include=multi.txt)",
+  "is_error": false
+ },
+ "grep/newline-literal-without-multiline": {
+  "content": "Error: grep is line-oriented and cannot match newline expressions. Pass multiline=true, search each line pattern separately, or use a scoped source search query for cross-line relationships.",
+  "is_error": true
+ },
+ "grep/newline-r": {
+  "content": "Error: grep is line-oriented and cannot match newline expressions. Pass multiline=true, search each line pattern separately, or use a scoped source search query for cross-line relationships.",
+  "is_error": true
+ },
+ "grep/newline-without-multiline": {
+  "content": "Error: grep is line-oriented and cannot match newline expressions. Pass multiline=true, search each line pattern separately, or use a scoped source search query for cross-line relationships.",
+  "is_error": true
+ },
+ "grep/no-match": {
+  "content": "No matches for pattern 'zzzzzz' in <WS> (include=*)",
+  "is_error": false
+ },
+ "grep/no-match-dir": {
+  "content": "No matches for pattern 'zzzzzz' in src (include=*)",
+  "is_error": false
+ },
+ "grep/no-match-scope": {
+  "content": "No matches for pattern 'zzzzzz' in <WS> (include=*.py, type=py)",
+  "is_error": false
+ },
+ "grep/non-greedy": {
+  "content": "lines.txt:1: line 1 match\nlines.txt:2: line 2 match\n[Showing matching lines 1-2; more exist. Pass offset=2 for the next page, or narrow directory/include/type.]",
+  "is_error": false
+ },
+ "grep/not-fixed": {
+  "content": "regex.txt:1: a.b\nregex.txt:2: axb",
+  "is_error": false
+ },
+ "grep/page-default-limit": {
+  "content": "lines.txt:1: line 1 match\nlines.txt:2: line 2 match\nlines.txt:3: line 3 match\nlines.txt:4: line 4 match\nlines.txt:5: line 5 match\nlines.txt:6: line 6 match\nlines.txt:7: line 7 match\nlines.txt:8: line 8 match\nlines.txt:9: line 9 match\nlines.txt:10: line 10 match\nlines.txt:11: line 11 match\nlines.txt:12: line 12 match\nlines.txt:13: line 13 match\nlines.txt:14: line 14 match\nlines.txt:15: line 15 match\nlines.txt:16: line 16 match\nlines.txt:17: line 17 match\nlines.txt:18: line 18 match\nlines.txt:19: line 19 match\nlines.txt:20: line 20 match\nlines.txt:21: line 21 match\nlines.txt:22: line 22 match\nlines.txt:23: line 23 match\nlines.txt:24: line 24 match\nlines.txt:25: line 25 match\nlines.txt:26: line 26 match\nlines.txt:27: line 27 match\nlines.txt:28: line 28 match\nlines.txt:29: line 29 match\nlines.txt:30: line 30 match\nlines.txt:31: line 31 match\nlines.txt:32: line 32 match\nlines.txt:33: line 33 match\nlines.txt:34: line 34 match\nlines.txt:35: line 35 match\nlines.txt:36: line 36 match\nlines.txt:37: line 37 match\nlines.txt:38: line 38 match\nlines.txt:39: line 39 match\nlines.txt:40: line 40 match\nlines.txt:41: line 41 match\nlines.txt:42: line 42 match\nlines.txt:43: line 43 match\nlines.txt:44: line 44 match\nlines.txt:45: line 45 match\nlines.txt:46: line 46 match\nlines.txt:47: line 47 match\nlines.txt:48: line 48 match\nlines.txt:49: line 49 match\nlines.txt:50: line 50 match\nlines.txt:51: line 51 match\nlines.txt:52: line 52 match\nlines.txt:53: line 53 match\nlines.txt:54: line 54 match\nlines.txt:55: line 55 match\nlines.txt:56: line 56 match\nlines.txt:57: line 57 match\nlines.txt:58: line 58 match\nlines.txt:59: line 59 match\nlines.txt:60: line 60 match\nlines.txt:61: line 61 match\nlines.txt:62: line 62 match\nlines.txt:63: line 63 match\nlines.txt:64: line 64 match\nlines.txt:65: line 65 match\nlines.txt:66: line 66 match\nlines.txt:67: line 67 match\nlines.txt:68: line 68 match\nlines.txt:69: line 69 match\nlines.txt:70: line 70 match\nlines.txt:71: line 71 match\nlines.txt:72: line 72 match\nlines.txt:73: line 73 match\nlines.txt:74: line 74 match\nlines.txt:75: line 75 match\nlines.txt:76: line 76 match\nlines.txt:77: line 77 match\nlines.txt:78: line 78 match\nlines.txt:79: line 79 match\nlines.txt:80: line 80 match\nlines.txt:81: line 81 match\nlines.txt:82: line 82 match\nlines.txt:83: line 83 match\nlines.txt:84: line 84 match\nlines.txt:85: line 85 match\nlines.txt:86: line 86 match\nlines.txt:87: line 87 match\nlines.txt:88: line 88 match\nlines.txt:89: line 89 match\nlines.txt:90: line 90 match\nlines.txt:91: line 91 match\nlines.txt:92: line 92 match\nlines.txt:93: line 93 match\nlines.txt:94: line 94 match\nlines.txt:95: line 95 match\nlines.txt:96: line 96 match\nlines.txt:97: line 97 match\nlines.txt:98: line 98 match\nlines.txt:99: line 99 match\nlines.txt:100: line 100 match\n[Showing matching lines 1-100; more exist. Pass offset=100 for the next page, or narrow directory/include/type.]",
+  "is_error": false
+ },
+ "grep/page-exact": {
+  "content": "lines.txt:1: line 1 match\nlines.txt:2: line 2 match\nlines.txt:3: line 3 match\nlines.txt:4: line 4 match\nlines.txt:5: line 5 match\nlines.txt:6: line 6 match\nlines.txt:7: line 7 match\nlines.txt:8: line 8 match\nlines.txt:9: line 9 match\nlines.txt:10: line 10 match\nlines.txt:11: line 11 match\nlines.txt:12: line 12 match\nlines.txt:13: line 13 match\nlines.txt:14: line 14 match\nlines.txt:15: line 15 match\nlines.txt:16: line 16 match\nlines.txt:17: line 17 match\nlines.txt:18: line 18 match\nlines.txt:19: line 19 match\nlines.txt:20: line 20 match\nlines.txt:21: line 21 match\nlines.txt:22: line 22 match\nlines.txt:23: line 23 match\nlines.txt:24: line 24 match\nlines.txt:25: line 25 match\nlines.txt:26: line 26 match\nlines.txt:27: line 27 match\nlines.txt:28: line 28 match\nlines.txt:29: line 29 match\nlines.txt:30: line 30 match\nlines.txt:31: line 31 match\nlines.txt:32: line 32 match\nlines.txt:33: line 33 match\nlines.txt:34: line 34 match\nlines.txt:35: line 35 match\nlines.txt:36: line 36 match\nlines.txt:37: line 37 match\nlines.txt:38: line 38 match\nlines.txt:39: line 39 match\nlines.txt:40: line 40 match\nlines.txt:41: line 41 match\nlines.txt:42: line 42 match\nlines.txt:43: line 43 match\nlines.txt:44: line 44 match\nlines.txt:45: line 45 match\nlines.txt:46: line 46 match\nlines.txt:47: line 47 match\nlines.txt:48: line 48 match\nlines.txt:49: line 49 match\nlines.txt:50: line 50 match\nlines.txt:51: line 51 match\nlines.txt:52: line 52 match\nlines.txt:53: line 53 match\nlines.txt:54: line 54 match\nlines.txt:55: line 55 match\nlines.txt:56: line 56 match\nlines.txt:57: line 57 match\nlines.txt:58: line 58 match\nlines.txt:59: line 59 match\nlines.txt:60: line 60 match\nlines.txt:61: line 61 match\nlines.txt:62: line 62 match\nlines.txt:63: line 63 match\nlines.txt:64: line 64 match\nlines.txt:65: line 65 match\nlines.txt:66: line 66 match\nlines.txt:67: line 67 match\nlines.txt:68: line 68 match\nlines.txt:69: line 69 match\nlines.txt:70: line 70 match\nlines.txt:71: line 71 match\nlines.txt:72: line 72 match\nlines.txt:73: line 73 match\nlines.txt:74: line 74 match\nlines.txt:75: line 75 match\nlines.txt:76: line 76 match\nlines.txt:77: line 77 match\nlines.txt:78: line 78 match\nlines.txt:79: line 79 match\nlines.txt:80: line 80 match\nlines.txt:81: line 81 match\nlines.txt:82: line 82 match\nlines.txt:83: line 83 match\nlines.txt:84: line 84 match\nlines.txt:85: line 85 match\nlines.txt:86: line 86 match\nlines.txt:87: line 87 match\nlines.txt:88: line 88 match\nlines.txt:89: line 89 match\nlines.txt:90: line 90 match\nlines.txt:91: line 91 match\nlines.txt:92: line 92 match\nlines.txt:93: line 93 match\nlines.txt:94: line 94 match\nlines.txt:95: line 95 match\nlines.txt:96: line 96 match\nlines.txt:97: line 97 match\nlines.txt:98: line 98 match\nlines.txt:99: line 99 match\nlines.txt:100: line 100 match\nlines.txt:101: line 101 match\nlines.txt:102: line 102 match\nlines.txt:103: line 103 match\nlines.txt:104: line 104 match\nlines.txt:105: line 105 match\nlines.txt:106: line 106 match\nlines.txt:107: line 107 match\nlines.txt:108: line 108 match\nlines.txt:109: line 109 match\nlines.txt:110: line 110 match\nlines.txt:111: line 111 match\nlines.txt:112: line 112 match\nlines.txt:113: line 113 match\nlines.txt:114: line 114 match\nlines.txt:115: line 115 match\nlines.txt:116: line 116 match\nlines.txt:117: line 117 match\nlines.txt:118: line 118 match\nlines.txt:119: line 119 match\nlines.txt:120: line 120 match\nlines.txt:121: line 121 match\nlines.txt:122: line 122 match\nlines.txt:123: line 123 match\nlines.txt:124: line 124 match\nlines.txt:125: line 125 match\nlines.txt:126: line 126 match\nlines.txt:127: line 127 match\nlines.txt:128: line 128 match\nlines.txt:129: line 129 match\nlines.txt:130: line 130 match\nlines.txt:131: line 131 match\nlines.txt:132: line 132 match\nlines.txt:133: line 133 match\nlines.txt:134: line 134 match\nlines.txt:135: line 135 match\nlines.txt:136: line 136 match\nlines.txt:137: line 137 match\nlines.txt:138: line 138 match\nlines.txt:139: line 139 match\nlines.txt:140: line 140 match\nlines.txt:141: line 141 match\nlines.txt:142: line 142 match\nlines.txt:143: line 143 match\nlines.txt:144: line 144 match\nlines.txt:145: line 145 match\nlines.txt:146: line 146 match\nlines.txt:147: line 147 match\nlines.txt:148: line 148 match\nlines.txt:149: line 149 match\nlines.txt:150: line 150 match\nlines.txt:151: line 151 match\nlines.txt:152: line 152 match\nlines.txt:153: line 153 match\nlines.txt:154: line 154 match\nlines.txt:155: line 155 match\nlines.txt:156: line 156 match\nlines.txt:157: line 157 match\nlines.txt:158: line 158 match\nlines.txt:159: line 159 match\nlines.txt:160: line 160 match\nlines.txt:161: line 161 match\nlines.txt:162: line 162 match\nlines.txt:163: line 163 match\nlines.txt:164: line 164 match\nlines.txt:165: line 165 match\nlines.txt:166: line 166 match\nlines.txt:167: line 167 match\nlines.txt:168: line 168 match\nlines.txt:169: line 169 match\nlines.txt:170: line 170 match\nlines.txt:171: line 171 match\nlines.txt:172: line 172 match\nlines.txt:173: line 173 match\nlines.txt:174: line 174 match\nlines.txt:175: line 175 match\nlines.txt:176: line 176 match\nlines.txt:177: line 177 match\nlines.txt:178: line 178 match\nlines.txt:179: line 179 match\nlines.txt:180: line 180 match\nlines.txt:181: line 181 match\nlines.txt:182: line 182 match\nlines.txt:183: line 183 match\nlines.txt:184: line 184 match\nlines.txt:185: line 185 match\nlines.txt:186: line 186 match\nlines.txt:187: line 187 match\nlines.txt:188: line 188 match\nlines.txt:189: line 189 match\nlines.txt:190: line 190 match\nlines.txt:191: line 191 match\nlines.txt:192: line 192 match\nlines.txt:193: line 193 match\nlines.txt:194: line 194 match\nlines.txt:195: line 195 match\nlines.txt:196: line 196 match\nlines.txt:197: line 197 match\nlines.txt:198: line 198 match\nlines.txt:199: line 199 match\nlines.txt:200: line 200 match\nlines.txt:201: line 201 match\nlines.txt:202: line 202 match\nlines.txt:203: line 203 match\nlines.txt:204: line 204 match\nlines.txt:205: line 205 match\nlines.txt:206: line 206 match\nlines.txt:207: line 207 match\nlines.txt:208: line 208 match\nlines.txt:209: line 209 match\nlines.txt:210: line 210 match\nlines.txt:211: line 211 match\nlines.txt:212: line 212 match\nlines.txt:213: line 213 match\nlines.txt:214: line 214 match\nlines.txt:215: line 215 match\nlines.txt:216: line 216 match\nlines.txt:217: line 217 match\nlines.txt:218: line 218 match\nlines.txt:219: line 219 match\nlines.txt:220: line 220 match\nlines.txt:221: line 221 match\nlines.txt:222: line 222 match\nlines.txt:223: line 223 match\nlines.txt:224: line 224 match\nlines.txt:225: line 225 match\nlines.txt:226: line 226 match\nlines.txt:227: line 227 match\nlines.txt:228: line 228 match\nlines.txt:229: line 229 match\nlines.txt:230: line 230 match\nlines.txt:231: line 231 match\nlines.txt:232: line 232 match\nlines.txt:233: line 233 match\nlines.txt:234: line 234 match\nlines.txt:235: line 235 match\nlines.txt:236: line 236 match\nlines.txt:237: line 237 match\nlines.txt:238: line 238 match\nlines.txt:239: line 239 match\nlines.txt:240: line 240 match\nlines.txt:241: line 241 match\nlines.txt:242: line 242 match\nlines.txt:243: line 243 match\nlines.txt:244: line 244 match\nlines.txt:245: line 245 match\nlines.txt:246: line 246 match\nlines.txt:247: line 247 match\nlines.txt:248: line 248 match\nlines.txt:249: line 249 match\nlines.txt:250: line 250 match",
+  "is_error": false
+ },
+ "grep/page-first": {
+  "content": "lines.txt:1: line 1 match\nlines.txt:2: line 2 match\nlines.txt:3: line 3 match\nlines.txt:4: line 4 match\nlines.txt:5: line 5 match\n[Showing matching lines 1-5; more exist. Pass offset=5 for the next page, or narrow directory/include/type.]",
+  "is_error": false
+ },
+ "grep/page-last": {
+  "content": "lines.txt:201: line 201 match\nlines.txt:202: line 202 match\nlines.txt:203: line 203 match\nlines.txt:204: line 204 match\nlines.txt:205: line 205 match\nlines.txt:206: line 206 match\nlines.txt:207: line 207 match\nlines.txt:208: line 208 match\nlines.txt:209: line 209 match\nlines.txt:210: line 210 match\nlines.txt:211: line 211 match\nlines.txt:212: line 212 match\nlines.txt:213: line 213 match\nlines.txt:214: line 214 match\nlines.txt:215: line 215 match\nlines.txt:216: line 216 match\nlines.txt:217: line 217 match\nlines.txt:218: line 218 match\nlines.txt:219: line 219 match\nlines.txt:220: line 220 match\nlines.txt:221: line 221 match\nlines.txt:222: line 222 match\nlines.txt:223: line 223 match\nlines.txt:224: line 224 match\nlines.txt:225: line 225 match\nlines.txt:226: line 226 match\nlines.txt:227: line 227 match\nlines.txt:228: line 228 match\nlines.txt:229: line 229 match\nlines.txt:230: line 230 match\nlines.txt:231: line 231 match\nlines.txt:232: line 232 match\nlines.txt:233: line 233 match\nlines.txt:234: line 234 match\nlines.txt:235: line 235 match\nlines.txt:236: line 236 match\nlines.txt:237: line 237 match\nlines.txt:238: line 238 match\nlines.txt:239: line 239 match\nlines.txt:240: line 240 match\nlines.txt:241: line 241 match\nlines.txt:242: line 242 match\nlines.txt:243: line 243 match\nlines.txt:244: line 244 match\nlines.txt:245: line 245 match\nlines.txt:246: line 246 match\nlines.txt:247: line 247 match\nlines.txt:248: line 248 match\nlines.txt:249: line 249 match\nlines.txt:250: line 250 match\n[Showing matching lines 201-250 of 250.]",
+  "is_error": false
+ },
+ "grep/page-limit-clamped": {
+  "content": "lines.txt:1: line 1 match\nlines.txt:2: line 2 match\nlines.txt:3: line 3 match\nlines.txt:4: line 4 match\nlines.txt:5: line 5 match\nlines.txt:6: line 6 match\nlines.txt:7: line 7 match\nlines.txt:8: line 8 match\nlines.txt:9: line 9 match\nlines.txt:10: line 10 match\nlines.txt:11: line 11 match\nlines.txt:12: line 12 match\nlines.txt:13: line 13 match\nlines.txt:14: line 14 match\nlines.txt:15: line 15 match\nlines.txt:16: line 16 match\nlines.txt:17: line 17 match\nlines.txt:18: line 18 match\nlines.txt:19: line 19 match\nlines.txt:20: line 20 match\nlines.txt:21: line 21 match\nlines.txt:22: line 22 match\nlines.txt:23: line 23 match\nlines.txt:24: line 24 match\nlines.txt:25: line 25 match\nlines.txt:26: line 26 match\nlines.txt:27: line 27 match\nlines.txt:28: line 28 match\nlines.txt:29: line 29 match\nlines.txt:30: line 30 match\nlines.txt:31: line 31 match\nlines.txt:32: line 32 match\nlines.txt:33: line 33 match\nlines.txt:34: line 34 match\nlines.txt:35: line 35 match\nlines.txt:36: line 36 match\nlines.txt:37: line 37 match\nlines.txt:38: line 38 match\nlines.txt:39: line 39 match\nlines.txt:40: line 40 match\nlines.txt:41: line 41 match\nlines.txt:42: line 42 match\nlines.txt:43: line 43 match\nlines.txt:44: line 44 match\nlines.txt:45: line 45 match\nlines.txt:46: line 46 match\nlines.txt:47: line 47 match\nlines.txt:48: line 48 match\nlines.txt:49: line 49 match\nlines.txt:50: line 50 match\nlines.txt:51: line 51 match\nlines.txt:52: line 52 match\nlines.txt:53: line 53 match\nlines.txt:54: line 54 match\nlines.txt:55: line 55 match\nlines.txt:56: line 56 match\nlines.txt:57: line 57 match\nlines.txt:58: line 58 match\nlines.txt:59: line 59 match\nlines.txt:60: line 60 match\nlines.txt:61: line 61 match\nlines.txt:62: line 62 match\nlines.txt:63: line 63 match\nlines.txt:64: line 64 match\nlines.txt:65: line 65 match\nlines.txt:66: line 66 match\nlines.txt:67: line 67 match\nlines.txt:68: line 68 match\nlines.txt:69: line 69 match\nlines.txt:70: line 70 match\nlines.txt:71: line 71 match\nlines.txt:72: line 72 match\nlines.txt:73: line 73 match\nlines.txt:74: line 74 match\nlines.txt:75: line 75 match\nlines.txt:76: line 76 match\nlines.txt:77: line 77 match\nlines.txt:78: line 78 match\nlines.txt:79: line 79 match\nlines.txt:80: line 80 match\nlines.txt:81: line 81 match\nlines.txt:82: line 82 match\nlines.txt:83: line 83 match\nlines.txt:84: line 84 match\nlines.txt:85: line 85 match\nlines.txt:86: line 86 match\nlines.txt:87: line 87 match\nlines.txt:88: line 88 match\nlines.txt:89: line 89 match\nlines.txt:90: line 90 match\nlines.txt:91: line 91 match\nlines.txt:92: line 92 match\nlines.txt:93: line 93 match\nlines.txt:94: line 94 match\nlines.txt:95: line 95 match\nlines.txt:96: line 96 match\nlines.txt:97: line 97 match\nlines.txt:98: line 98 match\nlines.txt:99: line 99 match\nlines.txt:100: line 100 match\nlines.txt:101: line 101 match\nlines.txt:102: line 102 match\nlines.txt:103: line 103 match\nlines.txt:104: line 104 match\nlines.txt:105: line 105 match\nlines.txt:106: line 106 match\nlines.txt:107: line 107 match\nlines.txt:108: line 108 match\nlines.txt:109: line 109 match\nlines.txt:110: line 110 match\nlines.txt:111: line 111 match\nlines.txt:112: line 112 match\nlines.txt:113: line 113 match\nlines.txt:114: line 114 match\nlines.txt:115: line 115 match\nlines.txt:116: line 116 match\nlines.txt:117: line 117 match\nlines.txt:118: line 118 match\nlines.txt:119: line 119 match\nlines.txt:120: line 120 match\nlines.txt:121: line 121 match\nlines.txt:122: line 122 match\nlines.txt:123: line 123 match\nlines.txt:124: line 124 match\nlines.txt:125: line 125 match\nlines.txt:126: line 126 match\nlines.txt:127: line 127 match\nlines.txt:128: line 128 match\nlines.txt:129: line 129 match\nlines.txt:130: line 130 match\nlines.txt:131: line 131 match\nlines.txt:132: line 132 match\nlines.txt:133: line 133 match\nlines.txt:134: line 134 match\nlines.txt:135: line 135 match\nlines.txt:136: line 136 match\nlines.txt:137: line 137 match\nlines.txt:138: line 138 match\nlines.txt:139: line 139 match\nlines.txt:140: line 140 match\nlines.txt:141: line 141 match\nlines.txt:142: line 142 match\nlines.txt:143: line 143 match\nlines.txt:144: line 144 match\nlines.txt:145: line 145 match\nlines.txt:146: line 146 match\nlines.txt:147: line 147 match\nlines.txt:148: line 148 match\nlines.txt:149: line 149 match\nlines.txt:150: line 150 match\nlines.txt:151: line 151 match\nlines.txt:152: line 152 match\nlines.txt:153: line 153 match\nlines.txt:154: line 154 match\nlines.txt:155: line 155 match\nlines.txt:156: line 156 match\nlines.txt:157: line 157 match\nlines.txt:158: line 158 match\nlines.txt:159: line 159 match\nlines.txt:160: line 160 match\nlines.txt:161: line 161 match\nlines.txt:162: line 162 match\nlines.txt:163: line 163 match\nlines.txt:164: line 164 match\nlines.txt:165: line 165 match\nlines.txt:166: line 166 match\nlines.txt:167: line 167 match\nlines.txt:168: line 168 match\nlines.txt:169: line 169 match\nlines.txt:170: line 170 match\nlines.txt:171: line 171 match\nlines.txt:172: line 172 match\nlines.txt:173: line 173 match\nlines.txt:174: line 174 match\nlines.txt:175: line 175 match\nlines.txt:176: line 176 match\nlines.txt:177: line 177 match\nlines.txt:178: line 178 match\nlines.txt:179: line 179 match\nlines.txt:180: line 180 match\nlines.txt:181: line 181 match\nlines.txt:182: line 182 match\nlines.txt:183: line 183 match\nlines.txt:184: line 184 match\nlines.txt:185: line 185 match\nlines.txt:186: line 186 match\nlines.txt:187: line 187 match\nlines.txt:188: line 188 match\nlines.txt:189: line 189 match\nlines.txt:190: line 190 match\nlines.txt:191: line 191 match\nlines.txt:192: line 192 match\nlines.txt:193: line 193 match\nlines.txt:194: line 194 match\nlines.txt:195: line 195 match\nlines.txt:196: line 196 match\nlines.txt:197: line 197 match\nlines.txt:198: line 198 match\nlines.txt:199: line 199 match\nlines.txt:200: line 200 match\nlines.txt:201: line 201 match\nlines.txt:202: line 202 match\nlines.txt:203: line 203 match\nlines.txt:204: line 204 match\nlines.txt:205: line 205 match\nlines.txt:206: line 206 match\nlines.txt:207: line 207 match\nlines.txt:208: line 208 match\nlines.txt:209: line 209 match\nlines.txt:210: line 210 match\nlines.txt:211: line 211 match\nlines.txt:212: line 212 match\nlines.txt:213: line 213 match\nlines.txt:214: line 214 match\nlines.txt:215: line 215 match\nlines.txt:216: line 216 match\nlines.txt:217: line 217 match\nlines.txt:218: line 218 match\nlines.txt:219: line 219 match\nlines.txt:220: line 220 match\nlines.txt:221: line 221 match\nlines.txt:222: line 222 match\nlines.txt:223: line 223 match\nlines.txt:224: line 224 match\nlines.txt:225: line 225 match\nlines.txt:226: line 226 match\nlines.txt:227: line 227 match\nlines.txt:228: line 228 match\nlines.txt:229: line 229 match\nlines.txt:230: line 230 match\nlines.txt:231: line 231 match\nlines.txt:232: line 232 match\nlines.txt:233: line 233 match\nlines.txt:234: line 234 match\nlines.txt:235: line 235 match\nlines.txt:236: line 236 match\nlines.txt:237: line 237 match\nlines.txt:238: line 238 match\nlines.txt:239: line 239 match\nlines.txt:240: line 240 match\nlines.txt:241: line 241 match\nlines.txt:242: line 242 match\nlines.txt:243: line 243 match\nlines.txt:244: line 244 match\nlines.txt:245: line 245 match\nlines.txt:246: line 246 match\nlines.txt:247: line 247 match\nlines.txt:248: line 248 match\nlines.txt:249: line 249 match\nlines.txt:250: line 250 match",
+  "is_error": false
+ },
+ "grep/page-limit-zero": {
+  "content": "lines.txt:1: line 1 match\n[Showing matching lines 1-1; more exist. Pass offset=1 for the next page, or narrow directory/include/type.]",
+  "is_error": false
+ },
+ "grep/page-offset-negative": {
+  "content": "lines.txt:1: line 1 match\nlines.txt:2: line 2 match\n[Showing matching lines 1-2; more exist. Pass offset=2 for the next page, or narrow directory/include/type.]",
+  "is_error": false
+ },
+ "grep/page-past-end": {
+  "content": "No entries at offset 999 — only 250 matching lines.",
+  "is_error": false
+ },
+ "grep/page-second": {
+  "content": "lines.txt:6: line 6 match\nlines.txt:7: line 7 match\nlines.txt:8: line 8 match\nlines.txt:9: line 9 match\nlines.txt:10: line 10 match\n[Showing matching lines 6-10; more exist. Pass offset=10 for the next page, or narrow directory/include/type.]",
+  "is_error": false
+ },
+ "grep/page-with-context": {
+  "content": "ctx.txt-8- seven\nctx.txt:9: HIT b\nctx.txt-10- eight\n[Showing matching lines 2-2; more exist. Pass offset=2 for the next page, or narrow directory/include/type.]",
+  "is_error": false
+ },
+ "grep/page-with-context-first": {
+  "content": "ctx.txt-2- two\nctx.txt:3: HIT a\nctx.txt-4- three\n--\nctx.txt-8- seven\nctx.txt:9: HIT b\nctx.txt-10- eight\n[Showing matching lines 1-2; more exist. Pass offset=2 for the next page, or narrow directory/include/type.]",
+  "is_error": false
+ },
+ "grep/pattern-max-length": {
+  "content": "No matches for pattern 'zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz' in <WS> (include=*)",
+  "is_error": false
+ },
+ "grep/pattern-too-long": {
+  "content": "Error: Pattern too long (501 chars, max 500)",
+  "is_error": true
+ },
+ "grep/python-only-named-group": {
+  "content": "case.txt:3: needle",
+  "is_error": false
+ },
+ "grep/regex-alternation": {
+  "content": "src/main.py:6:     print('hello')\nsrc/util.py:1: def helper(x):\nsrc/util.py:7:         return helper(2)",
+  "is_error": false
+ },
+ "grep/regex-anchors": {
+  "content": "src/main.py:4: def main():\nsrc/util.py:1: def helper(x):",
+  "is_error": false
+ },
+ "grep/regex-backreference": {
+  "content": "regex.txt:5: foofoo",
+  "is_error": false
+ },
+ "grep/regex-class": {
+  "content": "multi.txt:1: alpha\nmulti.txt:5: alpha beta",
+  "is_error": false
+ },
+ "grep/regex-invalid": {
+  "content": "Error: Invalid regex: ",
+  "is_error": true
+ },
+ "grep/regex-lookahead": {
+  "content": "regex.txt:3: foo(bar)",
+  "is_error": false
+ },
+ "grep/separators": {
+  "content": "sep.txt:2: b\nsep.txt:3: c",
+  "is_error": false
+ },
+ "grep/skips-generated-and-hidden": {
+  "content": "ünïcode.txt\nnested/ok.txt\nnested/build\nneg/out/x.txt\nneg/keep.log\nneg/b.txt\nneg/a.log\nname with spaces.txt\nlong_lines.txt\nign/sub/trace.log\nign/sub/rooted.txt\nign/rooted.txt\nign/keep.txt\nign/ignored_dir/x.txt\nign/docs/a.txt\nign/docs/a.tmp\nign/app.log\ncase.txt",
+  "is_error": false
+ },
+ "grep/spaces-file": {
+  "content": "name with spaces.txt:1: spaced needle",
+  "is_error": false
+ },
+ "grep/todo": {
+  "content": "README.md:3: A TODO list lives here.\nREADME.md:4: Second TODO line.\ndocs/guide.md:3: See the TODO list.\nsrc/app.ts:4: // TODO: types\nsrc/main.py:5:     # TODO: wire up\nsrc/lib/helpers.py:2: # TODO later",
+  "is_error": false
+ },
+ "grep/todo-count": {
+  "content": "README.md:2\ndocs/guide.md:1\nsrc/app.ts:1\nsrc/lib/helpers.py:1\nsrc/main.py:1\n[6 matching lines in 5 files.]",
+  "is_error": false
+ },
+ "grep/todo-files": {
+  "content": "src/main.py\nsrc/lib/helpers.py\nsrc/app.ts\ndocs/guide.md\nREADME.md",
+  "is_error": false
+ },
+ "grep/todo-src": {
+  "content": "src/app.ts:4: // TODO: types\nsrc/main.py:5:     # TODO: wire up\nsrc/lib/helpers.py:2: # TODO later",
+  "is_error": false
+ },
+ "grep/trailing-context-at-eof": {
+  "content": "ctx.txt-9- HIT b\nctx.txt-10- eight\nctx.txt-11- HIT c\nctx.txt:12: nine",
+  "is_error": false
+ },
+ "grep/type-invalid": {
+  "content": "Error: Invalid type 'py!'. Use a ripgrep type name such as 'py'.",
+  "is_error": true
+ },
+ "grep/type-markdown": {
+  "content": "README.md:3: A TODO list lives here.\nREADME.md:4: Second TODO line.\ndocs/guide.md:3: See the TODO list.",
+  "is_error": false
+ },
+ "grep/type-padded": {
+  "content": "src/main.py:5:     # TODO: wire up\nsrc/lib/helpers.py:2: # TODO later",
+  "is_error": false
+ },
+ "grep/type-py": {
+  "content": "src/main.py:5:     # TODO: wire up\nsrc/lib/helpers.py:2: # TODO later",
+  "is_error": false
+ },
+ "grep/type-too-long": {
+  "content": "Error: Invalid type 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'. Use a ripgrep type name such as 'py'.",
+  "is_error": true
+ },
+ "grep/type-ts": {
+  "content": "src/app.ts:4: // TODO: types",
+  "is_error": false
+ },
+ "grep/type-unknown": {
+  "content": "Error: Unknown type 'klingon'. Use one of c, cpp, cs, css, go, html, java, js, json, kotlin, markdown, md, php, py, ruby, rust, sh, sql, swift, toml, ts, yaml, or filter with include.",
+  "is_error": true
+ },
+ "grep/type-upper": {
+  "content": "src/main.py:5:     # TODO: wire up\nsrc/lib/helpers.py:2: # TODO later",
+  "is_error": false
+ },
+ "grep/unicode-case-insensitive": {
+  "content": "README.md:5: Unicode: café ✓ naïve",
+  "is_error": false
+ },
+ "grep/unicode-case-sensitive-miss": {
+  "content": "No matches for pattern 'CAFÉ' in <WS> (include=README.md)",
+  "is_error": false
+ },
+ "grep/unicode-class": {
+  "content": "README.md:3: A TODO list lives here.\nREADME.md:4: Second TODO line.",
+  "is_error": false
+ },
+ "grep/unicode-pattern": {
+  "content": "README.md:5: Unicode: café ✓ naïve",
+  "is_error": false
+ },
+ "grep/word-boundary": {
+  "content": "README.md:3: A TODO list lives here.\nREADME.md:4: Second TODO line.",
+  "is_error": false
+ },
+ "ls/abs-inside": {
+  "content": "[f] guide.md  (28 bytes)\n[f] notes.txt  (18 bytes)",
+  "is_error": false
+ },
+ "ls/default": {
+  "content": "[d] .hidden/\n[d] __pycache__/\n[d] build/\n[d] dist/\n[d] docs/\n[d] dotdir/\n[d] empty_dir/\n[d] gi_a/\n[d] gi_b/\n[d] ign/\n[d] many/\n[d] neg/\n[d] nested/\n[d] node_modules/\n[d] src/\n[d] ties/\n[d] venv/\n[f] .env  (9 bytes)\n[f] .env.local  (9 bytes)\n[f] .envrc  (11 bytes)\n[f] README.md  (122 bytes)\n[f] big.txt  (25013 bytes)\n[f] blank.txt  (0 bytes)\n[f] bom.txt  (12 bytes)\n[f] case.txt  (21 bytes)\n[f] cr_only.txt  (13 bytes)\n[f] crlf.txt  (17 bytes)\n[f] ctx.txt  (63 bytes)\n[f] data.bin  (13 bytes)\n[f] doc.docx  (1504 bytes)\n[f] file.with.dots.tar.gz  (16 bytes)\n[f] latin1.txt  (13 bytes)\n[f] lines.txt  (3642 bytes)\n[f] long_lines.txt  (326 bytes)\n[f] multi.txt  (34 bytes)\n[f] name with spaces.txt  (14 bytes)\n[f] nonl.txt  (26 bytes)\n[f] pic.png  (2048 bytes)\n[f] regex.txt  (32 bytes)\n[f] sep.txt  (10 bytes)\n[f] ünïcode.txt  (15 bytes)",
+  "is_error": false
+ },
+ "ls/dot": {
+  "content": "[d] .hidden/\n[d] __pycache__/\n[d] build/\n[d] dist/\n[d] docs/\n[d] dotdir/\n[d] empty_dir/\n[d] gi_a/\n[d] gi_b/\n[d] ign/\n[d] many/\n[d] neg/\n[d] nested/\n[d] node_modules/\n[d] src/\n[d] ties/\n[d] venv/\n[f] .env  (9 bytes)\n[f] .env.local  (9 bytes)\n[f] .envrc  (11 bytes)\n[f] README.md  (122 bytes)\n[f] big.txt  (25013 bytes)\n[f] blank.txt  (0 bytes)\n[f] bom.txt  (12 bytes)\n[f] case.txt  (21 bytes)\n[f] cr_only.txt  (13 bytes)\n[f] crlf.txt  (17 bytes)\n[f] ctx.txt  (63 bytes)\n[f] data.bin  (13 bytes)\n[f] doc.docx  (1504 bytes)\n[f] file.with.dots.tar.gz  (16 bytes)\n[f] latin1.txt  (13 bytes)\n[f] lines.txt  (3642 bytes)\n[f] long_lines.txt  (326 bytes)\n[f] multi.txt  (34 bytes)\n[f] name with spaces.txt  (14 bytes)\n[f] nonl.txt  (26 bytes)\n[f] pic.png  (2048 bytes)\n[f] regex.txt  (32 bytes)\n[f] sep.txt  (10 bytes)\n[f] ünïcode.txt  (15 bytes)",
+  "is_error": false
+ },
+ "ls/dotdir": {
+  "content": "[f] .dotfile  (15 bytes)",
+  "is_error": false
+ },
+ "ls/empty": {
+  "content": "(empty directory)",
+  "is_error": false
+ },
+ "ls/file": {
+  "content": "Error: Path is not a directory: README.md",
+  "is_error": true
+ },
+ "ls/hidden": {
+  "content": "[f] secret.txt  (14 bytes)",
+  "is_error": false
+ },
+ "ls/ign": {
+  "content": "[d] build/\n[d] docs/\n[d] ignored_dir/\n[d] sub/\n[f] .gitignore  (60 bytes)\n[f] app.log  (11 bytes)\n[f] keep.txt  (12 bytes)\n[f] rooted.txt  (14 bytes)",
+  "is_error": false
+ },
+ "ls/many": {
+  "content": "[f] f01.txt  (7 bytes)\n[f] f02.txt  (7 bytes)\n[f] f03.txt  (7 bytes)\n[f] f04.txt  (7 bytes)\n[f] f05.txt  (7 bytes)\n[f] f06.txt  (7 bytes)\n[f] f07.txt  (7 bytes)\n[f] f08.txt  (7 bytes)\n[f] f09.txt  (7 bytes)\n[f] f10.txt  (8 bytes)\n[f] f11.txt  (8 bytes)\n[f] f12.txt  (8 bytes)\n[f] f13.txt  (8 bytes)\n[f] f14.txt  (8 bytes)\n[f] f15.txt  (8 bytes)\n[f] f16.txt  (8 bytes)\n[f] f17.txt  (8 bytes)\n[f] f18.txt  (8 bytes)\n[f] f19.txt  (8 bytes)\n[f] f20.txt  (8 bytes)\n[f] f21.txt  (8 bytes)\n[f] f22.txt  (8 bytes)\n[f] f23.txt  (8 bytes)\n[f] f24.txt  (8 bytes)\n[f] f25.txt  (8 bytes)\n[f] f26.txt  (8 bytes)\n[f] f27.txt  (8 bytes)\n[f] f28.txt  (8 bytes)\n[f] f29.txt  (8 bytes)\n[f] f30.txt  (8 bytes)",
+  "is_error": false
+ },
+ "ls/missing": {
+  "content": "Error: Directory not found: nope",
+  "is_error": true
+ },
+ "ls/src": {
+  "content": "[d] lib/\n[f] app.test.ts  (23 bytes)\n[f] app.ts  (57 bytes)\n[f] main.py  (103 bytes)\n[f] util.py  (91 bytes)",
+  "is_error": false
+ },
+ "ls/src-slash": {
+  "content": "[d] lib/\n[f] app.test.ts  (23 bytes)\n[f] app.ts  (57 bytes)\n[f] main.py  (103 bytes)\n[f] util.py  (91 bytes)",
+  "is_error": false
+ },
+ "ls/ties": {
+  "content": "[f] a.txt  (4 bytes)\n[f] b.txt  (4 bytes)\n[f] c.txt  (4 bytes)",
+  "is_error": false
+ },
+ "read/abs-inside": {
+  "content": "00001| import os\n00002| \n00003| \n00004| def main():\n00005|     # TODO: wire up\n00006|     print('hello')\n00007| \n00008| \n00009| if __name__ == '__main__':\n00010|     main()\n",
+  "is_error": false
+ },
+ "read/allowed-envrc": {
+  "content": "00001| export A=1\n",
+  "is_error": false
+ },
+ "read/binary-as-text": {
+  "content": "00001| ÿþ\u0000\u0001 needle ÿ",
+  "is_error": false
+ },
+ "read/blank": {
+  "content": "",
+  "is_error": false
+ },
+ "read/bom": {
+  "content": "00001| ﻿bom line\n",
+  "is_error": false
+ },
+ "read/cr-only": {
+  "content": "00001| one\n00002| two\n00003| three",
+  "is_error": false
+ },
+ "read/crlf": {
+  "content": "00001| one\n00002| two\n00003| three\n",
+  "is_error": false
+ },
+ "read/denied-env": {
+  "content": "Error: Path '<WS>/.env' is inside a denied sandbox root: **/.env",
+  "is_error": true
+ },
+ "read/denied-env-local": {
+  "content": "Error: Path '<WS>/.env.local' is inside a denied sandbox root: **/.env.*",
+  "is_error": true
+ },
+ "read/denied-env-local-upper": {
+  "content": "Error: Path '<WS>/.env.local' is inside a denied sandbox root: **/.env.*",
+  "is_error": true
+ },
+ "read/denied-env-nested-missing": {
+  "content": "Error: Path '<WS>/sub/.env' is inside a denied sandbox root: **/.env",
+  "is_error": true
+ },
+ "read/denied-env-stream": {
+  "content": "Error: Path '<WS>/.env' is inside a denied sandbox root: **/.env",
+  "is_error": true
+ },
+ "read/denied-env-trailing-dot": {
+  "content": "Error: Path '<WS>/.env' is inside a denied sandbox root: **/.env",
+  "is_error": true
+ },
+ "read/denied-env-upper": {
+  "content": "Error: Path '<WS>/.env' is inside a denied sandbox root: **/.env",
+  "is_error": true
+ },
+ "read/directory": {
+  "content": "Error: Path is a directory: src",
+  "is_error": true
+ },
+ "read/dot": {
+  "content": "Error: Path is a directory: <WS>",
+  "is_error": true
+ },
+ "read/dot-slash": {
+  "content": "00001| def helper(x):\n00002|     return x * 2\n00003| \n00004| \n00005| class Thing:\n00006|     def run(self):\n00007|         return helper(2)\n",
+  "is_error": false
+ },
+ "read/file-as-directory": {
+  "content": "Error: File not found: README.md/inner.txt",
+  "is_error": true
+ },
+ "read/hidden-dir-file": {
+  "content": "00001| hidden needle\n",
+  "is_error": false
+ },
+ "read/image": {
+  "content": "[Image: pic.png] (2,048 bytes)\nThe file was read successfully but the current model does not support vision — image content cannot be displayed. Switch to a vision-capable model to analyze this image.",
+  "is_error": false
+ },
+ "read/latin1": {
+  "content": "00001| café au lait\n",
+  "is_error": false
+ },
+ "read/limit-null": {
+  "content": "[249-250/250]\n00249| line 249 match\n00250| line 250 match\n",
+  "is_error": false
+ },
+ "read/missing": {
+  "content": "Error: File not found: nope.txt",
+  "is_error": true
+ },
+ "read/missing-nested": {
+  "content": "Error: File not found: src/nope/deeper.py",
+  "is_error": true
+ },
+ "read/nested": {
+  "content": "00001| import os\n00002| \n00003| \n00004| def main():\n00005|     # TODO: wire up\n00006|     print('hello')\n00007| \n00008| \n00009| if __name__ == '__main__':\n00010|     main()\n",
+  "is_error": false
+ },
+ "read/no-trailing-newline": {
+  "content": "00001| first\n00002| last without newline",
+  "is_error": false
+ },
+ "read/office": {
+  "content": "[Office file: doc.docx] (1,504 bytes)\nDOCX, XLSX, and PPTX files are view-only. Open this file in the workspace viewer; agent-side extraction and editing are disabled.",
+  "is_error": false
+ },
+ "read/page-bool-offset": {
+  "content": "[1-1/250]\n00001| line 1 match\n",
+  "is_error": false
+ },
+ "read/page-float-numbers": {
+  "content": "[3-4/250]\n00003| line 3 match\n00004| line 4 match\n",
+  "is_error": false
+ },
+ "read/page-from-offset": {
+  "content": "[248-250/250]\n00248| line 248 match\n00249| line 249 match\n00250| line 250 match\n",
+  "is_error": false
+ },
+ "read/page-limit-negative": {
+  "content": "[2-0/250]\n",
+  "is_error": false
+ },
+ "read/page-limit-only": {
+  "content": "[1-3/250]\n00001| line 1 match\n00002| line 2 match\n00003| line 3 match\n",
+  "is_error": false
+ },
+ "read/page-limit-very-negative": {
+  "content": "[2--998/250]\n",
+  "is_error": false
+ },
+ "read/page-limit-zero": {
+  "content": "[2-1/250]\n",
+  "is_error": false
+ },
+ "read/page-middle": {
+  "content": "[100-104/250]\n00100| line 100 match\n00101| line 101 match\n00102| line 102 match\n00103| line 103 match\n00104| line 104 match\n",
+  "is_error": false
+ },
+ "read/page-offset-negative": {
+  "content": "[1-2/250]\n00001| line 1 match\n00002| line 2 match\n",
+  "is_error": false
+ },
+ "read/page-offset-one-limit": {
+  "content": "[1-2/250]\n00001| line 1 match\n00002| line 2 match\n",
+  "is_error": false
+ },
+ "read/page-offset-zero": {
+  "content": "[1-2/250]\n00001| line 1 match\n00002| line 2 match\n",
+  "is_error": false
+ },
+ "read/page-past-end": {
+  "content": "[999-250/250]\n",
+  "is_error": false
+ },
+ "read/page-string-numbers": {
+  "content": "[3-4/250]\n00003| line 3 match\n00004| line 4 match\n",
+  "is_error": false
+ },
+ "read/readme": {
+  "content": "00001| # Demo project\n00002| \n00003| A TODO list lives here.\n00004| Second TODO line.\n00005| Unicode: café ✓ naïve\n00006| \n00007| ## Usage\n00008| \n00009| run `make`\n00010| \n00011| ## License\n00012| MIT\n",
+  "is_error": false
+ },
+ "read/separators-paged": {
+  "content": "[2-3/4]\n00002| b c\n",
+  "is_error": false
+ },
+ "read/separators-whole": {
+  "content": "00001| a\fb c\n00002| d\n",
+  "is_error": false
+ },
+ "read/spaces": {
+  "content": "00001| spaced needle\n",
+  "is_error": false
+ },
+ "read/truncated": {
+  "content": "00001| xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n\n[read output truncated for LLM context: big.txt is 25,027 characters; shown first 20,000. Use offset and limit to read a smaller line range, or the grep tool for targeted inspection.]",
+  "is_error": false
+ },
+ "read/truncated-paged": {
+  "content": "[1-1/2]\n00001| xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n\n[read output truncated for LLM context: big.txt is 25,016 characters; shown first 20,000. Use offset and limit to read a smaller line range, or the grep tool for targeted inspection.]",
+  "is_error": false
+ },
+ "read/unicode-name": {
+  "content": "00001| unicode needle\n",
+  "is_error": false
+ }
+}

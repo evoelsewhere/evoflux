@@ -1,0 +1,3229 @@
+{
+ "fixtures": {
+  "main": {
+   "files": {
+    "README.md": {
+     "text": "# Demo project\n\nA TODO list lives here.\nSecond TODO line.\nUnicode: café ✓ naïve\n\n## Usage\n\nrun `make`\n\n## License\nMIT\n",
+     "mtime": 1700000240
+    },
+    "src/main.py": {
+     "text": "import os\n\n\ndef main():\n    # TODO: wire up\n    print('hello')\n\n\nif __name__ == '__main__':\n    main()\n",
+     "mtime": 1700007080
+    },
+    "src/util.py": {
+     "text": "def helper(x):\n    return x * 2\n\n\nclass Thing:\n    def run(self):\n        return helper(2)\n",
+     "mtime": 1700007140
+    },
+    "src/lib/helpers.py": {
+     "text": "HELPER = 1\n# TODO later\n",
+     "mtime": 1700007020
+    },
+    "src/app.ts": {
+     "text": "export function app() {\n  return 'app';\n}\n// TODO: types\n",
+     "mtime": 1700006960
+    },
+    "src/app.test.ts": {
+     "text": "test('app', () => {});\n",
+     "mtime": 1700006900
+    },
+    "docs/guide.md": {
+     "text": "# Guide\n\nSee the TODO list.\n",
+     "mtime": 1700001020
+    },
+    "docs/notes.txt": {
+     "text": "note one\nnote two\n",
+     "mtime": 1700001080
+    },
+    "crlf.txt": {
+     "b64": "b25lDQp0d28NCnRocmVlDQo=",
+     "mtime": 1700000720
+    },
+    "cr_only.txt": {
+     "b64": "b25lDXR3bw10aHJlZQ==",
+     "mtime": 1700000660
+    },
+    "latin1.txt": {
+     "b64": "Y2Fm6SBhdSBsYWl0Cg==",
+     "mtime": 1700004020
+    },
+    "bom.txt": {
+     "b64": "77u/Ym9tIGxpbmUK",
+     "mtime": 1700000480
+    },
+    "blank.txt": {
+     "text": "",
+     "mtime": 1700000420
+    },
+    "nonl.txt": {
+     "text": "first\nlast without newline",
+     "mtime": 1700006660
+    },
+    "sep.txt": {
+     "text": "a\fb c\nd\n",
+     "mtime": 1700006840
+    },
+    "big.txt": {
+     "text": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nsecond line\n",
+     "mtime": 1700000360
+    },
+    "long_lines.txt": {
+     "text": "LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL needle tail\nshort needle\n",
+     "mtime": 1700004140
+    },
+    "lines.txt": {
+     "text": "line 1 match\nline 2 match\nline 3 match\nline 4 match\nline 5 match\nline 6 match\nline 7 match\nline 8 match\nline 9 match\nline 10 match\nline 11 match\nline 12 match\nline 13 match\nline 14 match\nline 15 match\nline 16 match\nline 17 match\nline 18 match\nline 19 match\nline 20 match\nline 21 match\nline 22 match\nline 23 match\nline 24 match\nline 25 match\nline 26 match\nline 27 match\nline 28 match\nline 29 match\nline 30 match\nline 31 match\nline 32 match\nline 33 match\nline 34 match\nline 35 match\nline 36 match\nline 37 match\nline 38 match\nline 39 match\nline 40 match\nline 41 match\nline 42 match\nline 43 match\nline 44 match\nline 45 match\nline 46 match\nline 47 match\nline 48 match\nline 49 match\nline 50 match\nline 51 match\nline 52 match\nline 53 match\nline 54 match\nline 55 match\nline 56 match\nline 57 match\nline 58 match\nline 59 match\nline 60 match\nline 61 match\nline 62 match\nline 63 match\nline 64 match\nline 65 match\nline 66 match\nline 67 match\nline 68 match\nline 69 match\nline 70 match\nline 71 match\nline 72 match\nline 73 match\nline 74 match\nline 75 match\nline 76 match\nline 77 match\nline 78 match\nline 79 match\nline 80 match\nline 81 match\nline 82 match\nline 83 match\nline 84 match\nline 85 match\nline 86 match\nline 87 match\nline 88 match\nline 89 match\nline 90 match\nline 91 match\nline 92 match\nline 93 match\nline 94 match\nline 95 match\nline 96 match\nline 97 match\nline 98 match\nline 99 match\nline 100 match\nline 101 match\nline 102 match\nline 103 match\nline 104 match\nline 105 match\nline 106 match\nline 107 match\nline 108 match\nline 109 match\nline 110 match\nline 111 match\nline 112 match\nline 113 match\nline 114 match\nline 115 match\nline 116 match\nline 117 match\nline 118 match\nline 119 match\nline 120 match\nline 121 match\nline 122 match\nline 123 match\nline 124 match\nline 125 match\nline 126 match\nline 127 match\nline 128 match\nline 129 match\nline 130 match\nline 131 match\nline 132 match\nline 133 match\nline 134 match\nline 135 match\nline 136 match\nline 137 match\nline 138 match\nline 139 match\nline 140 match\nline 141 match\nline 142 match\nline 143 match\nline 144 match\nline 145 match\nline 146 match\nline 147 match\nline 148 match\nline 149 match\nline 150 match\nline 151 match\nline 152 match\nline 153 match\nline 154 match\nline 155 match\nline 156 match\nline 157 match\nline 158 match\nline 159 match\nline 160 match\nline 161 match\nline 162 match\nline 163 match\nline 164 match\nline 165 match\nline 166 match\nline 167 match\nline 168 match\nline 169 match\nline 170 match\nline 171 match\nline 172 match\nline 173 match\nline 174 match\nline 175 match\nline 176 match\nline 177 match\nline 178 match\nline 179 match\nline 180 match\nline 181 match\nline 182 match\nline 183 match\nline 184 match\nline 185 match\nline 186 match\nline 187 match\nline 188 match\nline 189 match\nline 190 match\nline 191 match\nline 192 match\nline 193 match\nline 194 match\nline 195 match\nline 196 match\nline 197 match\nline 198 match\nline 199 match\nline 200 match\nline 201 match\nline 202 match\nline 203 match\nline 204 match\nline 205 match\nline 206 match\nline 207 match\nline 208 match\nline 209 match\nline 210 match\nline 211 match\nline 212 match\nline 213 match\nline 214 match\nline 215 match\nline 216 match\nline 217 match\nline 218 match\nline 219 match\nline 220 match\nline 221 match\nline 222 match\nline 223 match\nline 224 match\nline 225 match\nline 226 match\nline 227 match\nline 228 match\nline 229 match\nline 230 match\nline 231 match\nline 232 match\nline 233 match\nline 234 match\nline 235 match\nline 236 match\nline 237 match\nline 238 match\nline 239 match\nline 240 match\nline 241 match\nline 242 match\nline 243 match\nline 244 match\nline 245 match\nline 246 match\nline 247 match\nline 248 match\nline 249 match\nline 250 match\n",
+     "mtime": 1700004080
+    },
+    "pic.png": {
+     "b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gISIjJCUmJygpKissLS4vMDEyMzQ1Njc4OTo7PD0+P0BBQkNERUZHSElKS0xNTk9QUVJTVFVWV1hZWltcXV5fYGFiY2RlZmdoaWprbG1ub3BxcnN0dXZ3eHl6e3x9fn+AgYKDhIWGh4iJiouMjY6PkJGSk5SVlpeYmZqbnJ2en6ChoqOkpaanqKmqq6ytrq+wsbKztLW2t7i5uru8vb6/wMHCw8TFxsfIycrLzM3Oz9DR0tPU1dbX2Nna29zd3t/g4eLj5OXm5+jp6uvs7e7v8PHy8/T19vf4+fr7/P3+/wABAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4fICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj9AQUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVpbXF1eX2BhYmNkZWZnaGlqa2xtbm9wcXJzdHV2d3h5ent8fX5/gIGCg4SFhoeIiYqLjI2Oj5CRkpOUlZaXmJmam5ydnp+goaKjpKWmp6ipqqusra6vsLGys7S1tre4ubq7vL2+v8DBwsPExcbHyMnKy8zNzs/Q0dLT1NXW19jZ2tvc3d7f4OHi4+Tl5ufo6err7O3u7/Dx8vP09fb3+Pn6+/z9/v8AAQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyAhIiMkJSYnKCkqKywtLi8wMTIzNDU2Nzg5Ojs8PT4/QEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXWFlaW1xdXl9gYWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXp7fH1+f4CBgoOEhYaHiImKi4yNjo+QkZKTlJWWl5iZmpucnZ6foKGio6SlpqeoqaqrrK2ur7CxsrO0tba3uLm6u7y9vr/AwcLDxMXGx8jJysvMzc7P0NHS09TV1tfY2drb3N3e3+Dh4uPk5ebn6Onq6+zt7u/w8fLz9PX29/j5+vv8/f7/AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gISIjJCUmJygpKissLS4vMDEyMzQ1Njc4OTo7PD0+P0BBQkNERUZHSElKS0xNTk9QUVJTVFVWV1hZWltcXV5fYGFiY2RlZmdoaWprbG1ub3BxcnN0dXZ3eHl6e3x9fn+AgYKDhIWGh4iJiouMjY6PkJGSk5SVlpeYmZqbnJ2en6ChoqOkpaanqKmqq6ytrq+wsbKztLW2t7i5uru8vb6/wMHCw8TFxsfIycrLzM3Oz9DR0tPU1dbX2Nna29zd3t/g4eLj5OXm5+jp6uvs7e7v8PHy8/T19vf4+fr7/P3+/wABAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4fICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj9AQUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVpbXF1eX2BhYmNkZWZnaGlqa2xtbm9wcXJzdHV2d3h5ent8fX5/gIGCg4SFhoeIiYqLjI2Oj5CRkpOUlZaXmJmam5ydnp+goaKjpKWmp6ipqqusra6vsLGys7S1tre4ubq7vL2+v8DBwsPExcbHyMnKy8zNzs/Q0dLT1NXW19jZ2tvc3d7f4OHi4+Tl5ufo6err7O3u7/Dx8vP09fb3+Pn6+/z9/v8AAQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyAhIiMkJSYnKCkqKywtLi8wMTIzNDU2Nzg5Ojs8PT4/QEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXWFlaW1xdXl9gYWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXp7fH1+f4CBgoOEhYaHiImKi4yNjo+QkZKTlJWWl5iZmpucnZ6foKGio6SlpqeoqaqrrK2ur7CxsrO0tba3uLm6u7y9vr/AwcLDxMXGx8jJysvMzc7P0NHS09TV1tfY2drb3N3e3+Dh4uPk5ebn6Onq6+zt7u/w8fLz9PX29/j5+vv8/f7/AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gISIjJCUmJygpKissLS4vMDEyMzQ1Njc4OTo7PD0+P0BBQkNERUZHSElKS0xNTk9QUVJTVFVWV1hZWltcXV5fYGFiY2RlZmdoaWprbG1ub3BxcnN0dXZ3eHl6e3x9fn+AgYKDhIWGh4iJiouMjY6PkJGSk5SVlpeYmZqbnJ2en6ChoqOkpaanqKmqq6ytrq+wsbKztLW2t7i5uru8vb6/wMHCw8TFxsfIycrLzM3Oz9DR0tPU1dbX2Nna29zd3t/g4eLj5OXm5+jp6uvs7e7v8PHy8/T19vf4+fr7/P3+/wABAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4fICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj9AQUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVpbXF1eX2BhYmNkZWZnaGlqa2xtbm9wcXJzdHV2d3h5ent8fX5/gIGCg4SFhoeIiYqLjI2Oj5CRkpOUlZaXmJmam5ydnp+goaKjpKWmp6ipqqusra6vsLGys7S1tre4ubq7vL2+v8DBwsPExcbHyMnKy8zNzs/Q0dLT1NXW19jZ2tvc3d7f4OHi4+Tl5ufo6err7O3u7/Dx8vP09fb3+Pn6+/z9/v8=",
+     "mtime": 1700006720
+    },
+    "doc.docx": {
+     "b64": "UEsDBDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMA==",
+     "mtime": 1700000960
+    },
+    "data.bin": {
+     "b64": "//4AASBuZWVkbGUg/w==",
+     "mtime": 1700000840
+    },
+    "name with spaces.txt": {
+     "text": "spaced needle\n",
+     "mtime": 1700006060
+    },
+    "ünïcode.txt": {
+     "text": "unicode needle\n",
+     "mtime": 1700007440
+    },
+    "file.with.dots.tar.gz": {
+     "text": "not really gzip\n",
+     "mtime": 1700001200
+    },
+    ".env": {
+     "text": "SECRET=1\n",
+     "mtime": 1700000000
+    },
+    ".env.local": {
+     "text": "SECRET=2\n",
+     "mtime": 1700000060
+    },
+    ".envrc": {
+     "text": "export A=1\n",
+     "mtime": 1700000120
+    },
+    ".hidden/secret.txt": {
+     "text": "hidden needle\n",
+     "mtime": 1700000180
+    },
+    "dotdir/.dotfile": {
+     "text": "dotfile needle\n",
+     "mtime": 1700001140
+    },
+    "node_modules/pkg/index.js": {
+     "text": "module.exports = 'needle';\n",
+     "mtime": 1700006600
+    },
+    "dist/bundle.js": {
+     "text": "needle\n",
+     "mtime": 1700000900
+    },
+    "build/out.txt": {
+     "text": "needle\n",
+     "mtime": 1700000540
+    },
+    "venv/x.py": {
+     "text": "needle = 1\n",
+     "mtime": 1700007380
+    },
+    "__pycache__/m.pyc": {
+     "text": "needle\n",
+     "mtime": 1700000300
+    },
+    "nested/node_modules/deep.txt": {
+     "text": "needle\n",
+     "mtime": 1700006480
+    },
+    "nested/build": {
+     "text": "a file named build needle\n",
+     "mtime": 1700006420
+    },
+    "nested/ok.txt": {
+     "text": "nested needle\n",
+     "mtime": 1700006540
+    },
+    "ign/.gitignore": {
+     "text": "*.log\nbuild/\nignored_dir/\n/rooted.txt\n# comment\n\ndocs/*.tmp\n",
+     "mtime": 1700003420
+    },
+    "ign/keep.txt": {
+     "text": "needle keep\n",
+     "mtime": 1700003780
+    },
+    "ign/app.log": {
+     "text": "needle log\n",
+     "mtime": 1700003480
+    },
+    "ign/rooted.txt": {
+     "text": "needle rooted\n",
+     "mtime": 1700003840
+    },
+    "ign/sub/rooted.txt": {
+     "text": "needle sub rooted\n",
+     "mtime": 1700003900
+    },
+    "ign/sub/trace.log": {
+     "text": "needle sub log\n",
+     "mtime": 1700003960
+    },
+    "ign/build/out.txt": {
+     "text": "needle build\n",
+     "mtime": 1700003540
+    },
+    "ign/ignored_dir/x.txt": {
+     "text": "needle ignored\n",
+     "mtime": 1700003720
+    },
+    "ign/docs/a.tmp": {
+     "text": "needle tmp\n",
+     "mtime": 1700003600
+    },
+    "ign/docs/a.txt": {
+     "text": "needle doc\n",
+     "mtime": 1700003660
+    },
+    "neg/.gitignore": {
+     "text": "*.log\n!keep.log\nout/\n",
+     "mtime": 1700006120
+    },
+    "neg/a.log": {
+     "text": "needle a\n",
+     "mtime": 1700006180
+    },
+    "neg/keep.log": {
+     "text": "needle keep\n",
+     "mtime": 1700006300
+    },
+    "neg/out/x.txt": {
+     "text": "needle out\n",
+     "mtime": 1700006360
+    },
+    "neg/b.txt": {
+     "text": "needle b\n",
+     "mtime": 1700006240
+    },
+    "gi_a/.gitignore": {
+     "text": "*.tmp\n/top.txt\nsub/inner.txt\n**/gen/\na*b\n[xy].dat\ndir.d/\n spaced.txt \n# not.txt\n\\#hash.txt\n",
+     "mtime": 1700001320
+    },
+    "gi_b/.gitignore": {
+     "text": "*.tmp\n/top.txt\nsub/inner.txt\n**/gen/\na*b\n[xy].dat\ndir.d/\n spaced.txt \n# not.txt\n\\#hash.txt\n!sub/inner.txt\n!a.tmp\n",
+     "mtime": 1700002400
+    },
+    "gi_a/top.txt": {
+     "text": "x\n",
+     "mtime": 1700002100
+    },
+    "gi_a/sub/top.txt": {
+     "text": "x\n",
+     "mtime": 1700002040
+    },
+    "gi_a/sub/inner.txt": {
+     "text": "x\n",
+     "mtime": 1700001980
+    },
+    "gi_a/x/sub/inner.txt": {
+     "text": "x\n",
+     "mtime": 1700002220
+    },
+    "gi_a/gen/a.txt": {
+     "text": "x\n",
+     "mtime": 1700001620
+    },
+    "gi_a/p/gen/b.txt": {
+     "text": "x\n",
+     "mtime": 1700001800
+    },
+    "gi_a/axb": {
+     "text": "x\n",
+     "mtime": 1700001500
+    },
+    "gi_a/a/xb": {
+     "text": "x\n",
+     "mtime": 1700001440
+    },
+    "gi_a/a.tmp": {
+     "text": "x\n",
+     "mtime": 1700001380
+    },
+    "gi_a/sub/b.tmp": {
+     "text": "x\n",
+     "mtime": 1700001920
+    },
+    "gi_a/x.dat": {
+     "text": "x\n",
+     "mtime": 1700002160
+    },
+    "gi_a/z.dat": {
+     "text": "x\n",
+     "mtime": 1700002280
+    },
+    "gi_a/dir.d/f.txt": {
+     "text": "x\n",
+     "mtime": 1700001560
+    },
+    "gi_a/spaced.txt": {
+     "text": "x\n",
+     "mtime": 1700001860
+    },
+    "gi_a/#hash.txt": {
+     "text": "x\n",
+     "mtime": 1700001260
+    },
+    "gi_a/not.txt": {
+     "text": "x\n",
+     "mtime": 1700001740
+    },
+    "gi_a/keep.txt": {
+     "text": "x\n",
+     "mtime": 1700001680
+    },
+    "gi_b/top.txt": {
+     "text": "x\n",
+     "mtime": 1700003180
+    },
+    "gi_b/sub/top.txt": {
+     "text": "x\n",
+     "mtime": 1700003120
+    },
+    "gi_b/sub/inner.txt": {
+     "text": "x\n",
+     "mtime": 1700003060
+    },
+    "gi_b/x/sub/inner.txt": {
+     "text": "x\n",
+     "mtime": 1700003300
+    },
+    "gi_b/gen/a.txt": {
+     "text": "x\n",
+     "mtime": 1700002700
+    },
+    "gi_b/p/gen/b.txt": {
+     "text": "x\n",
+     "mtime": 1700002880
+    },
+    "gi_b/axb": {
+     "text": "x\n",
+     "mtime": 1700002580
+    },
+    "gi_b/a/xb": {
+     "text": "x\n",
+     "mtime": 1700002520
+    },
+    "gi_b/a.tmp": {
+     "text": "x\n",
+     "mtime": 1700002460
+    },
+    "gi_b/sub/b.tmp": {
+     "text": "x\n",
+     "mtime": 1700003000
+    },
+    "gi_b/x.dat": {
+     "text": "x\n",
+     "mtime": 1700003240
+    },
+    "gi_b/z.dat": {
+     "text": "x\n",
+     "mtime": 1700003360
+    },
+    "gi_b/dir.d/f.txt": {
+     "text": "x\n",
+     "mtime": 1700002640
+    },
+    "gi_b/spaced.txt": {
+     "text": "x\n",
+     "mtime": 1700002940
+    },
+    "gi_b/#hash.txt": {
+     "text": "x\n",
+     "mtime": 1700002340
+    },
+    "gi_b/not.txt": {
+     "text": "x\n",
+     "mtime": 1700002820
+    },
+    "gi_b/keep.txt": {
+     "text": "x\n",
+     "mtime": 1700002760
+    },
+    "multi.txt": {
+     "text": "alpha\nbeta\ngamma\ndelta\nalpha beta\n",
+     "mtime": 1700006000
+    },
+    "ctx.txt": {
+     "text": "one\ntwo\nHIT a\nthree\nfour\nfive\nsix\nseven\nHIT b\neight\nHIT c\nnine\n",
+     "mtime": 1700000780
+    },
+    "case.txt": {
+     "text": "Needle\nNEEDLE\nneedle\n",
+     "mtime": 1700000600
+    },
+    "regex.txt": {
+     "text": "a.b\naxb\nfoo(bar)\nfoo bar\nfoofoo\n",
+     "mtime": 1700006780
+    },
+    "many/f01.txt": {
+     "text": "many 1\n",
+     "mtime": 1700100060
+    },
+    "many/f02.txt": {
+     "text": "many 2\n",
+     "mtime": 1700100120
+    },
+    "many/f03.txt": {
+     "text": "many 3\n",
+     "mtime": 1700100180
+    },
+    "many/f04.txt": {
+     "text": "many 4\n",
+     "mtime": 1700100240
+    },
+    "many/f05.txt": {
+     "text": "many 5\n",
+     "mtime": 1700100300
+    },
+    "many/f06.txt": {
+     "text": "many 6\n",
+     "mtime": 1700100360
+    },
+    "many/f07.txt": {
+     "text": "many 7\n",
+     "mtime": 1700100420
+    },
+    "many/f08.txt": {
+     "text": "many 8\n",
+     "mtime": 1700100480
+    },
+    "many/f09.txt": {
+     "text": "many 9\n",
+     "mtime": 1700100540
+    },
+    "many/f10.txt": {
+     "text": "many 10\n",
+     "mtime": 1700100600
+    },
+    "many/f11.txt": {
+     "text": "many 11\n",
+     "mtime": 1700100660
+    },
+    "many/f12.txt": {
+     "text": "many 12\n",
+     "mtime": 1700100720
+    },
+    "many/f13.txt": {
+     "text": "many 13\n",
+     "mtime": 1700100780
+    },
+    "many/f14.txt": {
+     "text": "many 14\n",
+     "mtime": 1700100840
+    },
+    "many/f15.txt": {
+     "text": "many 15\n",
+     "mtime": 1700100900
+    },
+    "many/f16.txt": {
+     "text": "many 16\n",
+     "mtime": 1700100960
+    },
+    "many/f17.txt": {
+     "text": "many 17\n",
+     "mtime": 1700101020
+    },
+    "many/f18.txt": {
+     "text": "many 18\n",
+     "mtime": 1700101080
+    },
+    "many/f19.txt": {
+     "text": "many 19\n",
+     "mtime": 1700101140
+    },
+    "many/f20.txt": {
+     "text": "many 20\n",
+     "mtime": 1700101200
+    },
+    "many/f21.txt": {
+     "text": "many 21\n",
+     "mtime": 1700101260
+    },
+    "many/f22.txt": {
+     "text": "many 22\n",
+     "mtime": 1700101320
+    },
+    "many/f23.txt": {
+     "text": "many 23\n",
+     "mtime": 1700101380
+    },
+    "many/f24.txt": {
+     "text": "many 24\n",
+     "mtime": 1700101440
+    },
+    "many/f25.txt": {
+     "text": "many 25\n",
+     "mtime": 1700101500
+    },
+    "many/f26.txt": {
+     "text": "many 26\n",
+     "mtime": 1700101560
+    },
+    "many/f27.txt": {
+     "text": "many 27\n",
+     "mtime": 1700101620
+    },
+    "many/f28.txt": {
+     "text": "many 28\n",
+     "mtime": 1700101680
+    },
+    "many/f29.txt": {
+     "text": "many 29\n",
+     "mtime": 1700101740
+    },
+    "many/f30.txt": {
+     "text": "many 30\n",
+     "mtime": 1700101800
+    },
+    "ties/b.txt": {
+     "text": "tie\n",
+     "mtime": 1700500000
+    },
+    "ties/a.txt": {
+     "text": "tie\n",
+     "mtime": 1700500000
+    },
+    "ties/c.txt": {
+     "text": "tie\n",
+     "mtime": 1700500001
+    }
+   },
+   "dirs": [
+    "empty_dir"
+   ],
+   "links": []
+  },
+  "links": {
+   "files": {
+    "src/main.py": {
+     "text": "print('linked')\n",
+     "mtime": 1700000000
+    },
+    "src/util.py": {
+     "text": "x = 1\n",
+     "mtime": 1700000060
+    }
+   },
+   "dirs": [],
+   "links": [
+    {
+     "path": "escape",
+     "target": "<OUT>"
+    },
+    {
+     "path": "alias",
+     "target": "<WS>/src"
+    }
+   ]
+  }
+ },
+ "outside": {
+  "secret.txt": "TOP SECRET\n"
+ },
+ "cases": [
+  {
+   "id": "read/readme",
+   "tool": "read",
+   "args": {
+    "path": "README.md"
+   }
+  },
+  {
+   "id": "read/nested",
+   "tool": "read",
+   "args": {
+    "path": "src/main.py"
+   }
+  },
+  {
+   "id": "read/abs-inside",
+   "tool": "read",
+   "args": {
+    "path": "<WS>/src/main.py"
+   },
+   "normalize": true
+  },
+  {
+   "id": "read/dot-slash",
+   "tool": "read",
+   "args": {
+    "path": "./src/../src/util.py"
+   }
+  },
+  {
+   "id": "read/crlf",
+   "tool": "read",
+   "args": {
+    "path": "crlf.txt"
+   }
+  },
+  {
+   "id": "read/cr-only",
+   "tool": "read",
+   "args": {
+    "path": "cr_only.txt"
+   }
+  },
+  {
+   "id": "read/latin1",
+   "tool": "read",
+   "args": {
+    "path": "latin1.txt"
+   }
+  },
+  {
+   "id": "read/bom",
+   "tool": "read",
+   "args": {
+    "path": "bom.txt"
+   }
+  },
+  {
+   "id": "read/blank",
+   "tool": "read",
+   "args": {
+    "path": "blank.txt"
+   }
+  },
+  {
+   "id": "read/no-trailing-newline",
+   "tool": "read",
+   "args": {
+    "path": "nonl.txt"
+   }
+  },
+  {
+   "id": "read/separators-whole",
+   "tool": "read",
+   "args": {
+    "path": "sep.txt"
+   }
+  },
+  {
+   "id": "read/separators-paged",
+   "tool": "read",
+   "args": {
+    "path": "sep.txt",
+    "offset": 2,
+    "limit": 2
+   }
+  },
+  {
+   "id": "read/truncated",
+   "tool": "read",
+   "args": {
+    "path": "big.txt"
+   }
+  },
+  {
+   "id": "read/truncated-paged",
+   "tool": "read",
+   "args": {
+    "path": "big.txt",
+    "offset": 1,
+    "limit": 1
+   }
+  },
+  {
+   "id": "read/page-middle",
+   "tool": "read",
+   "args": {
+    "path": "lines.txt",
+    "offset": 100,
+    "limit": 5
+   }
+  },
+  {
+   "id": "read/page-from-offset",
+   "tool": "read",
+   "args": {
+    "path": "lines.txt",
+    "offset": 248
+   }
+  },
+  {
+   "id": "read/page-limit-only",
+   "tool": "read",
+   "args": {
+    "path": "lines.txt",
+    "limit": 3
+   }
+  },
+  {
+   "id": "read/page-offset-one-limit",
+   "tool": "read",
+   "args": {
+    "path": "lines.txt",
+    "offset": 1,
+    "limit": 2
+   }
+  },
+  {
+   "id": "read/page-offset-zero",
+   "tool": "read",
+   "args": {
+    "path": "lines.txt",
+    "offset": 0,
+    "limit": 2
+   }
+  },
+  {
+   "id": "read/page-offset-negative",
+   "tool": "read",
+   "args": {
+    "path": "lines.txt",
+    "offset": -7,
+    "limit": 2
+   }
+  },
+  {
+   "id": "read/page-past-end",
+   "tool": "read",
+   "args": {
+    "path": "lines.txt",
+    "offset": 999,
+    "limit": 5
+   }
+  },
+  {
+   "id": "read/page-limit-zero",
+   "tool": "read",
+   "args": {
+    "path": "lines.txt",
+    "offset": 2,
+    "limit": 0
+   }
+  },
+  {
+   "id": "read/page-limit-negative",
+   "tool": "read",
+   "args": {
+    "path": "lines.txt",
+    "offset": 2,
+    "limit": -1
+   }
+  },
+  {
+   "id": "read/page-limit-very-negative",
+   "tool": "read",
+   "args": {
+    "path": "lines.txt",
+    "offset": 2,
+    "limit": -999
+   }
+  },
+  {
+   "id": "read/page-string-numbers",
+   "tool": "read",
+   "args": {
+    "path": "lines.txt",
+    "offset": "3",
+    "limit": "2"
+   }
+  },
+  {
+   "id": "read/page-float-numbers",
+   "tool": "read",
+   "args": {
+    "path": "lines.txt",
+    "offset": 3.0,
+    "limit": 2.0
+   }
+  },
+  {
+   "id": "read/page-bool-offset",
+   "tool": "read",
+   "args": {
+    "path": "lines.txt",
+    "offset": true,
+    "limit": 1
+   }
+  },
+  {
+   "id": "read/limit-null",
+   "tool": "read",
+   "args": {
+    "path": "lines.txt",
+    "limit": null,
+    "offset": 249
+   }
+  },
+  {
+   "id": "read/image",
+   "tool": "read",
+   "args": {
+    "path": "pic.png"
+   }
+  },
+  {
+   "id": "read/office",
+   "tool": "read",
+   "args": {
+    "path": "doc.docx"
+   }
+  },
+  {
+   "id": "read/binary-as-text",
+   "tool": "read",
+   "args": {
+    "path": "data.bin"
+   }
+  },
+  {
+   "id": "read/missing",
+   "tool": "read",
+   "args": {
+    "path": "nope.txt"
+   }
+  },
+  {
+   "id": "read/missing-nested",
+   "tool": "read",
+   "args": {
+    "path": "src/nope/deeper.py"
+   }
+  },
+  {
+   "id": "read/directory",
+   "tool": "read",
+   "args": {
+    "path": "src"
+   }
+  },
+  {
+   "id": "read/dot",
+   "tool": "read",
+   "args": {
+    "path": "."
+   },
+   "normalize": true
+  },
+  {
+   "id": "read/spaces",
+   "tool": "read",
+   "args": {
+    "path": "name with spaces.txt"
+   }
+  },
+  {
+   "id": "read/unicode-name",
+   "tool": "read",
+   "args": {
+    "path": "ünïcode.txt"
+   }
+  },
+  {
+   "id": "read/denied-env",
+   "tool": "read",
+   "args": {
+    "path": ".env"
+   },
+   "normalize": true
+  },
+  {
+   "id": "read/denied-env-local",
+   "tool": "read",
+   "args": {
+    "path": ".env.local"
+   },
+   "normalize": true
+  },
+  {
+   "id": "read/denied-env-nested-missing",
+   "tool": "read",
+   "args": {
+    "path": "sub/.env"
+   },
+   "normalize": true
+  },
+  {
+   "id": "read/allowed-envrc",
+   "tool": "read",
+   "args": {
+    "path": ".envrc"
+   }
+  },
+  {
+   "id": "read/denied-env-stream",
+   "tool": "read",
+   "args": {
+    "path": ".env::$DATA"
+   },
+   "only_os": "windows",
+   "normalize": true
+  },
+  {
+   "id": "read/denied-env-trailing-dot",
+   "tool": "read",
+   "args": {
+    "path": ".env."
+   },
+   "only_os": "windows",
+   "normalize": true
+  },
+  {
+   "id": "read/denied-env-upper",
+   "tool": "read",
+   "args": {
+    "path": ".ENV"
+   },
+   "only_os": "windows",
+   "normalize": true
+  },
+  {
+   "id": "read/denied-env-local-upper",
+   "tool": "read",
+   "args": {
+    "path": ".ENV.LOCAL"
+   },
+   "only_os": "windows",
+   "normalize": true
+  },
+  {
+   "id": "read/hidden-dir-file",
+   "tool": "read",
+   "args": {
+    "path": ".hidden/secret.txt"
+   }
+  },
+  {
+   "id": "read/file-as-directory",
+   "tool": "read",
+   "args": {
+    "path": "README.md/inner.txt"
+   }
+  },
+  {
+   "id": "ls/default",
+   "tool": "ls",
+   "args": {}
+  },
+  {
+   "id": "ls/dot",
+   "tool": "ls",
+   "args": {
+    "path": "."
+   }
+  },
+  {
+   "id": "ls/src",
+   "tool": "ls",
+   "args": {
+    "path": "src"
+   }
+  },
+  {
+   "id": "ls/src-slash",
+   "tool": "ls",
+   "args": {
+    "path": "src/"
+   }
+  },
+  {
+   "id": "ls/many",
+   "tool": "ls",
+   "args": {
+    "path": "many"
+   }
+  },
+  {
+   "id": "ls/ties",
+   "tool": "ls",
+   "args": {
+    "path": "ties"
+   }
+  },
+  {
+   "id": "ls/abs-inside",
+   "tool": "ls",
+   "args": {
+    "path": "<WS>/docs"
+   },
+   "normalize": true
+  },
+  {
+   "id": "ls/empty",
+   "tool": "ls",
+   "args": {
+    "path": "empty_dir"
+   }
+  },
+  {
+   "id": "ls/missing",
+   "tool": "ls",
+   "args": {
+    "path": "nope"
+   }
+  },
+  {
+   "id": "ls/file",
+   "tool": "ls",
+   "args": {
+    "path": "README.md"
+   }
+  },
+  {
+   "id": "ls/hidden",
+   "tool": "ls",
+   "args": {
+    "path": ".hidden"
+   }
+  },
+  {
+   "id": "ls/dotdir",
+   "tool": "ls",
+   "args": {
+    "path": "dotdir"
+   }
+  },
+  {
+   "id": "ls/ign",
+   "tool": "ls",
+   "args": {
+    "path": "ign"
+   }
+  },
+  {
+   "id": "glob/py-recursive",
+   "tool": "glob",
+   "args": {
+    "pattern": "**/*.py"
+   }
+  },
+  {
+   "id": "glob/py-src",
+   "tool": "glob",
+   "args": {
+    "pattern": "src/**/*.py"
+   }
+  },
+  {
+   "id": "glob/py-top",
+   "tool": "glob",
+   "args": {
+    "pattern": "*.py"
+   }
+  },
+  {
+   "id": "glob/ts-src",
+   "tool": "glob",
+   "args": {
+    "pattern": "src/*.ts"
+   }
+  },
+  {
+   "id": "glob/ts-dot-test",
+   "tool": "glob",
+   "args": {
+    "pattern": "**/*.test.ts"
+   }
+  },
+  {
+   "id": "glob/txt-recursive",
+   "tool": "glob",
+   "args": {
+    "pattern": "**/*.txt"
+   }
+  },
+  {
+   "id": "glob/name-txt",
+   "tool": "glob",
+   "args": {
+    "pattern": "*.txt",
+    "match": "name"
+   }
+  },
+  {
+   "id": "glob/name-py",
+   "tool": "glob",
+   "args": {
+    "pattern": "*.py",
+    "match": "name"
+   }
+  },
+  {
+   "id": "glob/name-question",
+   "tool": "glob",
+   "args": {
+    "pattern": "f0?.txt",
+    "match": "name"
+   }
+  },
+  {
+   "id": "glob/name-class",
+   "tool": "glob",
+   "args": {
+    "pattern": "f[0-1]?.txt",
+    "match": "name"
+   }
+  },
+  {
+   "id": "glob/name-negated-class",
+   "tool": "glob",
+   "args": {
+    "pattern": "f[!0]?.txt",
+    "match": "name"
+   }
+  },
+  {
+   "id": "glob/name-exact",
+   "tool": "glob",
+   "args": {
+    "pattern": "util.py",
+    "match": "name"
+   }
+  },
+  {
+   "id": "glob/name-no-match",
+   "tool": "glob",
+   "args": {
+    "pattern": "*.zzz",
+    "match": "name"
+   }
+  },
+  {
+   "id": "glob/path-no-match",
+   "tool": "glob",
+   "args": {
+    "pattern": "**/*.zzz"
+   }
+  },
+  {
+   "id": "glob/in-directory",
+   "tool": "glob",
+   "args": {
+    "pattern": "*.py",
+    "directory": "src"
+   }
+  },
+  {
+   "id": "glob/in-directory-name",
+   "tool": "glob",
+   "args": {
+    "pattern": "*.ts",
+    "directory": "src",
+    "match": "name"
+   }
+  },
+  {
+   "id": "glob/in-directory-abs",
+   "tool": "glob",
+   "args": {
+    "pattern": "*.md",
+    "directory": "<WS>/docs"
+   },
+   "normalize": true
+  },
+  {
+   "id": "glob/dot-file-skipped",
+   "tool": "glob",
+   "args": {
+    "pattern": ".*",
+    "match": "name"
+   }
+  },
+  {
+   "id": "glob/dot-pattern-path",
+   "tool": "glob",
+   "args": {
+    "pattern": ".hidden/*.txt"
+   }
+  },
+  {
+   "id": "glob/star-star-all",
+   "tool": "glob",
+   "args": {
+    "pattern": "**/*",
+    "max_results": 1000
+   }
+  },
+  {
+   "id": "glob/skips-generated",
+   "tool": "glob",
+   "args": {
+    "pattern": "**/*.js"
+   }
+  },
+  {
+   "id": "glob/skips-generated-name",
+   "tool": "glob",
+   "args": {
+    "pattern": "*.js",
+    "match": "name"
+   }
+  },
+  {
+   "id": "glob/file-named-build",
+   "tool": "glob",
+   "args": {
+    "pattern": "**/build"
+   }
+  },
+  {
+   "id": "glob/multi-dots",
+   "tool": "glob",
+   "args": {
+    "pattern": "*.gz",
+    "match": "name"
+   }
+  },
+  {
+   "id": "glob/name-with-spaces",
+   "tool": "glob",
+   "args": {
+    "pattern": "name*",
+    "match": "name"
+   }
+  },
+  {
+   "id": "glob/unicode",
+   "tool": "glob",
+   "args": {
+    "pattern": "ünï*",
+    "match": "name"
+   }
+  },
+  {
+   "id": "glob/page-first",
+   "tool": "glob",
+   "args": {
+    "pattern": "many/*.txt",
+    "max_results": 5
+   }
+  },
+  {
+   "id": "glob/page-second",
+   "tool": "glob",
+   "args": {
+    "pattern": "many/*.txt",
+    "max_results": 5,
+    "offset": 5
+   }
+  },
+  {
+   "id": "glob/page-last",
+   "tool": "glob",
+   "args": {
+    "pattern": "many/*.txt",
+    "max_results": 10,
+    "offset": 25
+   }
+  },
+  {
+   "id": "glob/page-exact-end",
+   "tool": "glob",
+   "args": {
+    "pattern": "many/*.txt",
+    "max_results": 30
+   }
+  },
+  {
+   "id": "glob/page-past-end",
+   "tool": "glob",
+   "args": {
+    "pattern": "many/*.txt",
+    "offset": 99
+   }
+  },
+  {
+   "id": "glob/page-name-mode",
+   "tool": "glob",
+   "args": {
+    "pattern": "f*.txt",
+    "match": "name",
+    "max_results": 4,
+    "offset": 2
+   }
+  },
+  {
+   "id": "glob/page-limit-zero",
+   "tool": "glob",
+   "args": {
+    "pattern": "many/*.txt",
+    "max_results": 0
+   }
+  },
+  {
+   "id": "glob/page-limit-negative",
+   "tool": "glob",
+   "args": {
+    "pattern": "many/*.txt",
+    "max_results": -5
+   }
+  },
+  {
+   "id": "glob/page-offset-negative",
+   "tool": "glob",
+   "args": {
+    "pattern": "many/*.txt",
+    "max_results": 2,
+    "offset": -4
+   }
+  },
+  {
+   "id": "glob/page-string-numbers",
+   "tool": "glob",
+   "args": {
+    "pattern": "many/*.txt",
+    "max_results": "2",
+    "offset": "1"
+   }
+  },
+  {
+   "id": "glob/ties-by-path",
+   "tool": "glob",
+   "args": {
+    "pattern": "ties/*.txt"
+   }
+  },
+  {
+   "id": "glob/ign-path",
+   "tool": "glob",
+   "args": {
+    "pattern": "**/*",
+    "directory": "ign"
+   }
+  },
+  {
+   "id": "glob/ign-name",
+   "tool": "glob",
+   "args": {
+    "pattern": "*",
+    "match": "name",
+    "directory": "ign"
+   }
+  },
+  {
+   "id": "glob/neg-path",
+   "tool": "glob",
+   "args": {
+    "pattern": "**/*",
+    "directory": "neg"
+   }
+  },
+  {
+   "id": "glob/neg-name",
+   "tool": "glob",
+   "args": {
+    "pattern": "*",
+    "match": "name",
+    "directory": "neg"
+   }
+  },
+  {
+   "id": "glob/gi-a-path",
+   "tool": "glob",
+   "args": {
+    "pattern": "**/*",
+    "directory": "gi_a",
+    "max_results": 100
+   }
+  },
+  {
+   "id": "glob/gi-a-name",
+   "tool": "glob",
+   "args": {
+    "pattern": "*",
+    "match": "name",
+    "directory": "gi_a",
+    "max_results": 100
+   }
+  },
+  {
+   "id": "glob/gi-b-path",
+   "tool": "glob",
+   "args": {
+    "pattern": "**/*",
+    "directory": "gi_b",
+    "max_results": 100
+   }
+  },
+  {
+   "id": "glob/gi-b-name",
+   "tool": "glob",
+   "args": {
+    "pattern": "*",
+    "match": "name",
+    "directory": "gi_b",
+    "max_results": 100
+   }
+  },
+  {
+   "id": "glob/unknown-match-mode-is-path",
+   "tool": "glob",
+   "args": {
+    "pattern": "*.md",
+    "match": "whatever"
+   }
+  },
+  {
+   "id": "glob/absolute-pattern",
+   "tool": "glob",
+   "args": {
+    "pattern": "/etc/*"
+   }
+  },
+  {
+   "id": "glob/empty-pattern",
+   "tool": "glob",
+   "args": {
+    "pattern": ""
+   }
+  },
+  {
+   "id": "glob/bad-double-star",
+   "tool": "glob",
+   "args": {
+    "pattern": "src/**py"
+   }
+  },
+  {
+   "id": "glob/trailing-slash",
+   "tool": "glob",
+   "args": {
+    "pattern": "src/"
+   }
+  },
+  {
+   "id": "glob/dot-pattern",
+   "tool": "glob",
+   "args": {
+    "pattern": "."
+   }
+  },
+  {
+   "id": "glob/dotdot-pattern",
+   "tool": "glob",
+   "args": {
+    "pattern": "../*"
+   }
+  },
+  {
+   "id": "glob/dotdot-inside",
+   "tool": "glob",
+   "args": {
+    "pattern": "src/../README.md"
+   }
+  },
+  {
+   "id": "glob/double-slash",
+   "tool": "glob",
+   "args": {
+    "pattern": "src//*.py"
+   }
+  },
+  {
+   "id": "glob/dir-missing",
+   "tool": "glob",
+   "args": {
+    "pattern": "*",
+    "directory": "nope"
+   }
+  },
+  {
+   "id": "glob/dir-is-file",
+   "tool": "glob",
+   "args": {
+    "pattern": "*",
+    "directory": "README.md"
+   },
+   "normalize": true
+  },
+  {
+   "id": "glob/dir-file-component",
+   "tool": "glob",
+   "args": {
+    "pattern": "*",
+    "directory": "README.md/sub"
+   },
+   "normalize": true
+  },
+  {
+   "id": "glob/dir-missing-nested",
+   "tool": "glob",
+   "args": {
+    "pattern": "*",
+    "directory": "src/nope/deeper"
+   }
+  },
+  {
+   "id": "glob/dir-outside",
+   "tool": "glob",
+   "args": {
+    "pattern": "*",
+    "directory": "../outside"
+   },
+   "normalize": true
+  },
+  {
+   "id": "glob/unterminated-class",
+   "tool": "glob",
+   "args": {
+    "pattern": "[a*.py",
+    "match": "name"
+   }
+  },
+  {
+   "id": "glob/upper-case-pattern-windows",
+   "tool": "glob",
+   "args": {
+    "pattern": "SRC/*.PY"
+   },
+   "only_os": "windows"
+  },
+  {
+   "id": "glob/upper-case-name-windows",
+   "tool": "glob",
+   "args": {
+    "pattern": "*.PY",
+    "match": "name"
+   },
+   "only_os": "windows"
+  },
+  {
+   "id": "glob/class-in-directory-part",
+   "tool": "glob",
+   "args": {
+    "pattern": "s[r]c/*.py"
+   }
+  },
+  {
+   "id": "glob/star-directory-part",
+   "tool": "glob",
+   "args": {
+    "pattern": "*/helpers.py"
+   }
+  },
+  {
+   "id": "glob/star-star-then-name",
+   "tool": "glob",
+   "args": {
+    "pattern": "**/helpers.py"
+   }
+  },
+  {
+   "id": "glob/star-star-middle",
+   "tool": "glob",
+   "args": {
+    "pattern": "src/**/helpers.py"
+   }
+  },
+  {
+   "id": "glob/question-mark-path",
+   "tool": "glob",
+   "args": {
+    "pattern": "src/?til.py"
+   }
+  },
+  {
+   "id": "glob/literal-path",
+   "tool": "glob",
+   "args": {
+    "pattern": "src/util.py"
+   }
+  },
+  {
+   "id": "glob/literal-hidden",
+   "tool": "glob",
+   "args": {
+    "pattern": ".env"
+   }
+  },
+  {
+   "id": "glob/literal-dir-only",
+   "tool": "glob",
+   "args": {
+    "pattern": "src"
+   }
+  },
+  {
+   "id": "glob/dir-with-trailing-slash",
+   "tool": "glob",
+   "args": {
+    "pattern": "*.py",
+    "directory": "src/"
+   }
+  },
+  {
+   "id": "glob/windows-separator",
+   "tool": "glob",
+   "args": {
+    "pattern": "src\\util.py"
+   },
+   "only_os": "windows"
+  },
+  {
+   "id": "glob/name-mode-path-pattern",
+   "tool": "glob",
+   "args": {
+    "pattern": "src/util.py",
+    "match": "name"
+   }
+  },
+  {
+   "id": "glob/name-mode-star-star",
+   "tool": "glob",
+   "args": {
+    "pattern": "**",
+    "match": "name",
+    "directory": "ties"
+   }
+  },
+  {
+   "id": "glob/max-results-one",
+   "tool": "glob",
+   "args": {
+    "pattern": "**/*.py",
+    "max_results": 1
+   }
+  },
+  {
+   "id": "grep/todo",
+   "tool": "grep",
+   "args": {
+    "pattern": "TODO"
+   }
+  },
+  {
+   "id": "grep/todo-files",
+   "tool": "grep",
+   "args": {
+    "pattern": "TODO",
+    "output_mode": "files_with_matches"
+   }
+  },
+  {
+   "id": "grep/todo-count",
+   "tool": "grep",
+   "args": {
+    "pattern": "TODO",
+    "output_mode": "count"
+   }
+  },
+  {
+   "id": "grep/todo-src",
+   "tool": "grep",
+   "args": {
+    "pattern": "TODO",
+    "directory": "src"
+   }
+  },
+  {
+   "id": "grep/include-py",
+   "tool": "grep",
+   "args": {
+    "pattern": "TODO",
+    "include": "*.py"
+   }
+  },
+  {
+   "id": "grep/include-md",
+   "tool": "grep",
+   "args": {
+    "pattern": "TODO",
+    "include": "*.md"
+   }
+  },
+  {
+   "id": "grep/type-py",
+   "tool": "grep",
+   "args": {
+    "pattern": "TODO",
+    "type": "py"
+   }
+  },
+  {
+   "id": "grep/type-ts",
+   "tool": "grep",
+   "args": {
+    "pattern": "TODO",
+    "type": "ts"
+   }
+  },
+  {
+   "id": "grep/type-upper",
+   "tool": "grep",
+   "args": {
+    "pattern": "TODO",
+    "type": "PY"
+   }
+  },
+  {
+   "id": "grep/type-markdown",
+   "tool": "grep",
+   "args": {
+    "pattern": "TODO",
+    "type": "markdown"
+   }
+  },
+  {
+   "id": "grep/type-unknown",
+   "tool": "grep",
+   "args": {
+    "pattern": "TODO",
+    "type": "klingon"
+   }
+  },
+  {
+   "id": "grep/type-invalid",
+   "tool": "grep",
+   "args": {
+    "pattern": "TODO",
+    "type": "py!"
+   }
+  },
+  {
+   "id": "grep/type-padded",
+   "tool": "grep",
+   "args": {
+    "pattern": "TODO",
+    "type": " py "
+   }
+  },
+  {
+   "id": "grep/type-too-long",
+   "tool": "grep",
+   "args": {
+    "pattern": "TODO",
+    "type": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+   }
+  },
+  {
+   "id": "grep/no-match",
+   "tool": "grep",
+   "args": {
+    "pattern": "zzzzzz"
+   }
+  },
+  {
+   "id": "grep/no-match-scope",
+   "tool": "grep",
+   "args": {
+    "pattern": "zzzzzz",
+    "include": "*.py",
+    "type": "py"
+   }
+  },
+  {
+   "id": "grep/no-match-dir",
+   "tool": "grep",
+   "args": {
+    "pattern": "zzzzzz",
+    "directory": "src"
+   }
+  },
+  {
+   "id": "grep/regex-alternation",
+   "tool": "grep",
+   "args": {
+    "pattern": "hello|helper"
+   }
+  },
+  {
+   "id": "grep/regex-anchors",
+   "tool": "grep",
+   "args": {
+    "pattern": "^def "
+   }
+  },
+  {
+   "id": "grep/regex-class",
+   "tool": "grep",
+   "args": {
+    "pattern": "[Aa]lpha"
+   }
+  },
+  {
+   "id": "grep/regex-backreference",
+   "tool": "grep",
+   "args": {
+    "pattern": "(foo)\\1"
+   }
+  },
+  {
+   "id": "grep/regex-lookahead",
+   "tool": "grep",
+   "args": {
+    "pattern": "foo(?=\\()"
+   }
+  },
+  {
+   "id": "grep/regex-invalid",
+   "tool": "grep",
+   "args": {
+    "pattern": "("
+   },
+   "prefix_only": "Error: Invalid regex: "
+  },
+  {
+   "id": "grep/case-sensitive",
+   "tool": "grep",
+   "args": {
+    "pattern": "needle",
+    "include": "case.txt"
+   }
+  },
+  {
+   "id": "grep/case-insensitive",
+   "tool": "grep",
+   "args": {
+    "pattern": "needle",
+    "include": "case.txt",
+    "case_insensitive": true
+   }
+  },
+  {
+   "id": "grep/case-insensitive-string-flag",
+   "tool": "grep",
+   "args": {
+    "pattern": "needle",
+    "include": "case.txt",
+    "case_insensitive": "yes"
+   }
+  },
+  {
+   "id": "grep/fixed-strings",
+   "tool": "grep",
+   "args": {
+    "pattern": "a.b",
+    "include": "regex.txt",
+    "fixed_strings": true
+   }
+  },
+  {
+   "id": "grep/not-fixed",
+   "tool": "grep",
+   "args": {
+    "pattern": "a.b",
+    "include": "regex.txt"
+   }
+  },
+  {
+   "id": "grep/fixed-parens",
+   "tool": "grep",
+   "args": {
+    "pattern": "foo(bar)",
+    "include": "regex.txt",
+    "fixed_strings": true
+   }
+  },
+  {
+   "id": "grep/skips-generated-and-hidden",
+   "tool": "grep",
+   "args": {
+    "pattern": "needle",
+    "output_mode": "files_with_matches",
+    "max_results": 1000
+   }
+  },
+  {
+   "id": "grep/needle-count",
+   "tool": "grep",
+   "args": {
+    "pattern": "needle",
+    "output_mode": "count",
+    "max_results": 1000
+   }
+  },
+  {
+   "id": "grep/binary-skipped",
+   "tool": "grep",
+   "args": {
+    "pattern": "needle",
+    "include": "data.bin"
+   }
+  },
+  {
+   "id": "grep/long-line",
+   "tool": "grep",
+   "args": {
+    "pattern": "needle",
+    "include": "long_lines.txt"
+   }
+  },
+  {
+   "id": "grep/context-1",
+   "tool": "grep",
+   "args": {
+    "pattern": "HIT",
+    "include": "ctx.txt",
+    "context": 1
+   }
+  },
+  {
+   "id": "grep/context-2",
+   "tool": "grep",
+   "args": {
+    "pattern": "HIT",
+    "include": "ctx.txt",
+    "context": 2
+   }
+  },
+  {
+   "id": "grep/context-big-clamped",
+   "tool": "grep",
+   "args": {
+    "pattern": "HIT b",
+    "include": "ctx.txt",
+    "context": 99
+   }
+  },
+  {
+   "id": "grep/context-negative",
+   "tool": "grep",
+   "args": {
+    "pattern": "HIT",
+    "include": "ctx.txt",
+    "context": -3
+   }
+  },
+  {
+   "id": "grep/context-with-files-mode",
+   "tool": "grep",
+   "args": {
+    "pattern": "HIT",
+    "include": "ctx.txt",
+    "context": 2,
+    "output_mode": "files_with_matches"
+   }
+  },
+  {
+   "id": "grep/page-first",
+   "tool": "grep",
+   "args": {
+    "pattern": "match",
+    "include": "lines.txt",
+    "max_results": 5
+   }
+  },
+  {
+   "id": "grep/page-second",
+   "tool": "grep",
+   "args": {
+    "pattern": "match",
+    "include": "lines.txt",
+    "max_results": 5,
+    "offset": 5
+   }
+  },
+  {
+   "id": "grep/page-last",
+   "tool": "grep",
+   "args": {
+    "pattern": "match",
+    "include": "lines.txt",
+    "max_results": 100,
+    "offset": 200
+   }
+  },
+  {
+   "id": "grep/page-exact",
+   "tool": "grep",
+   "args": {
+    "pattern": "match",
+    "include": "lines.txt",
+    "max_results": 250
+   }
+  },
+  {
+   "id": "grep/page-default-limit",
+   "tool": "grep",
+   "args": {
+    "pattern": "match",
+    "include": "lines.txt"
+   }
+  },
+  {
+   "id": "grep/page-limit-clamped",
+   "tool": "grep",
+   "args": {
+    "pattern": "match",
+    "include": "lines.txt",
+    "max_results": 5000
+   }
+  },
+  {
+   "id": "grep/page-limit-zero",
+   "tool": "grep",
+   "args": {
+    "pattern": "match",
+    "include": "lines.txt",
+    "max_results": 0
+   }
+  },
+  {
+   "id": "grep/page-past-end",
+   "tool": "grep",
+   "args": {
+    "pattern": "match",
+    "include": "lines.txt",
+    "offset": 999
+   }
+  },
+  {
+   "id": "grep/page-offset-negative",
+   "tool": "grep",
+   "args": {
+    "pattern": "match",
+    "include": "lines.txt",
+    "max_results": 2,
+    "offset": -5
+   }
+  },
+  {
+   "id": "grep/page-with-context",
+   "tool": "grep",
+   "args": {
+    "pattern": "HIT",
+    "include": "ctx.txt",
+    "context": 1,
+    "max_results": 1,
+    "offset": 1
+   }
+  },
+  {
+   "id": "grep/page-with-context-first",
+   "tool": "grep",
+   "args": {
+    "pattern": "HIT",
+    "include": "ctx.txt",
+    "context": 1,
+    "max_results": 2
+   }
+  },
+  {
+   "id": "grep/files-page-first",
+   "tool": "grep",
+   "args": {
+    "pattern": "needle",
+    "output_mode": "files_with_matches",
+    "max_results": 3
+   }
+  },
+  {
+   "id": "grep/files-page-second",
+   "tool": "grep",
+   "args": {
+    "pattern": "needle",
+    "output_mode": "files_with_matches",
+    "max_results": 3,
+    "offset": 3
+   }
+  },
+  {
+   "id": "grep/files-page-past",
+   "tool": "grep",
+   "args": {
+    "pattern": "needle",
+    "output_mode": "files_with_matches",
+    "offset": 500
+   }
+  },
+  {
+   "id": "grep/count-page-first",
+   "tool": "grep",
+   "args": {
+    "pattern": "needle",
+    "output_mode": "count",
+    "max_results": 3
+   }
+  },
+  {
+   "id": "grep/count-page-second",
+   "tool": "grep",
+   "args": {
+    "pattern": "needle",
+    "output_mode": "count",
+    "max_results": 3,
+    "offset": 3
+   }
+  },
+  {
+   "id": "grep/count-page-past",
+   "tool": "grep",
+   "args": {
+    "pattern": "needle",
+    "output_mode": "count",
+    "offset": 500
+   }
+  },
+  {
+   "id": "grep/count-lines",
+   "tool": "grep",
+   "args": {
+    "pattern": "match",
+    "include": "lines.txt",
+    "output_mode": "count"
+   }
+  },
+  {
+   "id": "grep/multiline",
+   "tool": "grep",
+   "args": {
+    "pattern": "alpha\nbeta",
+    "include": "multi.txt",
+    "multiline": true
+   }
+  },
+  {
+   "id": "grep/multiline-escaped",
+   "tool": "grep",
+   "args": {
+    "pattern": "alpha\\r?\\nbeta",
+    "include": "multi.txt",
+    "multiline": true
+   }
+  },
+  {
+   "id": "grep/multiline-dotall",
+   "tool": "grep",
+   "args": {
+    "pattern": "beta.*delta",
+    "include": "multi.txt",
+    "multiline": true
+   }
+  },
+  {
+   "id": "grep/multiline-count",
+   "tool": "grep",
+   "args": {
+    "pattern": "a.*\\n.*b",
+    "include": "multi.txt",
+    "multiline": true,
+    "output_mode": "count"
+   }
+  },
+  {
+   "id": "grep/multiline-context",
+   "tool": "grep",
+   "args": {
+    "pattern": "gamma\\ndelta",
+    "include": "multi.txt",
+    "multiline": true,
+    "context": 1
+   }
+  },
+  {
+   "id": "grep/newline-without-multiline",
+   "tool": "grep",
+   "args": {
+    "pattern": "alpha\\nbeta",
+    "include": "multi.txt"
+   }
+  },
+  {
+   "id": "grep/newline-literal-without-multiline",
+   "tool": "grep",
+   "args": {
+    "pattern": "alpha\nbeta",
+    "include": "multi.txt"
+   }
+  },
+  {
+   "id": "grep/newline-escaped-backslash-ok",
+   "tool": "grep",
+   "args": {
+    "pattern": "alpha\\\\nbeta",
+    "include": "multi.txt"
+   }
+  },
+  {
+   "id": "grep/newline-r",
+   "tool": "grep",
+   "args": {
+    "pattern": "alpha\\rbeta",
+    "include": "multi.txt"
+   }
+  },
+  {
+   "id": "grep/fixed-newline",
+   "tool": "grep",
+   "args": {
+    "pattern": "a\nb",
+    "include": "multi.txt",
+    "fixed_strings": true
+   }
+  },
+  {
+   "id": "grep/fixed-backslash-n-ok",
+   "tool": "grep",
+   "args": {
+    "pattern": "a\\nb",
+    "include": "multi.txt",
+    "fixed_strings": true
+   }
+  },
+  {
+   "id": "grep/pattern-too-long",
+   "tool": "grep",
+   "args": {
+    "pattern": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+   }
+  },
+  {
+   "id": "grep/pattern-max-length",
+   "tool": "grep",
+   "args": {
+    "pattern": "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"
+   }
+  },
+  {
+   "id": "grep/separators",
+   "tool": "grep",
+   "args": {
+    "pattern": "^[bc]",
+    "include": "sep.txt"
+   }
+  },
+  {
+   "id": "grep/crlf-file",
+   "tool": "grep",
+   "args": {
+    "pattern": "two",
+    "include": "crlf.txt"
+   }
+  },
+  {
+   "id": "grep/cr-only-file",
+   "tool": "grep",
+   "args": {
+    "pattern": "two",
+    "include": "cr_only.txt"
+   }
+  },
+  {
+   "id": "grep/bom-file",
+   "tool": "grep",
+   "args": {
+    "pattern": "^bom",
+    "include": "bom.txt"
+   }
+  },
+  {
+   "id": "grep/blank-file",
+   "tool": "grep",
+   "args": {
+    "pattern": ".*",
+    "include": "blank.txt"
+   }
+  },
+  {
+   "id": "grep/ign",
+   "tool": "grep",
+   "args": {
+    "pattern": "needle",
+    "directory": "ign",
+    "output_mode": "files_with_matches"
+   }
+  },
+  {
+   "id": "grep/ign-content",
+   "tool": "grep",
+   "args": {
+    "pattern": "needle",
+    "directory": "ign"
+   }
+  },
+  {
+   "id": "grep/neg",
+   "tool": "grep",
+   "args": {
+    "pattern": "needle",
+    "directory": "neg",
+    "output_mode": "files_with_matches"
+   }
+  },
+  {
+   "id": "grep/gi-a",
+   "tool": "grep",
+   "args": {
+    "pattern": "x",
+    "directory": "gi_a",
+    "output_mode": "count",
+    "max_results": 100
+   }
+  },
+  {
+   "id": "grep/gi-b",
+   "tool": "grep",
+   "args": {
+    "pattern": "x",
+    "directory": "gi_b",
+    "output_mode": "count",
+    "max_results": 100
+   }
+  },
+  {
+   "id": "grep/dir-missing",
+   "tool": "grep",
+   "args": {
+    "pattern": "x",
+    "directory": "nope"
+   }
+  },
+  {
+   "id": "grep/dir-is-file",
+   "tool": "grep",
+   "args": {
+    "pattern": "x",
+    "directory": "README.md"
+   },
+   "normalize": true
+  },
+  {
+   "id": "grep/dir-file-component",
+   "tool": "grep",
+   "args": {
+    "pattern": "x",
+    "directory": "README.md/sub"
+   },
+   "normalize": true
+  },
+  {
+   "id": "grep/dir-outside",
+   "tool": "grep",
+   "args": {
+    "pattern": "x",
+    "directory": "../outside"
+   },
+   "normalize": true
+  },
+  {
+   "id": "grep/include-empty",
+   "tool": "grep",
+   "args": {
+    "pattern": "TODO",
+    "include": ""
+   }
+  },
+  {
+   "id": "grep/include-no-match",
+   "tool": "grep",
+   "args": {
+    "pattern": "TODO",
+    "include": "*.zzz"
+   }
+  },
+  {
+   "id": "grep/include-class",
+   "tool": "grep",
+   "args": {
+    "pattern": "TODO",
+    "include": "*.[pm]*"
+   }
+  },
+  {
+   "id": "grep/unicode-pattern",
+   "tool": "grep",
+   "args": {
+    "pattern": "café"
+   }
+  },
+  {
+   "id": "grep/unicode-class",
+   "tool": "grep",
+   "args": {
+    "pattern": "\\w+ \\w+ \\w+",
+    "include": "README.md"
+   }
+  },
+  {
+   "id": "grep/dot-matches-unicode",
+   "tool": "grep",
+   "args": {
+    "pattern": "caf.",
+    "include": "README.md"
+   }
+  },
+  {
+   "id": "grep/spaces-file",
+   "tool": "grep",
+   "args": {
+    "pattern": "spaced"
+   }
+  },
+  {
+   "id": "grep/unicode-case-insensitive",
+   "tool": "grep",
+   "args": {
+    "pattern": "CAFÉ",
+    "include": "README.md",
+    "case_insensitive": true
+   }
+  },
+  {
+   "id": "grep/unicode-case-sensitive-miss",
+   "tool": "grep",
+   "args": {
+    "pattern": "CAFÉ",
+    "include": "README.md"
+   }
+  },
+  {
+   "id": "grep/word-boundary",
+   "tool": "grep",
+   "args": {
+    "pattern": "\\bTODO\\b",
+    "include": "README.md"
+   }
+  },
+  {
+   "id": "grep/digits",
+   "tool": "grep",
+   "args": {
+    "pattern": "\\d{3}",
+    "include": "lines.txt",
+    "max_results": 3
+   }
+  },
+  {
+   "id": "grep/non-greedy",
+   "tool": "grep",
+   "args": {
+    "pattern": "l.*?e",
+    "include": "lines.txt",
+    "max_results": 2
+   }
+  },
+  {
+   "id": "grep/multiline-anchors",
+   "tool": "grep",
+   "args": {
+    "pattern": "^beta$",
+    "include": "multi.txt",
+    "multiline": true
+   }
+  },
+  {
+   "id": "grep/multiline-case",
+   "tool": "grep",
+   "args": {
+    "pattern": "ALPHA.beta",
+    "include": "multi.txt",
+    "multiline": true,
+    "case_insensitive": true
+   }
+  },
+  {
+   "id": "grep/inline-flag",
+   "tool": "grep",
+   "args": {
+    "pattern": "(?i)needle",
+    "include": "case.txt"
+   }
+  },
+  {
+   "id": "grep/python-only-named-group",
+   "tool": "grep",
+   "args": {
+    "pattern": "(?P<w>needle)",
+    "include": "case.txt"
+   }
+  },
+  {
+   "id": "grep/include-case-windows",
+   "tool": "grep",
+   "args": {
+    "pattern": "TODO",
+    "include": "*.PY"
+   },
+   "only_os": "windows"
+  },
+  {
+   "id": "grep/empty-pattern",
+   "tool": "grep",
+   "args": {
+    "pattern": "",
+    "include": "nonl.txt"
+   }
+  },
+  {
+   "id": "grep/dot-star-all-lines",
+   "tool": "grep",
+   "args": {
+    "pattern": ".*",
+    "include": "nonl.txt",
+    "output_mode": "count"
+   }
+  },
+  {
+   "id": "grep/caret-only",
+   "tool": "grep",
+   "args": {
+    "pattern": "^",
+    "include": "ctx.txt",
+    "output_mode": "count"
+   }
+  },
+  {
+   "id": "grep/trailing-context-at-eof",
+   "tool": "grep",
+   "args": {
+    "pattern": "nine",
+    "include": "ctx.txt",
+    "context": 3
+   }
+  },
+  {
+   "id": "grep/leading-context-at-bof",
+   "tool": "grep",
+   "args": {
+    "pattern": "one",
+    "include": "ctx.txt",
+    "context": 3
+   }
+  },
+  {
+   "id": "confine/read-dotdot",
+   "tool": "read",
+   "args": {
+    "path": "../outside/secret.txt"
+   },
+   "normalize": true
+  },
+  {
+   "id": "confine/read-dotdot-deep",
+   "tool": "read",
+   "args": {
+    "path": "src/../../outside/secret.txt"
+   },
+   "normalize": true
+  },
+  {
+   "id": "confine/read-dotdot-reenter",
+   "tool": "read",
+   "args": {
+    "path": "../ws/README.md"
+   }
+  },
+  {
+   "id": "confine/read-dotdot-only",
+   "tool": "read",
+   "args": {
+    "path": ".."
+   },
+   "normalize": true
+  },
+  {
+   "id": "confine/read-absolute",
+   "tool": "read",
+   "args": {
+    "path": "<OUT>/secret.txt"
+   },
+   "normalize": true
+  },
+  {
+   "id": "confine/read-tilde",
+   "tool": "read",
+   "args": {
+    "path": "~/secret.txt"
+   }
+  },
+  {
+   "id": "confine/read-tilde-bare",
+   "tool": "read",
+   "args": {
+    "path": "~"
+   }
+  },
+  {
+   "id": "confine/read-tilde-user",
+   "tool": "read",
+   "args": {
+    "path": "~root/.ssh/id_rsa"
+   }
+  },
+  {
+   "id": "confine/read-tilde-middle-ok",
+   "tool": "read",
+   "args": {
+    "path": "a~b"
+   }
+  },
+  {
+   "id": "confine/read-nul",
+   "tool": "read",
+   "args": {
+    "path": "a\u0000b"
+   },
+   "only_os": "windows"
+  },
+  {
+   "id": "confine/read-nul-after-dir",
+   "tool": "read",
+   "args": {
+    "path": "a/\u0000"
+   },
+   "only_os": "windows"
+  },
+  {
+   "id": "confine/ls-nul",
+   "tool": "ls",
+   "args": {
+    "path": "a\u0000b"
+   },
+   "only_os": "windows"
+  },
+  {
+   "id": "confine/glob-nul-root",
+   "tool": "glob",
+   "args": {
+    "pattern": "*",
+    "directory": "a\u0000b"
+   },
+   "only_os": "windows"
+  },
+  {
+   "id": "confine/grep-nul-root",
+   "tool": "grep",
+   "args": {
+    "pattern": "x",
+    "directory": "a\u0000b"
+   },
+   "only_os": "windows"
+  },
+  {
+   "id": "confine/glob-nul-pattern",
+   "tool": "glob",
+   "args": {
+    "pattern": "a\u0000b"
+   }
+  },
+  {
+   "id": "confine/glob-nul-pattern-name",
+   "tool": "glob",
+   "args": {
+    "pattern": "a\u0000b",
+    "match": "name"
+   }
+  },
+  {
+   "id": "confine/grep-nul-pattern",
+   "tool": "grep",
+   "args": {
+    "pattern": "a\u0000b"
+   }
+  },
+  {
+   "id": "confine/grep-nul-include",
+   "tool": "grep",
+   "args": {
+    "pattern": "x",
+    "include": "a\u0000b"
+   }
+  },
+  {
+   "id": "confine/read-drive-letter",
+   "tool": "read",
+   "args": {
+    "path": "C:\\Windows\\win.ini"
+   },
+   "only_os": "windows",
+   "normalize": true
+  },
+  {
+   "id": "confine/read-drive-letter-slash",
+   "tool": "read",
+   "args": {
+    "path": "C:/Windows/win.ini"
+   },
+   "only_os": "windows",
+   "normalize": true
+  },
+  {
+   "id": "confine/read-drive-other",
+   "tool": "read",
+   "args": {
+    "path": "Z:\\nope\\x.txt"
+   },
+   "only_os": "windows",
+   "normalize": true
+  },
+  {
+   "id": "confine/read-unc",
+   "tool": "read",
+   "args": {
+    "path": "\\\\evil-host\\share\\x.txt"
+   },
+   "only_os": "windows",
+   "normalize": true
+  },
+  {
+   "id": "confine/read-unc-slash",
+   "tool": "read",
+   "args": {
+    "path": "//evil-host/share/x.txt"
+   },
+   "only_os": "windows",
+   "normalize": true
+  },
+  {
+   "id": "confine/read-unc-dotdot",
+   "tool": "read",
+   "args": {
+    "path": "\\\\evil-host\\share\\a\\..\\x.txt"
+   },
+   "only_os": "windows",
+   "normalize": true
+  },
+  {
+   "id": "confine/read-rooted-no-drive",
+   "tool": "read",
+   "args": {
+    "path": "\\Windows\\win.ini"
+   },
+   "only_os": "windows",
+   "normalize": true,
+   "normalize_drive": true
+  },
+  {
+   "id": "confine/read-verbatim-drive",
+   "tool": "read",
+   "args": {
+    "path": "\\\\?\\C:\\Windows\\win.ini"
+   },
+   "only_os": "windows",
+   "normalize": true
+  },
+  {
+   "id": "confine/ls-dotdot",
+   "tool": "ls",
+   "args": {
+    "path": ".."
+   },
+   "normalize": true
+  },
+  {
+   "id": "confine/ls-dotdot-outside",
+   "tool": "ls",
+   "args": {
+    "path": "../outside"
+   },
+   "normalize": true
+  },
+  {
+   "id": "confine/ls-absolute",
+   "tool": "ls",
+   "args": {
+    "path": "<OUT>"
+   },
+   "normalize": true
+  },
+  {
+   "id": "confine/ls-tilde",
+   "tool": "ls",
+   "args": {
+    "path": "~"
+   }
+  },
+  {
+   "id": "confine/ls-drive-letter",
+   "tool": "ls",
+   "args": {
+    "path": "C:\\"
+   },
+   "only_os": "windows",
+   "normalize": true
+  },
+  {
+   "id": "confine/ls-unc",
+   "tool": "ls",
+   "args": {
+    "path": "\\\\evil-host\\share"
+   },
+   "only_os": "windows",
+   "normalize": true
+  },
+  {
+   "id": "confine/glob-dotdot-root",
+   "tool": "glob",
+   "args": {
+    "pattern": "*",
+    "directory": ".."
+   },
+   "normalize": true
+  },
+  {
+   "id": "confine/glob-absolute-root",
+   "tool": "glob",
+   "args": {
+    "pattern": "*",
+    "directory": "<OUT>"
+   },
+   "normalize": true
+  },
+  {
+   "id": "confine/glob-tilde-root",
+   "tool": "glob",
+   "args": {
+    "pattern": "*",
+    "directory": "~"
+   }
+  },
+  {
+   "id": "confine/glob-unc-root",
+   "tool": "glob",
+   "args": {
+    "pattern": "*",
+    "directory": "\\\\evil-host\\share"
+   },
+   "only_os": "windows",
+   "normalize": true
+  },
+  {
+   "id": "confine/grep-dotdot-root",
+   "tool": "grep",
+   "args": {
+    "pattern": "SECRET",
+    "directory": ".."
+   },
+   "normalize": true
+  },
+  {
+   "id": "confine/grep-absolute-root",
+   "tool": "grep",
+   "args": {
+    "pattern": "SECRET",
+    "directory": "<OUT>"
+   },
+   "normalize": true
+  },
+  {
+   "id": "confine/grep-tilde-root",
+   "tool": "grep",
+   "args": {
+    "pattern": "SECRET",
+    "directory": "~"
+   }
+  },
+  {
+   "id": "confine/grep-drive-root",
+   "tool": "grep",
+   "args": {
+    "pattern": "x",
+    "directory": "C:\\Windows"
+   },
+   "only_os": "windows",
+   "normalize": true
+  },
+  {
+   "id": "confine/grep-unc-root",
+   "tool": "grep",
+   "args": {
+    "pattern": "x",
+    "directory": "\\\\evil-host\\share"
+   },
+   "only_os": "windows",
+   "normalize": true
+  },
+  {
+   "id": "confine/link-read-through-dir",
+   "tool": "read",
+   "args": {
+    "path": "escape/secret.txt"
+   },
+   "fixture": "links",
+   "normalize": true
+  },
+  {
+   "id": "confine/link-ls",
+   "tool": "ls",
+   "args": {
+    "path": "escape"
+   },
+   "fixture": "links",
+   "normalize": true
+  },
+  {
+   "id": "confine/link-glob-root",
+   "tool": "glob",
+   "args": {
+    "pattern": "*",
+    "directory": "escape"
+   },
+   "fixture": "links",
+   "normalize": true
+  },
+  {
+   "id": "confine/link-grep-root",
+   "tool": "grep",
+   "args": {
+    "pattern": "SECRET",
+    "directory": "escape"
+   },
+   "fixture": "links",
+   "normalize": true
+  },
+  {
+   "id": "confine/link-inside-read",
+   "tool": "read",
+   "args": {
+    "path": "alias/main.py"
+   },
+   "fixture": "links"
+  },
+  {
+   "id": "confine/link-inside-ls",
+   "tool": "ls",
+   "args": {
+    "path": "alias"
+   },
+   "fixture": "links"
+  },
+  {
+   "id": "args/read-missing-path",
+   "tool": "read",
+   "args": {}
+  },
+  {
+   "id": "args/read-path-int",
+   "tool": "read",
+   "args": {
+    "path": 1
+   }
+  },
+  {
+   "id": "args/read-path-null",
+   "tool": "read",
+   "args": {
+    "path": null
+   }
+  },
+  {
+   "id": "args/read-path-list",
+   "tool": "read",
+   "args": {
+    "path": [
+     "a"
+    ]
+   }
+  },
+  {
+   "id": "args/read-offset-text",
+   "tool": "read",
+   "args": {
+    "path": "README.md",
+    "offset": "abc"
+   }
+  },
+  {
+   "id": "args/read-offset-fraction",
+   "tool": "read",
+   "args": {
+    "path": "README.md",
+    "offset": 2.5
+   }
+  },
+  {
+   "id": "args/read-offset-null",
+   "tool": "read",
+   "args": {
+    "path": "README.md",
+    "offset": null
+   }
+  },
+  {
+   "id": "args/read-offset-list",
+   "tool": "read",
+   "args": {
+    "path": "README.md",
+    "offset": [
+     1
+    ]
+   }
+  },
+  {
+   "id": "args/read-limit-text",
+   "tool": "read",
+   "args": {
+    "path": "README.md",
+    "limit": "abc"
+   }
+  },
+  {
+   "id": "args/read-limit-fraction-text",
+   "tool": "read",
+   "args": {
+    "path": "README.md",
+    "limit": "1.5"
+   }
+  },
+  {
+   "id": "args/read-extra-args-ignored",
+   "tool": "read",
+   "args": {
+    "path": "README.md",
+    "limit": 1,
+    "bogus": 1
+   }
+  },
+  {
+   "id": "args/read-two-errors",
+   "tool": "read",
+   "args": {
+    "offset": "x"
+   }
+  },
+  {
+   "id": "args/read-dict-input",
+   "tool": "read",
+   "args": {
+    "path": {
+     "a": [
+      1,
+      null,
+      true,
+      "x'y"
+     ]
+    }
+   }
+  },
+  {
+   "id": "args/read-long-input",
+   "tool": "read",
+   "args": {
+    "path": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12,
+     13,
+     14,
+     15,
+     16,
+     17,
+     18,
+     19,
+     20,
+     21,
+     22,
+     23,
+     24,
+     25,
+     26,
+     27,
+     28,
+     29,
+     30,
+     31,
+     32,
+     33,
+     34,
+     35,
+     36,
+     37,
+     38,
+     39
+    ]
+   }
+  },
+  {
+   "id": "args/read-offset-underscore",
+   "tool": "read",
+   "args": {
+    "path": "README.md",
+    "offset": "1_000",
+    "limit": 1
+   }
+  },
+  {
+   "id": "args/read-offset-plus",
+   "tool": "read",
+   "args": {
+    "path": "README.md",
+    "offset": "+2",
+    "limit": 1
+   }
+  },
+  {
+   "id": "args/read-offset-minus",
+   "tool": "read",
+   "args": {
+    "path": "README.md",
+    "offset": "-2",
+    "limit": 1
+   }
+  },
+  {
+   "id": "args/read-offset-decimal-zero",
+   "tool": "read",
+   "args": {
+    "path": "README.md",
+    "offset": "3.0",
+    "limit": 1
+   }
+  },
+  {
+   "id": "args/read-offset-trailing-dot",
+   "tool": "read",
+   "args": {
+    "path": "README.md",
+    "offset": "5."
+   }
+  },
+  {
+   "id": "args/read-offset-exponent",
+   "tool": "read",
+   "args": {
+    "path": "README.md",
+    "offset": "1e3"
+   }
+  },
+  {
+   "id": "args/read-offset-spaces",
+   "tool": "read",
+   "args": {
+    "path": "README.md",
+    "offset": " 4 ",
+    "limit": 1
+   }
+  },
+  {
+   "id": "args/read-offset-empty",
+   "tool": "read",
+   "args": {
+    "path": "README.md",
+    "offset": ""
+   }
+  },
+  {
+   "id": "args/read-offset-hex",
+   "tool": "read",
+   "args": {
+    "path": "README.md",
+    "offset": "0x10"
+   }
+  },
+  {
+   "id": "args/ls-path-int",
+   "tool": "ls",
+   "args": {
+    "path": 5
+   }
+  },
+  {
+   "id": "args/glob-missing-pattern",
+   "tool": "glob",
+   "args": {}
+  },
+  {
+   "id": "args/glob-missing-pattern-with-extra",
+   "tool": "glob",
+   "args": {
+    "directory": "src"
+   }
+  },
+  {
+   "id": "args/glob-max-results-text",
+   "tool": "glob",
+   "args": {
+    "pattern": "*",
+    "max_results": "many"
+   }
+  },
+  {
+   "id": "args/glob-offset-bool",
+   "tool": "glob",
+   "args": {
+    "pattern": "many/*.txt",
+    "offset": true,
+    "max_results": 1
+   }
+  },
+  {
+   "id": "args/grep-missing-pattern",
+   "tool": "grep",
+   "args": {}
+  },
+  {
+   "id": "args/grep-bad-mode",
+   "tool": "grep",
+   "args": {
+    "pattern": "a",
+    "output_mode": "everything"
+   }
+  },
+  {
+   "id": "args/grep-bad-mode-type",
+   "tool": "grep",
+   "args": {
+    "pattern": "a",
+    "output_mode": 3
+   }
+  },
+  {
+   "id": "args/grep-bool-text",
+   "tool": "grep",
+   "args": {
+    "pattern": "a",
+    "case_insensitive": "maybe"
+   }
+  },
+  {
+   "id": "args/grep-bool-int",
+   "tool": "grep",
+   "args": {
+    "pattern": "a",
+    "multiline": 2
+   }
+  },
+  {
+   "id": "args/grep-bool-one",
+   "tool": "grep",
+   "args": {
+    "pattern": "needle",
+    "include": "case.txt",
+    "case_insensitive": 1
+   }
+  },
+  {
+   "id": "args/grep-bool-null",
+   "tool": "grep",
+   "args": {
+    "pattern": "a",
+    "fixed_strings": null
+   }
+  },
+  {
+   "id": "args/grep-context-text",
+   "tool": "grep",
+   "args": {
+    "pattern": "a",
+    "context": "lots"
+   }
+  },
+  {
+   "id": "args/grep-many-errors",
+   "tool": "grep",
+   "args": {
+    "output_mode": "x",
+    "context": "y",
+    "multiline": "z"
+   }
+  }
+ ]
+}
