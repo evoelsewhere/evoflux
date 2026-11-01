@@ -301,8 +301,16 @@ def test_restricted_workspace_is_refused(client, target) -> None:
         "~/projects/../.aws",
         "~/.azure",
         "~/Library",
+        "~/.cargo",
+        "~/.claude/sessions",
+        "~/.npmrc",
+        "~/.var/app/org.example.App",
+        "~/.git-credentials",
+        "~/.vscode",
         *(
             (
+                os.environ.get("SystemDrive", "C:") + "\\Users",
+                os.environ.get("SystemDrive", "C:") + "\\$Recycle.Bin",
                 "~\\.ssh.",
                 "~\\.ssh ",
                 "~\\.kube::$INDEX_ALLOCATION",
@@ -311,7 +319,7 @@ def test_restricted_workspace_is_refused(client, target) -> None:
                 "\\\\?\\UNC\\localhost\\C$\\Users",
             )
             if os.name == "nt"
-            else ()
+            else ("/etc/..", "/private/var", "/run/user", "/opt", "/srv", "/snap")
         ),
     ):
         sent = send(client, {"message": "hi", "workspace": workspace})

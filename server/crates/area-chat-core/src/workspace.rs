@@ -5,13 +5,14 @@
 //! tools. Here the path is resolved first (`~`, `..` and links), then refused
 //! when it is a filesystem root, a network (UNC) or device path, a name Windows
 //! rewrites (trailing `.` or space, `:`), the home directory or one of its
-//! ancestors, a system directory, or equal to, inside or above a credential or
-//! config folder.
+//! ancestors, a system directory (or a folder above one), another user's
+//! profile on Windows, or equal to, inside or above a credential or config
+//! folder.
 
 use std::path::{Component, Path, PathBuf};
 
 /// Folders under the home directory that hold credentials or application state.
-const HOME_SENSITIVE: [&str; 12] = [
+const HOME_SENSITIVE: [&str; 25] = [
     ".ssh",
     ".aws",
     ".gnupg",
@@ -24,26 +25,46 @@ const HOME_SENSITIVE: [&str; 12] = [
     ".azure",
     ".password-store",
     ".netrc",
+    ".mozilla",
+    ".cargo",
+    ".claude",
+    ".codex",
+    ".gem",
+    ".terraform.d",
+    "snap",
+    ".var/app",
+    ".npmrc",
+    ".pypirc",
+    ".git-credentials",
+    ".vscode",
+    "NTUSER.DAT",
 ];
 
 /// Paths compare without regard to case where the filesystem usually does.
 const CASE_INSENSITIVE: bool = cfg!(any(windows, target_os = "macos"));
 
-/// System directories on Unix.
-const UNIX_SYSTEM: [&str; 12] = [
+/// System directories on Unix. `/private` holds macOS's `/private/etc` and
+/// `/private/var`.
+const UNIX_SYSTEM: [&str; 17] = [
     "/etc", "/usr", "/bin", "/sbin", "/var", "/proc", "/sys", "/dev", "/boot", "/root", "/System",
-    "/Library",
+    "/Library", "/private", "/run", "/opt", "/srv", "/snap",
 ];
 
 /// Windows environment variables that name system directories.
 const WINDOWS_SYSTEM_VARS: [&str; 4] =
     ["WINDIR", "ProgramFiles", "ProgramFiles(x86)", "ProgramData"];
 
+/// Folders on the Windows system drive that no workspace may be in or above.
+const WINDOWS_DRIVE_SYSTEM: [&str; 2] = ["$Recycle.Bin", "System Volume Information"];
+
 /// The folders a workspace must stay clear of.
 pub(crate) struct Protected {
     home: Vec<PathBuf>,
-    /// Equal to or inside is refused.
+    /// Equal to, inside or above is refused.
     system: Vec<PathBuf>,
+    /// Folders holding one profile per user (`C:\Users`): the folder itself,
+    /// what is above it and every profile in it but the home folder are refused.
+    profiles: Vec<PathBuf>,
     /// Equal to, inside or above is refused.
     sensitive: Vec<PathBuf>,
 }
@@ -52,17 +73,36 @@ impl Protected {
     /// The protected set for this machine: `home` and `config_dir` come from
     /// `Settings`; system directories come from the OS.
     pub(crate) fn current(home: &Path, config_dir: &Path) -> Self {
-        let system = if cfg!(windows) {
-            WINDOWS_SYSTEM_VARS
-                .iter()
-                .filter_map(std::env::var_os)
-                .filter(|value| !value.is_empty())
-                .map(PathBuf::from)
-                .collect()
+        let mut system: Vec<PathBuf> = Vec::new();
+        let mut profiles = Vec::new();
+        if cfg!(windows) {
+            system.extend(
+                WINDOWS_SYSTEM_VARS
+                    .iter()
+                    .filter_map(std::env::var_os)
+                    .filter(|value| !value.is_empty())
+                    .map(PathBuf::from),
+            );
+            let drive = std::env::var("SystemDrive").unwrap_or_else(|_| "C:".to_owned());
+            let drive = format!("{}\\", drive.trim_end_matches(['\\', '/']));
+            system.extend(
+                WINDOWS_DRIVE_SYSTEM
+                    .iter()
+                    .map(|name| Path::new(&drive).join(name)),
+            );
+            profiles.push(Path::new(&drive).join("Users"));
         } else {
-            UNIX_SYSTEM.iter().map(PathBuf::from).collect()
-        };
-        Self::new(home, config_dir, system)
+            system.extend(UNIX_SYSTEM.iter().map(PathBuf::from));
+        }
+        Self::new(home, config_dir, system).with_profiles(profiles)
+    }
+
+    /// Also protect these folders of user profiles, as the `Users` folder
+    /// above the home folder already is.
+    fn with_profiles(mut self, mut roots: Vec<PathBuf>) -> Self {
+        roots.append(&mut self.profiles);
+        self.profiles = dedup_both(roots);
+        self
     }
 
     pub(crate) fn new(home: &Path, config_dir: &Path, system: Vec<PathBuf>) -> Self {
@@ -70,25 +110,25 @@ impl Protected {
         if !home.as_os_str().is_empty() {
             sensitive.extend(HOME_SENSITIVE.iter().map(|name| home.join(name)));
         }
-        // A protected folder reached through a link is protected under both names.
-        let both = |paths: Vec<PathBuf>| {
-            paths
-                .into_iter()
-                .flat_map(|p| {
-                    let real = std::fs::canonicalize(&p).ok();
-                    [Some(p), real]
-                })
-                .flatten()
-                .map(strip_verbatim)
-                .collect::<Vec<_>>()
-        };
+        let both = dedup_both;
         let home_paths = if home.as_os_str().is_empty() {
             Vec::new()
         } else {
             both(vec![home.to_path_buf()])
         };
+        // The folder above a home folder named `Users` holds the other profiles.
+        let profiles = home
+            .parent()
+            .filter(|parent| {
+                parent
+                    .file_name()
+                    .is_some_and(|name| name.to_string_lossy().eq_ignore_ascii_case("users"))
+            })
+            .map(|parent| vec![parent.to_path_buf()])
+            .unwrap_or_default();
         Self {
             home: home_paths,
+            profiles: both(profiles),
             system: both(system),
             sensitive: both(sensitive),
         }
@@ -109,8 +149,18 @@ impl Protected {
         if self.home.iter().any(|home| within(&path, home)) {
             return Some("the home folder or a folder above it");
         }
-        if self.system.iter().any(|dir| within(dir, &path)) {
+        if self
+            .system
+            .iter()
+            .any(|dir| within(dir, &path) || within(&path, dir))
+        {
             return Some("a system folder");
+        }
+        if self.profiles.iter().any(|root| {
+            within(&path, root)
+                || (within(root, &path) && !self.home.iter().any(|home| within(home, &path)))
+        }) {
+            return Some("the profiles folder or another user's profile");
         }
         if self
             .sensitive
@@ -121,6 +171,19 @@ impl Protected {
         }
         None
     }
+}
+
+/// A protected folder reached through a link is protected under both names.
+fn dedup_both(paths: Vec<PathBuf>) -> Vec<PathBuf> {
+    paths
+        .into_iter()
+        .flat_map(|p| {
+            let real = std::fs::canonicalize(&p).ok();
+            [Some(p), real]
+        })
+        .flatten()
+        .map(strip_verbatim)
+        .collect()
 }
 
 /// `path` with `~` expanded, folded and link-resolved without requiring it to
@@ -269,7 +332,81 @@ mod tests {
         assert_eq!(guard.refusal(&etc), Some("a system folder"));
         assert_eq!(guard.refusal(&etc.join("nginx")), Some("a system folder"));
         assert!(guard.refusal(&root.join("sys").join("other")).is_none());
-        assert!(guard.refusal(&root.join("sys")).is_none());
+        // A folder above a system folder would contain it.
+        assert_eq!(guard.refusal(&root.join("sys")), Some("a system folder"));
+    }
+
+    #[test]
+    fn the_second_batch_of_credential_folders_is_protected() {
+        let (_dir, root, guard) = protected();
+        let home = root.join("home");
+        for rel in [
+            ".mozilla",
+            ".cargo",
+            ".claude",
+            ".codex",
+            ".gem",
+            ".terraform.d",
+            "snap",
+            ".var/app",
+            ".var/app/org.x.App/data",
+            ".npmrc",
+            ".pypirc",
+            ".git-credentials",
+            ".vscode",
+            ".config",
+            "NTUSER.DAT",
+            "AppData",
+        ] {
+            assert!(guard.refusal(&home.join(rel)).is_some(), "{rel}");
+        }
+        assert!(guard.refusal(&home.join(".var")).is_some());
+        assert!(guard.refusal(&home.join(".var").join("other")).is_none());
+        assert!(guard.refusal(&home.join("snapshots")).is_none());
+    }
+
+    #[test]
+    fn other_users_profiles_and_the_profiles_folder_are_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = strip_verbatim(std::fs::canonicalize(dir.path()).unwrap());
+        let users = root.join("Users");
+        let home = users.join("me");
+        let config = root.join("cfg");
+        for path in [&home, &users.join("other"), &config] {
+            std::fs::create_dir_all(path).unwrap();
+        }
+        let guard = Protected::new(&home, &config, Vec::new());
+        let profiles = Some("the profiles folder or another user's profile");
+        assert!(guard.refusal(&users).is_some());
+        assert_eq!(guard.refusal(&users.join("other")), profiles);
+        assert_eq!(guard.refusal(&users.join("other").join("x")), profiles);
+        assert_eq!(guard.refusal(&users.join("Public")), profiles);
+        assert!(guard.refusal(&home.join("projects").join("x")).is_none());
+        // A home folder that is not under a `Users` folder protects no siblings.
+        let flat = Protected::new(&root.join("me"), &config, Vec::new());
+        assert!(flat.refusal(&root.join("other")).is_none());
+    }
+
+    #[test]
+    fn windows_current_protects_users_recycle_bin_and_volume_information() {
+        if !cfg!(windows) {
+            return;
+        }
+        let guard = Protected::current(Path::new(r"D:\Home\me"), Path::new(r"D:\Cfg"));
+        for path in [
+            r"C:\Users",
+            r"C:\Users\other",
+            r"C:\Users\other\code",
+            r"C:\$Recycle.Bin",
+            r"C:\$Recycle.Bin\S-1",
+            r"C:\System Volume Information",
+        ] {
+            assert!(guard.refusal(Path::new(path)).is_some(), "{path}");
+        }
+        assert!(guard.refusal(Path::new(r"D:\work\repo")).is_none());
+        let own = Protected::current(Path::new(r"C:\Users\me"), Path::new(r"D:\Cfg"));
+        assert!(own.refusal(Path::new(r"C:\Users\me\code\x")).is_none());
+        assert!(own.refusal(Path::new(r"C:\Users\you\code")).is_some());
     }
 
     #[test]

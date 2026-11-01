@@ -10,6 +10,8 @@ All notable changes to EvoFlux are documented in this file.
 - The v4 `evoflux-server` gateway now also refuses (403) phone-access requests whose address is not a Tailscale name (`*.ts.net`) or address, so a website that rebinds its own name to your tailnet IP can no longer act as you; pages on other local ports than EvoFlux's own and the Vite ports (5173, 4173); and requests your browser marks as coming from another website (`Sec-Fetch-Site: cross-site`, such as another site's image or form) unless they carry the desktop token.
 - Phone access through **Settings → Remote Control** now refuses (403) any request whose address is not this computer's own tailnet name or Tailscale address, so a website on another `*.ts.net` name can no longer reach EvoFlux through DNS rebinding.
 
+- The v4 Rust chat now also refuses a session `workspace` in or above `~/.mozilla`, `~/.cargo`, `~/.claude`, `~/.codex`, `~/.gem`, `~/.terraform.d`, `~/snap`, `~/.var/app`, `~/.npmrc`, `~/.pypirc`, `~/.git-credentials`, `~/.vscode` or `~/NTUSER.DAT`, a folder that contains a system folder, `/private`, `/run`, `/opt`, `/srv` or `/snap`, and on Windows `C:\Users`, another user's profile, `C:\$Recycle.Bin` or `C:\System Volume Information`, with a 422; Python still runs chat, so nothing changes in the app yet.
+
 ### Upgrade notes
 
 - If you reach EvoFlux from another address than this computer (LAN through `--host 0.0.0.0`, or your own `tailscale serve`), list that page's origin in `EVOFLUX_ALLOWED_ORIGINS` (for example `https://evoflux.example.ts.net`). Phone access through **Settings → Remote Control** keeps working without it.

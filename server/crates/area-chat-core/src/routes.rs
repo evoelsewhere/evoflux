@@ -961,13 +961,13 @@ mod tests {
             .ends_with('w'));
     }
 
-    async fn chat_state(config: &std::path::Path) -> Arc<ChatState> {
+    async fn chat_state(home: &std::path::Path, config: &std::path::Path) -> Arc<ChatState> {
         let vars = std::collections::HashMap::from([(
             "EVOFLUX_CONFIG_DIR".to_owned(),
             config.to_string_lossy().into_owned(),
         )]);
         let settings =
-            evoflux_core::config::Settings::from_vars(&vars, Some(config), config).unwrap();
+            evoflux_core::config::Settings::from_vars(&vars, Some(home), config).unwrap();
         let db =
             evoflux_core::db::Db::open(&config.join("db"), evoflux_core::db::DbOptions::default())
                 .unwrap();
@@ -1008,11 +1008,11 @@ mod tests {
     #[tokio::test]
     async fn the_workspace_is_created_only_after_the_lead_and_409_checks() {
         let config = tempfile::tempdir().unwrap();
-        let state = chat_state(config.path()).await;
+        let home = tempfile::tempdir().unwrap();
+        let state = chat_state(home.path(), config.path()).await;
         let sid = "06ae6ab0-636d-720e-8000-b0d548016ce8";
-        // Outside the config dir, which a workspace may not be in.
-        let outside = tempfile::tempdir().unwrap();
-        let workspace = outside.path().join("ws");
+        // Inside the home folder, outside the config dir a workspace may not be in.
+        let workspace = home.path().join("ws");
 
         // No lead agent: 404, nothing created.
         assert_eq!(post_chat(&state, sid, &workspace).await, 404);
