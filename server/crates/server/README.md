@@ -43,7 +43,8 @@ The flags mean what they mean for Python's `serve` (`app/cli/commands/serve.py`)
 
 Before routing, every request passes `evoflux_gateway::origin`: a `Host` other
 than `localhost`, `127.0.0.1`, `[::1]` or the bound `--host`, an `Origin`
-other than a loopback page on the gateway's port or a Vite port (5173, 4173),
+other than a loopback page on the gateway's port or, in a debug build or with
+`EVOFLUX_DEV=1`, a Vite port (5173, 4173),
 the Tauri window or the WebBridge extension, and an Origin-less request the
 browser marks `Sec-Fetch-Site: cross-site` without the desktop token, get
 403. `EVOFLUX_ALLOWED_ORIGINS` (comma-separated) adds origins, and their hosts.

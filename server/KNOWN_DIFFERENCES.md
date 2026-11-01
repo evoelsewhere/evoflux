@@ -117,12 +117,19 @@ history snapshots, and Python reading the rows Rust wrote). Differences:
   (any UNC path is refused outright: `\\server\share`, `\\localhost\C$`,
   `\\?\UNC\...`, and `\\.\` device paths), the home folder or any folder above
   it, a system folder
-  (Windows: `%WINDIR%`, `%ProgramFiles%`, `%ProgramFiles(x86)%`, `%ProgramData%`;
-  Unix: `/etc /usr /bin /sbin /var /proc /sys /dev /boot /root /System /Library`)
-  or anything inside one, and the EvoFlux config folder, `~/.ssh`, `~/.aws`,
-  `~/.gnupg`, `~/.config`, `~/.kube`, `~/.docker`, `~/AppData`, `~/Library`,
-  `~/.local/share`, `~/.azure`, `~/.password-store` and `~/.netrc` (equal, inside
-  or above). On Windows a folder name ending in `.` or a space, or containing
+  (Windows: `%WINDIR%`, `%ProgramFiles%`, `%ProgramFiles(x86)%`, `%ProgramData%`,
+  `<system drive>\$Recycle.Bin`, `<system drive>\System Volume Information`;
+  Unix: `/etc /usr /bin /sbin /var /proc /sys /dev /boot /root /System /Library
+  /private /run /opt /srv /snap`; `/private` holds macOS's `/private/etc` and
+  `/private/var`) equal, inside or above (a folder that contains one is refused
+  too), on Windows `C:\Users` itself and any profile in it but your own
+  (`C:\Users\other`, `C:\Users\Public`), and the EvoFlux config folder,
+  `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.config`, `~/.kube`, `~/.docker`,
+  `~/AppData`, `~/NTUSER.DAT`, `~/Library`, `~/.local/share`, `~/.azure`,
+  `~/.password-store`, `~/.netrc`, `~/.mozilla`, `~/.cargo`, `~/.claude`,
+  `~/.codex`, `~/.gem`, `~/.terraform.d`, `~/snap`, `~/.var/app`, `~/.npmrc`,
+  `~/.pypirc`, `~/.git-credentials` and `~/.vscode` (equal, inside or above).
+  A project under `/opt` or `/srv` must move to your home folder. On Windows a folder name ending in `.` or a space, or containing
   `:` (`.ssh.`, `x::$INDEX_ALLOCATION`), is refused because Windows opens another
   folder; after the folder is created the path is resolved and checked again, and
   a folder this request made that is then refused is removed if empty. Windows
@@ -221,9 +228,10 @@ alike are covered. Python alone (`evoflux serve` without the gateway) is unchang
   The gateway keeps its own check as defence in depth.
   The gateway alone refuses short MagicDNS names (`http://box/`); the proxy accepts the short name of its own node, so use the URL Remote Control shows.
 - **Origin.** When present it must be a loopback page (`http(s)://localhost`,
-  `127.0.0.1` or `[::1]`) on the gateway's own port or a Vite port (5173 for
-  `vite dev`, the Tauri `devUrl` and `make dev-web`; 4173 for `vite preview`;
-  the default 80/443 when no port is given), the bound host on those ports,
+  `127.0.0.1` or `[::1]`) on the gateway's own port or, in a debug build or with
+  `EVOFLUX_DEV=1`, a Vite port (5173 for `vite dev`, the Tauri `devUrl` and
+  `make dev-web`; 4173 for `vite preview`; the default 80/443 when no port is
+  given), the bound host on those ports,
   the Tauri window (`tauri://localhost`,
   `http://tauri.localhost`, `https://tauri.localhost`), the WebBridge extension
   (`chrome-extension://lghglpnddenmebbhkfachafichhglafi` plus
@@ -232,7 +240,10 @@ alike are covered. Python alone (`evoflux serve` without the gateway) is unchang
   (including `null`) is 403 `{"detail":"Origin not allowed.","code":"origin_not_allowed"}`
   for every method, SSE and WebSocket upgrades included. A page served on
   another loopback port (another local program, or Vite on a port of its own)
-  needs `EVOFLUX_ALLOWED_ORIGINS`.
+  needs `EVOFLUX_ALLOWED_ORIGINS`. A release gateway does not trust 5173 and
+  4173 (any local program can listen there): list them in
+  `EVOFLUX_ALLOWED_ORIGINS`, or set `EVOFLUX_DEV=1` for a dev run. The e2e and
+  contract harnesses run the debug binary, and e2e also lists its preview origin.
 - **No Origin.** Allowed (CLI, curl, tests, the Tauri shell's own requests),
   except when the browser marks it `Sec-Fetch-Site: cross-site` (another site's
   `<img>`, link, form or navigation), whatever the method: 403
