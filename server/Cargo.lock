@@ -529,6 +529,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "evoflux-area-imports"
+version = "0.1.0"
+dependencies = [
+ "axum",
+]
+
+[[package]]
 name = "evoflux-area-observability"
 version = "0.1.0"
 dependencies = [

@@ -267,3 +267,21 @@ Tests: `origin::tests` (unit, DNS rebinding through tsnet included) and
 than `cross-site`, a cross-site request with the token on both backends; evil
 Origin, other loopback ports, cross-site without the token, evil Host, SSE,
 stripped CORS and preflight on Rust only, skipped on Python).
+
+## import (L6a, `server/crates/area-imports`; no Rust routes yet)
+
+No difference exists yet: the crate is a stub and the unit stays on Python.
+Recorded ahead of L6b, from `area-imports/NOTES.md`:
+
+- **Python caches.** A Rust writer makes no Python cache stale that is not
+  already stale today, because `import_service.py` never invalidates anything
+  after it writes. Skills, `mcp.json`, `wiki/sources` and `settings.yaml`
+  readers revalidate. Two gaps exist with either writer: a new agent `.md`
+  is not spawnable by a running team until `GET /api/team/agents` or idle
+  eviction, and a session team cached in `team_manager` outlives an undo that
+  deletes its session.
+- **Planned for L6b, needs owner approval:** concurrent `execute` of one
+  `import_id` answers the losing requests `404` (Python: `200` with everything
+  skipped, or `500`); source reads that follow a link out of the source folder,
+  oversized files and oversized zip members are refused or skipped (Python reads
+  them).
