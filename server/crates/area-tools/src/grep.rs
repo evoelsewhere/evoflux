@@ -14,7 +14,7 @@ use serde_json::{json, Value};
 
 use crate::args::{self, Field, Kind, Val};
 use crate::fnmatch::fnmatch;
-use crate::fsutil::{children, is_dir, is_symlink, mtime_ns, read_capped};
+use crate::fsutil::{children, is_dir, is_file, is_symlink, mtime_ns, read_capped};
 use crate::ignore::{is_skipped_dir, Rules};
 use crate::pyfmt::{char_prefix, splitlines};
 use crate::sandbox::Sandbox;
@@ -272,7 +272,7 @@ impl Scan<'_> {
             if self.rules.is_ignored(&rel, false) {
                 continue;
             }
-            if !self.sandbox.permits_link(&path) {
+            if !self.readable(&path) {
                 continue;
             }
             check_deadline(self.deadline)?;
@@ -289,6 +289,12 @@ impl Scan<'_> {
             }
         }
         Ok(true)
+    }
+
+    /// Only regular files are opened: a FIFO, socket or device would block the
+    /// scan (or never end), and `metadata` follows links to judge it.
+    fn readable(&self, path: &Path) -> bool {
+        is_file(path) && self.sandbox.permits_link(path)
     }
 
     /// `false` once `stop_after` matching lines have been seen.
@@ -1016,6 +1022,44 @@ mod tests {
     }
 
     #[test]
+    fn only_regular_files_are_readable() {
+        let (_d, s) = workspace(&[
+            (
+                "a.txt", "x
+",
+            ),
+            (
+                "dir/b.txt",
+                "y
+",
+            ),
+        ]);
+        let regex = Regex::new("x").unwrap();
+        let rules = Rules::empty();
+        let scan = Scan {
+            sandbox: &s,
+            regex: &regex,
+            rules: &rules,
+            root: s.root(),
+            include: "*",
+            globs: None,
+            mode: Mode::Content,
+            multiline: false,
+            context: 0,
+            stop_after: 100,
+            deadline: Instant::now(),
+            match_count: 0,
+            hits: hits(Vec::new(), true),
+        };
+        assert!(scan.readable(&s.root().join("a.txt")));
+        assert!(
+            !scan.readable(&s.root().join("dir")),
+            "a folder is not a file"
+        );
+        assert!(!scan.readable(&s.root().join("missing.txt")));
+    }
+
+    #[test]
     fn the_walk_stops_at_an_expired_deadline() {
         let (_d, s) = workspace(&[("a.txt", "needle\n")]);
         let regex = Regex::new("needle").unwrap();
@@ -1422,6 +1466,22 @@ mod tests {
         if !link_file(&s.root().join(".env"), &s.root().join("peek.txt")) {
             return;
         }
+        assert_eq!(grep(&s, &query("needle")), "in.txt:1: needle");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_fifo_in_the_workspace_is_skipped_not_opened() {
+        let (_d, s) = workspace(&[(
+            "in.txt", "needle
+",
+        )]);
+        let made = std::process::Command::new("mkfifo")
+            .arg(s.root().join("a-pipe.txt"))
+            .status()
+            .unwrap();
+        assert!(made.success());
+        // `a-pipe.txt` sorts first: opening it would block this test forever.
         assert_eq!(grep(&s, &query("needle")), "in.txt:1: needle");
     }
 

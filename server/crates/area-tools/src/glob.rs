@@ -160,7 +160,7 @@ fn pattern_parts(pattern: &str) -> Result<Vec<String>, String> {
 
 /// Whether `link` (a symlink) leads outside the workspace.
 fn escapes(sandbox: &Sandbox, path: &Path) -> bool {
-    is_link(path) && !is_under(&resolve(path), sandbox.root())
+    is_link(path) && !resolve(path).is_some_and(|real| is_under(&real, sandbox.root()))
 }
 
 struct Selector<'a> {

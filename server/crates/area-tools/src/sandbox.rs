@@ -21,7 +21,8 @@ impl Sandbox {
     /// `SandboxConfig(workspace=...)`: the root is resolved once.
     pub(crate) fn new(workspace_root: &Path) -> Self {
         Self {
-            root: resolve(workspace_root),
+            root: resolve(workspace_root)
+                .unwrap_or_else(|| lexical_normalize(&absolute(workspace_root))),
         }
     }
 
@@ -30,7 +31,9 @@ impl Sandbox {
     }
 
     fn denied_by(&self, resolved: &Path) -> Option<&'static str> {
-        let posix = posix_string(resolved);
+        // Case-insensitive on every platform: `.ENV` is `.env` on a
+        // case-insensitive file system, and the patterns are lower case.
+        let posix = posix_string(resolved).to_lowercase();
         DENIED_PATTERNS
             .into_iter()
             .find(|pattern| fnmatchcase(&posix, pattern))
@@ -47,7 +50,9 @@ impl Sandbox {
         if !crate::fsutil::is_link(path) {
             return true;
         }
-        let resolved = resolve(path);
+        let Some(resolved) = resolve(path) else {
+            return false;
+        };
         self.is_allowed(&resolved) && self.denied_by(&resolved).is_none()
     }
 
@@ -93,7 +98,9 @@ impl Sandbox {
                         } else {
                             check.parent().unwrap_or(&check).join(link)
                         };
-                        let target_resolved = resolve(&target);
+                        let Some(target_resolved) = resolve(&target) else {
+                            return Err(too_many_links(&candidate));
+                        };
                         if let Some(denied) = self.denied_by(&target_resolved) {
                             return Err(format!(
                                 "Symlink target is inside a denied root: {} -> {} (denied: {denied})",
@@ -110,7 +117,9 @@ impl Sandbox {
             }
         }
 
-        let resolved = resolve(&candidate);
+        let Some(resolved) = resolve(&candidate) else {
+            return Err(too_many_links(&candidate));
+        };
         if let Some(denied) = self.denied_by(&resolved) {
             return Err(format!(
                 "Path '{}' is inside a denied sandbox root: {denied}",
@@ -134,6 +143,10 @@ impl Sandbox {
         }
         resolved.display().to_string()
     }
+}
+
+fn too_many_links(path: &Path) -> String {
+    format!("Too many levels of symbolic links: {}", path.display())
 }
 
 fn outside_message(resolved: &Path) -> String {
@@ -236,15 +249,17 @@ fn absolute(path: &Path) -> PathBuf {
 }
 
 /// `Path.resolve()` (non-strict): follow symlinks, tolerate missing tails.
+/// `None` when a link chain passes `SYMLINK_LIMIT`: the path is refused rather
+/// than judged by an unresolved link.
 ///
 /// Windows folds `..` lexically first, as `ntpath.realpath` does; elsewhere
 /// each component is resolved in turn so `link/..` leaves the link target.
-pub(crate) fn resolve(path: &Path) -> PathBuf {
+pub(crate) fn resolve(path: &Path) -> Option<PathBuf> {
     let start = absolute(path);
     if cfg!(windows) {
         // A path given with the `\\?\` prefix keeps it, as `ntpath.realpath` does.
         let keep_verbatim = start.display().to_string().starts_with("\\\\?\\");
-        resolve_prefix(&lexical_normalize(&start), keep_verbatim)
+        Some(resolve_prefix(&lexical_normalize(&start), keep_verbatim))
     } else {
         resolve_sequential(&start, 0)
     }
@@ -282,7 +297,7 @@ fn resolve_prefix(path: &Path, keep_verbatim: bool) -> PathBuf {
     }
 }
 
-fn resolve_sequential(path: &Path, depth: usize) -> PathBuf {
+fn resolve_sequential(path: &Path, depth: usize) -> Option<PathBuf> {
     let mut out = PathBuf::new();
     for component in path.components() {
         match component {
@@ -292,26 +307,26 @@ fn resolve_sequential(path: &Path, depth: usize) -> PathBuf {
             }
             Component::Normal(name) => {
                 out.push(name);
-                if depth < SYMLINK_LIMIT {
-                    if let Ok(meta) = std::fs::symlink_metadata(&out) {
-                        if meta.file_type().is_symlink() {
-                            if let Ok(link) = std::fs::read_link(&out) {
-                                let base = out.parent().map(Path::to_path_buf).unwrap_or_default();
-                                let target = if link.is_absolute() {
-                                    link
-                                } else {
-                                    base.join(link)
-                                };
-                                out = resolve_sequential(&target, depth + 1);
-                            }
-                        }
+                let is_link =
+                    std::fs::symlink_metadata(&out).is_ok_and(|m| m.file_type().is_symlink());
+                if is_link {
+                    if depth >= SYMLINK_LIMIT {
+                        return None;
                     }
+                    let link = std::fs::read_link(&out).ok()?;
+                    let base = out.parent().map(Path::to_path_buf).unwrap_or_default();
+                    let target = if link.is_absolute() {
+                        link
+                    } else {
+                        base.join(link)
+                    };
+                    out = resolve_sequential(&target, depth + 1)?;
                 }
             }
             other => out.push(other.as_os_str()),
         }
     }
-    out
+    Some(out)
 }
 
 #[cfg(test)]
@@ -487,6 +502,55 @@ mod tests {
     }
 
     #[test]
+    fn denied_names_match_in_any_case() {
+        let (_dir, sandbox) = sandbox();
+        for name in [".ENV", ".Env", "sub/.ENV.local", "sub/.Env.Production"] {
+            let message = outside_error(&sandbox, name);
+            assert!(
+                message.contains("is inside a denied sandbox root: **/.env"),
+                "{name}: {message}"
+            );
+        }
+        assert!(sandbox.validate_path("sub/ENV").is_ok());
+        assert!(sandbox.validate_path("sub/.ENVRC").is_ok());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_link_chain_past_the_limit_is_refused_not_half_resolved() {
+        let (dir, sandbox) = sandbox();
+        let root = sandbox.root().to_path_buf();
+        // l0 -> l1 -> ... -> l(LIMIT) -> outside: one link more than is followed.
+        let name = |i: usize| root.join(format!("l{i}"));
+        for i in 0..=SYMLINK_LIMIT {
+            let target = if i == SYMLINK_LIMIT {
+                dir.path().to_path_buf()
+            } else {
+                name(i + 1)
+            };
+            crate::testutil::link_dir(&target, &name(i));
+        }
+        let message = outside_error(&sandbox, "l0/secret.txt");
+        assert!(
+            message.starts_with("Too many levels of symbolic links: "),
+            "{message}"
+        );
+        assert!(outside_error(&sandbox, "l0").starts_with("Too many levels"));
+        assert!(!sandbox.permits_link(&name(0)), "ls and grep skip it");
+    }
+
+    #[test]
+    fn the_link_limit_message_names_the_path() {
+        assert_eq!(
+            too_many_links(Path::new("/ws/l0")),
+            format!(
+                "Too many levels of symbolic links: {}",
+                Path::new("/ws/l0").display()
+            )
+        );
+    }
+
+    #[test]
     fn permits_link_judges_only_links() {
         let (dir, sandbox) = sandbox();
         let root = sandbox.root().to_path_buf();
@@ -602,7 +666,7 @@ mod tests {
         crate::testutil::link_dir(&root.join("sub"), &root.join("alias"));
         let tail = Path::new("nothing").join("x.txt");
         assert_eq!(
-            resolve(&root.join("alias").join(&tail)),
+            resolve(&root.join("alias").join(&tail)).unwrap(),
             root.join("sub").join(&tail)
         );
     }
@@ -623,23 +687,23 @@ mod tests {
         let (dir, sandbox) = sandbox();
         let root = sandbox.root().to_path_buf();
         assert_eq!(
-            resolve_sequential(&root.join("sub").join("..").join("a.txt"), 0),
+            resolve_sequential(&root.join("sub").join("..").join("a.txt"), 0).unwrap(),
             root.join("a.txt")
         );
         assert_eq!(
-            resolve_sequential(&root.join(".").join("sub"), 0),
+            resolve_sequential(&root.join(".").join("sub"), 0).unwrap(),
             root.join("sub")
         );
         crate::testutil::link_dir(&root.join("sub"), &root.join("alias"));
         let tail = Path::new("x").join("y");
         assert_eq!(
-            resolve_sequential(&root.join("alias").join(&tail), 0),
+            resolve_sequential(&root.join("alias").join(&tail), 0).unwrap(),
             root.join("sub").join(&tail)
         );
         // `link/..` leaves the link target, not the link's own folder.
         crate::testutil::link_dir(&dir.path().join("out-of-ws"), &root.join("up"));
         assert_eq!(
-            resolve_sequential(&root.join("up").join("..").join("n"), 0),
+            resolve_sequential(&root.join("up").join("..").join("n"), 0).unwrap(),
             dir.path().join("n")
         );
     }
@@ -664,12 +728,12 @@ mod tests {
             }
         };
         build(SYMLINK_LIMIT);
-        assert_eq!(resolve_sequential(&name(0), 0), real);
-        // One more link than the limit: the last one is left unresolved.
+        assert_eq!(resolve_sequential(&name(0), 0), Some(real.clone()));
+        // One more link than the limit: the path is refused, never half-resolved.
         std::fs::remove_dir(name(SYMLINK_LIMIT - 1)).unwrap();
         crate::testutil::link_dir(&name(SYMLINK_LIMIT), &name(SYMLINK_LIMIT - 1));
         crate::testutil::link_dir(&real, &name(SYMLINK_LIMIT));
-        assert_eq!(resolve_sequential(&name(0), 0), name(SYMLINK_LIMIT));
+        assert_eq!(resolve_sequential(&name(0), 0), None);
     }
 
     #[test]
@@ -681,7 +745,7 @@ mod tests {
         crate::testutil::link_dir(&root.join("two"), &root.join("one"));
         std::fs::remove_dir(root.join("two")).unwrap();
         crate::testutil::link_dir(&root.join("one"), &root.join("two"));
-        let _ = resolve_sequential(&root.join("one"), 0);
+        assert_eq!(resolve_sequential(&root.join("one"), 0), None);
     }
 
     #[test]
