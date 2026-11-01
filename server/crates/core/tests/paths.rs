@@ -334,6 +334,24 @@ fn dotenv_names_are_the_fields_python_settings_declares() {
 }
 
 #[test]
+fn dotenv_sets_the_rust_only_workspace_roots() {
+    let tmp = tempdir();
+    let (home, cwd) = (tmp.join("home"), tmp.join("cwd"));
+    let list = std::env::join_paths(["/a", "/b"]).unwrap();
+    let from_project = format!("evoflux_workspace_roots={}\n", list.to_str().unwrap());
+    write_dotenv(&home, &cwd, &[("PROJECT_DOTENV", from_project.as_str())]);
+    let s = Settings::from_vars_and_dotenv(&vars(&[]), Some(home.as_path()), &cwd).unwrap();
+    assert_eq!(
+        s.workspace_roots,
+        [PathBuf::from("/a"), PathBuf::from("/b")]
+    );
+    // The process environment wins over the file.
+    let env = vars(&[("EVOFLUX_WORKSPACE_ROOTS", "/c")]);
+    let s = Settings::from_vars_and_dotenv(&env, Some(home.as_path()), &cwd).unwrap();
+    assert_eq!(s.workspace_roots, [PathBuf::from("/c")]);
+}
+
+#[test]
 fn dotenv_ignores_names_python_settings_does_not_declare() {
     let tmp = tempdir();
     let (home, cwd) = (tmp.join("home"), tmp.join("cwd"));
@@ -395,6 +413,23 @@ fn workspace_dir_follows_python_defaults_and_override() {
     )
     .unwrap();
     assert_eq!(set.workspace_dir, Path::new("/w"));
+}
+
+#[test]
+fn workspace_roots_are_an_os_path_list_with_empty_entries_dropped() {
+    let list = std::env::join_paths(["/a", "", "/b/c"]).unwrap();
+    let set = Settings::from_vars(
+        &vars(&[("evoflux_workspace_roots", list.to_str().unwrap())]),
+        None,
+        Path::new("/cwd"),
+    )
+    .unwrap();
+    assert_eq!(
+        set.workspace_roots,
+        [PathBuf::from("/a"), PathBuf::from("/b/c")]
+    );
+    let none = Settings::from_vars(&vars(&[]), None, Path::new("/cwd")).unwrap();
+    assert!(none.workspace_roots.is_empty());
 }
 
 #[test]

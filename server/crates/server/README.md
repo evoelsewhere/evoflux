@@ -53,6 +53,18 @@ Requests from the bundled tsnet proxy keep their `Host`, which must be a
 the checked origin; Python's CORS headers are removed. Details and the reasons
 are in `server/KNOWN_DIFFERENCES.md` ("gateway: Origin and Host checks").
 
+## Chat workspace allowlist
+
+`POST /api/team/chat` accepts a session `workspace` only when, once resolved
+(`~`, `..`, links), it is equal to or inside the default workspace folder
+(`EVOFLUX_WORKSPACE_DIR`) or a folder listed in `EVOFLUX_WORKSPACE_ROOTS`, an OS
+path list (`;` on Windows, `:` elsewhere) from the environment or a `.env` file.
+A root that is a drive root, the home folder, a system folder or a credentials
+folder is ignored with a warning in the log, and credentials folders stay
+refused inside a root. Any other workspace gets a 422 that names
+`EVOFLUX_WORKSPACE_ROOTS`. Python accepts any folder
+(`server/KNOWN_DIFFERENCES.md`, "Workspace allowlist").
+
 ## Auth
 
 Python stays the auth authority for every route it serves. It gets the

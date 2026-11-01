@@ -16,6 +16,7 @@ Production defaults:
 | `EVOFLUX_CACHE_DIR` | `~/.cache/evoflux` | regeneratable indexes, OAuth cache and previews |
 | `EVOFLUX_WORKSPACE_DIR` | `~/.local/share/evoflux-workspace` | Work session files/uploads |
 | `EVOFLUX_WIKI_DIR` | `~/.local/share/evoflux-wiki` | Markdown memory wiki |
+| `EVOFLUX_WORKSPACE_ROOTS` | empty | v4 Rust server only: folders, besides `EVOFLUX_WORKSPACE_DIR`, that a chat session `workspace` may be equal to or inside, as an OS path list (`;` on Windows, `:` elsewhere), from the environment or a `.env` file. Each is resolved at startup; a drive root, the home folder, a system folder or a credentials folder is ignored with a warning in the log. A `workspace` outside every root, or in a credentials folder inside one (`<root>/.ssh`), gets a 422. Python accepts any folder |
 
 Development defaults live below `.evoflux/dev/{data,config,state,cache,workspace,wiki}`
 in the repository. All roots can be overridden with absolute paths.

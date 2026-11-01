@@ -207,6 +207,9 @@ def start_backend(
         }
     )
     env.update({k: str(v) for k, v in dirs.items()})
+    # Rust only (Python ignores it): the folder the chat tests use as a workspace.
+    (home / "projects").mkdir(exist_ok=True)
+    env["EVOFLUX_WORKSPACE_ROOTS"] = str(home / "projects")
     env["EVOFLUX_MODEL_REGISTRY_REFRESH"] = "false"
     env["APP_ENV"] = "production"
     env["PYTHONUNBUFFERED"] = "1"

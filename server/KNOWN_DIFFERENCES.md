@@ -109,35 +109,49 @@ they need a decision before these tools run agents.
 Parity is checked by `contract-tests/chat-core` (15 cases, Python-recorded SSE and
 history snapshots, and Python reading the rows Rust wrote). Differences:
 
-- **Restricted workspace (Rust-only, owner decision 2026-11-01).** The session
-  `workspace` is the file tools' sandbox root. Python accepts any absolute path
-  or `~`, so `workspace=~` lets the model read `~/.ssh/id_rsa`. Rust resolves the
-  path first (`~`, `..` and links, before anything is created) and answers 422
-  `Workspace path is not allowed: it is <reason>.` for a filesystem or drive root
-  (any UNC path is refused outright: `\\server\share`, `\\localhost\C$`,
-  `\\?\UNC\...`, and `\\.\` device paths), the home folder or any folder above
-  it, a system folder
+- **Workspace allowlist (Rust-only, owner decision 2026-11-01, replacing the
+  denylist).** The session `workspace` is the file tools' sandbox root. Python
+  accepts any absolute path or `~`, so `workspace=~` lets the model read
+  `~/.ssh/id_rsa`; four review rounds each found a folder a denylist missed, so
+  Rust accepts a workspace only when, after full resolution (`~`, `..`, links and
+  canonical form, before anything is created), it is equal to or inside an
+  allowed root. The roots are the default workspace folder (`EVOFLUX_WORKSPACE_DIR`,
+  what Python uses when no workspace is given) plus the folders of
+  `EVOFLUX_WORKSPACE_ROOTS`, an OS path list (`;` on Windows, `:` elsewhere) read
+  from the environment or a `.env` file. Each root is resolved once at startup; a
+  root that is not absolute, or that is a drive or filesystem root, the home
+  folder or above it, a system folder or a credentials folder (the second layer
+  below), is ignored with a `workspace_root_ignored_*` warning in the log. Any
+  other workspace answers 422 `Workspace path is not allowed: it is <reason>. To
+  allow a folder, add it to EVOFLUX_WORKSPACE_ROOTS ...`.
+  **Second layer, inside the roots:** UNC, device and non-disk verbatim paths
+  (`\\server\share`, `\\localhost\C$`, `\\?\UNC\...`, `\\.\COM1`,
+  `\\?\Volume{GUID}\`, `\\?\GLOBALROOT\...`), a path that is not absolute after
+  resolving, the home folder or any folder above it, a system folder
   (Windows: `%WINDIR%`, `%ProgramFiles%`, `%ProgramFiles(x86)%`, `%ProgramData%`,
   `<system drive>\$Recycle.Bin`, `<system drive>\System Volume Information`;
   Unix: `/etc /usr /bin /sbin /var /proc /sys /dev /boot /root /System /Library
-  /private /run /opt /srv /snap`; `/private` holds macOS's `/private/etc` and
-  `/private/var`) equal, inside or above (a folder that contains one is refused
-  too), on Windows `C:\Users` itself and any profile in it but your own
-  (`C:\Users\other`, `C:\Users\Public`), and the EvoFlux config folder,
-  `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.config`, `~/.kube`, `~/.docker`,
+  /private /run /opt /srv /snap`) equal, inside or above, on Windows
+  `C:\Users` itself and any profile in it but your own, the EvoFlux config
+  folder and `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.config`, `~/.kube`, `~/.docker`,
   `~/AppData`, `~/NTUSER.DAT`, `~/Library`, `~/.local/share`, `~/.azure`,
   `~/.password-store`, `~/.netrc`, `~/.mozilla`, `~/.cargo`, `~/.claude`,
   `~/.codex`, `~/.gem`, `~/.terraform.d`, `~/snap`, `~/.var/app`, `~/.npmrc`,
-  `~/.pypirc`, `~/.git-credentials` and `~/.vscode` (equal, inside or above).
-  A project under `/opt` or `/srv` must move to your home folder. On Windows a folder name ending in `.` or a space, or containing
-  `:` (`.ssh.`, `x::$INDEX_ALLOCATION`), is refused because Windows opens another
-  folder; after the folder is created the path is resolved and checked again, and
-  a folder this request made that is then refused is removed if empty. Windows
-  and macOS compare case-insensitively, Linux case-sensitively. Normal project
-  folders work.
+  `~/.pypirc`, `~/.git-credentials` and `~/.vscode`, and a folder with one of
+  those names directly inside a root (`<root>/.ssh`). On Windows a folder name
+  ending in `.` or a space, or containing `:`, is refused because Windows opens
+  another folder. The default workspace folder is judged without the home
+  credential folders, since it lives in `~/.local/share`. After the folder is
+  created the path is resolved and checked again, allowlist included, and a
+  folder this request made that is then refused is removed if empty. Windows and
+  macOS compare case-insensitively, Linux case-sensitively. This closes the Linux
+  `/home/<other>` gap. A project outside the default folder needs its folder in
+  `EVOFLUX_WORKSPACE_ROOTS`.
   Sessions already stored with a workspace are not re-checked. The `commands` and
-  `snippets` routes' `workspace` query is not covered. Test:
-  `test_restricted_workspace_is_refused` (Rust only; Python is skipped).
+  `snippets` routes' `workspace` query is not covered. Tests:
+  `test_restricted_workspace_is_refused` (Rust only; Python is skipped; the
+  contract harness sets `EVOFLUX_WORKSPACE_ROOTS` to `<home>/projects`) and the
+  `workspace.rs` unit tests.
 - **Unported tools end the turn.** A call to one of Python's built-in tools that
   Rust does not run (`shell`, `edit`, `web_search`, `get_goal`, ... the
   `PYTHON_ONLY_TOOLS` list in `turn.rs`) gets the tool result Python gives an

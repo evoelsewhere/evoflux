@@ -80,6 +80,10 @@ pub const PYTHON_SETTINGS_FIELDS: &[&str] = &[
     "EVOFLUX_WIKI_DIR",
 ];
 
+/// Settings only the Rust server reads (Python ignores them); a `.env` file may
+/// set these as well as the declared fields above.
+pub const RUST_ONLY_SETTINGS_FIELDS: [&str; 1] = ["EVOFLUX_WORKSPACE_ROOTS"];
+
 /// A `SecretStr` setting: `Debug` never prints the value.
 #[derive(Clone, PartialEq, Eq)]
 pub struct Secret(String);
@@ -106,6 +110,10 @@ pub struct Settings {
     pub cache_dir: PathBuf,
     /// `EVOFLUX_WORKSPACE_DIR`: the root of the per-session Work workspaces.
     pub workspace_dir: PathBuf,
+    /// `EVOFLUX_WORKSPACE_ROOTS` (Rust only): the folders besides
+    /// `workspace_dir` a chat session workspace may be in or equal to, as an OS
+    /// path list (`;` on Windows, `:` elsewhere). Empty entries are dropped.
+    pub workspace_roots: Vec<PathBuf>,
     /// `Path.home()`; empty when the home directory is unknown.
     pub home_dir: PathBuf,
     pub log_level: String,
@@ -171,7 +179,9 @@ impl Settings {
         for file in files {
             for (key, value) in read_dotenv(&file) {
                 let key = key.to_uppercase();
-                if PYTHON_SETTINGS_FIELDS.contains(&key.as_str()) {
+                if PYTHON_SETTINGS_FIELDS.contains(&key.as_str())
+                    || RUST_ONLY_SETTINGS_FIELDS.contains(&key.as_str())
+                {
                     merged.insert(key, value);
                 }
             }
@@ -228,6 +238,13 @@ impl Settings {
             state_dir: dir("EVOFLUX_STATE_DIR", defaults.state),
             cache_dir: dir("EVOFLUX_CACHE_DIR", defaults.cache),
             workspace_dir: dir("EVOFLUX_WORKSPACE_DIR", defaults.workspace),
+            workspace_roots: get("EVOFLUX_WORKSPACE_ROOTS")
+                .map(|list| {
+                    std::env::split_paths(&list)
+                        .filter(|path| !path.as_os_str().is_empty())
+                        .collect()
+                })
+                .unwrap_or_default(),
             home_dir: home.map(Path::to_path_buf).unwrap_or_default(),
             log_level: get("LOG_LEVEL").unwrap_or_else(|| "INFO".to_owned()),
             api_host: get("API_HOST").unwrap_or_else(|| "0.0.0.0".to_owned()),
