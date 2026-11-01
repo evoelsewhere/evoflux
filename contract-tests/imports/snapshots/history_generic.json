@@ -1,0 +1,28 @@
+[
+  {
+    "completed_at": "<ts:naive,frac>",
+    "created_at": "<ts:naive,frac>",
+    "detected_format": "generic",
+    "error_count": 0,
+    "import_id": "<import_id>",
+    "imported": {
+      "agent": 1,
+      "knowledge": 1,
+      "mcp_server": 1,
+      "skill": 1
+    },
+    "item_count": 5,
+    "origin": "manual",
+    "path": "<tmp>/generic-src",
+    "skipped": {
+      "setting": 1
+    },
+    "source": "generic",
+    "status": "completed",
+    "undo_available": true,
+    "undo_skipped_count": 0,
+    "undo_state": "available",
+    "undoable_count": 4,
+    "undone_count": 0
+  }
+]

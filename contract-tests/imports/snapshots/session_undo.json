@@ -1,0 +1,85 @@
+{
+  "first": {
+    "import_id": "<job_id>",
+    "items": [
+      {
+        "kind": "session",
+        "label": "Recipe ideas",
+        "operation": "created",
+        "outcome": "undone",
+        "reason": null,
+        "source_item_id": "session:chatgpt:abc-123"
+      }
+    ],
+    "skipped": 0,
+    "state": "undone",
+    "undone": 1
+  },
+  "history": [
+    {
+      "completed_at": "<ts:naive,frac>",
+      "created_at": "<ts:naive,frac>",
+      "detected_format": "chatgpt",
+      "error_count": 0,
+      "import_id": "<job_id>",
+      "imported": {
+        "session": 1
+      },
+      "item_count": 1,
+      "origin": "manual",
+      "path": "<tmp>/src/chatgpt.json",
+      "skipped": {},
+      "source": "chatgpt",
+      "status": "completed",
+      "undo_available": false,
+      "undo_skipped_count": 0,
+      "undo_state": "undone",
+      "undoable_count": 0,
+      "undone_count": 1
+    },
+    {
+      "completed_at": "<ts:naive,frac>",
+      "created_at": "<ts:naive,frac>",
+      "detected_format": "chatgpt",
+      "error_count": 0,
+      "import_id": "<job_id>",
+      "imported": {
+        "session": 1
+      },
+      "item_count": 1,
+      "origin": "manual",
+      "path": "<tmp>/src/chatgpt.json",
+      "skipped": {},
+      "source": "chatgpt",
+      "status": "completed",
+      "undo_available": false,
+      "undo_skipped_count": 0,
+      "undo_state": "undone",
+      "undoable_count": 0,
+      "undone_count": 1
+    }
+  ],
+  "repeat": {
+    "import_id": "<job_id>",
+    "items": [],
+    "skipped": 0,
+    "state": "undone",
+    "undone": 0
+  },
+  "second": {
+    "import_id": "<job_id>",
+    "items": [
+      {
+        "kind": "session",
+        "label": "Recipe ideas",
+        "operation": "reimported",
+        "outcome": "undone",
+        "reason": null,
+        "source_item_id": "session:chatgpt:abc-123"
+      }
+    ],
+    "skipped": 0,
+    "state": "undone",
+    "undone": 1
+  }
+}

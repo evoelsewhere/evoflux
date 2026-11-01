@@ -1,0 +1,65 @@
+{
+  "bad_action": {
+    "detail": [
+      {
+        "ctx": {
+          "expected": "'import', 'skip' or 'reimport'"
+        },
+        "input": "rename",
+        "loc": [
+          "body",
+          "action"
+        ],
+        "msg": "Input should be 'import', 'skip' or 'reimport'",
+        "type": "literal_error"
+      }
+    ]
+  },
+  "empty": {
+    "detail": [
+      {
+        "ctx": {
+          "actual_length": 0,
+          "field_type": "List",
+          "min_length": 1
+        },
+        "input": [],
+        "loc": [
+          "body",
+          "indexes"
+        ],
+        "msg": "List should have at least 1 item after validation, not 0",
+        "type": "too_short"
+      }
+    ]
+  },
+  "missing": {
+    "detail": [
+      {
+        "input": {
+          "action": "skip"
+        },
+        "loc": [
+          "body",
+          "indexes"
+        ],
+        "msg": "Field required",
+        "type": "missing"
+      }
+    ]
+  },
+  "not_ints": {
+    "detail": [
+      {
+        "input": "a",
+        "loc": [
+          "body",
+          "indexes",
+          0
+        ],
+        "msg": "Input should be a valid integer, unable to parse string as an integer",
+        "type": "int_parsing"
+      }
+    ]
+  }
+}

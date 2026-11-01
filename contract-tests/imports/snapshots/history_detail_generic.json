@@ -1,0 +1,47 @@
+{
+  "import_id": "<import_id>",
+  "items": [
+    {
+      "kind": "agent",
+      "label": "Agent: helper-bot",
+      "operation": "created",
+      "outcome": "imported",
+      "reason": null,
+      "source_item_id": "agent:agent:helper-bot"
+    },
+    {
+      "kind": "knowledge",
+      "label": "Knowledge: Meeting Notes",
+      "operation": "created",
+      "outcome": "imported",
+      "reason": null,
+      "source_item_id": "knowledge:knowledge:notes.md"
+    },
+    {
+      "kind": "mcp_server",
+      "label": "MCP: files",
+      "operation": "created",
+      "outcome": "imported",
+      "reason": null,
+      "source_item_id": "mcp_server:mcp:files"
+    },
+    {
+      "kind": "setting",
+      "label": "Credential: OPENAI_API_KEY",
+      "operation": "none",
+      "outcome": "skipped",
+      "reason": "Settings and credentials are not imported",
+      "source_item_id": "setting:credential:OPENAI_API_KEY"
+    },
+    {
+      "kind": "skill",
+      "label": "Skill: PDF Tools",
+      "operation": "created",
+      "outcome": "imported",
+      "reason": null,
+      "source_item_id": "skill:skill:PDF Tools"
+    }
+  ],
+  "origin": "manual",
+  "undo_state": "available"
+}

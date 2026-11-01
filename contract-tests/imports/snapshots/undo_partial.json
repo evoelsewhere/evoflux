@@ -1,0 +1,22 @@
+[
+  [
+    "agent",
+    "undo_skipped",
+    "Imported file no longer exists"
+  ],
+  [
+    "knowledge",
+    "undone",
+    null
+  ],
+  [
+    "mcp_server",
+    "undone",
+    null
+  ],
+  [
+    "skill",
+    "undo_skipped",
+    "File changed after import; left it untouched"
+  ]
+]

@@ -1,0 +1,53 @@
+{
+  "detected_source": "claude_web",
+  "import_id": "<import_id>",
+  "items": [
+    {
+      "action": "import",
+      "conflicts": [],
+      "id": "<import_id>_0",
+      "kind": "session",
+      "label": "Trip plan",
+      "origin": null,
+      "preview": "2 messages, created <ts:date>",
+      "reason": null,
+      "target_name": "Trip plan"
+    },
+    {
+      "action": "import",
+      "conflicts": [],
+      "id": "<import_id>_1",
+      "kind": "agent",
+      "label": "Agent: Research Hub",
+      "origin": null,
+      "preview": "Imported from Claude Project: Research Hub",
+      "reason": null,
+      "target_name": "research-hub"
+    },
+    {
+      "action": "import",
+      "conflicts": [],
+      "id": "<import_id>_2",
+      "kind": "knowledge",
+      "label": "Knowledge: Research Hub/Notes One",
+      "origin": null,
+      "preview": "research-hub-notes-one.md",
+      "reason": null,
+      "target_name": "Knowledge: Research Hub/Notes One"
+    }
+  ],
+  "path": "<tmp>/src/claude-export.zip",
+  "summary": {
+    "agent": 1,
+    "already_imported": 0,
+    "conflicts": 0,
+    "knowledge": 1,
+    "new_items": 3,
+    "not_importable": 0,
+    "session": 1,
+    "total_items": 3
+  },
+  "warnings": [
+    "Could not parse broken.json: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)"
+  ]
+}

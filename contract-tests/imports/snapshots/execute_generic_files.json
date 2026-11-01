@@ -1,0 +1,18 @@
+{
+  "agent": "---\nname: helper-bot\ndescription: Helps out\nsource: generic\nimported_at: \"<ts:offset,frac>\"\n---\n\nDo helpful things.\n",
+  "knowledge": "# Meeting Notes\nKnowledge body.",
+  "mcp": {
+    "servers": {
+      "files": {
+        "args": [
+          "files-server"
+        ],
+        "command": "npx",
+        "nested": {
+          "keep": "yes"
+        }
+      }
+    }
+  },
+  "skill": "---\nname: pdf-tools\ndescription: Work with PDFs\nsource: generic\nimported_at: '<ts:offset,frac>'\n---\n\nUse pdftk.\n"
+}

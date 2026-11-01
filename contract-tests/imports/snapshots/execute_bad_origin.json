@@ -1,0 +1,16 @@
+{
+  "detail": [
+    {
+      "ctx": {
+        "expected": "'manual' or 'auto_sync'"
+      },
+      "input": "cron",
+      "loc": [
+        "body",
+        "origin"
+      ],
+      "msg": "Input should be 'manual' or 'auto_sync'",
+      "type": "literal_error"
+    }
+  ]
+}

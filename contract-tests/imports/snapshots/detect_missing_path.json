@@ -1,0 +1,15 @@
+{
+  "detail": [
+    {
+      "input": {
+        "source": "generic"
+      },
+      "loc": [
+        "body",
+        "path"
+      ],
+      "msg": "Field required",
+      "type": "missing"
+    }
+  ]
+}

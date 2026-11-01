@@ -1,0 +1,74 @@
+{
+  "detected_source": "cursor",
+  "import_id": "<import_id>",
+  "items": [
+    {
+      "action": "import",
+      "conflicts": [],
+      "id": "<import_id>_0",
+      "kind": "skill",
+      "label": "Skill: plain",
+      "origin": null,
+      "preview": "skill",
+      "reason": null,
+      "target_name": "plain"
+    },
+    {
+      "action": "import",
+      "conflicts": [],
+      "id": "<import_id>_1",
+      "kind": "skill",
+      "label": "Skill: style",
+      "origin": null,
+      "preview": "skill",
+      "reason": null,
+      "target_name": "style"
+    },
+    {
+      "action": "import",
+      "conflicts": [],
+      "id": "<import_id>_2",
+      "kind": "mcp_server",
+      "label": "MCP: files",
+      "origin": null,
+      "preview": "mcp_server",
+      "reason": null,
+      "target_name": "files"
+    },
+    {
+      "action": "skip",
+      "conflicts": [],
+      "id": "<import_id>_3",
+      "kind": "setting",
+      "label": "Cursor settings",
+      "origin": null,
+      "preview": "Setting",
+      "reason": "Settings and credentials are not imported",
+      "target_name": "Cursor settings"
+    },
+    {
+      "action": "import",
+      "conflicts": [],
+      "id": "<import_id>_4",
+      "kind": "agent",
+      "label": "Agent: Cursor workspace rules",
+      "origin": null,
+      "preview": "agent",
+      "reason": null,
+      "target_name": "cursor-workspace"
+    }
+  ],
+  "path": "<tmp>/cursor-ws",
+  "summary": {
+    "agent": 1,
+    "already_imported": 0,
+    "conflicts": 0,
+    "mcp_server": 1,
+    "new_items": 4,
+    "not_importable": 1,
+    "setting": 1,
+    "skill": 2,
+    "total_items": 5
+  },
+  "warnings": []
+}

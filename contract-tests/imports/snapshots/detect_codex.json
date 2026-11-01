@@ -1,0 +1,65 @@
+{
+  "detected_source": "codex",
+  "import_id": "<import_id>",
+  "items": [
+    {
+      "action": "import",
+      "conflicts": [],
+      "id": "<import_id>_0",
+      "kind": "session",
+      "label": "Write tests",
+      "origin": null,
+      "preview": "4 messages, created <ts:date>",
+      "reason": null,
+      "target_name": "Write tests"
+    },
+    {
+      "action": "import",
+      "conflicts": [],
+      "id": "<import_id>_1",
+      "kind": "agent",
+      "label": "Agent: Codex workspace instructions",
+      "origin": null,
+      "preview": "Imported from Codex CLI instructions",
+      "reason": null,
+      "target_name": "codex-workspace"
+    },
+    {
+      "action": "skip",
+      "conflicts": [],
+      "id": "<import_id>_2",
+      "kind": "setting",
+      "label": "Codex settings",
+      "origin": null,
+      "preview": "Setting",
+      "reason": "Settings and credentials are not imported",
+      "target_name": "Codex settings"
+    },
+    {
+      "action": "skip",
+      "conflicts": [
+        "Skill already exists in Shared Agent Skills"
+      ],
+      "id": "<import_id>_3",
+      "kind": "skill",
+      "label": "Skill: lint",
+      "origin": "Shared Agent Skills",
+      "preview": "Lint code, already imported",
+      "reason": null,
+      "target_name": "lint"
+    }
+  ],
+  "path": "<tmp>/home/.codex",
+  "summary": {
+    "agent": 1,
+    "already_imported": 1,
+    "conflicts": 1,
+    "new_items": 2,
+    "not_importable": 1,
+    "session": 1,
+    "setting": 1,
+    "skill": 1,
+    "total_items": 4
+  },
+  "warnings": []
+}

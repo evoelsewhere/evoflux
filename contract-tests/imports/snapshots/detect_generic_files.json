@@ -1,0 +1,137 @@
+{
+  "SKILL.md": {
+    "detected_source": "generic",
+    "import_id": "<import_id>",
+    "items": [
+      {
+        "action": "import",
+        "conflicts": [],
+        "id": "<import_id>_0",
+        "kind": "skill",
+        "label": "Skill: PDF Tools",
+        "origin": null,
+        "preview": "Work with PDFs",
+        "reason": null,
+        "target_name": "PDF Tools"
+      }
+    ],
+    "path": "<tmp>/generic-src/pdf-tools/SKILL.md",
+    "summary": {
+      "already_imported": 0,
+      "conflicts": 0,
+      "new_items": 1,
+      "not_importable": 0,
+      "skill": 1,
+      "total_items": 1
+    },
+    "warnings": []
+  },
+  "agent.md": {
+    "detected_source": "generic",
+    "import_id": "<import_id>",
+    "items": [
+      {
+        "action": "import",
+        "conflicts": [],
+        "id": "<import_id>_0",
+        "kind": "agent",
+        "label": "Agent: helper-bot",
+        "origin": null,
+        "preview": "Helps out",
+        "reason": null,
+        "target_name": "helper-bot"
+      }
+    ],
+    "path": "<tmp>/generic-src/agent.md",
+    "summary": {
+      "agent": 1,
+      "already_imported": 0,
+      "conflicts": 0,
+      "new_items": 1,
+      "not_importable": 0,
+      "total_items": 1
+    },
+    "warnings": []
+  },
+  "keys.env": {
+    "detected_source": "generic",
+    "import_id": "<import_id>",
+    "items": [
+      {
+        "action": "skip",
+        "conflicts": [],
+        "id": "<import_id>_0",
+        "kind": "setting",
+        "label": "Credential: OPENAI_API_KEY",
+        "origin": null,
+        "preview": "Setting",
+        "reason": "Settings and credentials are not imported",
+        "target_name": "Credential: OPENAI_API_KEY"
+      }
+    ],
+    "path": "<tmp>/generic-src/keys.env",
+    "summary": {
+      "already_imported": 0,
+      "conflicts": 0,
+      "new_items": 0,
+      "not_importable": 1,
+      "setting": 1,
+      "total_items": 1
+    },
+    "warnings": []
+  },
+  "mcp.json": {
+    "detected_source": "generic",
+    "import_id": "<import_id>",
+    "items": [
+      {
+        "action": "import",
+        "conflicts": [],
+        "id": "<import_id>_0",
+        "kind": "mcp_server",
+        "label": "MCP: files",
+        "origin": null,
+        "preview": "MCP server config",
+        "reason": null,
+        "target_name": "files"
+      }
+    ],
+    "path": "<tmp>/generic-src/mcp.json",
+    "summary": {
+      "already_imported": 0,
+      "conflicts": 0,
+      "mcp_server": 1,
+      "new_items": 1,
+      "not_importable": 0,
+      "total_items": 1
+    },
+    "warnings": []
+  },
+  "notes.md": {
+    "detected_source": "generic",
+    "import_id": "<import_id>",
+    "items": [
+      {
+        "action": "import",
+        "conflicts": [],
+        "id": "<import_id>_0",
+        "kind": "knowledge",
+        "label": "Knowledge: Meeting Notes",
+        "origin": null,
+        "preview": "notes.md",
+        "reason": null,
+        "target_name": "Knowledge: Meeting Notes"
+      }
+    ],
+    "path": "<tmp>/generic-src/notes.md",
+    "summary": {
+      "already_imported": 0,
+      "conflicts": 0,
+      "knowledge": 1,
+      "new_items": 1,
+      "not_importable": 0,
+      "total_items": 1
+    },
+    "warnings": []
+  }
+}

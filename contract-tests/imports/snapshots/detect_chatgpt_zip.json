@@ -1,0 +1,63 @@
+{
+  "detected_source": "chatgpt",
+  "import_id": "<import_id>",
+  "items": [
+    {
+      "action": "import",
+      "conflicts": [],
+      "id": "<import_id>_0",
+      "kind": "session",
+      "label": "Recipe ideas",
+      "origin": null,
+      "preview": "2 messages, created <ts:date>",
+      "reason": null,
+      "target_name": "Recipe ideas"
+    },
+    {
+      "action": "import",
+      "conflicts": [],
+      "id": "<import_id>_1",
+      "kind": "agent",
+      "label": "Agent: Chef Bot",
+      "origin": null,
+      "preview": "Imported from ChatGPT: Chef Bot",
+      "reason": null,
+      "target_name": "chef-bot"
+    },
+    {
+      "action": "import",
+      "conflicts": [],
+      "id": "<import_id>_2",
+      "kind": "skill",
+      "label": "Skill: Chef Bot",
+      "origin": null,
+      "preview": "Tools from ChatGPT GPT: Chef Bot",
+      "reason": null,
+      "target_name": "chef-bot"
+    },
+    {
+      "action": "import",
+      "conflicts": [],
+      "id": "<import_id>_3",
+      "kind": "knowledge",
+      "label": "Memory: Likes tea...",
+      "origin": null,
+      "preview": "chatgpt-memory-0.md",
+      "reason": null,
+      "target_name": "Memory: Likes tea..."
+    }
+  ],
+  "path": "<tmp>/src/chatgpt-export.zip",
+  "summary": {
+    "agent": 1,
+    "already_imported": 0,
+    "conflicts": 0,
+    "knowledge": 1,
+    "new_items": 4,
+    "not_importable": 0,
+    "session": 1,
+    "skill": 1,
+    "total_items": 4
+  },
+  "warnings": []
+}

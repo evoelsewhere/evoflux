@@ -1,0 +1,13 @@
+{
+  "errors": [],
+  "import_id": "<import_id>",
+  "imported": {
+    "agent": 1,
+    "knowledge": 1,
+    "mcp_server": 1,
+    "skill": 1
+  },
+  "skipped": {
+    "setting": 1
+  }
+}

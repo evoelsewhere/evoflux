@@ -1,0 +1,75 @@
+{
+  "detected_source": "generic",
+  "import_id": "<import_id>",
+  "items": [
+    {
+      "action": "import",
+      "conflicts": [],
+      "id": "<import_id>_0",
+      "kind": "agent",
+      "label": "Agent: helper-bot",
+      "origin": null,
+      "preview": "agent",
+      "reason": null,
+      "target_name": "helper-bot"
+    },
+    {
+      "action": "skip",
+      "conflicts": [],
+      "id": "<import_id>_1",
+      "kind": "setting",
+      "label": "Credential: OPENAI_API_KEY",
+      "origin": null,
+      "preview": "Setting",
+      "reason": "Settings and credentials are not imported",
+      "target_name": "Credential: OPENAI_API_KEY"
+    },
+    {
+      "action": "import",
+      "conflicts": [],
+      "id": "<import_id>_2",
+      "kind": "mcp_server",
+      "label": "MCP: files",
+      "origin": null,
+      "preview": "mcp_server",
+      "reason": null,
+      "target_name": "files"
+    },
+    {
+      "action": "import",
+      "conflicts": [],
+      "id": "<import_id>_3",
+      "kind": "knowledge",
+      "label": "Knowledge: Meeting Notes",
+      "origin": null,
+      "preview": "knowledge",
+      "reason": null,
+      "target_name": "Knowledge: Meeting Notes"
+    },
+    {
+      "action": "import",
+      "conflicts": [],
+      "id": "<import_id>_4",
+      "kind": "skill",
+      "label": "Skill: PDF Tools",
+      "origin": null,
+      "preview": "skill",
+      "reason": null,
+      "target_name": "PDF Tools"
+    }
+  ],
+  "path": "<tmp>/generic-src",
+  "summary": {
+    "agent": 1,
+    "already_imported": 0,
+    "conflicts": 0,
+    "knowledge": 1,
+    "mcp_server": 1,
+    "new_items": 4,
+    "not_importable": 1,
+    "setting": 1,
+    "skill": 1,
+    "total_items": 5
+  },
+  "warnings": []
+}

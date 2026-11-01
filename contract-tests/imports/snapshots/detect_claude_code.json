@@ -1,0 +1,110 @@
+{
+  "detected_source": "claude_code",
+  "import_id": "<import_id>",
+  "items": [
+    {
+      "action": "import",
+      "conflicts": [],
+      "id": "<import_id>_0",
+      "kind": "agent",
+      "label": "Agent: my-proj",
+      "origin": null,
+      "preview": "Imported from Claude Code project: my-proj",
+      "reason": null,
+      "target_name": "my-proj"
+    },
+    {
+      "action": "import",
+      "conflicts": [],
+      "id": "<import_id>_1",
+      "kind": "session",
+      "label": "Fix the bug",
+      "origin": null,
+      "preview": "3 messages, created <ts:date>",
+      "reason": null,
+      "target_name": "Fix the bug"
+    },
+    {
+      "action": "import",
+      "conflicts": [],
+      "id": "<import_id>_2",
+      "kind": "skill",
+      "label": "Skill: review",
+      "origin": "Claude Code command",
+      "preview": "Review code",
+      "reason": null,
+      "target_name": "review"
+    },
+    {
+      "action": "import",
+      "conflicts": [],
+      "id": "<import_id>_3",
+      "kind": "mcp_server",
+      "label": "MCP: files",
+      "origin": null,
+      "preview": "MCP server config",
+      "reason": null,
+      "target_name": "files"
+    },
+    {
+      "action": "skip",
+      "conflicts": [],
+      "id": "<import_id>_4",
+      "kind": "setting",
+      "label": "Credential: ANTHROPIC_API_KEY",
+      "origin": null,
+      "preview": "Setting",
+      "reason": "Settings and credentials are not imported",
+      "target_name": "Credential: ANTHROPIC_API_KEY"
+    },
+    {
+      "action": "skip",
+      "conflicts": [
+        "Skill already exists in Claude Code skills"
+      ],
+      "id": "<import_id>_5",
+      "kind": "skill",
+      "label": "Skill: deploy",
+      "origin": "Claude Code global Skill",
+      "preview": "Ship it, already imported",
+      "reason": null,
+      "target_name": "deploy"
+    },
+    {
+      "action": "import",
+      "conflicts": [],
+      "id": "<import_id>_6",
+      "kind": "skill",
+      "label": "Skill: deploy-my-plugin",
+      "origin": "Claude Code standalone plugin · my-plugin",
+      "preview": "Skill from standalone:my-plugin",
+      "reason": null,
+      "target_name": "deploy-my-plugin"
+    },
+    {
+      "action": "import",
+      "conflicts": [],
+      "id": "<import_id>_7",
+      "kind": "mcp_server",
+      "label": "MCP: plug",
+      "origin": null,
+      "preview": "MCP server config",
+      "reason": null,
+      "target_name": "plug"
+    }
+  ],
+  "path": "<tmp>/home/.claude",
+  "summary": {
+    "agent": 1,
+    "already_imported": 1,
+    "conflicts": 1,
+    "mcp_server": 2,
+    "new_items": 6,
+    "not_importable": 1,
+    "session": 1,
+    "setting": 1,
+    "skill": 3,
+    "total_items": 8
+  },
+  "warnings": []
+}

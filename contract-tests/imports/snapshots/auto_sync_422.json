@@ -1,0 +1,84 @@
+{
+  "float_interval": {
+    "detail": [
+      {
+        "input": 60.0,
+        "loc": [
+          "body",
+          "scan_interval_seconds"
+        ],
+        "msg": "Input should be a valid integer",
+        "type": "int_type"
+      }
+    ]
+  },
+  "int_bool": {
+    "detail": [
+      {
+        "input": 1,
+        "loc": [
+          "body",
+          "notify_new_items"
+        ],
+        "msg": "Input should be a valid boolean",
+        "type": "bool_type"
+      }
+    ]
+  },
+  "not_object": {
+    "detail": [
+      {
+        "input": [
+          1
+        ],
+        "loc": [
+          "body"
+        ],
+        "msg": "Input should be a valid dictionary or object to extract fields from",
+        "type": "model_attributes_type"
+      }
+    ]
+  },
+  "string_bool": {
+    "detail": [
+      {
+        "input": "yes",
+        "loc": [
+          "body",
+          "enabled"
+        ],
+        "msg": "Input should be a valid boolean",
+        "type": "bool_type"
+      }
+    ]
+  },
+  "string_interval": {
+    "detail": [
+      {
+        "input": "60",
+        "loc": [
+          "body",
+          "scan_interval_seconds"
+        ],
+        "msg": "Input should be a valid integer",
+        "type": "int_type"
+      }
+    ]
+  },
+  "too_small": {
+    "detail": [
+      {
+        "ctx": {
+          "ge": 30
+        },
+        "input": 29,
+        "loc": [
+          "body",
+          "scan_interval_seconds"
+        ],
+        "msg": "Input should be greater than or equal to 30",
+        "type": "greater_than_equal"
+      }
+    ]
+  }
+}

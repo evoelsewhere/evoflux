@@ -1,0 +1,27 @@
+{
+  "detected_source": "claude_web",
+  "import_id": "<import_id>",
+  "items": [
+    {
+      "action": "import",
+      "conflicts": [],
+      "id": "<import_id>_0",
+      "kind": "session",
+      "label": "Trip plan",
+      "origin": null,
+      "preview": "2 messages, created <ts:date>",
+      "reason": null,
+      "target_name": "Trip plan"
+    }
+  ],
+  "path": "<tmp>/src/claude.json",
+  "summary": {
+    "already_imported": 0,
+    "conflicts": 0,
+    "new_items": 1,
+    "not_importable": 0,
+    "session": 1,
+    "total_items": 1
+  },
+  "warnings": []
+}

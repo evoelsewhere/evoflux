@@ -1,0 +1,40 @@
+{
+  "import_id": "<import_id>",
+  "items": [
+    {
+      "kind": "agent",
+      "label": "Agent: helper-bot",
+      "operation": "created",
+      "outcome": "undone",
+      "reason": null,
+      "source_item_id": "agent:agent:helper-bot"
+    },
+    {
+      "kind": "knowledge",
+      "label": "Knowledge: Meeting Notes",
+      "operation": "created",
+      "outcome": "undone",
+      "reason": null,
+      "source_item_id": "knowledge:knowledge:notes.md"
+    },
+    {
+      "kind": "mcp_server",
+      "label": "MCP: files",
+      "operation": "created",
+      "outcome": "undone",
+      "reason": null,
+      "source_item_id": "mcp_server:mcp:files"
+    },
+    {
+      "kind": "skill",
+      "label": "Skill: PDF Tools",
+      "operation": "created",
+      "outcome": "undone",
+      "reason": null,
+      "source_item_id": "skill:skill:PDF Tools"
+    }
+  ],
+  "skipped": 0,
+  "state": "undone",
+  "undone": 4
+}

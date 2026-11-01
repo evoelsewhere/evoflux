@@ -1,0 +1,53 @@
+{
+  "discovered": [
+    {
+      "description": "Export file in Downloads",
+      "estimated_items": 0,
+      "label": "Claude.ai export: claude-export-2026.json",
+      "path": "<tmp>/home/Downloads/claude-export-2026.json",
+      "source": "claude_web"
+    },
+    {
+      "description": "2 sessions across 1 projects, 1 plugins, 2 skills, 1 commands, 1 plans, MCP config",
+      "estimated_items": 8,
+      "label": "Claude Desktop / Claude Code",
+      "path": "<tmp>/home/.claude",
+      "source": "claude_code"
+    },
+    {
+      "description": "Export file in Desktop",
+      "estimated_items": 0,
+      "label": "ChatGPT export: chatgpt-export.zip",
+      "path": "<tmp>/home/Desktop/chatgpt-export.zip",
+      "source": "chatgpt"
+    },
+    {
+      "description": "1 sessions, instructions",
+      "estimated_items": 2,
+      "label": "Codex CLI",
+      "path": "<tmp>/home/.codex",
+      "source": "codex"
+    },
+    {
+      "description": "1 rules, .cursorrules, MCP config",
+      "estimated_items": 3,
+      "label": "Cursor (current workspace)",
+      "path": "<tmp>/cwd",
+      "source": "cursor"
+    },
+    {
+      "description": "CLAUDE.md, .windsurfrules",
+      "estimated_items": 2,
+      "label": "Workspace instructions",
+      "path": "<tmp>/cwd",
+      "source": "generic"
+    },
+    {
+      "description": "Claude config, Codex config",
+      "estimated_items": 2,
+      "label": "app (projects/)",
+      "path": "<tmp>/home/projects/app",
+      "source": "generic"
+    }
+  ]
+}

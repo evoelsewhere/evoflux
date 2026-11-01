@@ -1,0 +1,28 @@
+{
+  "missing": {
+    "detail": [
+      {
+        "input": {},
+        "loc": [
+          "body",
+          "action"
+        ],
+        "msg": "Field required",
+        "type": "missing"
+      }
+    ]
+  },
+  "not_int": {
+    "detail": [
+      {
+        "input": "x",
+        "loc": [
+          "path",
+          "item_index"
+        ],
+        "msg": "Input should be a valid integer, unable to parse string as an integer",
+        "type": "int_parsing"
+      }
+    ]
+  }
+}
