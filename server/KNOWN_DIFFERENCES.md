@@ -40,14 +40,11 @@ they need a decision before these tools run agents.
   afterwards, and `grep` checks `permits_link` before it opens a file. Another
   process that keeps swapping a folder between a real folder and a link to
   outside the workspace can win that race (reproduced on Windows with a junction
-  swap: `read d/secret.txt` returned the outside file after a few tries).
+  swap: `read d/secret.txt` returned the outside file after a few tries). Python
+  validates and then opens in the same way, so this matches Python; no handle-based
+  recheck without a new dependency.
 - **Hard links.** A hard link inside the workspace to a file outside it, or to
   `.env`, reads as an ordinary file; only symlinks and reparse points are judged.
-- **`.env` on a case-insensitive Unix file system** (macOS default): the deny
-  check is case-sensitive and the path's case is not corrected, so `.ENV` or
-  `.Env.local` reads the real file. Windows is covered (its comparison ignores case).
-- **`grep` opens every non-folder it walks.** A FIFO in the workspace blocks the
-  scan forever (`read` refuses non-regular files).
 - **Metadata of link targets.** `ls` shows the size of a file behind a link that
   leads outside, and `glob` lists such files; their contents are not read.
 
