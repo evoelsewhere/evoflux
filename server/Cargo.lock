@@ -480,6 +480,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "evoflux-area-agents-skills-registry"
+version = "0.1.0"
+dependencies = [
+ "axum",
+]
+
+[[package]]
 name = "evoflux-area-chat-core"
 version = "0.1.0"
 dependencies = [
