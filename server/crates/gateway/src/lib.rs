@@ -5,6 +5,7 @@
 // `ApiError` carries a HeaderMap per the shared interface; boxing it everywhere is noise.
 #![allow(clippy::result_large_err)]
 
+pub mod origin;
 pub mod proxy;
 pub mod record;
 pub mod routing;

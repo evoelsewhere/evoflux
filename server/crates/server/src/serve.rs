@@ -11,6 +11,8 @@
 //! `EVOFLUX_GATEWAY_CLI_ENTRY` override each part (development and tests).
 //! `EVOFLUX_GATEWAY_STATE_FILE`, when set, receives `{"pid":…,"port":…}` of
 //! the current Python child each time it becomes ready (contract tests).
+//! `EVOFLUX_ALLOWED_ORIGINS` adds browser origins the gateway accepts (see
+//! [`evoflux_gateway::origin`]).
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -23,6 +25,7 @@ use evoflux_core::auth::DesktopAuth;
 use evoflux_core::config::Settings;
 use evoflux_core::paths::Paths;
 use evoflux_core::{telemetry, watchdog};
+use evoflux_gateway::origin::{self, OriginPolicy};
 use evoflux_gateway::proxy::GatewayOptions;
 use evoflux_gateway::routing::{
     openapi_operations, parse_rust_ready, rust_forward_enabled, Owner, RoutingTable,
@@ -63,6 +66,8 @@ struct Prepared {
     table: RoutingTable,
     state: UnitState,
     state_file: Option<PathBuf>,
+    /// The Host and Origin values the gateway accepts.
+    origins: OriginPolicy,
 }
 
 struct PythonPaths {
@@ -154,6 +159,11 @@ fn prepare(args: ServeArgs, settings: &Settings) -> Result<Prepared, String> {
         .check_shadow_get_only(&operations)
         .map_err(|e| format!("routing table: {e}"))?;
     let python = python_paths(args.python_root.as_deref())?;
+    let origins = OriginPolicy::new(
+        &args.host,
+        env("EVOFLUX_ALLOWED_ORIGINS").as_deref(),
+        env("EVOFLUX_WEBBRIDGE_EXTENSION_IDS").as_deref(),
+    );
     Ok(Prepared {
         args,
         python,
@@ -168,6 +178,7 @@ fn prepare(args: ServeArgs, settings: &Settings) -> Result<Prepared, String> {
             http: evoflux_net::build_client().map_err(|e| e.to_string())?,
         },
         state_file: std::env::var_os("EVOFLUX_GATEWAY_STATE_FILE").map(PathBuf::from),
+        origins,
     })
 }
 
@@ -384,13 +395,19 @@ async fn run(mut prepared: Prepared) -> u8 {
     let auth = DesktopAuth::new(prepared.auth_token, remote_proxy_secret);
     let cancel = CancellationToken::new();
     let services = units::start_rust_services(&prepared.table, &prepared.state, cancel.clone());
-    let router = router_with_units_and_db(
-        Arc::new(prepared.table),
-        Arc::clone(&sup),
-        auth,
-        units::router(&prepared.state),
-        prepared.state.paths.state_dir.clone(),
-        prepared.state.db.clone(),
+    let tsnet = auth.clone();
+    // Outermost, so Python- and Rust-owned routes alike are checked.
+    let router = origin::guard(
+        router_with_units_and_db(
+            Arc::new(prepared.table),
+            Arc::clone(&sup),
+            auth,
+            units::router(&prepared.state),
+            prepared.state.paths.state_dir.clone(),
+            prepared.state.db.clone(),
+        ),
+        Arc::new(prepared.origins),
+        move |headers| tsnet.trusted_embedded_proxy(headers),
     );
     let mut stop = shutdown.clone();
     let server = tokio::spawn(async move {
@@ -613,6 +630,7 @@ routes=['/b']
             table,
             state,
             state_file: None,
+            origins: OriginPolicy::new("127.0.0.1", None, None),
         };
         units::test_support::reset();
         let server = tokio::spawn(run(prepared));
@@ -628,6 +646,27 @@ routes=['/b']
             }
         }).await.unwrap();
         assert!(response.contains("test unit response"), "{response}");
+        for request in [
+            "GET /test-unit HTTP/1.1
+Host: evil.example
+Connection: close
+
+",
+            "GET /test-unit HTTP/1.1
+Host: localhost
+Origin: https://evil.example
+Connection: close
+
+",
+        ] {
+            let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", port))
+                .await
+                .unwrap();
+            stream.write_all(request.as_bytes()).await.unwrap();
+            let mut refused = String::new();
+            stream.read_to_string(&mut refused).await.unwrap();
+            assert!(refused.starts_with("HTTP/1.1 403"), "{refused}");
+        }
         assert!(units::test_support::started());
         parent.kill().await.unwrap();
         assert_eq!(

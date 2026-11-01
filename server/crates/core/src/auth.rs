@@ -225,6 +225,21 @@ impl DesktopAuth {
         Decision::Forward(req)
     }
 
+    /// Whether `headers` come from the bundled tsnet proxy: a tailnet login,
+    /// the `tsnet` marker and this process's proxy secret. Unlike
+    /// [`Self::decide`], an external provider's marker is never enough.
+    pub fn trusted_embedded_proxy(&self, headers: &HeaderMap) -> bool {
+        let login = header_text(headers, REMOTE_USER_LOGIN_HEADER).unwrap_or_default();
+        let marker = header_text(headers, REMOTE_PROXY_MARKER_HEADER).unwrap_or_default();
+        let provided = header_text(headers, REMOTE_PROXY_TOKEN_HEADER).unwrap_or_default();
+        !py_strip(&login).is_empty()
+            && py_strip(&marker) == REMOTE_PROXY_MARKER
+            && constant_time_eq(
+                provided.as_bytes(),
+                self.inner.remote_proxy_secret.as_bytes(),
+            )
+    }
+
     fn trusted_remote_proxy_headers(&self, marker: &str, provided: &str) -> bool {
         if marker == REMOTE_PROXY_MARKER {
             return constant_time_eq(

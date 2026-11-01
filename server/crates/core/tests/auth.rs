@@ -266,3 +266,22 @@ async fn auth_remote_unknown_marker_trust_follows_embedded_proxy_requirement() {
     assert_eq!(status, StatusCode::UNAUTHORIZED);
     assert_eq!(body, UNTRUSTED);
 }
+
+#[test]
+fn trusted_embedded_proxy_needs_login_tsnet_marker_and_the_secret() {
+    let lax = DesktopAuth::new(None, SECRET.to_owned()).with_embedded_proxy_required(false);
+    let trusted = |req: Request<Body>| lax.trusted_embedded_proxy(req.headers());
+    assert!(trusted(remote(Some(" tsnet "), Some(SECRET))));
+    assert!(!trusted(remote(Some("tsnet"), Some("wrong"))));
+    assert!(!trusted(remote(Some("tsnet"), None)));
+    // An external provider's marker is trusted by `decide`, never here.
+    assert!(!trusted(remote(Some("other"), Some(SECRET))));
+    assert!(!trusted(remote(None, Some(SECRET))));
+    let no_login = Request::get("/")
+        .header("Tailscale-User-Login", " ")
+        .header("X-EvoFlux-Remote-Proxy", "tsnet")
+        .header("X-EvoFlux-Remote-Token", SECRET)
+        .body(Body::empty())
+        .unwrap();
+    assert!(!trusted(no_login));
+}
