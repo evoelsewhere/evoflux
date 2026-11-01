@@ -1,0 +1,26 @@
+{
+  "config": {
+    "args": [
+      "<stdio_server>",
+      "--dump",
+      "<tmp>/dump.json"
+    ],
+    "capabilities": [],
+    "command": "<python>",
+    "cwd": null,
+    "enabled": false,
+    "env": {},
+    "transport": "stdio"
+  },
+  "enabled": false,
+  "error": null,
+  "name": "off",
+  "plugin_installation_id": null,
+  "plugin_name": null,
+  "plugin_server_name": null,
+  "source": "global",
+  "started_at": null,
+  "state": "stopped",
+  "tool_names": [],
+  "transport": "stdio"
+}

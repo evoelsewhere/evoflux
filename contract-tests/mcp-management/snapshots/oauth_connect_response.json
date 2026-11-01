@@ -1,0 +1,26 @@
+{
+  "config": {
+    "capabilities": [],
+    "enabled": true,
+    "headers": {},
+    "oauth": {
+      "client_id": "********",
+      "client_secret": null
+    },
+    "transport": "http",
+    "url": "<url>"
+  },
+  "enabled": true,
+  "error": null,
+  "name": "web",
+  "plugin_installation_id": null,
+  "plugin_name": null,
+  "plugin_server_name": null,
+  "source": "global",
+  "started_at": "<ts>",
+  "state": "ready",
+  "tool_names": [
+    "mcp_web_ping"
+  ],
+  "transport": "http"
+}

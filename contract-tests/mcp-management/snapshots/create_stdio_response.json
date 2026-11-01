@@ -1,0 +1,29 @@
+{
+  "config": {
+    "args": [
+      "<stdio_server>"
+    ],
+    "capabilities": [
+      "browser",
+      "x"
+    ],
+    "command": "<python>",
+    "cwd": null,
+    "enabled": true,
+    "env": {},
+    "transport": "stdio"
+  },
+  "enabled": true,
+  "error": null,
+  "name": "alpha",
+  "plugin_installation_id": null,
+  "plugin_name": null,
+  "plugin_server_name": null,
+  "source": "global",
+  "started_at": "<ts>",
+  "state": "ready",
+  "tool_names": [
+    "mcp_alpha_echo"
+  ],
+  "transport": "stdio"
+}
