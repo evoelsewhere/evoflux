@@ -18,3 +18,8 @@ disallowed_methods = "deny"
 # SQLite with BEGIN CONCURRENT (design §3.3); see vendor/SQLITE_BRANCH.toml.
 [patch.crates-io]
 libsqlite3-sys = { path = "vendor/libsqlite3-sys" }
+
+# area-providers has a timing test (16 MiB in one-byte deltas); an unoptimized
+# build spends it in the allocator, not in the code under test.
+[profile.dev.package.evoflux-area-providers]
+opt-level = 3

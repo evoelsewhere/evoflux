@@ -6,6 +6,7 @@ All notable changes to EvoFlux are documented in this file.
 
 ### Fixed
 
+- The v4 Rust model providers now also stop a response whose tool-call arguments add up to more than 32 MiB or that has more than 128 tool calls, and no longer re-read a tool call's whole arguments for every streamed fragment, which grew slowly on large calls. Python still runs agents, so nothing changes in the app.
 - The v4 Rust server settings read a `.env` file only for the settings Python declares, like Python does: provider variables such as `MISTRAL_BASE_URL` or `GROQ_API_KEY` now come from the process environment only, so a `.env` file can no longer redirect a key to another host. No app behaviour changes.
 - The v4 Rust model providers now stop a response that grows without end: one streamed line or one tool call's arguments over 16 MiB ends the reply with a "response was too large" error, and only the first 64 KiB of a provider's error message is read, even when it is compressed. Python still runs agents, so nothing changes in the app.
 - The contract-test harness now runs an area in parallel (`pytest -n 8`, `make contract JOBS=n`), finds the backend handshake even when the sidecar's log text shares its line (the cause of intermittent "gave no handshake" errors), and treats a backend that has already exited as a clean stop on Windows. It affects tests only, so nothing changes in the app.
