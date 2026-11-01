@@ -540,6 +540,13 @@ name = "evoflux-area-observability"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "evoflux-core",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+ "tower",
+ "tracing",
 ]
 
 [[package]]
@@ -681,6 +688,7 @@ dependencies = [
  "evoflux-area-chat-core",
  "evoflux-area-commands",
  "evoflux-area-health-live",
+ "evoflux-area-observability",
  "evoflux-area-quote",
  "evoflux-area-snippets",
  "evoflux-core",

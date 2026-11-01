@@ -285,3 +285,27 @@ Recorded ahead of L6b, from `area-imports/NOTES.md`:
   skipped, or `500`); source reads that follow a link out of the source folder,
   oversized files and oversized zip members are refused or skipped (Python reads
   them).
+
+## observability (`server/crates/area-observability`)
+
+Python reads the span files with DuckDB (`read_json`, `union_by_name`); Rust reads the same
+`{state}/otel/spans/*.jsonl` line by line and reproduces each query.
+
+- **Read caps.** Python reads without limit. Rust reads at most the newest 2,400 partition files
+  (90 days of hourly files plus slack), 64 MiB of one file, 256 MiB over all files, skips a line over
+  4 MiB, and stops after 500,000 spans in the window. Past a cap the summary, trace list and trace
+  detail cover the spans read so far (files newest-first for the file count, oldest-first inside the
+  byte and span caps).
+- **Malformed lines.** A line that is not a JSON object, or has no integer `end_time`, is skipped.
+  DuckDB fails the whole query on a malformed line (a 500 from Python).
+- **Mixed attribute types.** DuckDB unifies an attribute's type across the window (an integer next to
+  a float becomes a float, a number next to a string becomes a string). Rust keeps each span's own JSON
+  value in the trace detail and casts to text per span for the aggregates, so a whole-number float such
+  as `100.0` counts as a non-integer (0 tokens) only in the aggregates, like `try_cast('100.0' AS BIGINT)`.
+- **Ties.** Rows with equal `end_time` (trace list), equal `start_time` (trace detail), equal cost
+  (`by_model`, `cache_by_step`) or equal calls (`by_tool`) keep the order they were read in; Python's
+  order is unspecified there.
+- **Settings are a snapshot.** `OTEL_SPAN_SAMPLE_RATIO` and the `OTEL_*RETENTION*` variables are read
+  once when the server starts; Python re-reads the environment on each request or sweep.
+- **Float text.** A cost below `1e-4` prints as `1e-5` (Rust) instead of `1e-05` (Python); both parse
+  to the same number.

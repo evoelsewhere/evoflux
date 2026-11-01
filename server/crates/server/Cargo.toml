@@ -13,6 +13,7 @@ base64 = "0.22"
 evoflux-area-chat-core = { path = "../area-chat-core" }
 evoflux-area-commands = { path = "../area-commands" }
 evoflux-area-health-live = { path = "../area-health-live" }
+evoflux-area-observability = { path = "../area-observability" }
 evoflux-area-quote = { path = "../area-quote" }
 evoflux-area-snippets = { path = "../area-snippets" }
 evoflux-core = { path = "../core" }

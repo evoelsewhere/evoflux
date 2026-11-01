@@ -39,6 +39,10 @@ pub fn router(_state: &UnitState) -> Router {
         ))
         .merge(evoflux_area_commands::router(roots.clone()))
         .merge(evoflux_area_snippets::router(roots))
+        .merge(evoflux_area_observability::router(
+            &_state.settings.state_dir,
+            otel_config(),
+        ))
         .merge(evoflux_area_chat_core::router(
             _state.settings.clone(),
             _state.db.clone(),
@@ -70,7 +74,28 @@ pub fn start_rust_services(
             test_support::mark_stopped();
         })];
     }
-    Vec::new()
+    let mut handles = Vec::new();
+    if owns_service(_table, "observability", "otel_retention") {
+        handles.push(evoflux_area_observability::spawn_otel_retention(
+            _state.settings.state_dir.join("otel"),
+            otel_config(),
+            _cancel,
+        ));
+    }
+    handles
+}
+
+/// The `OTEL_*` settings of the process environment, as Python's `os.getenv` reads them.
+fn otel_config() -> evoflux_area_observability::OtelConfig {
+    evoflux_area_observability::OtelConfig::from_lookup(|name| std::env::var(name).ok())
+}
+
+fn owns_service(table: &RoutingTable, unit_name: &str, service: &str) -> bool {
+    table.units().iter().any(|unit| {
+        unit.name == unit_name
+            && unit.owner == evoflux_gateway::routing::Owner::Rust
+            && unit.services.iter().any(|name| name == service)
+    })
 }
 
 #[cfg(test)]
@@ -144,6 +169,18 @@ mod tests {
         let (status, body) = get("/api/quote").await;
         assert_eq!(status, StatusCode::OK);
         assert!(body.contains("John Johnson"), "{body}");
+    }
+
+    #[tokio::test]
+    async fn serves_the_observability_routes() {
+        let (status, body) = get("/api/observability/traces").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            body,
+            r#"{"traces":[],"limit":50,"offset":0,"total":0,"has_next":false}"#
+        );
+        let (status, _) = get("/api/observability/summary?days=0").await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
     }
 
     #[tokio::test]
