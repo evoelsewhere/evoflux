@@ -9,7 +9,13 @@
 //! dev and preview servers, which keep the page's `Origin` when they proxy
 //! `/api`), from the Tauri window, from the WebBridge extension, and through
 //! the bundled tsnet proxy, which keeps the tailnet `Host` and `Origin`.
+//!
+//! The gateway cannot learn the box's own tailnet name (Python starts the
+//! tsnet child, which forwards the browser's `Host` as is), so a tsnet request
+//! must name a tailnet: `<node>.<tailnet>.ts.net` or a Tailscale address. A
+//! DNS-rebound name such as `evil.example` is refused.
 
+use std::net::{Ipv4Addr, Ipv6Addr};
 use std::sync::Arc;
 
 use axum::extract::Request;
@@ -18,7 +24,7 @@ use axum::http::header::{
     ACCESS_CONTROL_ALLOW_ORIGIN, ACCESS_CONTROL_MAX_AGE, ACCESS_CONTROL_REQUEST_HEADERS,
     ACCESS_CONTROL_REQUEST_METHOD, CONTENT_TYPE, HOST, ORIGIN, VARY,
 };
-use axum::http::{HeaderMap, HeaderValue, Method, StatusCode};
+use axum::http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::Router;
@@ -26,6 +32,10 @@ use evoflux_core::ApiError;
 
 /// Hosts that always name this machine, whatever the port.
 const LOOPBACK_HOSTS: &[&str] = &["localhost", "127.0.0.1", "[::1]"];
+/// Ports of the app's loopback pages besides the gateway's own: the Vite dev
+/// server (`scripts/run_dev.py`, the Tauri `devUrl`) and Vite preview's default.
+const VITE_PORTS: &[u16] = &[5173, 4173];
+const SEC_FETCH_SITE: HeaderName = HeaderName::from_static("sec-fetch-site");
 /// The Tauri window: macOS/Linux, Windows, and Windows with the HTTPS scheme.
 const TAURI_ORIGINS: &[&str] = &[
     "tauri://localhost",
@@ -49,6 +59,9 @@ pub struct OriginPolicy {
     origins: Vec<String>,
     /// The bundled WebBridge extension plus `EVOFLUX_WEBBRIDGE_EXTENSION_IDS`.
     extension_ids: Vec<String>,
+    /// Ports a loopback or bound-host page may use: the Vite ports and,
+    /// once bound, the gateway's own.
+    app_ports: Vec<u16>,
 }
 
 impl OriginPolicy {
@@ -81,7 +94,15 @@ impl OriginPolicy {
             origin_hosts,
             origins,
             extension_ids: ids,
+            app_ports: VITE_PORTS.to_vec(),
         }
+    }
+
+    /// Also accept loopback and bound-host pages on the gateway's own `port`.
+    #[must_use]
+    pub fn with_gateway_port(mut self, port: u16) -> Self {
+        self.app_ports.push(port);
+        self
     }
 
     /// A `Host` header naming this machine: a loopback name, the bound host,
@@ -94,9 +115,15 @@ impl OriginPolicy {
         })
     }
 
-    /// An `Origin` of the app: a loopback or bound-host page, the Tauri
-    /// window, the WebBridge extension, an `EVOFLUX_ALLOWED_ORIGINS` entry,
-    /// or, behind the bundled tsnet proxy, the page's own tailnet origin.
+    /// The `Host` of a request from the bundled tsnet proxy: a tailnet name
+    /// or address, or the host of an allowed origin, on any port.
+    pub fn tailnet_host_allowed(&self, host: &str) -> bool {
+        hostname(host).is_some_and(|name| self.origin_hosts.contains(&name) || tailnet_name(&name))
+    }
+
+    /// An `Origin` of the app: a loopback or bound-host page on an app port,
+    /// the Tauri window, the WebBridge extension, an `EVOFLUX_ALLOWED_ORIGINS`
+    /// entry, or, behind the bundled tsnet proxy, the page's own tailnet origin.
     pub fn origin_allowed(
         &self,
         origin: &str,
@@ -115,9 +142,15 @@ impl OriginPolicy {
                 let Some(name) = hostname(authority) else {
                     return false;
                 };
-                (via_tsnet && request_host.is_some_and(|host| host.eq_ignore_ascii_case(authority)))
-                    || LOOPBACK_HOSTS.contains(&name.as_str())
-                    || self.bound.as_ref() == Some(&name)
+                let own_tailnet_page = via_tsnet
+                    && request_host.is_some_and(|host| {
+                        host.eq_ignore_ascii_case(authority) && self.tailnet_host_allowed(host)
+                    });
+                let this_machine =
+                    LOOPBACK_HOSTS.contains(&name.as_str()) || self.bound.as_ref() == Some(&name);
+                own_tailnet_page
+                    || (this_machine
+                        && port(scheme, authority).is_some_and(|p| self.app_ports.contains(&p)))
             }
             "chrome-extension" => self.extension_ids.iter().any(|id| id == authority),
             _ => false,
@@ -146,20 +179,86 @@ fn hostname(authority: &str) -> Option<String> {
     Some(host.to_ascii_lowercase())
 }
 
+/// The port of an `http(s)` origin's `authority`, the scheme's default when
+/// none is given; `None` for an unreadable one.
+fn port(scheme: &str, authority: &str) -> Option<u16> {
+    let explicit = match authority.strip_prefix('[') {
+        Some(inner) => match inner.split_once(']')?.1 {
+            "" => None,
+            rest => Some(rest.strip_prefix(':')?),
+        },
+        None => authority.split_once(':').map(|(_, port)| port),
+    };
+    match explicit {
+        Some(port) => port.parse().ok(),
+        None if scheme == "https" => Some(443),
+        None => Some(80),
+    }
+}
+
+/// A Tailscale name or address: `<node>.<tailnet>.ts.net`, an IPv4 address
+/// in 100.64.0.0/10 or an IPv6 one in fd7a:115c:a1e0::/48.
+fn tailnet_name(name: &str) -> bool {
+    if let Some(v6) = name.strip_prefix('[').and_then(|n| n.strip_suffix(']')) {
+        return v6
+            .parse::<Ipv6Addr>()
+            .is_ok_and(|ip| matches!(ip.segments(), [0xfd7a, 0x115c, 0xa1e0, ..]));
+    }
+    if let Ok(ip) = name.parse::<Ipv4Addr>() {
+        return matches!(ip.octets(), [100, second, _, _] if second & 0xc0 == 64);
+    }
+    name.strip_suffix(".ts.net").is_some_and(|rest| {
+        let labels: Vec<&str> = rest.split('.').collect();
+        labels.len() >= 2
+            && labels.iter().all(|label| {
+                !label.is_empty() && label.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+            })
+    })
+}
+
+/// Whether a browser marked the request as coming from another site.
+fn cross_site(headers: &HeaderMap) -> bool {
+    headers
+        .get(SEC_FETCH_SITE)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value.trim().eq_ignore_ascii_case("cross-site"))
+}
+
 /// Put the checks in front of `router`. `via_tsnet` says whether a request
-/// carries the bundled tsnet proxy's verified identity headers.
-pub fn guard<F>(router: Router, policy: Arc<OriginPolicy>, via_tsnet: F) -> Router
+/// carries the bundled tsnet proxy's verified identity headers;
+/// `authenticated` whether its headers or query (the second argument) carry
+/// the desktop token.
+pub fn guard<F, A>(
+    router: Router,
+    policy: Arc<OriginPolicy>,
+    via_tsnet: F,
+    authenticated: A,
+) -> Router
 where
     F: Fn(&HeaderMap) -> bool + Clone + Send + Sync + 'static,
+    A: Fn(&HeaderMap, &str) -> bool + Clone + Send + Sync + 'static,
 {
     router.layer(middleware::from_fn(move |req, next| {
-        check(req, next, Arc::clone(&policy), via_tsnet.clone())
+        check(
+            req,
+            next,
+            Arc::clone(&policy),
+            via_tsnet.clone(),
+            authenticated.clone(),
+        )
     }))
 }
 
-async fn check<F>(req: Request, next: Next, policy: Arc<OriginPolicy>, via_tsnet: F) -> Response
+async fn check<F, A>(
+    req: Request,
+    next: Next,
+    policy: Arc<OriginPolicy>,
+    via_tsnet: F,
+    authenticated: A,
+) -> Response
 where
     F: Fn(&HeaderMap) -> bool,
+    A: Fn(&HeaderMap, &str) -> bool,
 {
     let tsnet = via_tsnet(req.headers());
     let host = match req.headers().get(HOST) {
@@ -169,12 +268,22 @@ where
         },
         None => req.uri().authority().map(|a| a.as_str().to_owned()),
     };
-    // No Host at all is a non-browser client; a browser always sends one.
-    if let Some(host) = host.as_deref() {
-        if !tsnet && !policy.host_allowed(host) {
-            tracing::warn!(host, "request_host_rejected");
-            return forbidden("Host not allowed.", "host_not_allowed");
+    match host.as_deref() {
+        Some(host) => {
+            let allowed = if tsnet {
+                policy.tailnet_host_allowed(host)
+            } else {
+                policy.host_allowed(host)
+            };
+            if !allowed {
+                tracing::warn!(host, tsnet, "request_host_rejected");
+                return forbidden("Host not allowed.", "host_not_allowed");
+            }
         }
+        // The tsnet proxy always forwards the browser's Host.
+        None if tsnet => return forbidden("Host not allowed.", "host_not_allowed"),
+        // No Host at all is a non-browser client; a browser always sends one.
+        None => {}
     }
     let origin = match req.headers().get(ORIGIN) {
         None => None,
@@ -184,6 +293,15 @@ where
         },
     };
     let Some(origin) = origin else {
+        // No Origin is a CLI or a navigation/subresource load; a browser marks
+        // another site's as cross-site. The desktop window's own images carry
+        // the token in `_token`, which no other site knows.
+        if cross_site(req.headers())
+            && !authenticated(req.headers(), req.uri().query().unwrap_or(""))
+        {
+            tracing::warn!("request_cross_site_rejected");
+            return forbidden("Cross-site request not allowed.", "cross_site_not_allowed");
+        }
         return with_cors(next.run(req).await, None);
     };
     if !policy.origin_allowed(&origin, host.as_deref(), tsnet) {
@@ -277,7 +395,7 @@ mod tests {
     use tower::ServiceExt;
 
     fn policy() -> OriginPolicy {
-        OriginPolicy::new("127.0.0.1", None, None)
+        OriginPolicy::new("127.0.0.1", None, None).with_gateway_port(4082)
     }
 
     #[test]
@@ -319,9 +437,10 @@ mod tests {
 
     #[test]
     fn the_bound_host_is_accepted_unless_it_is_a_wildcard() {
-        let lan = OriginPolicy::new(" 192.168.1.5 ", None, None);
+        let lan = OriginPolicy::new(" 192.168.1.5 ", None, None).with_gateway_port(4082);
         assert!(lan.host_allowed("192.168.1.5:4082"));
         assert!(lan.origin_allowed("http://192.168.1.5:4082", None, false));
+        assert!(!lan.origin_allowed("http://192.168.1.5:8080", None, false));
         assert!(!lan.host_allowed("192.168.1.6"));
         let named = OriginPolicy::new("MyBox.local", None, None);
         assert!(named.host_allowed("mybox.local:1"));
@@ -342,8 +461,9 @@ mod tests {
         let p = policy();
         for origin in [
             "http://localhost:5173",
-            "http://127.0.0.1:41234",
-            "https://localhost",
+            "http://127.0.0.1:4173",
+            "http://127.0.0.1:4082",
+            "https://localhost:5173",
             "http://[::1]:4082",
             "HTTP://LOCALHOST:5173",
             "tauri://localhost",
@@ -373,6 +493,16 @@ mod tests {
             "chrome-extension://abcdefghijklmnopabcdefghijklmnop",
             "http://localhost/path",
             "",
+            // Loopback pages on other ports are other local programs.
+            "http://127.0.0.1:41234",
+            "http://localhost:8000",
+            "http://[::1]:1",
+            "http://localhost",
+            "https://localhost",
+            "http://[::1]",
+            "http://localhost:",
+            "http://localhost:99999",
+            "http://[::1]4082",
         ] {
             assert!(
                 !p.origin_allowed(origin, Some("127.0.0.1:4082"), false),
@@ -426,6 +556,85 @@ mod tests {
         assert!(!p.origin_allowed("https://evil.example", host, true));
         assert!(!p.origin_allowed("https://box.tail.ts.net", None, true));
         assert!(!p.origin_allowed("ftp://box.tail.ts.net", host, true));
+        // A DNS-rebound page's Origin equals its Host, which is not a tailnet name.
+        assert!(!p.origin_allowed("http://evil.example", Some("evil.example"), true));
+        assert!(!p.origin_allowed("http://evil.example:8080", Some("evil.example:8080"), true));
+    }
+
+    #[test]
+    fn default_ports_follow_the_scheme() {
+        assert_eq!(port("http", "localhost"), Some(80));
+        assert_eq!(port("https", "localhost"), Some(443));
+        assert_eq!(port("https", "[::1]"), Some(443));
+        assert_eq!(port("http", "[::1]:5173"), Some(5173));
+        assert_eq!(port("http", "[::1]x"), None);
+        assert_eq!(port("http", "[::1"), None);
+        assert_eq!(port("http", "localhost:x"), None);
+        let open = OriginPolicy::new("127.0.0.1", None, None);
+        assert!(open.origin_allowed("http://localhost:5173", None, false));
+        assert!(!open.origin_allowed("http://localhost:4082", None, false));
+        assert!(open
+            .with_gateway_port(80)
+            .origin_allowed("http://localhost", None, false));
+    }
+
+    #[test]
+    fn tsnet_hosts_must_name_a_tailnet() {
+        let p = OriginPolicy::new("127.0.0.1", Some("https://phone.example.org"), None);
+        for host in [
+            "box.tail1234.ts.net",
+            "BOX.Tail1234.TS.NET:443",
+            "my-box.my-tailnet.ts.net:80",
+            "a.b.c.ts.net",
+            "100.64.0.1",
+            "100.127.255.254:80",
+            "100.101.102.103",
+            "[fd7a:115c:a1e0::1]",
+            "[fd7a:115c:a1e0:ab12::5]:443",
+            "phone.example.org",
+        ] {
+            assert!(p.tailnet_host_allowed(host), "{host}");
+        }
+        for host in [
+            "evil.example",
+            "evil.example:80",
+            "ts.net",
+            "tail.ts.net",
+            "box..ts.net",
+            ".tail.ts.net",
+            "box_1.tail.ts.net",
+            "box.tail.ts.net.evil.example",
+            "evilts.net",
+            "localhost",
+            "127.0.0.1",
+            "100.63.255.255",
+            "100.128.0.1",
+            "101.64.0.1",
+            "[::1]",
+            "[fd7a:115c:a1e1::1]",
+            "[fd7a:115d:a1e0::1]",
+            "[fd7b:115c:a1e0::1]",
+            "[100.64.0.1]",
+            "[fd7a:115c:a1e0::1",
+            "",
+        ] {
+            assert!(!p.tailnet_host_allowed(host), "{host}");
+        }
+    }
+
+    #[test]
+    fn cross_site_reads_sec_fetch_site() {
+        let with = |value: &'static str| {
+            let mut headers = HeaderMap::new();
+            headers.insert(SEC_FETCH_SITE, HeaderValue::from_static(value));
+            headers
+        };
+        assert!(cross_site(&with("cross-site")));
+        assert!(cross_site(&with(" Cross-Site ")));
+        for other in ["same-origin", "same-site", "none", ""] {
+            assert!(!cross_site(&with(other)), "{other}");
+        }
+        assert!(!cross_site(&HeaderMap::new()));
     }
 
     async fn upstream() -> Response {
@@ -446,6 +655,9 @@ mod tests {
             Router::new().route("/{*path}", any(upstream)),
             Arc::new(policy()),
             move |_: &HeaderMap| tsnet,
+            |headers: &HeaderMap, query: &str| {
+                query == "_token=ok" || headers.contains_key("x-test-token")
+            },
         )
     }
 
@@ -589,7 +801,71 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn tsnet_requests_skip_the_host_check() {
+    async fn dns_rebinding_through_tsnet_is_403() {
+        for origin in [Some("http://evil.example"), None] {
+            for method in ["GET", "POST"] {
+                let (status, _, body) =
+                    send(app(true), request(method, Some("evil.example"), origin)).await;
+                assert_eq!(status, StatusCode::FORBIDDEN, "{method} {origin:?}");
+                assert_eq!(
+                    body,
+                    r#"{"detail":"Host not allowed.","code":"host_not_allowed"}"#
+                );
+            }
+        }
+        let (status, _, _) = send(app(true), request("GET", None, None)).await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        let (status, _, _) = send(app(true), request("GET", Some("100.64.0.7"), None)).await;
+        assert_eq!(status, StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn cross_site_without_origin_is_403_unless_it_carries_the_token() {
+        let cross = |method: &str, uri: &str| {
+            HttpRequest::builder()
+                .method(method)
+                .uri(uri)
+                .header(HOST, "127.0.0.1:4082")
+                .header(SEC_FETCH_SITE, "cross-site")
+                .body(Body::empty())
+                .unwrap()
+        };
+        for method in ["GET", "HEAD", "POST", "DELETE"] {
+            let (status, headers, body) = send(app(false), cross(method, "/api/x")).await;
+            assert_eq!(status, StatusCode::FORBIDDEN, "{method}");
+            assert_eq!(headers[VARY], "Origin");
+            if method != "HEAD" {
+                assert_eq!(
+                    body,
+                    r#"{"detail":"Cross-site request not allowed.","code":"cross_site_not_allowed"}"#
+                );
+            }
+        }
+        let (status, _, _) = send(app(false), cross("GET", "/api/x?_token=bad")).await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        let (status, _, body) = send(app(false), cross("GET", "/api/x?_token=ok")).await;
+        assert_eq!((status, body.as_str()), (StatusCode::OK, "upstream"));
+        let mut bearer = cross("GET", "/api/x");
+        bearer
+            .headers_mut()
+            .insert("x-test-token", HeaderValue::from_static("1"));
+        assert_eq!(send(app(false), bearer).await.0, StatusCode::OK);
+        for site in ["same-origin", "same-site", "none"] {
+            let mut req = request("GET", Some("127.0.0.1:4082"), None);
+            req.headers_mut()
+                .insert(SEC_FETCH_SITE, HeaderValue::from_static(site));
+            assert_eq!(send(app(false), req).await.0, StatusCode::OK, "{site}");
+        }
+        // An allowed Origin decides on its own: the desktop window is cross-site.
+        let mut tauri = request("POST", Some("127.0.0.1:4082"), Some("tauri://localhost"));
+        tauri
+            .headers_mut()
+            .insert(SEC_FETCH_SITE, HeaderValue::from_static("cross-site"));
+        assert_eq!(send(app(false), tauri).await.0, StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn tsnet_requests_need_a_tailnet_host() {
         let (status, headers, _) = send(
             app(true),
             request(

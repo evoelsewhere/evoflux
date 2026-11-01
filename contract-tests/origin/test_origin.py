@@ -18,6 +18,10 @@ ROUTES = ("/api/health/live", "/api/agents")
 EVIL_ORIGIN = "https://evil.example"
 FORBIDDEN_ORIGIN = {"detail": "Origin not allowed.", "code": "origin_not_allowed"}
 FORBIDDEN_HOST = {"detail": "Host not allowed.", "code": "host_not_allowed"}
+FORBIDDEN_CROSS_SITE = {
+    "detail": "Cross-site request not allowed.",
+    "code": "cross_site_not_allowed",
+}
 
 
 def _python_skip(target: str) -> None:
@@ -103,3 +107,51 @@ def test_preflight_from_an_app_origin(
     assert response.headers["access-control-allow-origin"] == "tauri://localhost"
     assert response.headers["access-control-allow-headers"] == "authorization"
     assert "POST" in response.headers["access-control-allow-methods"]
+
+
+@pytest.mark.parametrize("path", ROUTES)
+@pytest.mark.parametrize(
+    "origin", ["http://127.0.0.1:1", "http://localhost:8000", "http://localhost"]
+)
+def test_other_loopback_ports_are_403(
+    client: httpx.Client, target: str, path: str, origin: str
+) -> None:
+    """Only the gateway's own port and the Vite dev/preview ports are the app."""
+    _python_skip(target)
+    response = client.get(path, headers={"Origin": origin})
+    assert response.status_code == 403
+    assert response.json() == FORBIDDEN_ORIGIN
+
+
+@pytest.mark.parametrize("method", ["GET", "POST"])
+def test_cross_site_without_origin_is_403(backend, target: str, method: str) -> None:
+    """A no-cors load from another site (``<img>``, a form, a link) has no Origin."""
+    _python_skip(target)
+    response = httpx.request(
+        method,
+        f"{backend.base_url}/api/health/live",
+        headers={"Sec-Fetch-Site": "cross-site"},
+        timeout=30.0,
+    )
+    assert response.status_code == 403
+    assert response.json() == FORBIDDEN_CROSS_SITE
+
+
+@pytest.mark.parametrize("path", ROUTES)
+def test_cross_site_with_the_desktop_token_is_allowed(backend, path: str) -> None:
+    """The desktop window's own images carry the token in ``_token``."""
+    response = httpx.get(
+        f"{backend.base_url}{path}",
+        params={"_token": backend.token},
+        headers={"Sec-Fetch-Site": "cross-site"},
+        timeout=30.0,
+    )
+    assert response.status_code == 200
+
+
+@pytest.mark.parametrize("path", ROUTES)
+@pytest.mark.parametrize("site", ["same-origin", "same-site", "none"])
+def test_fetch_metadata_other_than_cross_site_is_allowed(
+    client: httpx.Client, path: str, site: str
+) -> None:
+    assert client.get(path, headers={"Sec-Fetch-Site": site}).status_code == 200

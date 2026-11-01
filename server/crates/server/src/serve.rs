@@ -396,6 +396,7 @@ async fn run(mut prepared: Prepared) -> u8 {
     let cancel = CancellationToken::new();
     let services = units::start_rust_services(&prepared.table, &prepared.state, cancel.clone());
     let tsnet = auth.clone();
+    let token = auth.clone();
     // Outermost, so Python- and Rust-owned routes alike are checked.
     let router = origin::guard(
         router_with_units_and_db(
@@ -406,8 +407,9 @@ async fn run(mut prepared: Prepared) -> u8 {
             prepared.state.paths.state_dir.clone(),
             prepared.state.db.clone(),
         ),
-        Arc::new(prepared.origins),
+        Arc::new(prepared.origins.with_gateway_port(port)),
         move |headers| tsnet.trusted_embedded_proxy(headers),
+        move |headers, query| token.carries_valid_token(headers, query),
     );
     let mut stop = shutdown.clone();
     let server = tokio::spawn(async move {

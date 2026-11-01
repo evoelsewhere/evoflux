@@ -134,6 +134,9 @@ export async function startStack(options: StackOptions = {}): Promise<Stack> {
     if (options.realConfigDir) cpSync(options.realConfigDir, config, { recursive: true })
     const stateFile = path.join(state, 'python-child.json')
     const apiPort = await freePort()
+    // The gateway accepts loopback pages only on its own and the Vite default ports.
+    const webPort = await freePort()
+    const webUrl = `http://127.0.0.1:${webPort}`
     const env: NodeJS.ProcessEnv = {
       ...process.env,
       HOME: home,
@@ -152,6 +155,7 @@ export async function startStack(options: StackOptions = {}): Promise<Stack> {
       EVOFLUX_GATEWAY_SITE_PACKAGES: repoRoot,
       EVOFLUX_GATEWAY_CLI_ENTRY: path.join(repoRoot, 'app', 'cli', '__main__.py'),
       EVOFLUX_GATEWAY_STATE_FILE: stateFile,
+      EVOFLUX_ALLOWED_ORIGINS: webUrl,
       // Also in the environment so a restarted Python child still reaches the mock.
       ROUTER9_BASE_URL: `${providerUrl}/v1`,
       ROUTER9_API_KEY: 'mock-key',
@@ -192,7 +196,6 @@ export async function startStack(options: StackOptions = {}): Promise<Stack> {
 
     }
 
-    const webPort = await freePort()
     const vite = spawn(
       process.execPath,
       [path.join(webRoot, 'node_modules', 'vite', 'bin', 'vite.js'), 'preview', '--outDir', required('EVOFLUX_E2E_WEB_DIST'), '--host', '127.0.0.1', '--port', String(webPort), '--strictPort'],
@@ -200,7 +203,6 @@ export async function startStack(options: StackOptions = {}): Promise<Stack> {
     )
     pids.push(vite.pid!)
     pump(vite, log)
-    const webUrl = `http://127.0.0.1:${webPort}`
     await waitFor('Vite', async () => ((await fetch(webUrl)).ok ? true : undefined), 60_000)
 
     const pythonPid = () => (JSON.parse(readFileSync(stateFile, 'utf8')) as { pid: number }).pid

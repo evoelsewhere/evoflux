@@ -1,7 +1,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use axum::body::{to_bytes, Body};
-use axum::http::{Request, StatusCode};
+use axum::http::{HeaderMap, Request, StatusCode};
 use axum::routing::any;
 use axum::Router;
 use evoflux_core::auth::DesktopAuth;
@@ -265,6 +265,20 @@ async fn auth_remote_unknown_marker_trust_follows_embedded_proxy_requirement() {
     let (status, body) = call(app_with(strict), remote(Some("other"), None)).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
     assert_eq!(body, UNTRUSTED);
+}
+
+#[test]
+fn carries_valid_token_checks_bearer_and_query_token() {
+    let auth = DesktopAuth::new(Some(TOKEN.to_owned()), SECRET.to_owned());
+    let mut bearer = HeaderMap::new();
+    bearer.insert("authorization", format!("Bearer {TOKEN}").parse().unwrap());
+    assert!(auth.carries_valid_token(&bearer, ""));
+    assert!(auth.carries_valid_token(&HeaderMap::new(), &format!("a=1&_token={TOKEN}")));
+    assert!(!auth.carries_valid_token(&HeaderMap::new(), "_token=wrong"));
+    assert!(!auth.carries_valid_token(&HeaderMap::new(), ""));
+    let open = DesktopAuth::new(None, SECRET.to_owned());
+    assert!(!open.carries_valid_token(&bearer, "_token="));
+    assert!(!open.carries_valid_token(&HeaderMap::new(), ""));
 }
 
 #[test]

@@ -240,6 +240,12 @@ impl DesktopAuth {
             )
     }
 
+    /// Whether the request carries the configured desktop token, as a bearer
+    /// header or a `_token` query parameter. Always false without a token.
+    pub fn carries_valid_token(&self, headers: &HeaderMap, query: &str) -> bool {
+        token_matches(extract_token(headers, query).as_deref(), &self.inner.token)
+    }
+
     fn trusted_remote_proxy_headers(&self, marker: &str, provided: &str) -> bool {
         if marker == REMOTE_PROXY_MARKER {
             return constant_time_eq(
