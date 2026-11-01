@@ -200,5 +200,11 @@ sits one hour before the current hour; expectations for dates and buckets come f
 `Seeded.ms/day/hour_bucket`, never from the wall clock. Not covered by a contract test
 (needs a controllable clock): a window edge falling inside a partition file.
 
-Rust unit tests for L5b (not yet written): the retention rows above, `OTEL_SPAN_SAMPLE_RATIO`
-clamp, null aggregate coercion and the service-level `days`/`limit` clamps.
+## Rust port (L5b)
+
+Modules: `clock` (UTC calendar maths, no `chrono`), `scan` (bounded JSONL reader), `params` (FastAPI int and
+`ge`/`le` validation), `summary`, `traces`, `retention` (`spawn_otel_retention`), `routes`. Unit tests cover the
+retention rows above (temp dir, a paused tokio clock for the interval), the `OTEL_SPAN_SAMPLE_RATIO` clamp, null
+durations, the service-level behaviour behind `days`/`limit` and the read caps. Differences: `server/KNOWN_DIFFERENCES.md`
+(observability). Mounted by `server/crates/server/src/units.rs`; the retention task starts only when the
+`observability` unit is owned by Rust. Not in `rust-ready.toml`: cutover needs the owner.
