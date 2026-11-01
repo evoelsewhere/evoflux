@@ -1,0 +1,125 @@
+{
+  "goal": null,
+  "has_more": false,
+  "lead": {
+    "agent_name": "evoflux",
+    "created_at": "<ts:utc-z,frac>",
+    "id": "<uuid:1>",
+    "messages": [
+      {
+        "content": "say hello",
+        "created_at": "<ts:utc-z,frac>",
+        "exclude_from_context": false,
+        "extra": {
+          "model": "router9:mock-model"
+        },
+        "file_message": false,
+        "id": "<uuid:2>",
+        "is_summary": false,
+        "role": "user",
+        "session_id": "<uuid:1>"
+      },
+      {
+        "content": "Hello from mock.",
+        "created_at": "<ts:utc-z,frac>",
+        "exclude_from_context": false,
+        "extra": {
+          "duration_ms": "<ms>",
+          "model": "router9:mock-model",
+          "turn_usage": {
+            "cache": 0,
+            "cache_write": 0,
+            "calls": 1,
+            "input": 10,
+            "models": [
+              "router9:mock-model"
+            ],
+            "output": 4,
+            "phases": {
+              "main": {
+                "cache": 0,
+                "cache_write": 0,
+                "calls": 1,
+                "input": 10,
+                "models": [
+                  "router9:mock-model"
+                ],
+                "output": 4
+              }
+            }
+          },
+          "usage": {
+            "input": 10,
+            "output": 4
+          }
+        },
+        "file_message": false,
+        "id": "<uuid:3>",
+        "is_summary": false,
+        "role": "assistant",
+        "session_id": "<uuid:1>"
+      },
+      {
+        "content": "again",
+        "created_at": "<ts:utc-z,frac>",
+        "exclude_from_context": false,
+        "extra": {
+          "model": "router9:mock-model"
+        },
+        "file_message": false,
+        "id": "<uuid:4>",
+        "is_summary": false,
+        "role": "user",
+        "session_id": "<uuid:1>"
+      },
+      {
+        "content": "Hello from mock.",
+        "created_at": "<ts:utc-z,frac>",
+        "exclude_from_context": false,
+        "extra": {
+          "duration_ms": "<ms>",
+          "model": "router9:mock-model",
+          "turn_usage": {
+            "cache": 0,
+            "cache_write": 0,
+            "calls": 1,
+            "input": 10,
+            "models": [
+              "router9:mock-model"
+            ],
+            "output": 4,
+            "phases": {
+              "main": {
+                "cache": 0,
+                "cache_write": 0,
+                "calls": 1,
+                "input": 10,
+                "models": [
+                  "router9:mock-model"
+                ],
+                "output": 4
+              }
+            }
+          },
+          "usage": {
+            "input": 10,
+            "output": 4
+          }
+        },
+        "file_message": false,
+        "id": "<uuid:5>",
+        "is_summary": false,
+        "role": "assistant",
+        "session_id": "<uuid:1>"
+      }
+    ],
+    "mode": "work",
+    "permission_mode": "auto",
+    "running": false,
+    "tags": [],
+    "title": "<title>",
+    "updated_at": "<ts:utc-z,frac>"
+  },
+  "members": [],
+  "next_cursor": null
+}

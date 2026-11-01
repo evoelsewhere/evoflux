@@ -1,0 +1,32 @@
+{
+  "goal": null,
+  "has_more": false,
+  "lead": {
+    "agent_name": "evoflux",
+    "created_at": "<ts:utc-z,frac>",
+    "id": "<uuid:1>",
+    "messages": [
+      {
+        "content": "say hello",
+        "created_at": "<ts:utc-z,frac>",
+        "exclude_from_context": false,
+        "extra": {
+          "model": "router9:mock-model"
+        },
+        "file_message": false,
+        "id": "<uuid:2>",
+        "is_summary": false,
+        "role": "user",
+        "session_id": "<uuid:1>"
+      }
+    ],
+    "mode": "work",
+    "permission_mode": "auto",
+    "running": false,
+    "tags": [],
+    "title": "<title>",
+    "updated_at": "<ts:utc-z,frac>"
+  },
+  "members": [],
+  "next_cursor": null
+}

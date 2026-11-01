@@ -1,0 +1,74 @@
+{
+  "bad_delivery": [
+    422,
+    {
+      "detail": "Value error, delivery must be 'steer' or 'queue'."
+    }
+  ],
+  "bad_folder_id": [
+    422,
+    {
+      "detail": "Invalid folder_id."
+    }
+  ],
+  "bad_mode": [
+    422,
+    {
+      "detail": "Value error, mode must be 'work' or 'coding'"
+    }
+  ],
+  "bad_permission_mode": [
+    422,
+    {
+      "detail": "Unknown permission_mode 'yolo'."
+    }
+  ],
+  "bad_session_id": [
+    422,
+    {
+      "detail": "Invalid session id."
+    }
+  ],
+  "bad_workspace": [
+    422,
+    {
+      "detail": "Workspace path must be absolute."
+    }
+  ],
+  "blank_message": [
+    422,
+    {
+      "detail": "Value error, message must not be blank."
+    }
+  ],
+  "interrupt_and_message": [
+    422,
+    {
+      "detail": "Value error, interrupt and message are mutually exclusive."
+    }
+  ],
+  "interrupt_without_session": [
+    422,
+    {
+      "detail": "Value error, session_id is required when interrupt=true."
+    }
+  ],
+  "loop_removed": [
+    410,
+    {
+      "detail": "/loop has been removed. Use /goal <objective> instead."
+    }
+  ],
+  "missing_message": [
+    422,
+    {
+      "detail": "Value error, message is required when interrupt=false."
+    }
+  ],
+  "model_without_provider": [
+    422,
+    {
+      "detail": "Value error, model must use 'provider:model' format."
+    }
+  ]
+}

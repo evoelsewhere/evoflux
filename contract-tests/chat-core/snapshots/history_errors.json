@@ -1,0 +1,27 @@
+{
+  "bad_uuid": [
+    422,
+    {
+      "detail": [
+        {
+          "ctx": {
+            "error": "invalid character: found `n` at 1"
+          },
+          "input": "not-a-uuid",
+          "loc": [
+            "path",
+            "session_id"
+          ],
+          "msg": "Input should be a valid UUID, invalid character: found `n` at 1",
+          "type": "uuid_parsing"
+        }
+      ]
+    }
+  ],
+  "missing": [
+    404,
+    {
+      "detail": "Lead session not found."
+    }
+  ]
+}

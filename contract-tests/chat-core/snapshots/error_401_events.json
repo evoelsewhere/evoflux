@@ -1,0 +1,79 @@
+[
+  [
+    "agent_status",
+    {
+      "agent": "evoflux",
+      "metadata": {},
+      "status": "working",
+      "type": "agent_status"
+    }
+  ],
+  [
+    "agent_status",
+    {
+      "agent": "evoflux",
+      "metadata": {
+        "phase": "model_calling"
+      },
+      "status": "working",
+      "type": "agent_status"
+    }
+  ],
+  [
+    "agent_not_configured",
+    {
+      "action": {
+        "tab": "providers",
+        "type": "open_settings"
+      },
+      "agent": "evoflux",
+      "message": "router9:mock-model rejected the request — authentication failed (HTTP 401): Incorrect API key provided. Check the provider's API key / login in Settings → Providers.",
+      "type": "agent_not_configured"
+    }
+  ],
+  [
+    "agent_status",
+    {
+      "agent": "evoflux",
+      "metadata": {
+        "message": "router9:mock-model rejected the request — authentication failed (HTTP 401): Incorrect API key provided. Check the provider's API key / login in Settings → Providers."
+      },
+      "status": "error",
+      "type": "agent_status"
+    }
+  ],
+  [
+    "desktop_notification",
+    {
+      "body": "<title>",
+      "kind": "assistant_done",
+      "metadata": {
+        "mode": "work",
+        "session_id": "<uuid:1>",
+        "title": "<title>",
+        "workspace": null
+      },
+      "session_id": "<uuid:1>",
+      "title": "Session completed",
+      "type": "desktop_notification"
+    }
+  ],
+  [
+    "turn_changes",
+    {
+      "additions": 0,
+      "deletions": 0,
+      "files": [],
+      "metadata": {},
+      "session_id": "<uuid:1>",
+      "type": "turn_changes"
+    }
+  ],
+  [
+    "done",
+    {
+      "metadata": {},
+      "type": "done"
+    }
+  ]
+]

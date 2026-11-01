@@ -1,0 +1,29 @@
+{
+  "bad": [
+    422,
+    {
+      "detail": "Invalid before cursor: yesterday"
+    }
+  ],
+  "before": [
+    200,
+    {
+      "goal": null,
+      "has_more": false,
+      "lead": {
+        "agent_name": "evoflux",
+        "created_at": "<ts:utc-z,frac>",
+        "id": "<uuid:1>",
+        "messages": [],
+        "mode": "work",
+        "permission_mode": "auto",
+        "running": false,
+        "tags": [],
+        "title": "<title>",
+        "updated_at": "<ts:utc-z,frac>"
+      },
+      "members": [],
+      "next_cursor": null
+    }
+  ]
+}

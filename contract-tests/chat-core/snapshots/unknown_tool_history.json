@@ -1,0 +1,116 @@
+{
+  "goal": null,
+  "has_more": false,
+  "lead": {
+    "agent_name": "evoflux",
+    "created_at": "<ts:utc-z,frac>",
+    "id": "<uuid:1>",
+    "messages": [
+      {
+        "content": "call a tool",
+        "created_at": "<ts:utc-z,frac>",
+        "exclude_from_context": false,
+        "extra": {
+          "model": "router9:mock-model"
+        },
+        "file_message": false,
+        "id": "<uuid:2>",
+        "is_summary": false,
+        "role": "user",
+        "session_id": "<uuid:1>"
+      },
+      {
+        "created_at": "<ts:utc-z,frac>",
+        "exclude_from_context": false,
+        "extra": {
+          "duration_ms": "<ms>",
+          "model": "router9:mock-model",
+          "usage": {
+            "input": 20,
+            "output": 5
+          }
+        },
+        "file_message": false,
+        "id": "<uuid:3>",
+        "is_summary": false,
+        "role": "assistant",
+        "session_id": "<uuid:1>",
+        "tool_calls": [
+          {
+            "function": {
+              "arguments": "{}",
+              "name": "no_such_tool",
+              "thought": null,
+              "thought_signature": null
+            },
+            "id": "call_mock_unknown",
+            "type": "function"
+          }
+        ]
+      },
+      {
+        "content": "Error: Tool 'no_such_tool' not found.",
+        "created_at": "<ts:utc-z,frac>",
+        "exclude_from_context": false,
+        "extra": {
+          "duration_ms": "<ms>"
+        },
+        "file_message": false,
+        "id": "<uuid:4>",
+        "is_summary": false,
+        "name": "no_such_tool",
+        "role": "tool",
+        "session_id": "<uuid:1>",
+        "tool_call_id": "call_mock_unknown"
+      },
+      {
+        "content": "The date tool ran.",
+        "created_at": "<ts:utc-z,frac>",
+        "exclude_from_context": false,
+        "extra": {
+          "duration_ms": "<ms>",
+          "model": "router9:mock-model",
+          "turn_usage": {
+            "cache": 0,
+            "cache_write": 0,
+            "calls": 2,
+            "input": 50,
+            "models": [
+              "router9:mock-model"
+            ],
+            "output": 11,
+            "phases": {
+              "main": {
+                "cache": 0,
+                "cache_write": 0,
+                "calls": 2,
+                "input": 50,
+                "models": [
+                  "router9:mock-model"
+                ],
+                "output": 11
+              }
+            }
+          },
+          "usage": {
+            "input": 30,
+            "output": 6
+          }
+        },
+        "file_message": false,
+        "id": "<uuid:5>",
+        "is_summary": false,
+        "role": "assistant",
+        "session_id": "<uuid:1>"
+      }
+    ],
+    "mode": "work",
+    "permission_mode": "auto",
+    "running": false,
+    "tags": [],
+    "title": "<title>",
+    "updated_at": "<ts:utc-z,frac>"
+  },
+  "members": [],
+  "next_cursor": null
+}

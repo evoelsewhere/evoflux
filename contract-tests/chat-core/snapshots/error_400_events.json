@@ -1,0 +1,78 @@
+[
+  [
+    "agent_status",
+    {
+      "agent": "evoflux",
+      "metadata": {},
+      "status": "working",
+      "type": "agent_status"
+    }
+  ],
+  [
+    "agent_status",
+    {
+      "agent": "evoflux",
+      "metadata": {
+        "phase": "model_calling"
+      },
+      "status": "working",
+      "type": "agent_status"
+    }
+  ],
+  [
+    "error",
+    {
+      "message": "Lead agent 'evoflux' failed: router9:mock-model rejected the request (HTTP 400): Invalid request: unsupported parameter.",
+      "metadata": {
+        "agent": "evoflux",
+        "exception": "ProviderRequestError"
+      },
+      "type": "error"
+    }
+  ],
+  [
+    "agent_status",
+    {
+      "agent": "evoflux",
+      "metadata": {
+        "message": "router9:mock-model rejected the request (HTTP 400): Invalid request: unsupported parameter."
+      },
+      "status": "error",
+      "type": "agent_status"
+    }
+  ],
+  [
+    "desktop_notification",
+    {
+      "body": "<title>",
+      "kind": "assistant_done",
+      "metadata": {
+        "mode": "work",
+        "session_id": "<uuid:1>",
+        "title": "<title>",
+        "workspace": null
+      },
+      "session_id": "<uuid:1>",
+      "title": "Session completed",
+      "type": "desktop_notification"
+    }
+  ],
+  [
+    "turn_changes",
+    {
+      "additions": 0,
+      "deletions": 0,
+      "files": [],
+      "metadata": {},
+      "session_id": "<uuid:1>",
+      "type": "turn_changes"
+    }
+  ],
+  [
+    "done",
+    {
+      "metadata": {},
+      "type": "done"
+    }
+  ]
+]
