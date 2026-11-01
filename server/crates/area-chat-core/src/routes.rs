@@ -90,11 +90,13 @@ pub(crate) fn parse_form(headers: &HeaderMap, body: &[u8]) -> Form {
 }
 
 fn find(haystack: &[u8], needle: &[u8], from: usize) -> Option<usize> {
-    if needle.is_empty() || haystack.len() < needle.len() {
+    if needle.is_empty() {
         return None;
     }
-    (from..=haystack.len() - needle.len())
-        .find(|&i| haystack.get(i..i + needle.len()) == Some(needle))
+    let tail = haystack.get(from..)?;
+    tail.windows(needle.len())
+        .position(|window| window == needle)
+        .map(|offset| from + offset)
 }
 
 fn parse_multipart(form: &mut Form, body: &[u8], boundary: &str) {
@@ -747,6 +749,9 @@ pub(crate) async fn team_history(
     }))
     .into_response())
 }
+
+#[cfg(test)]
+mod more_tests;
 
 #[cfg(test)]
 #[allow(

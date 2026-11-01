@@ -10,10 +10,14 @@
 #![allow(clippy::result_large_err)]
 
 mod agent;
+#[cfg(test)]
+mod flow_tests;
 mod pyjson;
 mod routes;
 mod store;
 mod stream_store;
+#[cfg(test)]
+mod testkit;
 mod title;
 mod turn;
 mod usage;
@@ -77,20 +81,31 @@ impl ChatState {
     }
 }
 
-/// The chat-core router.
-pub fn router(settings: Arc<Settings>, db: Option<Arc<Db>>, http: evoflux_net::Client) -> Router {
-    let state = Arc::new(ChatState {
+fn new_state(
+    settings: Arc<Settings>,
+    db: Option<Arc<Db>>,
+    http: evoflux_net::Client,
+) -> Arc<ChatState> {
+    Arc::new(ChatState {
         settings,
         db,
         http,
         store: Arc::new(StreamStore::default()),
         active: Mutex::new(HashMap::new()),
-    });
+    })
+}
+
+fn routes(state: Arc<ChatState>) -> Router {
     Router::new()
         .route("/api/team/chat", post(routes::team_chat))
         .route("/api/team/{session_id}/stream", get(routes::team_stream))
         .route("/api/team/{session_id}/history", get(routes::team_history))
         .with_state(state)
+}
+
+/// The chat-core router.
+pub fn router(settings: Arc<Settings>, db: Option<Arc<Db>>, http: evoflux_net::Client) -> Router {
+    routes(new_state(settings, db, http))
 }
 
 #[cfg(test)]

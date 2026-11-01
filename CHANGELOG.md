@@ -35,6 +35,7 @@ All notable changes to EvoFlux are documented in this file.
 
 ### Changed
 
+- The v4 Rust chat loop (`chat-core`) now has database-backed and end-to-end crate tests for its message store, routes and turn code, and the mutation gate covers them. It affects tests only, so nothing changes in the app.
 - The contract-test harness tests now run against `TARGET=python` and `TARGET=rust` without a migration-board unit, and the `commands` port's known differences moved into `server/KNOWN_DIFFERENCES.md`. It affects tests and notes only, so nothing changes in the app.
 - Ported the chat loop to the v4 Rust server (`chat-core`: `POST /api/team/chat`, `GET /api/team/{session_id}/stream`, `GET /api/team/{session_id}/history`): Work-mode turns stream from the AR1 providers with the same SSE events Python sends, run the read-only tools, generate the session title, and save messages, usage and session state to the same tables Python reads. Python still serves these routes until cutover, so nothing changes in the app; the differences are listed in `server/KNOWN_DIFFERENCES.md`.
 - The v4 routing table has a new `chat-core` unit (the three chat routes above, owned by Python), the mock provider can delay an error reply, and the server settings expose the Work workspace folder and the provider keys saved in Settings while it runs. No app behaviour changes.

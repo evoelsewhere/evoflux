@@ -822,6 +822,9 @@ struct Call {
 }
 
 #[cfg(test)]
+mod more_tests;
+
+#[cfg(test)]
 #[allow(
     clippy::unwrap_used,
     clippy::indexing_slicing,
