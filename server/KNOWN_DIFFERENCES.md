@@ -109,6 +109,20 @@ they need a decision before these tools run agents.
 Parity is checked by `contract-tests/chat-core` (15 cases, Python-recorded SSE and
 history snapshots, and Python reading the rows Rust wrote). Differences:
 
+- **Restricted workspace (Rust-only, owner decision 2026-11-01).** The session
+  `workspace` is the file tools' sandbox root. Python accepts any absolute path
+  or `~`, so `workspace=~` lets the model read `~/.ssh/id_rsa`. Rust resolves the
+  path first (`~`, `..` and links, before anything is created) and answers 422
+  `Workspace path is not allowed: it is <reason>.` for a filesystem or drive root
+  (UNC share roots too), the home folder or any folder above it, a system folder
+  (Windows: `%WINDIR%`, `%ProgramFiles%`, `%ProgramFiles(x86)%`, `%ProgramData%`;
+  Unix: `/etc /usr /bin /sbin /var /proc /sys /dev /boot /root /System /Library`)
+  or anything inside one, and the EvoFlux config folder, `~/.ssh`, `~/.aws`,
+  `~/.gnupg`, `~/.config`, `~/.kube`, `~/.docker` and `~/AppData` (equal, inside
+  or above). Windows compares case-insensitively. Normal project folders work.
+  Sessions already stored with a workspace are not re-checked. The `commands` and
+  `snippets` routes' `workspace` query is not covered. Test:
+  `test_restricted_workspace_is_refused` (Rust only; Python is skipped).
 - **Unported tools end the turn.** A call to one of Python's built-in tools that
   Rust does not run (`shell`, `edit`, `web_search`, `get_goal`, ... the
   `PYTHON_ONLY_TOOLS` list in `turn.rs`) gets the tool result Python gives an
@@ -152,13 +166,13 @@ history snapshots, and Python reading the rows Rust wrote). Differences:
 - **A panic in a turn** releases the session (a later message is accepted, not
   409) and ends its stream. Python's turn runs in an asyncio task whose
   exception is logged.
-- **Same as Python, on purpose.** The session `workspace` comes from the request
-  form (a user choice) and is created if missing, only after the lead and
-  running-turn checks; Python creates it before them. Neither Python nor the Rust
-  gateway checks `Origin` or `Host` on state-changing requests (Python only adds
-  `CORSMiddleware` with `CORS_ORIGINS = ["*"]`), so a page the user opens in a
-  browser can post to `/api/team/chat` with any workspace. The step limit per
-  turn is Python's `MAX_AGENT_ITERATIONS` (5000).
+- **Same as Python, on purpose.** The session `workspace` is created if missing,
+  only after the lead and running-turn checks; Python creates it before them.
+  Neither Python nor the Rust gateway checks `Origin` or `Host` on state-changing
+  requests (Python only adds `CORSMiddleware` with `CORS_ORIGINS = ["*"]`), so a
+  page the user opens in a browser can post to `/api/team/chat`; Rust still
+  refuses a restricted workspace (above). The step limit per turn is Python's
+  `MAX_AGENT_ITERATIONS` (5000).
 - **Usage cost.** `cost` is always `null` and `usage` carries no `cost`: there is
   no models.dev pricing catalog in Rust.
 - **Retries and interrupts.** When every provider stays rate-limited the turn
