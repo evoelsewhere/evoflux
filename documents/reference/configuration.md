@@ -83,6 +83,7 @@ clear the override. This does not change EvoFlux's backend configuration.
 | `SSL_VERIFY` | TLS verification for supported HTTP clients |
 | `CORS_ORIGINS` | allowed development/external API origins (Python alone; ignored behind the `evoflux-server` gateway) |
 | `EVOFLUX_ALLOWED_ORIGINS` | comma-separated extra browser origins the `evoflux-server` gateway accepts, e.g. `https://evoflux.example.ts.net`; their hosts are also accepted as `Host`. Loopback pages on the gateway's own port, a Vite port (5173, 4173) in a debug build or with `EVOFLUX_DEV=1` set (a release gateway needs them listed here), the desktop window and the WebBridge extension are always allowed; any other `Origin` or `Host` gets 403, so a UI served on another local port must be listed here |
+| `EVOFLUX_RUST_FORWARD` | Rust-forward switch for `evoflux-server`: the desktop app passes `--rust-forward` unless this is `0`, `false` or `off` (any case) in the environment it was launched from, which keeps the backend Python-only. Run directly, `evoflux-server serve` turns it on only for `1`, `true` or `on` (or `--rust-forward`). An explicit `EVOFLUX_ROUTE_OVERRIDE` entry wins over it |
 | `EVOFLUX_MODEL_REGISTRY_REFRESH` | allow refreshed `models.dev` metadata |
 | `EVOFLUX_MODEL_REGISTRY_REFRESH_INTERVAL_HOURS` | background `models.dev` re-fetch interval (24, minimum 1) |
 | `EVOFLUX_DESKTOP_TOKEN` | random desktop-shell bearer token |
