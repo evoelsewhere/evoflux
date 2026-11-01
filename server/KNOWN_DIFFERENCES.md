@@ -12,6 +12,15 @@ Python. Entries need owner approval.
 - **Event shape.** The assembled tool call carries parsed JSON arguments (an empty string becomes `{}`) where Python keeps the string. `Done.finish_reason` is `""` when the provider sent none. Python's `cache_probe` diagnostics are not ported.
 - **Size caps.** Python buffers without limit. Rust ends a stream with `ProviderError::TooLarge` (not retried) when one SSE line passes 16 MiB, one tool call's arguments pass 16 MiB, the arguments of all tool calls in one response pass 32 MiB, or a response has more than 128 distinct tool calls, and keeps only the first 64 KiB of an error body (after gzip decoding), decoded as lossy UTF-8 instead of by the response charset.
 
+## commands (`server/crates/area-commands`)
+
+These are outside the contract tests; they need an owner decision.
+
+- **YAML 1.2 instead of 1.1.** Frontmatter is parsed with `yaml-rust2` (YAML 1.2 core); Python's `yaml.safe_load` is YAML 1.1. A plain `description: yes`, `on` or `2024-01-01` is a bool or date in Python (so `""`) and a string in Rust.
+- **Unusual JSON bodies.** A body that is not valid UTF-8 or has a BOM, a lone `\ud800` surrogate, or `NaN`/`Infinity` makes `serde_json` fail where Python succeeds or words the error differently; `json_invalid` then reports offset 0 and `Expecting value`.
+- **Links and case.** Symlinked sub-folders are not followed (as `rglob`), and a symlink in the workspace path is resolved after `..` is folded, not before. `*.MD` matches only on Windows in Python.
+- **`Location` of the 307** is built from the `Host` header with the decoded path; non-ASCII paths are UTF-8, Starlette sends latin-1.
+
 ## tools (`server/crates/area-tools`: `read`, `ls`, `glob`, `grep`, `date`)
 
 Parity is checked by `contract-tests/tools` (324 cases on fixture workspaces) and

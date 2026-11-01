@@ -125,16 +125,8 @@ body validation, and every route through the router.
 
 Rust re-reads the files on every request (no mtime cache); the visible result is the same.
 
-### Known differences (not covered by a contract test; owner decision needed)
+### Known differences
 
-- YAML is parsed with `yaml-rust2` (YAML 1.2 core), `yaml.safe_load` is YAML 1.1: a plain
-  `description: yes`/`on`/`2024-01-01` is a bool/date in Python (so `""`) and a string in Rust.
-- A body that is not valid UTF-8 or has a BOM, a lone `\ud800` surrogate, or `NaN`/`Infinity`
-  makes `serde_json` fail where Python succeeds or words the error differently; `json_invalid`
-  then reports offset 0 and `Expecting value`.
-- Symlinked sub-folders are not followed (as `rglob`), and a symlink in the workspace path is
-  resolved after `..` is folded, not before. `*.MD` matches only on Windows in Python.
-- `Location` of the 307 is built from the `Host` header with the decoded path; non-ASCII paths
-  are UTF-8, Starlette sends latin-1.
+Listed in [`server/KNOWN_DIFFERENCES.md`](../../KNOWN_DIFFERENCES.md#commands-servercratesarea-commands).
 
 The Rust `home` is `Settings.home_dir` (Python: `Path.home()`), passed in through `Roots` by `server/src/units.rs`; the crate never reads the environment.

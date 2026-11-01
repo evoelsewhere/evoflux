@@ -25,6 +25,7 @@ All notable changes to EvoFlux are documented in this file.
 
 ### Changed
 
+- The contract-test harness tests now run against `TARGET=python` and `TARGET=rust` without a migration-board unit, and the `commands` port's known differences moved into `server/KNOWN_DIFFERENCES.md`. It affects tests and notes only, so nothing changes in the app.
 - Ported the OpenAI-compatible model providers (9Router, Xiaomi MiMo and the other Chat Completions providers) to the v4 Rust server as the `evoflux-area-providers` crate: streaming text, reasoning, tool calls and usage, Python's retries, rate-limit handling and error messages, with parity tests recorded from the Python provider. Python still runs agents, so nothing changes in the app.
 - The v4 Rust server settings now read every `*_API_KEY` and `*_BASE_URL` variable (never printed in logs or debug output) and include the `async-trait` dependency, for the model providers. No app behaviour changes.
 - Added the v4 Rust-forward switch: `evoflux-server serve --rust-forward` or `EVOFLUX_RUST_FORWARD=1` (`true` and `on` also work) routes every unit in the built-in `server/rust-ready.toml` to Rust, an explicit `EVOFLUX_ROUTE_OVERRIDE` entry still wins, an unknown unit stops startup, and the startup log lists the units moved. The list is empty today, so nothing changes in the app.
