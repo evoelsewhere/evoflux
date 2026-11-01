@@ -42,6 +42,7 @@ All notable changes to EvoFlux are documented in this file.
 
 ### Changed
 
+- Added contract tests for the settings and sign-in routes (`/api/settings/**` except Conductor, WebBridge and Computer App, and `/api/auth/**`: sandbox, context, Git & reviews, the small toggles, providers, seed, logos, OAuth login lookups), including proof that API keys are never returned by any response, written to any file but `.env`, or logged, and the v4 server workspace now includes the `settings-providers` area crate with its migration notes (what the Rust port depends on, which files other features also write, and two security findings about request echo and `.env` variable names). Nothing changes in the app.
 - Added contract tests for the import routes (`/api/import/**`: scan, auto-sync, detect and preview for every importer including zip exports, item actions, execute, concurrent execute, history and undo) and an `imports` area crate stub with its migration notes, which list every file and table import writes and which cached readers see them. It affects tests and notes only, so nothing changes in the app.
 - The v4 server workspace now includes the `imports` area crate, and the migration notes record that a Rust import would leave no Python cache stale beyond what is stale today. Nothing changes in the app.
 - The v4 Rust chat loop (`chat-core`) now has database-backed and end-to-end crate tests for its message store, routes and turn code, and the mutation gate covers them. It affects tests only, so nothing changes in the app.

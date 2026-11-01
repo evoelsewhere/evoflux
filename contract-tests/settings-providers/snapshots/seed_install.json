@@ -1,0 +1,16 @@
+{
+  "agents_removed": [],
+  "agents_written": [
+    "coding/architect.md",
+    "coding/coder.md",
+    "coding/evoflux.md",
+    "coding/explorer.md",
+    "consultant.md",
+    "evoflux.md",
+    "executor.md",
+    "explorer.md"
+  ],
+  "configs_written": [],
+  "skills_written": [],
+  "source": "local"
+}

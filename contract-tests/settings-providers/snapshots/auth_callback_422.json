@@ -1,0 +1,53 @@
+{
+  "extra": {
+    "detail": [
+      {
+        "input": 1,
+        "loc": [
+          "body",
+          "x"
+        ],
+        "msg": "Extra inputs are not permitted",
+        "type": "extra_forbidden"
+      }
+    ]
+  },
+  "missing": {
+    "detail": [
+      {
+        "input": {},
+        "loc": [
+          "body",
+          "code"
+        ],
+        "msg": "Field required",
+        "type": "missing"
+      }
+    ]
+  },
+  "no_body": {
+    "detail": [
+      {
+        "input": null,
+        "loc": [
+          "body"
+        ],
+        "msg": "Field required",
+        "type": "missing"
+      }
+    ]
+  },
+  "wrong_type": {
+    "detail": [
+      {
+        "input": 5,
+        "loc": [
+          "body",
+          "code"
+        ],
+        "msg": "Input should be a valid string",
+        "type": "string_type"
+      }
+    ]
+  }
+}

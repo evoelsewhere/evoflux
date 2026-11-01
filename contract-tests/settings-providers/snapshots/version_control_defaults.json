@@ -1,0 +1,15 @@
+{
+  "allow_force_push": false,
+  "allow_insecure_connections": false,
+  "allow_review_mutations": true,
+  "default_pull_strategy": "ff_only",
+  "max_diff_bytes": 2000000,
+  "network_timeout_seconds": 120.0,
+  "prune_on_fetch": true,
+  "require_successful_checks_before_merge": false,
+  "review_max_concurrent_repositories": 4,
+  "review_max_pages_per_repository": 5,
+  "review_request_timeout_seconds": 20.0,
+  "review_retry_attempts": 2,
+  "review_retry_backoff_seconds": 0.5
+}

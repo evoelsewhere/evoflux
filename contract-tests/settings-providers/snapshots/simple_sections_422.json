@@ -1,0 +1,232 @@
+{
+  "background-tasks": [
+    {
+      "detail": [
+        {
+          "input": "maybe",
+          "loc": [
+            "body",
+            "wake_idle"
+          ],
+          "msg": "Input should be a valid boolean, unable to interpret input",
+          "type": "bool_parsing"
+        }
+      ]
+    },
+    {
+      "detail": [
+        {
+          "input": 2,
+          "loc": [
+            "body",
+            "wake_idle"
+          ],
+          "msg": "Input should be a valid boolean, unable to interpret input",
+          "type": "bool_parsing"
+        }
+      ]
+    },
+    {
+      "detail": [
+        {
+          "input": true,
+          "loc": [
+            "body",
+            "x"
+          ],
+          "msg": "Extra inputs are not permitted",
+          "type": "extra_forbidden"
+        }
+      ]
+    }
+  ],
+  "background-tasks-no-body": {
+    "detail": [
+      {
+        "input": null,
+        "loc": [
+          "body"
+        ],
+        "msg": "Field required",
+        "type": "missing"
+      }
+    ]
+  },
+  "follow-up": [
+    {
+      "detail": [
+        {
+          "ctx": {
+            "expected": "'steer' or 'queue'"
+          },
+          "input": "x",
+          "loc": [
+            "body",
+            "delivery"
+          ],
+          "msg": "Input should be 'steer' or 'queue'",
+          "type": "literal_error"
+        }
+      ]
+    },
+    {
+      "detail": [
+        {
+          "ctx": {
+            "expected": "'steer' or 'queue'"
+          },
+          "input": null,
+          "loc": [
+            "body",
+            "delivery"
+          ],
+          "msg": "Input should be 'steer' or 'queue'",
+          "type": "literal_error"
+        }
+      ]
+    },
+    {
+      "detail": [
+        {
+          "input": 1,
+          "loc": [
+            "body",
+            "x"
+          ],
+          "msg": "Extra inputs are not permitted",
+          "type": "extra_forbidden"
+        }
+      ]
+    }
+  ],
+  "follow-up-no-body": {
+    "detail": [
+      {
+        "input": null,
+        "loc": [
+          "body"
+        ],
+        "msg": "Field required",
+        "type": "missing"
+      }
+    ]
+  },
+  "response-style": [
+    {
+      "detail": [
+        {
+          "ctx": {
+            "expected": "'simple' or 'visual'"
+          },
+          "input": "fancy",
+          "loc": [
+            "body",
+            "style"
+          ],
+          "msg": "Input should be 'simple' or 'visual'",
+          "type": "literal_error"
+        }
+      ]
+    },
+    {
+      "detail": [
+        {
+          "ctx": {
+            "expected": "'simple' or 'visual'"
+          },
+          "input": 3,
+          "loc": [
+            "body",
+            "style"
+          ],
+          "msg": "Input should be 'simple' or 'visual'",
+          "type": "literal_error"
+        }
+      ]
+    },
+    {
+      "detail": [
+        {
+          "input": 1,
+          "loc": [
+            "body",
+            "x"
+          ],
+          "msg": "Extra inputs are not permitted",
+          "type": "extra_forbidden"
+        }
+      ]
+    }
+  ],
+  "response-style-no-body": {
+    "detail": [
+      {
+        "input": null,
+        "loc": [
+          "body"
+        ],
+        "msg": "Field required",
+        "type": "missing"
+      }
+    ]
+  },
+  "team-spawn": [
+    {
+      "detail": [
+        {
+          "ctx": {
+            "expected": "'ask' or 'auto'"
+          },
+          "input": "x",
+          "loc": [
+            "body",
+            "work"
+          ],
+          "msg": "Input should be 'ask' or 'auto'",
+          "type": "literal_error"
+        }
+      ]
+    },
+    {
+      "detail": [
+        {
+          "ctx": {
+            "expected": "'ask' or 'auto'"
+          },
+          "input": 1,
+          "loc": [
+            "body",
+            "coding"
+          ],
+          "msg": "Input should be 'ask' or 'auto'",
+          "type": "literal_error"
+        }
+      ]
+    },
+    {
+      "detail": [
+        {
+          "input": "ask",
+          "loc": [
+            "body",
+            "other"
+          ],
+          "msg": "Extra inputs are not permitted",
+          "type": "extra_forbidden"
+        }
+      ]
+    }
+  ],
+  "team-spawn-no-body": {
+    "detail": [
+      {
+        "input": null,
+        "loc": [
+          "body"
+        ],
+        "msg": "Field required",
+        "type": "missing"
+      }
+    ]
+  }
+}

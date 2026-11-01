@@ -1,0 +1,69 @@
+{
+  "api_key_type": {
+    "detail": [
+      {
+        "input": 5,
+        "loc": [
+          "body",
+          "api_key"
+        ],
+        "msg": "Input should be a valid string",
+        "type": "string_type"
+      }
+    ]
+  },
+  "extra_not_object": {
+    "detail": [
+      {
+        "input": [
+          "a"
+        ],
+        "loc": [
+          "body",
+          "extra"
+        ],
+        "msg": "Input should be a valid dictionary",
+        "type": "dict_type"
+      }
+    ]
+  },
+  "extra_value_type": {
+    "detail": [
+      {
+        "input": 1,
+        "loc": [
+          "body",
+          "extra",
+          "X"
+        ],
+        "msg": "Input should be a valid string",
+        "type": "string_type"
+      }
+    ]
+  },
+  "no_body": {
+    "detail": [
+      {
+        "input": null,
+        "loc": [
+          "body"
+        ],
+        "msg": "Field required",
+        "type": "missing"
+      }
+    ]
+  },
+  "unknown_field": {
+    "detail": [
+      {
+        "input": 1,
+        "loc": [
+          "body",
+          "x"
+        ],
+        "msg": "Extra inputs are not permitted",
+        "type": "extra_forbidden"
+      }
+    ]
+  }
+}

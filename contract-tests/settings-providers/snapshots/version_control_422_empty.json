@@ -1,0 +1,121 @@
+{
+  "detail": [
+    {
+      "input": {},
+      "loc": [
+        "body",
+        "network_timeout_seconds"
+      ],
+      "msg": "Field required",
+      "type": "missing"
+    },
+    {
+      "input": {},
+      "loc": [
+        "body",
+        "max_diff_bytes"
+      ],
+      "msg": "Field required",
+      "type": "missing"
+    },
+    {
+      "input": {},
+      "loc": [
+        "body",
+        "default_pull_strategy"
+      ],
+      "msg": "Field required",
+      "type": "missing"
+    },
+    {
+      "input": {},
+      "loc": [
+        "body",
+        "prune_on_fetch"
+      ],
+      "msg": "Field required",
+      "type": "missing"
+    },
+    {
+      "input": {},
+      "loc": [
+        "body",
+        "allow_force_push"
+      ],
+      "msg": "Field required",
+      "type": "missing"
+    },
+    {
+      "input": {},
+      "loc": [
+        "body",
+        "review_request_timeout_seconds"
+      ],
+      "msg": "Field required",
+      "type": "missing"
+    },
+    {
+      "input": {},
+      "loc": [
+        "body",
+        "review_retry_attempts"
+      ],
+      "msg": "Field required",
+      "type": "missing"
+    },
+    {
+      "input": {},
+      "loc": [
+        "body",
+        "review_retry_backoff_seconds"
+      ],
+      "msg": "Field required",
+      "type": "missing"
+    },
+    {
+      "input": {},
+      "loc": [
+        "body",
+        "review_max_concurrent_repositories"
+      ],
+      "msg": "Field required",
+      "type": "missing"
+    },
+    {
+      "input": {},
+      "loc": [
+        "body",
+        "review_max_pages_per_repository"
+      ],
+      "msg": "Field required",
+      "type": "missing"
+    },
+    {
+      "input": {},
+      "loc": [
+        "body",
+        "allow_review_mutations"
+      ],
+      "msg": "Field required",
+      "type": "missing"
+    },
+    {
+      "input": {},
+      "loc": [
+        "body",
+        "allow_insecure_connections"
+      ],
+      "msg": "Field required",
+      "type": "missing"
+    },
+    {
+      "input": {},
+      "loc": [
+        "body",
+        "require_successful_checks_before_merge"
+      ],
+      "msg": "Field required",
+      "type": "missing"
+    }
+  ]
+}

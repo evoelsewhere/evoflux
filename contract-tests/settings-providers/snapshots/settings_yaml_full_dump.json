@@ -1,0 +1,110 @@
+{
+  "background_tasks": {
+    "wake_idle": true
+  },
+  "browser": {
+    "allow_agent_permission_accept": false,
+    "allow_clipboard_read": false,
+    "allow_clipboard_write": true,
+    "allow_cookie_values": false,
+    "allow_downloads": true,
+    "allow_evaluate": true,
+    "allow_file_uploads": false,
+    "allow_http_requests": true,
+    "allow_storage": true,
+    "allowed_domains": [],
+    "blocked_domains": []
+  },
+  "code_reviews": {
+    "allow_insecure_connections": false,
+    "allow_mutations": true,
+    "max_concurrent_repositories": 4,
+    "max_pages_per_repository": 5,
+    "request_timeout_seconds": 20.0,
+    "require_successful_checks_before_merge": false,
+    "retry_attempts": 2,
+    "retry_backoff_seconds": 0.5
+  },
+  "computer_app": {
+    "allowed_apps": [],
+    "blocked_apps": [],
+    "enabled": false,
+    "keep_hidden": true,
+    "permission": "ask"
+  },
+  "conductor": {
+    "enabled": false,
+    "enforcement_mode": "report",
+    "heartbeat_interval_seconds": 60.0,
+    "request_timeout_seconds": 15.0,
+    "sync_interval_seconds": 60.0,
+    "url": ""
+  },
+  "context": {},
+  "dream": {
+    "enabled": false,
+    "schedule": "0 2 * * *"
+  },
+  "follow_up": {
+    "delivery": "steer"
+  },
+  "git": {
+    "allow_force_push": false,
+    "default_pull_strategy": "ff_only",
+    "max_diff_bytes": 2000000,
+    "network_timeout_seconds": 120.0,
+    "prune_on_fetch": true
+  },
+  "import_auto_sync": {
+    "enabled": false,
+    "notify_new_items": true,
+    "scan_interval_seconds": 300
+  },
+  "memory_extraction": {
+    "enabled": true,
+    "every_n_messages": 10,
+    "max_input_chars": 12000,
+    "min_assistant_messages": 3
+  },
+  "memory_vector": {
+    "backend": "disabled",
+    "enabled": false
+  },
+  "providers": {},
+  "response_style": {
+    "style": "visual"
+  },
+  "server": {
+    "host": "127.0.0.1",
+    "port": 4082
+  },
+  "team_spawn": {
+    "coding": "ask",
+    "work": "ask"
+  },
+  "title_generation": {
+    "enabled": true
+  },
+  "webbridge": {
+    "agent_browsing": true,
+    "allow_evaluate": true,
+    "allowed_domains": [],
+    "audit_log_size": 200,
+    "blocked_domains": [],
+    "enabled": true,
+    "interactions": {
+      "allow_background_triggers": false,
+      "max_per_minute": 30
+    },
+    "require_tab_binding": true,
+    "sharing": {
+      "allow_readable_page": true,
+      "allow_screenshot": true,
+      "allow_selection": true,
+      "artifact_retention_hours": 24,
+      "blocked_domains": [],
+      "default": "ask",
+      "max_artifact_bytes": 5000000
+    }
+  }
+}

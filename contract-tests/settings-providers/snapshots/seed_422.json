@@ -1,0 +1,44 @@
+{
+  "bad_model": {
+    "detail": [
+      {
+        "ctx": {
+          "error": {}
+        },
+        "input": "nomodel",
+        "loc": [
+          "body",
+          "provider_model"
+        ],
+        "msg": "Value error, provider_model must use '<provider>:<model>' format",
+        "type": "value_error"
+      }
+    ]
+  },
+  "extra": {
+    "detail": [
+      {
+        "input": 1,
+        "loc": [
+          "body",
+          "x"
+        ],
+        "msg": "Extra inputs are not permitted",
+        "type": "extra_forbidden"
+      }
+    ]
+  },
+  "wrong_type": {
+    "detail": [
+      {
+        "input": 5,
+        "loc": [
+          "body",
+          "provider_model"
+        ],
+        "msg": "Input should be a valid string",
+        "type": "string_type"
+      }
+    ]
+  }
+}

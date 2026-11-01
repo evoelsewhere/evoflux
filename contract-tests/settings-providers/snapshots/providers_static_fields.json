@@ -1,0 +1,270 @@
+{
+  "anthropic": {
+    "browser_login": false,
+    "credentials": [
+      {
+        "label": "Anthropic Claude API key",
+        "name": "ANTHROPIC_API_KEY",
+        "placeholder": "",
+        "required": true,
+        "secret": true
+      },
+      {
+        "label": "Base URL",
+        "name": "ANTHROPIC_BASE_URL",
+        "placeholder": "https://api.anthropic.com",
+        "required": false,
+        "secret": false
+      }
+    ],
+    "description": "Claude API via Anthropic Messages.",
+    "docs_url": "https://console.anthropic.com/settings/keys",
+    "env_var": "ANTHROPIC_API_KEY",
+    "env_vars": [
+      "ANTHROPIC_API_KEY",
+      "ANTHROPIC_BASE_URL"
+    ],
+    "id": "anthropic",
+    "kind": "api_key",
+    "label": "Anthropic Claude",
+    "oauth_command": "",
+    "source": "builtin",
+    "transport": "anthropic"
+  },
+  "bedrock": {
+    "browser_login": false,
+    "credentials": [
+      {
+        "label": "AWS Bedrock Region",
+        "name": "AWS_BEDROCK_REGION",
+        "placeholder": "us-east-1",
+        "required": false,
+        "secret": false
+      },
+      {
+        "label": "AWS Profile",
+        "name": "AWS_BEDROCK_PROFILE",
+        "placeholder": "default",
+        "required": false,
+        "secret": false
+      },
+      {
+        "label": "AWS Access Key ID",
+        "name": "AWS_ACCESS_KEY_ID",
+        "placeholder": "AKIA...",
+        "required": false,
+        "secret": false
+      },
+      {
+        "label": "AWS Secret Access Key",
+        "name": "AWS_SECRET_ACCESS_KEY",
+        "placeholder": "••••••••",
+        "required": false,
+        "secret": true
+      }
+    ],
+    "description": "AWS Bedrock using an AWS profile or access keys. Region defaults to us-east-1.",
+    "docs_url": "https://console.aws.amazon.com/bedrock",
+    "env_var": "AWS_BEARER_TOKEN_BEDROCK",
+    "env_vars": [
+      "AWS_BEDROCK_REGION",
+      "AWS_BEDROCK_PROFILE",
+      "AWS_ACCESS_KEY_ID",
+      "AWS_SECRET_ACCESS_KEY"
+    ],
+    "id": "bedrock",
+    "kind": "cloud_creds",
+    "label": "Amazon Bedrock",
+    "oauth_command": "",
+    "source": "builtin",
+    "transport": "bedrock"
+  },
+  "cliproxy": {
+    "browser_login": false,
+    "credentials": [
+      {
+        "label": "CLIProxyAPI API key",
+        "name": "CLIPROXY_API_KEY",
+        "placeholder": "",
+        "required": false,
+        "secret": true
+      },
+      {
+        "label": "Base URL",
+        "name": "CLIPROXY_BASE_URL",
+        "placeholder": "http://localhost:8317/v1",
+        "required": false,
+        "secret": false
+      }
+    ],
+    "description": "Local proxy for Gemini CLI / Codex / Claude Code OAuth.",
+    "docs_url": "",
+    "env_var": "CLIPROXY_API_KEY",
+    "env_vars": [
+      "CLIPROXY_API_KEY",
+      "CLIPROXY_BASE_URL"
+    ],
+    "id": "cliproxy",
+    "kind": "api_key",
+    "label": "CLIProxyAPI",
+    "oauth_command": "",
+    "source": "builtin",
+    "transport": "openai-completions"
+  },
+  "codex": {
+    "browser_login": false,
+    "credentials": [],
+    "description": "Use your ChatGPT subscription via Codex OAuth.",
+    "docs_url": "https://chatgpt.com/codex",
+    "env_var": "",
+    "env_vars": [],
+    "id": "codex",
+    "kind": "oauth",
+    "label": "OpenAI Codex",
+    "oauth_command": "evoflux auth codex",
+    "source": "builtin",
+    "transport": "openai-responses"
+  },
+  "copilot": {
+    "browser_login": false,
+    "credentials": [],
+    "description": "Use your Copilot subscription — OAuth, no API key.",
+    "docs_url": "https://github.com/settings/copilot",
+    "env_var": "",
+    "env_vars": [],
+    "id": "copilot",
+    "kind": "oauth",
+    "label": "GitHub Copilot",
+    "oauth_command": "evoflux auth copilot",
+    "source": "builtin",
+    "transport": "openai-completions"
+  },
+  "foundry": {
+    "browser_login": false,
+    "credentials": [
+      {
+        "label": "Resource name or endpoint URL",
+        "name": "FOUNDRY_RESOURCE_NAME",
+        "placeholder": "my-resource or https://my-resource.services.ai.azure.com",
+        "required": true,
+        "secret": false
+      },
+      {
+        "label": "API key",
+        "name": "FOUNDRY_API_KEY",
+        "placeholder": "••••••••",
+        "required": true,
+        "secret": true
+      }
+    ],
+    "description": "Azure AI Foundry — OpenAI, DeepSeek, Grok, Claude and more on your Azure resource.",
+    "docs_url": "https://ai.azure.com",
+    "env_var": "FOUNDRY_API_KEY",
+    "env_vars": [
+      "FOUNDRY_RESOURCE_NAME",
+      "FOUNDRY_API_KEY"
+    ],
+    "id": "foundry",
+    "kind": "cloud_creds",
+    "label": "Microsoft Foundry",
+    "oauth_command": "",
+    "source": "builtin",
+    "transport": "azure"
+  },
+  "ollama": {
+    "browser_login": false,
+    "credentials": [
+      {
+        "label": "Ollama API key",
+        "name": "OLLAMA_API_KEY",
+        "placeholder": "",
+        "required": false,
+        "secret": true
+      },
+      {
+        "label": "Base URL",
+        "name": "OLLAMA_BASE_URL",
+        "placeholder": "http://localhost:11434/v1",
+        "required": false,
+        "secret": false
+      }
+    ],
+    "description": "Run models locally with the Ollama daemon.",
+    "docs_url": "https://ollama.com",
+    "env_var": "OLLAMA_API_KEY",
+    "env_vars": [
+      "OLLAMA_API_KEY",
+      "OLLAMA_BASE_URL"
+    ],
+    "id": "ollama",
+    "kind": "local",
+    "label": "Ollama",
+    "oauth_command": "",
+    "source": "builtin",
+    "transport": "openai-completions"
+  },
+  "openai": {
+    "browser_login": false,
+    "credentials": [
+      {
+        "label": "OpenAI API key",
+        "name": "OPENAI_API_KEY",
+        "placeholder": "",
+        "required": true,
+        "secret": true
+      },
+      {
+        "label": "Base URL",
+        "name": "OPENAI_BASE_URL",
+        "placeholder": "https://api.openai.com/v1",
+        "required": false,
+        "secret": false
+      }
+    ],
+    "description": "GPT-5.x, GPT-4.1, etc.",
+    "docs_url": "https://platform.openai.com/api-keys",
+    "env_var": "OPENAI_API_KEY",
+    "env_vars": [
+      "OPENAI_API_KEY",
+      "OPENAI_BASE_URL"
+    ],
+    "id": "openai",
+    "kind": "api_key",
+    "label": "OpenAI",
+    "oauth_command": "",
+    "source": "builtin",
+    "transport": "openai-responses"
+  },
+  "router9": {
+    "browser_login": false,
+    "credentials": [
+      {
+        "label": "9Router API key",
+        "name": "ROUTER9_API_KEY",
+        "placeholder": "",
+        "required": false,
+        "secret": true
+      },
+      {
+        "label": "Base URL",
+        "name": "ROUTER9_BASE_URL",
+        "placeholder": "http://localhost:20128/v1",
+        "required": false,
+        "secret": false
+      }
+    ],
+    "description": "Local proxy aggregating 40+ providers.",
+    "docs_url": "",
+    "env_var": "ROUTER9_API_KEY",
+    "env_vars": [
+      "ROUTER9_API_KEY",
+      "ROUTER9_BASE_URL"
+    ],
+    "id": "router9",
+    "kind": "api_key",
+    "label": "9Router",
+    "oauth_command": "",
+    "source": "builtin",
+    "transport": "openai-completions"
+  }
+}

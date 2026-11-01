@@ -1,0 +1,59 @@
+{
+  "extra": {
+    "detail": [
+      {
+        "input": 1,
+        "loc": [
+          "body",
+          "unknown"
+        ],
+        "msg": "Extra inputs are not permitted",
+        "type": "extra_forbidden"
+      }
+    ]
+  },
+  "literal": {
+    "detail": [
+      {
+        "ctx": {
+          "expected": "'repository' or 'user_data'"
+        },
+        "input": "x",
+        "loc": [
+          "body",
+          "worktree_location"
+        ],
+        "msg": "Input should be 'repository' or 'user_data'",
+        "type": "literal_error"
+      }
+    ]
+  },
+  "no_body": {
+    "detail": [
+      {
+        "input": null,
+        "loc": [
+          "body"
+        ],
+        "msg": "Field required",
+        "type": "missing"
+      }
+    ]
+  },
+  "range": {
+    "detail": [
+      {
+        "ctx": {
+          "ge": 5
+        },
+        "input": 1,
+        "loc": [
+          "body",
+          "max_execution_seconds"
+        ],
+        "msg": "Input should be greater than or equal to 5",
+        "type": "greater_than_equal"
+      }
+    ]
+  }
+}
