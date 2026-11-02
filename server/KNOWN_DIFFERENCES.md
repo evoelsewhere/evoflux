@@ -60,8 +60,14 @@ they need a decision before these tools run agents.
   workspace folder another program holds open with delete access makes the read
   fail with a sharing violation on Windows. The workspace root's own parents are
   not held.
-- **Hard links.** A hard link inside the workspace to a file outside it, or to
-  `.env`, reads as an ordinary file; only symlinks and reparse points are judged.
+- **Hard links (owner decision 2026-11-02, DS3-002: accepted, as in Python).** A
+  hard link inside the workspace to a file outside it, or to `.env`, reads as an
+  ordinary file; only symlinks and reparse points are judged. Whoever creates
+  such a link already has write access to the workspace and read access to the
+  target, and refusing every file with more than one link would also refuse
+  legitimate hard-linked trees (pnpm `node_modules` stores, `git clone --local`
+  objects). Std exposes the link count only on Unix, so Windows would also need
+  a new dependency.
 - **Metadata of link targets.** `ls` shows the size of a file behind a link that
   leads outside, and `glob` lists such files; their contents are not read.
 
