@@ -1,0 +1,2128 @@
+[
+  {
+    "name": "text-0-env-False",
+    "text": "",
+    "env": {},
+    "expected": []
+  },
+  {
+    "name": "text-0-env-True",
+    "text": "",
+    "env": {
+      "A": "environment",
+      "EXT": "external",
+      "EMPTY": "",
+      "HOME": "/fake"
+    },
+    "expected": []
+  },
+  {
+    "name": "text-1-env-False",
+    "text": "# comment\n",
+    "env": {},
+    "expected": []
+  },
+  {
+    "name": "text-1-env-True",
+    "text": "# comment\n",
+    "env": {
+      "A": "environment",
+      "EXT": "external",
+      "EMPTY": "",
+      "HOME": "/fake"
+    },
+    "expected": []
+  },
+  {
+    "name": "text-2-env-False",
+    "text": "A=one\nB=two\n",
+    "env": {},
+    "expected": [
+      [
+        "A",
+        "one"
+      ],
+      [
+        "B",
+        "two"
+      ]
+    ]
+  },
+  {
+    "name": "text-2-env-True",
+    "text": "A=one\nB=two\n",
+    "env": {
+      "A": "environment",
+      "EXT": "external",
+      "EMPTY": "",
+      "HOME": "/fake"
+    },
+    "expected": [
+      [
+        "A",
+        "one"
+      ],
+      [
+        "B",
+        "two"
+      ]
+    ]
+  },
+  {
+    "name": "text-3-env-False",
+    "text": "A\nB=\n",
+    "env": {},
+    "expected": [
+      [
+        "A",
+        null
+      ],
+      [
+        "B",
+        ""
+      ]
+    ]
+  },
+  {
+    "name": "text-3-env-True",
+    "text": "A\nB=\n",
+    "env": {
+      "A": "environment",
+      "EXT": "external",
+      "EMPTY": "",
+      "HOME": "/fake"
+    },
+    "expected": [
+      [
+        "A",
+        null
+      ],
+      [
+        "B",
+        ""
+      ]
+    ]
+  },
+  {
+    "name": "text-4-env-False",
+    "text": "A=  \n",
+    "env": {},
+    "expected": [
+      [
+        "A",
+        ""
+      ]
+    ]
+  },
+  {
+    "name": "text-4-env-True",
+    "text": "A=  \n",
+    "env": {
+      "A": "environment",
+      "EXT": "external",
+      "EMPTY": "",
+      "HOME": "/fake"
+    },
+    "expected": [
+      [
+        "A",
+        ""
+      ]
+    ]
+  },
+  {
+    "name": "text-5-env-False",
+    "text": " export A = one \n",
+    "env": {},
+    "expected": [
+      [
+        "A",
+        "one"
+      ]
+    ]
+  },
+  {
+    "name": "text-5-env-True",
+    "text": " export A = one \n",
+    "env": {
+      "A": "environment",
+      "EXT": "external",
+      "EMPTY": "",
+      "HOME": "/fake"
+    },
+    "expected": [
+      [
+        "A",
+        "one"
+      ]
+    ]
+  },
+  {
+    "name": "text-6-env-False",
+    "text": "export\tA=one\n",
+    "env": {},
+    "expected": [
+      [
+        "A",
+        "one"
+      ]
+    ]
+  },
+  {
+    "name": "text-6-env-True",
+    "text": "export\tA=one\n",
+    "env": {
+      "A": "environment",
+      "EXT": "external",
+      "EMPTY": "",
+      "HOME": "/fake"
+    },
+    "expected": [
+      [
+        "A",
+        "one"
+      ]
+    ]
+  },
+  {
+    "name": "text-7-env-False",
+    "text": "exportA=one\n",
+    "env": {},
+    "expected": [
+      [
+        "exportA",
+        "one"
+      ]
+    ]
+  },
+  {
+    "name": "text-7-env-True",
+    "text": "exportA=one\n",
+    "env": {
+      "A": "environment",
+      "EXT": "external",
+      "EMPTY": "",
+      "HOME": "/fake"
+    },
+    "expected": [
+      [
+        "exportA",
+        "one"
+      ]
+    ]
+  },
+  {
+    "name": "text-8-env-False",
+    "text": "export\nA=x",
+    "env": {},
+    "expected": [
+      [
+        "export",
+        null
+      ],
+      [
+        "A",
+        "x"
+      ]
+    ]
+  },
+  {
+    "name": "text-8-env-True",
+    "text": "export\nA=x",
+    "env": {
+      "A": "environment",
+      "EXT": "external",
+      "EMPTY": "",
+      "HOME": "/fake"
+    },
+    "expected": [
+      [
+        "export",
+        null
+      ],
+      [
+        "A",
+        "x"
+      ]
+    ]
+  },
+  {
+    "name": "text-9-env-False",
+    "text": "A=hello # comment\n",
+    "env": {},
+    "expected": [
+      [
+        "A",
+        "hello"
+      ]
+    ]
+  },
+  {
+    "name": "text-9-env-True",
+    "text": "A=hello # comment\n",
+    "env": {
+      "A": "environment",
+      "EXT": "external",
+      "EMPTY": "",
+      "HOME": "/fake"
+    },
+    "expected": [
+      [
+        "A",
+        "hello"
+      ]
+    ]
+  },
+  {
+    "name": "text-10-env-False",
+    "text": "A=hello#literal\n",
+    "env": {},
+    "expected": [
+      [
+        "A",
+        "hello#literal"
+      ]
+    ]
+  },
+  {
+    "name": "text-10-env-True",
+    "text": "A=hello#literal\n",
+    "env": {
+      "A": "environment",
+      "EXT": "external",
+      "EMPTY": "",
+      "HOME": "/fake"
+    },
+    "expected": [
+      [
+        "A",
+        "hello#literal"
+      ]
+    ]
+  },
+  {
+    "name": "text-11-env-False",
+    "text": "A=hello\t#comment\n",
+    "env": {},
+    "expected": [
+      [
+        "A",
+        "hello"
+      ]
+    ]
+  },
+  {
+    "name": "text-11-env-True",
+    "text": "A=hello\t#comment\n",
+    "env": {
+      "A": "environment",
+      "EXT": "external",
+      "EMPTY": "",
+      "HOME": "/fake"
+    },
+    "expected": [
+      [
+        "A",
+        "hello"
+      ]
+    ]
+  },
+  {
+    "name": "text-12-env-False",
+    "text": "A=#literal\n",
+    "env": {},
+    "expected": [
+      [
+        "A",
+        "#literal"
+      ]
+    ]
+  },
+  {
+    "name": "text-12-env-True",
+    "text": "A=#literal\n",
+    "env": {
+      "A": "environment",
+      "EXT": "external",
+      "EMPTY": "",
+      "HOME": "/fake"
+    },
+    "expected": [
+      [
+        "A",
+        "#literal"
+      ]
+    ]
+  },
+  {
+    "name": "text-13-env-False",
+    "text": "A='hello # literal' # comment\n",
+    "env": {},
+    "expected": [
+      [
+        "A",
+        "hello # literal"
+      ]
+    ]
+  },
+  {
+    "name": "text-13-env-True",
+    "text": "A='hello # literal' # comment\n",
+    "env": {
+      "A": "environment",
+      "EXT": "external",
+      "EMPTY": "",
+      "HOME": "/fake"
+    },
+    "expected": [
+      [
+        "A",
+        "hello # literal"
+      ]
+    ]
+  },
+  {
+    "name": "text-14-env-False",
+    "text": "A=\"hello # literal\"\n",
+    "env": {},
+    "expected": [
+      [
+        "A",
+        "hello # literal"
+      ]
+    ]
+  },
+  {
+    "name": "text-14-env-True",
+    "text": "A=\"hello # literal\"\n",
+    "env": {
+      "A": "environment",
+      "EXT": "external",
+      "EMPTY": "",
+      "HOME": "/fake"
+    },
+    "expected": [
+      [
+        "A",
+        "hello # literal"
+      ]
+    ]
+  },
+  {
+    "name": "text-15-env-False",
+    "text": "A='a\\nb\\\\c\\'d'\n",
+    "env": {},
+    "expected": [
+      [
+        "A",
+        "a\\nb\\c'd"
+      ]
+    ]
+  },
+  {
+    "name": "text-15-env-True",
+    "text": "A='a\\nb\\\\c\\'d'\n",
+    "env": {
+      "A": "environment",
+      "EXT": "external",
+      "EMPTY": "",
+      "HOME": "/fake"
+    },
+    "expected": [
+      [
+        "A",
+        "a\\nb\\c'd"
+      ]
+    ]
+  },
+  {
+    "name": "text-16-env-False",
+    "text": "A=\"a\\\\b\\\"c\\nd\\re\\tf\\ag\\bh\\fi\\vj\\'k\"\n",
+    "env": {},
+    "expected": [
+      [
+        "A",
+        "a\\b\"c\nd\re\tf\u0007g\bh\fi\u000bj'k"
+      ]
+    ]
+  },
+  {
+    "name": "text-16-env-True",
+    "text": "A=\"a\\\\b\\\"c\\nd\\re\\tf\\ag\\bh\\fi\\vj\\'k\"\n",
+    "env": {
+      "A": "environment",
+      "EXT": "external",
+      "EMPTY": "",
+      "HOME": "/fake"
+    },
+    "expected": [
+      [
+        "A",
+        "a\\b\"c\nd\re\tf\u0007g\bh\fi\u000bj'k"
+      ]
+    ]
+  },
+  {
+    "name": "text-17-env-False",
+    "text": "A=\"\\q\\u1234\\x41\\0\\$\"\n",
+    "env": {},
+    "expected": [
+      [
+        "A",
+        "\\q\\u1234\\x41\\0\\$"
+      ]
+    ]
+  },
+  {
+    "name": "text-17-env-True",
+    "text": "A=\"\\q\\u1234\\x41\\0\\$\"\n",
+    "env": {
+      "A": "environment",
+      "EXT": "external",
+      "EMPTY": "",
+      "HOME": "/fake"
+    },
+    "expected": [
+      [
+        "A",
+        "\\q\\u1234\\x41\\0\\$"
+      ]
+    ]
+  },
+  {
+    "name": "text-18-env-False",
+    "text": "A='first\nsecond'\nB=end\n",
+    "env": {},
+    "expected": [
+      [
+        "A",
+        "first\nsecond"
+      ],
+      [
+        "B",
+        "end"
+      ]
+    ]
+  },
+  {
+    "name": "text-18-env-True",
+    "text": "A='first\nsecond'\nB=end\n",
+    "env": {
+      "A": "environment",
+      "EXT": "external",
+      "EMPTY": "",
+      "HOME": "/fake"
+    },
+    "expected": [
+      [
+        "A",
+        "first\nsecond"
+      ],
+      [
+        "B",
+        "end"
+      ]
+    ]
+  },
+  {
+    "name": "text-19-env-False",
+    "text": "A=\"first\nsecond\"\nB=end\n",
+    "env": {},
+    "expected": [
+      [
+        "A",
+        "first\nsecond"
+      ],
+      [
+        "B",
+        "end"
+      ]
+    ]
+  },
+  {
+    "name": "text-19-env-True",
+    "text": "A=\"first\nsecond\"\nB=end\n",
+    "env": {
+      "A": "environment",
+      "EXT": "external",
+      "EMPTY": "",
+      "HOME": "/fake"
+    },
+    "expected": [
+      [
+        "A",
+        "first\nsecond"
+      ],
+      [
+        "B",
+        "end"
+      ]
+    ]
+  },
+  {
+    "name": "text-20-env-False",
+    "text": "'quoted key'=one\n",
+    "env": {},
+    "expected": [
+      [
+        "quoted key",
+        "one"
+      ]
+    ]
+  },
+  {
+    "name": "text-20-env-True",
+    "text": "'quoted key'=one\n",
+    "env": {
+      "A": "environment",
+      "EXT": "external",
+      "EMPTY": "",
+      "HOME": "/fake"
+    },
+    "expected": [
+      [
+        "quoted key",
+        "one"
+      ]
+    ]
+  },
+  {
+    "name": "text-21-env-False",
+    "text": "''=bad\nB=ok",
+    "env": {},
+    "expected": [
+      [
+        "B",
+        "ok"
+      ]
+    ]
+  },
+  {
+    "name": "text-21-env-True",
+    "text": "''=bad\nB=ok",
+    "env": {
+      "A": "environment",
+      "EXT": "external",
+      "EMPTY": "",
+      "HOME": "/fake"
+    },
+    "expected": [
+      [
+        "B",
+        "ok"
+      ]
+    ]
+  },
+  {
+    "name": "text-22-env-False",
+    "text": "A=one\nA=two\nB=x\nA=three",
+    "env": {},
+    "expected": [
+      [
+        "A",
+        "three"
+      ],
+      [
+        "B",
+        "x"
+      ]
+    ]
+  },
+  {
+    "name": "text-22-env-True",
+    "text": "A=one\nA=two\nB=x\nA=three",
+    "env": {
+      "A": "environment",
+      "EXT": "external",
+      "EMPTY": "",
+      "HOME": "/fake"
+    },
+    "expected": [
+      [
+        "A",
+        "three"
+      ],
+      [
+        "B",
+        "x"
+      ]
+    ]
+  },
+  {
+    "name": "text-23-env-False",
+    "text": "A=one\nA\nB=${A:-default}",
+    "env": {},
+    "expected": [
+      [
+        "A",
+        null
+      ],
+      [
+        "B",
+        ""
+      ]
+    ]
+  },
+  {
+    "name": "text-23-env-True",
+    "text": "A=one\nA\nB=${A:-default}",
+    "env": {
+      "A": "environment",
+      "EXT": "external",
+      "EMPTY": "",
+      "HOME": "/fake"
+    },
+    "expected": [
+      [
+        "A",
+        null
+      ],
+      [
+        "B",
+        ""
+      ]
+    ]
+  },
+  {
+    "name": "text-24-env-False",
+    "text": "A=${EXT}\nB=${UNDEFINED}\n",
+    "env": {},
+    "expected": [
+      [
+        "A",
+        ""
+      ],
+      [
+        "B",
+        ""
+      ]
+    ]
+  },
+  {
+    "name": "text-24-env-True",
+    "text": "A=${EXT}\nB=${UNDEFINED}\n",
+    "env": {
+      "A": "environment",
+      "EXT": "external",
+      "EMPTY": "",
+      "HOME": "/fake"
+    },
+    "expected": [
+      [
+        "A",
+        "external"
+      ],
+      [
+        "B",
+        ""
+      ]
+    ]
+  },
+  {
+    "name": "text-25-env-False",
+    "text": "A=${UNDEFINED:-default}\n",
+    "env": {},
+    "expected": [
+      [
+        "A",
+        "default"
+      ]
+    ]
+  },
+  {
+    "name": "text-25-env-True",
+    "text": "A=${UNDEFINED:-default}\n",
+    "env": {
+      "A": "environment",
+      "EXT": "external",
+      "EMPTY": "",
+      "HOME": "/fake"
+    },
+    "expected": [
+      [
+        "A",
+        "default"
+      ]
+    ]
+  },
+  {
+    "name": "text-26-env-False",
+    "text": "A=${EMPTY:-default}\nB=${MISSING:-}\n",
+    "env": {},
+    "expected": [
+      [
+        "A",
+        "default"
+      ],
+      [
+        "B",
+        ""
+      ]
+    ]
+  },
+  {
+    "name": "text-26-env-True",
+    "text": "A=${EMPTY:-default}\nB=${MISSING:-}\n",
+    "env": {
+      "A": "environment",
+      "EXT": "external",
+      "EMPTY": "",
+      "HOME": "/fake"
+    },
+    "expected": [
+      [
+        "A",
+        ""
+      ],
+      [
+        "B",
+        ""
+      ]
+    ]
+  },
+  {
+    "name": "text-27-env-False",
+    "text": "A=\nB=${A:-default}\n",
+    "env": {},
+    "expected": [
+      [
+        "A",
+        ""
+      ],
+      [
+        "B",
+        ""
+      ]
+    ]
+  },
+  {
+    "name": "text-27-env-True",
+    "text": "A=\nB=${A:-default}\n",
+    "env": {
+      "A": "environment",
+      "EXT": "external",
+      "EMPTY": "",
+      "HOME": "/fake"
+    },
+    "expected": [
+      [
+        "A",
+        ""
+      ],
+      [
+        "B",
+        ""
+      ]
+    ]
+  },
+  {
+    "name": "text-28-env-False",
+    "text": "A\nB=${A:-default}\n",
+    "env": {},
+    "expected": [
+      [
+        "A",
+        null
+      ],
+      [
+        "B",
+        ""
+      ]
+    ]
+  },
+  {
+    "name": "text-28-env-True",
+    "text": "A\nB=${A:-default}\n",
+    "env": {
+      "A": "environment",
+      "EXT": "external",
+      "EMPTY": "",
+      "HOME": "/fake"
+    },
+    "expected": [
+      [
+        "A",
+        null
+      ],
+      [
+        "B",
+        ""
+      ]
+    ]
+  },
+  {
+    "name": "text-29-env-False",
+    "text": "A=local\nB=${A}\n",
+    "env": {},
+    "expected": [
+      [
+        "A",
+        "local"
+      ],
+      [
+        "B",
+        "local"
+      ]
+    ]
+  },
+  {
+    "name": "text-29-env-True",
+    "text": "A=local\nB=${A}\n",
+    "env": {
+      "A": "environment",
+      "EXT": "external",
+      "EMPTY": "",
+      "HOME": "/fake"
+    },
+    "expected": [
+      [
+        "A",
+        "local"
+      ],
+      [
+        "B",
+        "local"
+      ]
+    ]
+  },
+  {
+    "name": "text-30-env-False",
+    "text": "B=${A}\nA=local\nC=${A}",
+    "env": {},
+    "expected": [
+      [
+        "B",
+        ""
+      ],
+      [
+        "A",
+        "local"
+      ],
+      [
+        "C",
+        "local"
+      ]
+    ]
+  },
+  {
+    "name": "text-30-env-True",
+    "text": "B=${A}\nA=local\nC=${A}",
+    "env": {
+      "A": "environment",
+      "EXT": "external",
+      "EMPTY": "",
+      "HOME": "/fake"
+    },
+    "expected": [
+      [
+        "B",
+        "environment"
+      ],
+      [
+        "A",
+        "local"
+      ],
+      [
+        "C",
+        "local"
+      ]
+    ]
+  },
+  {
+    "name": "text-31-env-False",
+    "text": "A=${A:-default}\nB=${A}\n",
+    "env": {},
+    "expected": [
+      [
+        "A",
+        "default"
+      ],
+      [
+        "B",
+        "default"
+      ]
+    ]
+  },
+  {
+    "name": "text-31-env-True",
+    "text": "A=${A:-default}\nB=${A}\n",
+    "env": {
+      "A": "environment",
+      "EXT": "external",
+      "EMPTY": "",
+      "HOME": "/fake"
+    },
+    "expected": [
+      [
+        "A",
+        "environment"
+      ],
+      [
+        "B",
+        "environment"
+      ]
+    ]
+  },
+  {
+    "name": "text-32-env-False",
+    "text": "A='${EXT}'\n",
+    "env": {},
+    "expected": [
+      [
+        "A",
+        ""
+      ]
+    ]
+  },
+  {
+    "name": "text-32-env-True",
+    "text": "A='${EXT}'\n",
+    "env": {
+      "A": "environment",
+      "EXT": "external",
+      "EMPTY": "",
+      "HOME": "/fake"
+    },
+    "expected": [
+      [
+        "A",
+        "external"
+      ]
+    ]
+  },
+  {
+    "name": "text-33-env-False",
+    "text": "A=\"${EXT}\"\n",
+    "env": {},
+    "expected": [
+      [
+        "A",
+        ""
+      ]
+    ]
+  },
+  {
+    "name": "text-33-env-True",
+    "text": "A=\"${EXT}\"\n",
+    "env": {
+      "A": "environment",
+      "EXT": "external",
+      "EMPTY": "",
+      "HOME": "/fake"
+    },
+    "expected": [
+      [
+        "A",
+        "external"
+      ]
+    ]
+  },
+  {
+    "name": "text-34-env-False",
+    "text": "A=$EXT\nB=${EXT-default}\nC=${EXT:bad}\nD=${}\n",
+    "env": {},
+    "expected": [
+      [
+        "A",
+        "$EXT"
+      ],
+      [
+        "B",
+        ""
+      ],
+      [
+        "C",
+        "${EXT:bad}"
+      ],
+      [
+        "D",
+        ""
+      ]
+    ]
+  },
+  {
+    "name": "text-34-env-True",
+    "text": "A=$EXT\nB=${EXT-default}\nC=${EXT:bad}\nD=${}\n",
+    "env": {
+      "A": "environment",
+      "EXT": "external",
+      "EMPTY": "",
+      "HOME": "/fake"
+    },
+    "expected": [
+      [
+        "A",
+        "$EXT"
+      ],
+      [
+        "B",
+        ""
+      ],
+      [
+        "C",
+        "${EXT:bad}"
+      ],
+      [
+        "D",
+        ""
+      ]
+    ]
+  },
+  {
+    "name": "text-35-env-False",
+    "text": "A=${MISSING:-${EXT}}\n",
+    "env": {},
+    "expected": [
+      [
+        "A",
+        "${EXT}"
+      ]
+    ]
+  },
+  {
+    "name": "text-35-env-True",
+    "text": "A=${MISSING:-${EXT}}\n",
+    "env": {
+      "A": "environment",
+      "EXT": "external",
+      "EMPTY": "",
+      "HOME": "/fake"
+    },
+    "expected": [
+      [
+        "A",
+        "${EXT}"
+      ]
+    ]
+  },
+  {
+    "name": "text-36-env-False",
+    "text": "A=${MISSING:-a:b}\n",
+    "env": {},
+    "expected": [
+      [
+        "A",
+        "a:b"
+      ]
+    ]
+  },
+  {
+    "name": "text-36-env-True",
+    "text": "A=${MISSING:-a:b}\n",
+    "env": {
+      "A": "environment",
+      "EXT": "external",
+      "EMPTY": "",
+      "HOME": "/fake"
+    },
+    "expected": [
+      [
+        "A",
+        "a:b"
+      ]
+    ]
+  },
+  {
+    "name": "text-37-env-False",
+    "text": "A=${bad:name}\n",
+    "env": {},
+    "expected": [
+      [
+        "A",
+        "${bad:name}"
+      ]
+    ]
+  },
+  {
+    "name": "text-37-env-True",
+    "text": "A=${bad:name}\n",
+    "env": {
+      "A": "environment",
+      "EXT": "external",
+      "EMPTY": "",
+      "HOME": "/fake"
+    },
+    "expected": [
+      [
+        "A",
+        "${bad:name}"
+      ]
+    ]
+  },
+  {
+    "name": "text-38-env-False",
+    "text": "A=one\r\nB=two\rC='x\r\ny'\n",
+    "env": {},
+    "expected": [
+      [
+        "A",
+        "one"
+      ],
+      [
+        "B",
+        "two"
+      ],
+      [
+        "C",
+        "x\ny"
+      ]
+    ]
+  },
+  {
+    "name": "text-38-env-True",
+    "text": "A=one\r\nB=two\rC='x\r\ny'\n",
+    "env": {
+      "A": "environment",
+      "EXT": "external",
+      "EMPTY": "",
+      "HOME": "/fake"
+    },
+    "expected": [
+      [
+        "A",
+        "one"
+      ],
+      [
+        "B",
+        "two"
+      ],
+      [
+        "C",
+        "x\ny"
+      ]
+    ]
+  },
+  {
+    "name": "text-39-env-False",
+    "text": "\ufeffA=one\nB=${A}\n",
+    "env": {},
+    "expected": [
+      [
+        "\ufeffA",
+        "one"
+      ],
+      [
+        "B",
+        ""
+      ]
+    ]
+  },
+  {
+    "name": "text-39-env-True",
+    "text": "\ufeffA=one\nB=${A}\n",
+    "env": {
+      "A": "environment",
+      "EXT": "external",
+      "EMPTY": "",
+      "HOME": "/fake"
+    },
+    "expected": [
+      [
+        "\ufeffA",
+        "one"
+      ],
+      [
+        "B",
+        "environment"
+      ]
+    ]
+  },
+  {
+    "name": "text-40-env-False",
+    "text": "bad line = nope\nA=ok\n",
+    "env": {},
+    "expected": [
+      [
+        "A",
+        "ok"
+      ]
+    ]
+  },
+  {
+    "name": "text-40-env-True",
+    "text": "bad line = nope\nA=ok\n",
+    "env": {
+      "A": "environment",
+      "EXT": "external",
+      "EMPTY": "",
+      "HOME": "/fake"
+    },
+    "expected": [
+      [
+        "A",
+        "ok"
+      ]
+    ]
+  },
+  {
+    "name": "text-41-env-False",
+    "text": "A='unclosed\nB=ok\n",
+    "env": {},
+    "expected": [
+      [
+        "B",
+        "ok"
+      ]
+    ]
+  },
+  {
+    "name": "text-41-env-True",
+    "text": "A='unclosed\nB=ok\n",
+    "env": {
+      "A": "environment",
+      "EXT": "external",
+      "EMPTY": "",
+      "HOME": "/fake"
+    },
+    "expected": [
+      [
+        "B",
+        "ok"
+      ]
+    ]
+  },
+  {
+    "name": "text-42-env-False",
+    "text": "A=\"unclosed\nB=ok\n",
+    "env": {},
+    "expected": [
+      [
+        "B",
+        "ok"
+      ]
+    ]
+  },
+  {
+    "name": "text-42-env-True",
+    "text": "A=\"unclosed\nB=ok\n",
+    "env": {
+      "A": "environment",
+      "EXT": "external",
+      "EMPTY": "",
+      "HOME": "/fake"
+    },
+    "expected": [
+      [
+        "B",
+        "ok"
+      ]
+    ]
+  },
+  {
+    "name": "text-43-env-False",
+    "text": "A='ok'garbage\nB=ok\n",
+    "env": {},
+    "expected": [
+      [
+        "B",
+        "ok"
+      ]
+    ]
+  },
+  {
+    "name": "text-43-env-True",
+    "text": "A='ok'garbage\nB=ok\n",
+    "env": {
+      "A": "environment",
+      "EXT": "external",
+      "EMPTY": "",
+      "HOME": "/fake"
+    },
+    "expected": [
+      [
+        "B",
+        "ok"
+      ]
+    ]
+  },
+  {
+    "name": "text-44-env-False",
+    "text": "A=\"ok\" tail\nB=ok\n",
+    "env": {},
+    "expected": [
+      [
+        "B",
+        "ok"
+      ]
+    ]
+  },
+  {
+    "name": "text-44-env-True",
+    "text": "A=\"ok\" tail\nB=ok\n",
+    "env": {
+      "A": "environment",
+      "EXT": "external",
+      "EMPTY": "",
+      "HOME": "/fake"
+    },
+    "expected": [
+      [
+        "B",
+        "ok"
+      ]
+    ]
+  },
+  {
+    "name": "text-45-env-False",
+    "text": "=bad\nA=ok\n",
+    "env": {},
+    "expected": [
+      [
+        "A",
+        "ok"
+      ]
+    ]
+  },
+  {
+    "name": "text-45-env-True",
+    "text": "=bad\nA=ok\n",
+    "env": {
+      "A": "environment",
+      "EXT": "external",
+      "EMPTY": "",
+      "HOME": "/fake"
+    },
+    "expected": [
+      [
+        "A",
+        "ok"
+      ]
+    ]
+  },
+  {
+    "name": "text-46-env-False",
+    "text": " # comment\n\n\tA=x\n",
+    "env": {},
+    "expected": [
+      [
+        "A",
+        "x"
+      ]
+    ]
+  },
+  {
+    "name": "text-46-env-True",
+    "text": " # comment\n\n\tA=x\n",
+    "env": {
+      "A": "environment",
+      "EXT": "external",
+      "EMPTY": "",
+      "HOME": "/fake"
+    },
+    "expected": [
+      [
+        "A",
+        "x"
+      ]
+    ]
+  },
+  {
+    "name": "text-47-env-False",
+    "text": "A=one\u000b #hi\nB=x\n",
+    "env": {},
+    "expected": [
+      [
+        "A",
+        "one"
+      ],
+      [
+        "B",
+        "x"
+      ]
+    ]
+  },
+  {
+    "name": "text-47-env-True",
+    "text": "A=one\u000b #hi\nB=x\n",
+    "env": {
+      "A": "environment",
+      "EXT": "external",
+      "EMPTY": "",
+      "HOME": "/fake"
+    },
+    "expected": [
+      [
+        "A",
+        "one"
+      ],
+      [
+        "B",
+        "x"
+      ]
+    ]
+  },
+  {
+    "name": "text-48-env-False",
+    "text": "A=\u96ea\u2603\nB=${A}\n",
+    "env": {},
+    "expected": [
+      [
+        "A",
+        "\u96ea\u2603"
+      ],
+      [
+        "B",
+        "\u96ea\u2603"
+      ]
+    ]
+  },
+  {
+    "name": "text-48-env-True",
+    "text": "A=\u96ea\u2603\nB=${A}\n",
+    "env": {
+      "A": "environment",
+      "EXT": "external",
+      "EMPTY": "",
+      "HOME": "/fake"
+    },
+    "expected": [
+      [
+        "A",
+        "\u96ea\u2603"
+      ],
+      [
+        "B",
+        "\u96ea\u2603"
+      ]
+    ]
+  },
+  {
+    "name": "text-49-env-False",
+    "text": "'multi\nkey'=yes\n",
+    "env": {},
+    "expected": [
+      [
+        "multi\nkey",
+        "yes"
+      ]
+    ]
+  },
+  {
+    "name": "text-49-env-True",
+    "text": "'multi\nkey'=yes\n",
+    "env": {
+      "A": "environment",
+      "EXT": "external",
+      "EMPTY": "",
+      "HOME": "/fake"
+    },
+    "expected": [
+      [
+        "multi\nkey",
+        "yes"
+      ]
+    ]
+  },
+  {
+    "name": "text-50-env-False",
+    "text": "A='a\\\\'\nB=ok\n",
+    "env": {},
+    "expected": [
+      [
+        "A",
+        "a\\"
+      ],
+      [
+        "B",
+        "ok"
+      ]
+    ]
+  },
+  {
+    "name": "text-50-env-True",
+    "text": "A='a\\\\'\nB=ok\n",
+    "env": {
+      "A": "environment",
+      "EXT": "external",
+      "EMPTY": "",
+      "HOME": "/fake"
+    },
+    "expected": [
+      [
+        "A",
+        "a\\"
+      ],
+      [
+        "B",
+        "ok"
+      ]
+    ]
+  },
+  {
+    "name": "text-51-env-False",
+    "text": "#a=b\nA=a=b=c\n",
+    "env": {},
+    "expected": [
+      [
+        "A",
+        "a=b=c"
+      ]
+    ]
+  },
+  {
+    "name": "text-51-env-True",
+    "text": "#a=b\nA=a=b=c\n",
+    "env": {
+      "A": "environment",
+      "EXT": "external",
+      "EMPTY": "",
+      "HOME": "/fake"
+    },
+    "expected": [
+      [
+        "A",
+        "a=b=c"
+      ]
+    ]
+  },
+  {
+    "name": "text-52-env-False",
+    "text": "A=one\nB=${A}${EXT}${MISSING:-d}\n",
+    "env": {},
+    "expected": [
+      [
+        "A",
+        "one"
+      ],
+      [
+        "B",
+        "oned"
+      ]
+    ]
+  },
+  {
+    "name": "text-52-env-True",
+    "text": "A=one\nB=${A}${EXT}${MISSING:-d}\n",
+    "env": {
+      "A": "environment",
+      "EXT": "external",
+      "EMPTY": "",
+      "HOME": "/fake"
+    },
+    "expected": [
+      [
+        "A",
+        "one"
+      ],
+      [
+        "B",
+        "oneexternald"
+      ]
+    ]
+  },
+  {
+    "name": "text-53-env-False",
+    "text": "A=one\nA=${A}two\n",
+    "env": {},
+    "expected": [
+      [
+        "A",
+        "onetwo"
+      ]
+    ]
+  },
+  {
+    "name": "text-53-env-True",
+    "text": "A=one\nA=${A}two\n",
+    "env": {
+      "A": "environment",
+      "EXT": "external",
+      "EMPTY": "",
+      "HOME": "/fake"
+    },
+    "expected": [
+      [
+        "A",
+        "onetwo"
+      ]
+    ]
+  },
+  {
+    "name": "text-54-env-False",
+    "text": "A=${{X}\nB=${MISSING:-a${EXT}}\n",
+    "env": {},
+    "expected": [
+      [
+        "A",
+        ""
+      ],
+      [
+        "B",
+        "a${EXT}"
+      ]
+    ]
+  },
+  {
+    "name": "text-54-env-True",
+    "text": "A=${{X}\nB=${MISSING:-a${EXT}}\n",
+    "env": {
+      "A": "environment",
+      "EXT": "external",
+      "EMPTY": "",
+      "HOME": "/fake"
+    },
+    "expected": [
+      [
+        "A",
+        ""
+      ],
+      [
+        "B",
+        "a${EXT}"
+      ]
+    ]
+  },
+  {
+    "name": "text-55-env-False",
+    "text": "A\u001c=\u001dyes\u001f\n",
+    "env": {},
+    "expected": [
+      [
+        "A",
+        "yes"
+      ]
+    ]
+  },
+  {
+    "name": "text-55-env-True",
+    "text": "A\u001c=\u001dyes\u001f\n",
+    "env": {
+      "A": "environment",
+      "EXT": "external",
+      "EMPTY": "",
+      "HOME": "/fake"
+    },
+    "expected": [
+      [
+        "A",
+        "yes"
+      ]
+    ]
+  },
+  {
+    "name": "text-56-env-False",
+    "text": "A=one\u0085#comment\n",
+    "env": {},
+    "expected": [
+      [
+        "A",
+        "one"
+      ]
+    ]
+  },
+  {
+    "name": "text-56-env-True",
+    "text": "A=one\u0085#comment\n",
+    "env": {
+      "A": "environment",
+      "EXT": "external",
+      "EMPTY": "",
+      "HOME": "/fake"
+    },
+    "expected": [
+      [
+        "A",
+        "one"
+      ]
+    ]
+  },
+  {
+    "name": "text-57-env-False",
+    "text": "A='x\rnext'\rB=last\r",
+    "env": {},
+    "expected": [
+      [
+        "A",
+        "x\nnext"
+      ],
+      [
+        "B",
+        "last"
+      ]
+    ]
+  },
+  {
+    "name": "text-57-env-True",
+    "text": "A='x\rnext'\rB=last\r",
+    "env": {
+      "A": "environment",
+      "EXT": "external",
+      "EMPTY": "",
+      "HOME": "/fake"
+    },
+    "expected": [
+      [
+        "A",
+        "x\nnext"
+      ],
+      [
+        "B",
+        "last"
+      ]
+    ]
+  },
+  {
+    "name": "text-58-env-False",
+    "text": "A=\"a\\\\\\\"b\"\n",
+    "env": {},
+    "expected": [
+      [
+        "A",
+        "a\\\"b"
+      ]
+    ]
+  },
+  {
+    "name": "text-58-env-True",
+    "text": "A=\"a\\\\\\\"b\"\n",
+    "env": {
+      "A": "environment",
+      "EXT": "external",
+      "EMPTY": "",
+      "HOME": "/fake"
+    },
+    "expected": [
+      [
+        "A",
+        "a\\\"b"
+      ]
+    ]
+  },
+  {
+    "name": "text-59-env-False",
+    "text": "'a=b# c'=x\n",
+    "env": {},
+    "expected": [
+      [
+        "a=b# c",
+        "x"
+      ]
+    ]
+  },
+  {
+    "name": "text-59-env-True",
+    "text": "'a=b# c'=x\n",
+    "env": {
+      "A": "environment",
+      "EXT": "external",
+      "EMPTY": "",
+      "HOME": "/fake"
+    },
+    "expected": [
+      [
+        "a=b# c",
+        "x"
+      ]
+    ]
+  },
+  {
+    "name": "text-60-env-False",
+    "text": "A =x\nA # bare\nB=${A:-d}\n",
+    "env": {},
+    "expected": [
+      [
+        "A",
+        null
+      ],
+      [
+        "B",
+        ""
+      ]
+    ]
+  },
+  {
+    "name": "text-60-env-True",
+    "text": "A =x\nA # bare\nB=${A:-d}\n",
+    "env": {
+      "A": "environment",
+      "EXT": "external",
+      "EMPTY": "",
+      "HOME": "/fake"
+    },
+    "expected": [
+      [
+        "A",
+        null
+      ],
+      [
+        "B",
+        ""
+      ]
+    ]
+  },
+  {
+    "name": "text-61-env-False",
+    "text": "A='\\\"\\a\\b\\f\\n\\r\\t\\v\\q' \n",
+    "env": {},
+    "expected": [
+      [
+        "A",
+        "\\\"\\a\\b\\f\\n\\r\\t\\v\\q"
+      ]
+    ]
+  },
+  {
+    "name": "text-61-env-True",
+    "text": "A='\\\"\\a\\b\\f\\n\\r\\t\\v\\q' \n",
+    "env": {
+      "A": "environment",
+      "EXT": "external",
+      "EMPTY": "",
+      "HOME": "/fake"
+    },
+    "expected": [
+      [
+        "A",
+        "\\\"\\a\\b\\f\\n\\r\\t\\v\\q"
+      ]
+    ]
+  },
+  {
+    "name": "text-62-env-False",
+    "text": "A='ok'\n# middle comment\nB=next\n",
+    "env": {},
+    "expected": [
+      [
+        "A",
+        "ok"
+      ],
+      [
+        "B",
+        "next"
+      ]
+    ]
+  },
+  {
+    "name": "text-62-env-True",
+    "text": "A='ok'\n# middle comment\nB=next\n",
+    "env": {
+      "A": "environment",
+      "EXT": "external",
+      "EMPTY": "",
+      "HOME": "/fake"
+    },
+    "expected": [
+      [
+        "A",
+        "ok"
+      ],
+      [
+        "B",
+        "next"
+      ]
+    ]
+  },
+  {
+    "name": "text-63-env-False",
+    "text": "A='first\nsecond'junk\nB=keep\n",
+    "env": {},
+    "expected": [
+      [
+        "B",
+        "keep"
+      ]
+    ]
+  },
+  {
+    "name": "text-63-env-True",
+    "text": "A='first\nsecond'junk\nB=keep\n",
+    "env": {
+      "A": "environment",
+      "EXT": "external",
+      "EMPTY": "",
+      "HOME": "/fake"
+    },
+    "expected": [
+      [
+        "B",
+        "keep"
+      ]
+    ]
+  },
+  {
+    "name": "text-64-env-False",
+    "text": "A='x\\'\nB=keep\n",
+    "env": {},
+    "expected": [
+      [
+        "A",
+        "x\\"
+      ],
+      [
+        "B",
+        "keep"
+      ]
+    ]
+  },
+  {
+    "name": "text-64-env-True",
+    "text": "A='x\\'\nB=keep\n",
+    "env": {
+      "A": "environment",
+      "EXT": "external",
+      "EMPTY": "",
+      "HOME": "/fake"
+    },
+    "expected": [
+      [
+        "A",
+        "x\\"
+      ],
+      [
+        "B",
+        "keep"
+      ]
+    ]
+  },
+  {
+    "name": "text-65-env-False",
+    "text": "A=\"x\\\"\nB=keep\n",
+    "env": {},
+    "expected": [
+      [
+        "A",
+        "x\\"
+      ],
+      [
+        "B",
+        "keep"
+      ]
+    ]
+  },
+  {
+    "name": "text-65-env-True",
+    "text": "A=\"x\\\"\nB=keep\n",
+    "env": {
+      "A": "environment",
+      "EXT": "external",
+      "EMPTY": "",
+      "HOME": "/fake"
+    },
+    "expected": [
+      [
+        "A",
+        "x\\"
+      ],
+      [
+        "B",
+        "keep"
+      ]
+    ]
+  },
+  {
+    "name": "text-66-env-False",
+    "text": "A=${MISSING:-oops\nB=${EXT}\n",
+    "env": {},
+    "expected": [
+      [
+        "A",
+        "${MISSING:-oops"
+      ],
+      [
+        "B",
+        ""
+      ]
+    ]
+  },
+  {
+    "name": "text-66-env-True",
+    "text": "A=${MISSING:-oops\nB=${EXT}\n",
+    "env": {
+      "A": "environment",
+      "EXT": "external",
+      "EMPTY": "",
+      "HOME": "/fake"
+    },
+    "expected": [
+      [
+        "A",
+        "${MISSING:-oops"
+      ],
+      [
+        "B",
+        "external"
+      ]
+    ]
+  },
+  {
+    "name": "text-67-env-False",
+    "text": "A=${BAD:wrong${EXT}}\n",
+    "env": {},
+    "expected": [
+      [
+        "A",
+        "${BAD:wrong}"
+      ]
+    ]
+  },
+  {
+    "name": "text-67-env-True",
+    "text": "A=${BAD:wrong${EXT}}\n",
+    "env": {
+      "A": "environment",
+      "EXT": "external",
+      "EMPTY": "",
+      "HOME": "/fake"
+    },
+    "expected": [
+      [
+        "A",
+        "${BAD:wrongexternal}"
+      ]
+    ]
+  },
+  {
+    "name": "text-68-env-False",
+    "text": "A='a'b'\nB=keep\n",
+    "env": {},
+    "expected": [
+      [
+        "B",
+        "keep"
+      ]
+    ]
+  },
+  {
+    "name": "text-68-env-True",
+    "text": "A='a'b'\nB=keep\n",
+    "env": {
+      "A": "environment",
+      "EXT": "external",
+      "EMPTY": "",
+      "HOME": "/fake"
+    },
+    "expected": [
+      [
+        "B",
+        "keep"
+      ]
+    ]
+  },
+  {
+    "name": "text-69-env-False",
+    "text": "A=\"a\"b\"\nB=keep\n",
+    "env": {},
+    "expected": [
+      [
+        "B",
+        "keep"
+      ]
+    ]
+  },
+  {
+    "name": "text-69-env-True",
+    "text": "A=\"a\"b\"\nB=keep\n",
+    "env": {
+      "A": "environment",
+      "EXT": "external",
+      "EMPTY": "",
+      "HOME": "/fake"
+    },
+    "expected": [
+      [
+        "B",
+        "keep"
+      ]
+    ]
+  }
+]

@@ -3,6 +3,22 @@
 Each entry is a place where the Rust port cannot or deliberately does not match
 Python. Entries need owner approval.
 
+## shared-dotenv (P-005, `server/crates/shared-dotenv`)
+
+Owner-accepted hardening in the P-005 brief; callers are not switched over yet.
+
+- **Atomic MCP credential writes.** Both writer profiles now use a same-directory
+  `.{name}.*.tmp` file, owner-only permissions (0600 on Unix), file fsync and
+  atomic replacement, with cleanup on failure. Python's MCP `_save_env_values`
+  overwrites the file directly and applies permissions afterwards; a crash can
+  leave partial contents. The credential writer already replaces atomically.
+- **Refuse environment-line injection (S2).** Both writers reject names outside
+  `^[A-Za-z_][A-Za-z0-9_]*$` and values containing CR, LF or NUL, before changing
+  any file or creating its parent. Python accepts these inputs, allowing extra
+  assignments to be injected. Errors name no values. This is the accepted S2
+  hardening for settings-providers and MCP-management; it does not add a variable
+  allow-list. Callers own updates to the process environment.
+
 
 ## providers (AR1, `server/crates/area-providers`)
 
