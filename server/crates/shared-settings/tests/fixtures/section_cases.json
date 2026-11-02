@@ -1,0 +1,569 @@
+[
+ {
+  "section": "git",
+  "body": {
+   "network_timeout_seconds": "12",
+   "max_diff_bytes": 2.0,
+   "prune_on_fetch": "no"
+  },
+  "errors": [
+   {
+    "type": "greater_than_equal",
+    "loc": [
+     "max_diff_bytes"
+    ],
+    "msg": "Input should be greater than or equal to 64000",
+    "ctx": {
+     "ge": 64000
+    }
+   }
+  ]
+ },
+ {
+  "section": "git",
+  "body": {
+   "network_timeout_seconds": 5,
+   "max_diff_bytes": 1.5,
+   "prune_on_fetch": 2,
+   "allow_force_push": "maybe",
+   "default_pull_strategy": "x"
+  },
+  "errors": [
+   {
+    "type": "greater_than_equal",
+    "loc": [
+     "network_timeout_seconds"
+    ],
+    "msg": "Input should be greater than or equal to 10",
+    "ctx": {
+     "ge": 10.0
+    }
+   },
+   {
+    "type": "int_from_float",
+    "loc": [
+     "max_diff_bytes"
+    ],
+    "msg": "Input should be a valid integer, got a number with a fractional part"
+   },
+   {
+    "type": "literal_error",
+    "loc": [
+     "default_pull_strategy"
+    ],
+    "msg": "Input should be 'ff_only', 'merge' or 'rebase'",
+    "ctx": {
+     "expected": "'ff_only', 'merge' or 'rebase'"
+    }
+   },
+   {
+    "type": "bool_parsing",
+    "loc": [
+     "prune_on_fetch"
+    ],
+    "msg": "Input should be a valid boolean, unable to interpret input"
+   },
+   {
+    "type": "bool_parsing",
+    "loc": [
+     "allow_force_push"
+    ],
+    "msg": "Input should be a valid boolean, unable to interpret input"
+   }
+  ]
+ },
+ {
+  "section": "git",
+  "body": {
+   "max_diff_bytes": true
+  },
+  "errors": [
+   {
+    "type": "greater_than_equal",
+    "loc": [
+     "max_diff_bytes"
+    ],
+    "msg": "Input should be greater than or equal to 64000",
+    "ctx": {
+     "ge": 64000
+    }
+   }
+  ]
+ },
+ {
+  "section": "git",
+  "body": {
+   "max_diff_bytes": null
+  },
+  "errors": [
+   {
+    "type": "int_type",
+    "loc": [
+     "max_diff_bytes"
+    ],
+    "msg": "Input should be a valid integer"
+   }
+  ]
+ },
+ {
+  "section": "git",
+  "body": [],
+  "errors": [
+   {
+    "type": "model_type",
+    "loc": [],
+    "msg": "Input should be a valid dictionary or instance of GitSettings",
+    "ctx": {
+     "class_name": "GitSettings"
+    }
+   }
+  ]
+ },
+ {
+  "section": "git",
+  "body": "x",
+  "errors": [
+   {
+    "type": "model_type",
+    "loc": [],
+    "msg": "Input should be a valid dictionary or instance of GitSettings",
+    "ctx": {
+     "class_name": "GitSettings"
+    }
+   }
+  ]
+ },
+ {
+  "section": "context",
+  "body": {
+   "summary_trigger_tokens": "3",
+   "keep_recent_turns": 2.0
+  },
+  "errors": [
+   {
+    "type": "greater_than_equal",
+    "loc": [
+     "summary_trigger_tokens"
+    ],
+    "msg": "Input should be greater than or equal to 20000",
+    "ctx": {
+     "ge": 20000
+    }
+   }
+  ]
+ },
+ {
+  "section": "context",
+  "body": {
+   "summary_trigger_tokens": 2.5
+  },
+  "errors": [
+   {
+    "type": "int_from_float",
+    "loc": [
+     "summary_trigger_tokens"
+    ],
+    "msg": "Input should be a valid integer, got a number with a fractional part"
+   }
+  ]
+ },
+ {
+  "section": "context",
+  "body": {
+   "summary_trigger_tokens": "three"
+  },
+  "errors": [
+   {
+    "type": "int_parsing",
+    "loc": [
+     "summary_trigger_tokens"
+    ],
+    "msg": "Input should be a valid integer, unable to parse string as an integer"
+   }
+  ]
+ },
+ {
+  "section": "context",
+  "body": {
+   "keep_recent_turns": null,
+   "summary_max_tokens": 120001
+  },
+  "errors": [
+   {
+    "type": "less_than_equal",
+    "loc": [
+     "summary_max_tokens"
+    ],
+    "msg": "Input should be less than or equal to 120000",
+    "ctx": {
+     "le": 120000
+    }
+   }
+  ]
+ },
+ {
+  "section": "dream",
+  "body": {
+   "model": "nocolon"
+  },
+  "errors": [
+   {
+    "type": "value_error",
+    "loc": [],
+    "msg": "Value error, Dream model must be 'provider:model'.",
+    "ctx": {
+     "error": "Dream model must be 'provider:model'."
+    }
+   }
+  ]
+ },
+ {
+  "section": "dream",
+  "body": {
+   "model": "a:b",
+   "enabled": "yes",
+   "schedule": 5
+  },
+  "errors": [
+   {
+    "type": "string_type",
+    "loc": [
+     "schedule"
+    ],
+    "msg": "Input should be a valid string"
+   }
+  ]
+ },
+ {
+  "section": "team_spawn",
+  "body": {
+   "work": "auto",
+   "coding": "ASK"
+  },
+  "errors": [
+   {
+    "type": "literal_error",
+    "loc": [
+     "coding"
+    ],
+    "msg": "Input should be 'ask' or 'auto'",
+    "ctx": {
+     "expected": "'ask' or 'auto'"
+    }
+   }
+  ]
+ },
+ {
+  "section": "follow_up",
+  "body": {
+   "delivery": "steer"
+  },
+  "dump": {
+   "delivery": "steer"
+  }
+ },
+ {
+  "section": "follow_up",
+  "body": {},
+  "dump": {
+   "delivery": "queue"
+  }
+ },
+ {
+  "section": "background_tasks",
+  "body": {
+   "wake_idle": "off"
+  },
+  "dump": {
+   "wake_idle": false
+  }
+ },
+ {
+  "section": "response_style",
+  "body": {
+   "style": null
+  },
+  "errors": [
+   {
+    "type": "literal_error",
+    "loc": [
+     "style"
+    ],
+    "msg": "Input should be 'simple' or 'visual'",
+    "ctx": {
+     "expected": "'simple' or 'visual'"
+    }
+   }
+  ]
+ },
+ {
+  "section": "webbridge",
+  "body": {
+   "sharing": {
+    "default": "allow",
+    "blocked_domains": [
+     "x"
+    ]
+   },
+   "interactions": "nope"
+  },
+  "errors": [
+   {
+    "type": "model_type",
+    "loc": [
+     "interactions"
+    ],
+    "msg": "Input should be a valid dictionary or instance of WebBridgeInteractionSettings",
+    "ctx": {
+     "class_name": "WebBridgeInteractionSettings"
+    }
+   }
+  ]
+ },
+ {
+  "section": "webbridge",
+  "body": {
+   "allowed_domains": "x.com"
+  },
+  "errors": [
+   {
+    "type": "list_type",
+    "loc": [
+     "allowed_domains"
+    ],
+    "msg": "Input should be a valid list"
+   }
+  ]
+ },
+ {
+  "section": "computer_app",
+  "body": {
+   "allowed_apps": [
+    "a",
+    2
+   ],
+   "permission": "allow"
+  },
+  "errors": [
+   {
+    "type": "string_type",
+    "loc": [
+     "allowed_apps",
+     1
+    ],
+    "msg": "Input should be a valid string"
+   }
+  ]
+ },
+ {
+  "section": "conductor",
+  "body": {
+   "url": "https://x.example/",
+   "enrollment_token": "t"
+  },
+  "dump": {
+   "enabled": false,
+   "url": "https://x.example",
+   "machine_credential_path": null,
+   "sync_interval_seconds": 60.0,
+   "heartbeat_interval_seconds": 60.0,
+   "request_timeout_seconds": 15.0,
+   "enforcement_mode": "report",
+   "installation_key": null,
+   "installation_id": null,
+   "project_id": null,
+   "project_name": null,
+   "project_display_name": null,
+   "project_logo_url": null,
+   "member_id": null,
+   "member_display_name": null,
+   "member_primary_role": null,
+   "collection_level": null
+  }
+ },
+ {
+  "section": "conductor",
+  "body": {
+   "url": "http://"
+  },
+  "errors": [
+   {
+    "type": "value_error",
+    "loc": [],
+    "msg": "Value error, Conductor URL must be an http:// or https:// origin without credentials, path, query, or fragment.",
+    "ctx": {
+     "error": "Conductor URL must be an http:// or https:// origin without credentials, path, query, or fragment."
+    }
+   }
+  ]
+ },
+ {
+  "section": "conductor",
+  "body": {
+   "url": "https://[::1]:8443"
+  },
+  "dump": {
+   "enabled": false,
+   "url": "https://[::1]:8443",
+   "machine_credential_path": null,
+   "sync_interval_seconds": 60.0,
+   "heartbeat_interval_seconds": 60.0,
+   "request_timeout_seconds": 15.0,
+   "enforcement_mode": "report",
+   "installation_key": null,
+   "installation_id": null,
+   "project_id": null,
+   "project_name": null,
+   "project_display_name": null,
+   "project_logo_url": null,
+   "member_id": null,
+   "member_display_name": null,
+   "member_primary_role": null,
+   "collection_level": null
+  }
+ },
+ {
+  "section": "conductor",
+  "body": {
+   "url": "https://x.example#frag"
+  },
+  "errors": [
+   {
+    "type": "value_error",
+    "loc": [],
+    "msg": "Value error, Conductor URL must be an http:// or https:// origin without credentials, path, query, or fragment.",
+    "ctx": {
+     "error": "Conductor URL must be an http:// or https:// origin without credentials, path, query, or fragment."
+    }
+   }
+  ]
+ },
+ {
+  "section": "conductor",
+  "body": {
+   "url": "HTTPS://X.example"
+  },
+  "dump": {
+   "enabled": false,
+   "url": "HTTPS://X.example",
+   "machine_credential_path": null,
+   "sync_interval_seconds": 60.0,
+   "heartbeat_interval_seconds": 60.0,
+   "request_timeout_seconds": 15.0,
+   "enforcement_mode": "report",
+   "installation_key": null,
+   "installation_id": null,
+   "project_id": null,
+   "project_name": null,
+   "project_display_name": null,
+   "project_logo_url": null,
+   "member_id": null,
+   "member_display_name": null,
+   "member_primary_role": null,
+   "collection_level": null
+  }
+ },
+ {
+  "section": "conductor",
+  "body": {
+   "url": "https://x.example/"
+  },
+  "dump": {
+   "enabled": false,
+   "url": "https://x.example",
+   "machine_credential_path": null,
+   "sync_interval_seconds": 60.0,
+   "heartbeat_interval_seconds": 60.0,
+   "request_timeout_seconds": 15.0,
+   "enforcement_mode": "report",
+   "installation_key": null,
+   "installation_id": null,
+   "project_id": null,
+   "project_name": null,
+   "project_display_name": null,
+   "project_logo_url": null,
+   "member_id": null,
+   "member_display_name": null,
+   "member_primary_role": null,
+   "collection_level": null
+  }
+ },
+ {
+  "section": "conductor",
+  "body": {
+   "url": 5
+  },
+  "errors": [
+   {
+    "type": "string_type",
+    "loc": [
+     "url"
+    ],
+    "msg": "Input should be a valid string"
+   }
+  ]
+ },
+ {
+  "section": "browser",
+  "body": {
+   "allow_downloads": 1,
+   "allow_storage": 0.0
+  },
+  "dump": {
+   "allowed_domains": [],
+   "blocked_domains": [],
+   "allow_evaluate": true,
+   "allow_storage": false,
+   "allow_cookie_values": false,
+   "allow_http_requests": true,
+   "allow_clipboard_read": false,
+   "allow_clipboard_write": true,
+   "allow_file_uploads": false,
+   "allow_downloads": true,
+   "allow_agent_permission_accept": false
+  }
+ },
+ {
+  "section": "import_auto_sync",
+  "body": {
+   "scan_interval_seconds": 29
+  },
+  "errors": [
+   {
+    "type": "greater_than_equal",
+    "loc": [
+     "scan_interval_seconds"
+    ],
+    "msg": "Input should be greater than or equal to 30",
+    "ctx": {
+     "ge": 30
+    }
+   }
+  ]
+ },
+ {
+  "section": "memory_extraction",
+  "body": {
+   "model": null,
+   "min_assistant_messages": "5"
+  },
+  "dump": {
+   "enabled": true,
+   "min_assistant_messages": 5,
+   "every_n_messages": 10,
+   "max_input_chars": 12000,
+   "model": null
+  }
+ },
+ {
+  "section": "title_generation",
+  "body": {
+   "enabled": "1",
+   "model": null
+  },
+  "dump": {
+   "enabled": true,
+   "model": null
+  }
+ }
+]

@@ -762,6 +762,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "evoflux-shared-settings"
+version = "0.1.0"
+dependencies = [
+ "evoflux-shared-yaml",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "evoflux-shared-yaml"
 version = "0.1.0"
 dependencies = [

@@ -1,0 +1,19 @@
+[package]
+name = "evoflux-shared-settings"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+
+[lints]
+workspace = true
+
+[dependencies]
+evoflux-shared-yaml = { path = "../shared-yaml" }
+serde_json = { version = "1", features = ["preserve_order"] }
+tempfile = "3"
+thiserror = "2"
+tokio = { version = "1", features = ["fs", "rt", "sync"] }
+
+[dev-dependencies]
+serde_json = "1"
+tokio = { version = "1", features = ["fs", "macros", "rt", "rt-multi-thread", "sync"] }
