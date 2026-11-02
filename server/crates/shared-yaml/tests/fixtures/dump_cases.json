@@ -1,0 +1,5518 @@
+[
+ {
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "a"
+     },
+     {
+      "t": "int",
+      "v": "1"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "b"
+     },
+     {
+      "t": "int",
+      "v": "2"
+     }
+    ]
+   ]
+  },
+  "sort=0,unicode=0": "a: 1\nb: 2\n",
+  "sort=0,unicode=1": "a: 1\nb: 2\n",
+  "sort=1,unicode=0": "a: 1\nb: 2\n",
+  "sort=1,unicode=1": "a: 1\nb: 2\n"
+ },
+ {
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "z"
+     },
+     {
+      "t": "int",
+      "v": "1"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "a"
+     },
+     {
+      "t": "int",
+      "v": "2"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "m"
+     },
+     {
+      "t": "int",
+      "v": "3"
+     }
+    ]
+   ]
+  },
+  "sort=0,unicode=0": "z: 1\na: 2\nm: 3\n",
+  "sort=0,unicode=1": "z: 1\na: 2\nm: 3\n",
+  "sort=1,unicode=0": "a: 2\nm: 3\nz: 1\n",
+  "sort=1,unicode=1": "a: 2\nm: 3\nz: 1\n"
+ },
+ {
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "off"
+     },
+     {
+      "t": "str",
+      "v": "off"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "yes"
+     },
+     {
+      "t": "str",
+      "v": "yes"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "no"
+     },
+     {
+      "t": "str",
+      "v": "No"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "on"
+     },
+     {
+      "t": "str",
+      "v": "ON"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "y"
+     },
+     {
+      "t": "str",
+      "v": "y"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "n"
+     },
+     {
+      "t": "str",
+      "v": "n"
+     }
+    ]
+   ]
+  },
+  "sort=0,unicode=0": "'off': 'off'\n'yes': 'yes'\n'no': 'No'\n'on': 'ON'\ny: y\nn: n\n",
+  "sort=0,unicode=1": "'off': 'off'\n'yes': 'yes'\n'no': 'No'\n'on': 'ON'\ny: y\nn: n\n",
+  "sort=1,unicode=0": "n: n\n'no': 'No'\n'off': 'off'\n'on': 'ON'\ny: y\n'yes': 'yes'\n",
+  "sort=1,unicode=1": "n: n\n'no': 'No'\n'off': 'off'\n'on': 'ON'\ny: y\n'yes': 'yes'\n"
+ },
+ {
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "null"
+     },
+     {
+      "t": "null"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "empty"
+     },
+     {
+      "t": "str",
+      "v": ""
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "space"
+     },
+     {
+      "t": "str",
+      "v": " "
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "tilde"
+     },
+     {
+      "t": "str",
+      "v": "~"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "nullstr"
+     },
+     {
+      "t": "str",
+      "v": "null"
+     }
+    ]
+   ]
+  },
+  "sort=0,unicode=0": "'null': null\nempty: ''\nspace: ' '\ntilde: '~'\nnullstr: 'null'\n",
+  "sort=0,unicode=1": "'null': null\nempty: ''\nspace: ' '\ntilde: '~'\nnullstr: 'null'\n",
+  "sort=1,unicode=0": "empty: ''\n'null': null\nnullstr: 'null'\nspace: ' '\ntilde: '~'\n",
+  "sort=1,unicode=1": "empty: ''\n'null': null\nnullstr: 'null'\nspace: ' '\ntilde: '~'\n"
+ },
+ {
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "i"
+     },
+     {
+      "t": "int",
+      "v": "7"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "neg"
+     },
+     {
+      "t": "int",
+      "v": "-3"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "big"
+     },
+     {
+      "t": "int",
+      "v": "12345678901234567890"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "zero"
+     },
+     {
+      "t": "int",
+      "v": "0"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "octal"
+     },
+     {
+      "t": "str",
+      "v": "017"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "hex"
+     },
+     {
+      "t": "str",
+      "v": "0x1F"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "sx"
+     },
+     {
+      "t": "str",
+      "v": "1:30"
+     }
+    ]
+   ]
+  },
+  "sort=0,unicode=0": "i: 7\nneg: -3\nbig: 12345678901234567890\nzero: 0\noctal: '017'\nhex: '0x1F'\nsx: '1:30'\n",
+  "sort=0,unicode=1": "i: 7\nneg: -3\nbig: 12345678901234567890\nzero: 0\noctal: '017'\nhex: '0x1F'\nsx: '1:30'\n",
+  "sort=1,unicode=0": "big: 12345678901234567890\nhex: '0x1F'\ni: 7\nneg: -3\noctal: '017'\nsx: '1:30'\nzero: 0\n",
+  "sort=1,unicode=1": "big: 12345678901234567890\nhex: '0x1F'\ni: 7\nneg: -3\noctal: '017'\nsx: '1:30'\nzero: 0\n"
+ },
+ {
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "f"
+     },
+     {
+      "t": "float",
+      "v": "1.0"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "g"
+     },
+     {
+      "t": "float",
+      "v": "0.1"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "h"
+     },
+     {
+      "t": "float",
+      "v": "60.0"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "i"
+     },
+     {
+      "t": "float",
+      "v": "1e+16"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "j"
+     },
+     {
+      "t": "float",
+      "v": "1e-05"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "k"
+     },
+     {
+      "t": "float",
+      "v": "-2.5"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "l"
+     },
+     {
+      "t": "float",
+      "v": "inf"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "m"
+     },
+     {
+      "t": "float",
+      "v": "-inf"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "n"
+     },
+     {
+      "t": "float",
+      "v": "nan"
+     }
+    ]
+   ]
+  },
+  "sort=0,unicode=0": "f: 1.0\ng: 0.1\nh: 60.0\ni: 1.0e+16\nj: 1.0e-05\nk: -2.5\nl: .inf\nm: -.inf\nn: .nan\n",
+  "sort=0,unicode=1": "f: 1.0\ng: 0.1\nh: 60.0\ni: 1.0e+16\nj: 1.0e-05\nk: -2.5\nl: .inf\nm: -.inf\nn: .nan\n",
+  "sort=1,unicode=0": "f: 1.0\ng: 0.1\nh: 60.0\ni: 1.0e+16\nj: 1.0e-05\nk: -2.5\nl: .inf\nm: -.inf\nn: .nan\n",
+  "sort=1,unicode=1": "f: 1.0\ng: 0.1\nh: 60.0\ni: 1.0e+16\nj: 1.0e-05\nk: -2.5\nl: .inf\nm: -.inf\nn: .nan\n"
+ },
+ {
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "fs"
+     },
+     {
+      "t": "str",
+      "v": "1.0"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "fe"
+     },
+     {
+      "t": "str",
+      "v": "1e3"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "fe2"
+     },
+     {
+      "t": "str",
+      "v": "1.0e+3"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "ints"
+     },
+     {
+      "t": "str",
+      "v": "123"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "neg"
+     },
+     {
+      "t": "str",
+      "v": "-1"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "dot"
+     },
+     {
+      "t": "str",
+      "v": ".5"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "inf"
+     },
+     {
+      "t": "str",
+      "v": ".inf"
+     }
+    ]
+   ]
+  },
+  "sort=0,unicode=0": "fs: '1.0'\nfe: 1e3\nfe2: '1.0e+3'\nints: '123'\nneg: '-1'\ndot: '.5'\ninf: '.inf'\n",
+  "sort=0,unicode=1": "fs: '1.0'\nfe: 1e3\nfe2: '1.0e+3'\nints: '123'\nneg: '-1'\ndot: '.5'\ninf: '.inf'\n",
+  "sort=1,unicode=0": "dot: '.5'\nfe: 1e3\nfe2: '1.0e+3'\nfs: '1.0'\ninf: '.inf'\nints: '123'\nneg: '-1'\n",
+  "sort=1,unicode=1": "dot: '.5'\nfe: 1e3\nfe2: '1.0e+3'\nfs: '1.0'\ninf: '.inf'\nints: '123'\nneg: '-1'\n"
+ },
+ {
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "t"
+     },
+     {
+      "t": "bool",
+      "v": true
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "f"
+     },
+     {
+      "t": "bool",
+      "v": false
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "ts"
+     },
+     {
+      "t": "str",
+      "v": "true"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "fs"
+     },
+     {
+      "t": "str",
+      "v": "False"
+     }
+    ]
+   ]
+  },
+  "sort=0,unicode=0": "t: true\nf: false\nts: 'true'\nfs: 'False'\n",
+  "sort=0,unicode=1": "t: true\nf: false\nts: 'true'\nfs: 'False'\n",
+  "sort=1,unicode=0": "f: false\nfs: 'False'\nt: true\nts: 'true'\n",
+  "sort=1,unicode=1": "f: false\nfs: 'False'\nt: true\nts: 'true'\n"
+ },
+ {
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "d"
+     },
+     {
+      "t": "timestamp",
+      "v": "2024-01-01"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "dt"
+     },
+     {
+      "t": "timestamp",
+      "v": "2024-01-01 10:00:00"
+     }
+    ]
+   ]
+  },
+  "sort=0,unicode=0": "d: 2024-01-01\ndt: 2024-01-01 10:00:00\n",
+  "sort=0,unicode=1": "d: 2024-01-01\ndt: 2024-01-01 10:00:00\n",
+  "sort=1,unicode=0": "d: 2024-01-01\ndt: 2024-01-01 10:00:00\n",
+  "sort=1,unicode=1": "d: 2024-01-01\ndt: 2024-01-01 10:00:00\n"
+ },
+ {
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "dtz"
+     },
+     {
+      "t": "timestamp",
+      "v": "2024-01-01 10:00:00.000500-05:30"
+     }
+    ]
+   ]
+  },
+  "sort=0,unicode=0": "dtz: 2024-01-01 10:00:00.000500-05:30\n",
+  "sort=0,unicode=1": "dtz: 2024-01-01 10:00:00.000500-05:30\n",
+  "sort=1,unicode=0": "dtz: 2024-01-01 10:00:00.000500-05:30\n",
+  "sort=1,unicode=1": "dtz: 2024-01-01 10:00:00.000500-05:30\n"
+ },
+ {
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "utc"
+     },
+     {
+      "t": "timestamp",
+      "v": "2001-12-15 02:59:43.100000+00:00"
+     }
+    ]
+   ]
+  },
+  "sort=0,unicode=0": "utc: 2001-12-15 02:59:43.100000+00:00\n",
+  "sort=0,unicode=1": "utc: 2001-12-15 02:59:43.100000+00:00\n",
+  "sort=1,unicode=0": "utc: 2001-12-15 02:59:43.100000+00:00\n",
+  "sort=1,unicode=1": "utc: 2001-12-15 02:59:43.100000+00:00\n"
+ },
+ {
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "ds"
+     },
+     {
+      "t": "str",
+      "v": "2024-01-01"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "dts"
+     },
+     {
+      "t": "str",
+      "v": "2024-01-01 10:00:00"
+     }
+    ]
+   ]
+  },
+  "sort=0,unicode=0": "ds: '2024-01-01'\ndts: '2024-01-01 10:00:00'\n",
+  "sort=0,unicode=1": "ds: '2024-01-01'\ndts: '2024-01-01 10:00:00'\n",
+  "sort=1,unicode=0": "ds: '2024-01-01'\ndts: '2024-01-01 10:00:00'\n",
+  "sort=1,unicode=1": "ds: '2024-01-01'\ndts: '2024-01-01 10:00:00'\n"
+ },
+ {
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "colon"
+     },
+     {
+      "t": "str",
+      "v": "a: b"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "hash"
+     },
+     {
+      "t": "str",
+      "v": "a #b"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "hash2"
+     },
+     {
+      "t": "str",
+      "v": "a#b"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "lead"
+     },
+     {
+      "t": "str",
+      "v": "- x"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "q"
+     },
+     {
+      "t": "str",
+      "v": "?"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "qs"
+     },
+     {
+      "t": "str",
+      "v": "? x"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "col"
+     },
+     {
+      "t": "str",
+      "v": ":x"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "dash"
+     },
+     {
+      "t": "str",
+      "v": "-"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "dashx"
+     },
+     {
+      "t": "str",
+      "v": "-x"
+     }
+    ]
+   ]
+  },
+  "sort=0,unicode=0": "colon: 'a: b'\nhash: 'a #b'\nhash2: a#b\nlead: '- x'\nq: '?'\nqs: '? x'\ncol: :x\ndash: '-'\ndashx: -x\n",
+  "sort=0,unicode=1": "colon: 'a: b'\nhash: 'a #b'\nhash2: a#b\nlead: '- x'\nq: '?'\nqs: '? x'\ncol: :x\ndash: '-'\ndashx: -x\n",
+  "sort=1,unicode=0": "col: :x\ncolon: 'a: b'\ndash: '-'\ndashx: -x\nhash: 'a #b'\nhash2: a#b\nlead: '- x'\nq: '?'\nqs: '? x'\n",
+  "sort=1,unicode=1": "col: :x\ncolon: 'a: b'\ndash: '-'\ndashx: -x\nhash: 'a #b'\nhash2: a#b\nlead: '- x'\nq: '?'\nqs: '? x'\n"
+ },
+ {
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "ind"
+     },
+     {
+      "t": "str",
+      "v": "[x]"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "brace"
+     },
+     {
+      "t": "str",
+      "v": "{x}"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "amp"
+     },
+     {
+      "t": "str",
+      "v": "&a"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "star"
+     },
+     {
+      "t": "str",
+      "v": "*a"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "bang"
+     },
+     {
+      "t": "str",
+      "v": "!x"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "pipe"
+     },
+     {
+      "t": "str",
+      "v": "|"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "gt"
+     },
+     {
+      "t": "str",
+      "v": ">"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "pct"
+     },
+     {
+      "t": "str",
+      "v": "%x"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "at"
+     },
+     {
+      "t": "str",
+      "v": "@x"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "tick"
+     },
+     {
+      "t": "str",
+      "v": "`x"
+     }
+    ]
+   ]
+  },
+  "sort=0,unicode=0": "ind: '[x]'\nbrace: '{x}'\namp: '&a'\nstar: '*a'\nbang: '!x'\npipe: '|'\ngt: '>'\npct: '%x'\nat: '@x'\ntick: '`x'\n",
+  "sort=0,unicode=1": "ind: '[x]'\nbrace: '{x}'\namp: '&a'\nstar: '*a'\nbang: '!x'\npipe: '|'\ngt: '>'\npct: '%x'\nat: '@x'\ntick: '`x'\n",
+  "sort=1,unicode=0": "amp: '&a'\nat: '@x'\nbang: '!x'\nbrace: '{x}'\ngt: '>'\nind: '[x]'\npct: '%x'\npipe: '|'\nstar: '*a'\ntick: '`x'\n",
+  "sort=1,unicode=1": "amp: '&a'\nat: '@x'\nbang: '!x'\nbrace: '{x}'\ngt: '>'\nind: '[x]'\npct: '%x'\npipe: '|'\nstar: '*a'\ntick: '`x'\n"
+ },
+ {
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "comma"
+     },
+     {
+      "t": "str",
+      "v": "a, b"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "flowind"
+     },
+     {
+      "t": "str",
+      "v": "a[b]"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "sq"
+     },
+     {
+      "t": "str",
+      "v": "'q'"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "dq"
+     },
+     {
+      "t": "str",
+      "v": "\"q\""
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "both"
+     },
+     {
+      "t": "str",
+      "v": "it's \"x\""
+     }
+    ]
+   ]
+  },
+  "sort=0,unicode=0": "comma: a, b\nflowind: a[b]\nsq: '''q'''\ndq: '\"q\"'\nboth: it's \"x\"\n",
+  "sort=0,unicode=1": "comma: a, b\nflowind: a[b]\nsq: '''q'''\ndq: '\"q\"'\nboth: it's \"x\"\n",
+  "sort=1,unicode=0": "both: it's \"x\"\ncomma: a, b\ndq: '\"q\"'\nflowind: a[b]\nsq: '''q'''\n",
+  "sort=1,unicode=1": "both: it's \"x\"\ncomma: a, b\ndq: '\"q\"'\nflowind: a[b]\nsq: '''q'''\n"
+ },
+ {
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "doc"
+     },
+     {
+      "t": "str",
+      "v": "--- x"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "dots"
+     },
+     {
+      "t": "str",
+      "v": "... y"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "trail"
+     },
+     {
+      "t": "str",
+      "v": "x "
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "lead"
+     },
+     {
+      "t": "str",
+      "v": " x"
+     }
+    ]
+   ]
+  },
+  "sort=0,unicode=0": "doc: '--- x'\ndots: '... y'\ntrail: 'x '\nlead: ' x'\n",
+  "sort=0,unicode=1": "doc: '--- x'\ndots: '... y'\ntrail: 'x '\nlead: ' x'\n",
+  "sort=1,unicode=0": "doc: '--- x'\ndots: '... y'\nlead: ' x'\ntrail: 'x '\n",
+  "sort=1,unicode=1": "doc: '--- x'\ndots: '... y'\nlead: ' x'\ntrail: 'x '\n"
+ },
+ {
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "ml"
+     },
+     {
+      "t": "str",
+      "v": "line one\nline two"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "mlt"
+     },
+     {
+      "t": "str",
+      "v": "trailing\n"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "mlb"
+     },
+     {
+      "t": "str",
+      "v": "\nleading"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "blank"
+     },
+     {
+      "t": "str",
+      "v": "a\n\nb"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "spacebreak"
+     },
+     {
+      "t": "str",
+      "v": "a \nb"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "breakspace"
+     },
+     {
+      "t": "str",
+      "v": "a\n b"
+     }
+    ]
+   ]
+  },
+  "sort=0,unicode=0": "ml: 'line one\n\n  line two'\nmlt: 'trailing\n\n  '\nmlb: '\n\n  leading'\nblank: 'a\n\n\n  b'\nspacebreak: \"a \\nb\"\nbreakspace: \"a\\n b\"\n",
+  "sort=0,unicode=1": "ml: 'line one\n\n  line two'\nmlt: 'trailing\n\n  '\nmlb: '\n\n  leading'\nblank: 'a\n\n\n  b'\nspacebreak: \"a \\nb\"\nbreakspace: \"a\\n b\"\n",
+  "sort=1,unicode=0": "blank: 'a\n\n\n  b'\nbreakspace: \"a\\n b\"\nml: 'line one\n\n  line two'\nmlb: '\n\n  leading'\nmlt: 'trailing\n\n  '\nspacebreak: \"a \\nb\"\n",
+  "sort=1,unicode=1": "blank: 'a\n\n\n  b'\nbreakspace: \"a\\n b\"\nml: 'line one\n\n  line two'\nmlb: '\n\n  leading'\nmlt: 'trailing\n\n  '\nspacebreak: \"a \\nb\"\n"
+ },
+ {
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "cafe"
+     },
+     {
+      "t": "str",
+      "v": "café"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "jp"
+     },
+     {
+      "t": "str",
+      "v": "日本語"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "dash"
+     },
+     {
+      "t": "str",
+      "v": "Reviews code — carefully."
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "emoji"
+     },
+     {
+      "t": "str",
+      "v": "😀"
+     }
+    ]
+   ]
+  },
+  "sort=0,unicode=0": "cafe: \"caf\\xE9\"\njp: \"\\u65E5\\u672C\\u8A9E\"\ndash: \"Reviews code \\u2014 carefully.\"\nemoji: \"\\U0001F600\"\n",
+  "sort=0,unicode=1": "cafe: café\njp: 日本語\ndash: Reviews code — carefully.\nemoji: 😀\n",
+  "sort=1,unicode=0": "cafe: \"caf\\xE9\"\ndash: \"Reviews code \\u2014 carefully.\"\nemoji: \"\\U0001F600\"\njp: \"\\u65E5\\u672C\\u8A9E\"\n",
+  "sort=1,unicode=1": "cafe: café\ndash: Reviews code — carefully.\nemoji: 😀\njp: 日本語\n"
+ },
+ {
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "tab"
+     },
+     {
+      "t": "str",
+      "v": "a\tb"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "cr"
+     },
+     {
+      "t": "str",
+      "v": "a\rb"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "nul"
+     },
+     {
+      "t": "str",
+      "v": "a\u0000b"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "bell"
+     },
+     {
+      "t": "str",
+      "v": "\u0007"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "esc"
+     },
+     {
+      "t": "str",
+      "v": "\u001b"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "nel"
+     },
+     {
+      "t": "str",
+      "v": ""
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "nbsp"
+     },
+     {
+      "t": "str",
+      "v": " "
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "ls"
+     },
+     {
+      "t": "str",
+      "v": " "
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "bom"
+     },
+     {
+      "t": "str",
+      "v": "﻿"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "del"
+     },
+     {
+      "t": "str",
+      "v": ""
+     }
+    ]
+   ]
+  },
+  "sort=0,unicode=0": "tab: \"a\\tb\"\ncr: \"a\\rb\"\nnul: \"a\\0b\"\nbell: \"\\a\"\nesc: \"\\e\"\nnel: \"\\N\"\nnbsp: \"\\_\"\nls: \"\\L\"\nbom: \"\\uFEFF\"\ndel: \"\\x7F\"\n",
+  "sort=0,unicode=1": "tab: \"a\\tb\"\ncr: \"a\\rb\"\nnul: \"a\\0b\"\nbell: \"\\a\"\nesc: \"\\e\"\nnel: '  '\nnbsp:  \nls: '   '\nbom: \"\\uFEFF\"\ndel: \"\\x7F\"\n",
+  "sort=1,unicode=0": "bell: \"\\a\"\nbom: \"\\uFEFF\"\ncr: \"a\\rb\"\ndel: \"\\x7F\"\nesc: \"\\e\"\nls: \"\\L\"\nnbsp: \"\\_\"\nnel: \"\\N\"\nnul: \"a\\0b\"\ntab: \"a\\tb\"\n",
+  "sort=1,unicode=1": "bell: \"\\a\"\nbom: \"\\uFEFF\"\ncr: \"a\\rb\"\ndel: \"\\x7F\"\nesc: \"\\e\"\nls: '   '\nnbsp:  \nnel: '  '\nnul: \"a\\0b\"\ntab: \"a\\tb\"\n"
+ },
+ {
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "bs"
+     },
+     {
+      "t": "str",
+      "v": "back\\slash"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "dqin"
+     },
+     {
+      "t": "str",
+      "v": "say \"hi\""
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "c1"
+     },
+     {
+      "t": "str",
+      "v": ""
+     }
+    ]
+   ]
+  },
+  "sort=0,unicode=0": "bs: back\\slash\ndqin: say \"hi\"\nc1: \"\\x9F\"\n",
+  "sort=0,unicode=1": "bs: back\\slash\ndqin: say \"hi\"\nc1: \"\\x9F\"\n",
+  "sort=1,unicode=0": "bs: back\\slash\nc1: \"\\x9F\"\ndqin: say \"hi\"\n",
+  "sort=1,unicode=1": "bs: back\\slash\nc1: \"\\x9F\"\ndqin: say \"hi\"\n"
+ },
+ {
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "long"
+     },
+     {
+      "t": "str",
+      "v": "word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word end"
+     }
+    ]
+   ]
+  },
+  "sort=0,unicode=0": "long: word word word word word word word word word word word word word word word word\n  word word word word word word word word word word word word word word end\n",
+  "sort=0,unicode=1": "long: word word word word word word word word word word word word word word word word\n  word word word word word word word word word word word word word word end\n",
+  "sort=1,unicode=0": "long: word word word word word word word word word word word word word word word word\n  word word word word word word word word word word word word word word end\n",
+  "sort=1,unicode=1": "long: word word word word word word word word word word word word word word word word\n  word word word word word word word word word word word word word word end\n"
+ },
+ {
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "longnosp"
+     },
+     {
+      "t": "str",
+      "v": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+     }
+    ]
+   ]
+  },
+  "sort=0,unicode=0": "longnosp: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n",
+  "sort=0,unicode=1": "longnosp: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n",
+  "sort=1,unicode=0": "longnosp: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n",
+  "sort=1,unicode=1": "longnosp: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+ },
+ {
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "longsq"
+     },
+     {
+      "t": "str",
+      "v": "it's it's it's it's it's it's it's it's it's it's it's it's it's it's it's it's it's it's it's it's it's it's it's it's it's done"
+     }
+    ]
+   ]
+  },
+  "sort=0,unicode=0": "longsq: it's it's it's it's it's it's it's it's it's it's it's it's it's it's it's\n  it's it's it's it's it's it's it's it's it's it's done\n",
+  "sort=0,unicode=1": "longsq: it's it's it's it's it's it's it's it's it's it's it's it's it's it's it's\n  it's it's it's it's it's it's it's it's it's it's done\n",
+  "sort=1,unicode=0": "longsq: it's it's it's it's it's it's it's it's it's it's it's it's it's it's it's\n  it's it's it's it's it's it's it's it's it's it's done\n",
+  "sort=1,unicode=1": "longsq: it's it's it's it's it's it's it's it's it's it's it's it's it's it's it's\n  it's it's it's it's it's it's it's it's it's it's done\n"
+ },
+ {
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "longdq"
+     },
+     {
+      "t": "str",
+      "v": "é é é é é é é é é é é é é é é é é é é é é é é é é é é é é é é é é é é é é é é é é é é é é é é é é é end"
+     }
+    ]
+   ]
+  },
+  "sort=0,unicode=0": "longdq: \"\\xE9 \\xE9 \\xE9 \\xE9 \\xE9 \\xE9 \\xE9 \\xE9 \\xE9 \\xE9 \\xE9 \\xE9 \\xE9 \\xE9 \\xE9\\\n  \\ \\xE9 \\xE9 \\xE9 \\xE9 \\xE9 \\xE9 \\xE9 \\xE9 \\xE9 \\xE9 \\xE9 \\xE9 \\xE9 \\xE9 \\xE9 \\xE9\\\n  \\ \\xE9 \\xE9 \\xE9 \\xE9 \\xE9 \\xE9 \\xE9 \\xE9 \\xE9 \\xE9 \\xE9 \\xE9 \\xE9 \\xE9 \\xE9 \\xE9\\\n  \\ \\xE9 \\xE9 \\xE9 end\"\n",
+  "sort=0,unicode=1": "longdq: é é é é é é é é é é é é é é é é é é é é é é é é é é é é é é é é é é é é é\n  é é é é é é é é é é é é é end\n",
+  "sort=1,unicode=0": "longdq: \"\\xE9 \\xE9 \\xE9 \\xE9 \\xE9 \\xE9 \\xE9 \\xE9 \\xE9 \\xE9 \\xE9 \\xE9 \\xE9 \\xE9 \\xE9\\\n  \\ \\xE9 \\xE9 \\xE9 \\xE9 \\xE9 \\xE9 \\xE9 \\xE9 \\xE9 \\xE9 \\xE9 \\xE9 \\xE9 \\xE9 \\xE9 \\xE9\\\n  \\ \\xE9 \\xE9 \\xE9 \\xE9 \\xE9 \\xE9 \\xE9 \\xE9 \\xE9 \\xE9 \\xE9 \\xE9 \\xE9 \\xE9 \\xE9 \\xE9\\\n  \\ \\xE9 \\xE9 \\xE9 end\"\n",
+  "sort=1,unicode=1": "longdq: é é é é é é é é é é é é é é é é é é é é é é é é é é é é é é é é é é é é é\n  é é é é é é é é é é é é é end\n"
+ },
+ {
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "longdq2"
+     },
+     {
+      "t": "str",
+      "v": "éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"
+     }
+    ]
+   ]
+  },
+  "sort=0,unicode=0": "longdq2: \"\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\\n  \\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\\n  \\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\\n  \\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\\n  \\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\\n  \\xE9\\xE9\"\n",
+  "sort=0,unicode=1": "longdq2: éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé\n",
+  "sort=1,unicode=0": "longdq2: \"\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\\n  \\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\\n  \\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\\n  \\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\\n  \\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\xE9\\\n  \\xE9\\xE9\"\n",
+  "sort=1,unicode=1": "longdq2: éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé\n"
+ },
+ {
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "longdqsp"
+     },
+     {
+      "t": "str",
+      "v": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  é  bbbbbbbbbbbbbbbbbbbb"
+     }
+    ]
+   ]
+  },
+  "sort=0,unicode=0": "longdqsp: \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\\\n  \\  \\xE9  bbbbbbbbbbbbbbbbbbbb\"\n",
+  "sort=0,unicode=1": "longdqsp: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  é  bbbbbbbbbbbbbbbbbbbb\n",
+  "sort=1,unicode=0": "longdqsp: \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\\\n  \\  \\xE9  bbbbbbbbbbbbbbbbbbbb\"\n",
+  "sort=1,unicode=1": "longdqsp: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  é  bbbbbbbbbbbbbbbbbbbb\n"
+ },
+ {
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "longml"
+     },
+     {
+      "t": "str",
+      "v": "word word word word word word word word word word word word word word word word word word word word \nword word word word word word word word word word word word word word word word word word word word \nword word word word word word word word word word word word word word word word word word word word \n"
+     }
+    ]
+   ]
+  },
+  "sort=0,unicode=0": "longml: \"word word word word word word word word word word word word word word word\\\n  \\ word word word word word \\nword word word word word word word word word word word\\\n  \\ word word word word word word word word word \\nword word word word word word word\\\n  \\ word word word word word word word word word word word word word \\n\"\n",
+  "sort=0,unicode=1": "longml: \"word word word word word word word word word word word word word word word\\\n  \\ word word word word word \\nword word word word word word word word word word word\\\n  \\ word word word word word word word word word \\nword word word word word word word\\\n  \\ word word word word word word word word word word word word word \\n\"\n",
+  "sort=1,unicode=0": "longml: \"word word word word word word word word word word word word word word word\\\n  \\ word word word word word \\nword word word word word word word word word word word\\\n  \\ word word word word word word word word word \\nword word word word word word word\\\n  \\ word word word word word word word word word word word word word \\n\"\n",
+  "sort=1,unicode=1": "longml: \"word word word word word word word word word word word word word word word\\\n  \\ word word word word word \\nword word word word word word word word word word word\\\n  \\ word word word word word word word word word \\nword word word word word word word\\\n  \\ word word word word word word word word word word word word word \\n\"\n"
+ },
+ {
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk"
+     },
+     {
+      "t": "str",
+      "v": "long key"
+     }
+    ]
+   ]
+  },
+  "sort=0,unicode=0": "? kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk\n: long key\n",
+  "sort=0,unicode=1": "? kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk\n: long key\n",
+  "sort=1,unicode=0": "? kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk\n: long key\n",
+  "sort=1,unicode=1": "? kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk\n: long key\n"
+ },
+ {
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "multiline\nkey"
+     },
+     {
+      "t": "int",
+      "v": "1"
+     }
+    ]
+   ]
+  },
+  "sort=0,unicode=0": "? 'multiline\n\n  key'\n: 1\n",
+  "sort=0,unicode=1": "? 'multiline\n\n  key'\n: 1\n",
+  "sort=1,unicode=0": "? 'multiline\n\n  key'\n: 1\n",
+  "sort=1,unicode=1": "? 'multiline\n\n  key'\n: 1\n"
+ },
+ {
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": ""
+     },
+     {
+      "t": "str",
+      "v": "empty key"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": " "
+     },
+     {
+      "t": "str",
+      "v": "space key"
+     }
+    ]
+   ]
+  },
+  "sort=0,unicode=0": "? ''\n: empty key\n' ': space key\n",
+  "sort=0,unicode=1": "? ''\n: empty key\n' ': space key\n",
+  "sort=1,unicode=0": "? ''\n: empty key\n' ': space key\n",
+  "sort=1,unicode=1": "? ''\n: empty key\n' ': space key\n"
+ },
+ {
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "int",
+      "v": "1"
+     },
+     {
+      "t": "str",
+      "v": "bool"
+     }
+    ],
+    [
+     {
+      "t": "float",
+      "v": "2.5"
+     },
+     {
+      "t": "str",
+      "v": "float"
+     }
+    ],
+    [
+     {
+      "t": "null"
+     },
+     {
+      "t": "str",
+      "v": "none"
+     }
+    ],
+    [
+     {
+      "t": "timestamp",
+      "v": "2024-01-01"
+     },
+     {
+      "t": "str",
+      "v": "date"
+     }
+    ]
+   ]
+  },
+  "sort=0,unicode=0": "1: bool\n2.5: float\nnull: none\n2024-01-01: date\n",
+  "sort=0,unicode=1": "1: bool\n2.5: float\nnull: none\n2024-01-01: date\n",
+  "sort=1,unicode=0": "1: bool\n2.5: float\nnull: none\n2024-01-01: date\n",
+  "sort=1,unicode=1": "1: bool\n2.5: float\nnull: none\n2024-01-01: date\n"
+ },
+ {
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "list"
+     },
+     {
+      "t": "seq",
+      "v": [
+       {
+        "t": "int",
+        "v": "1"
+       },
+       {
+        "t": "str",
+        "v": "two"
+       },
+       {
+        "t": "float",
+        "v": "3.0"
+       },
+       {
+        "t": "null"
+       },
+       {
+        "t": "bool",
+        "v": true
+       }
+      ]
+     }
+    ]
+   ]
+  },
+  "sort=0,unicode=0": "list:\n- 1\n- two\n- 3.0\n- null\n- true\n",
+  "sort=0,unicode=1": "list:\n- 1\n- two\n- 3.0\n- null\n- true\n",
+  "sort=1,unicode=0": "list:\n- 1\n- two\n- 3.0\n- null\n- true\n",
+  "sort=1,unicode=1": "list:\n- 1\n- two\n- 3.0\n- null\n- true\n"
+ },
+ {
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "nested"
+     },
+     {
+      "t": "map",
+      "v": [
+       [
+        {
+         "t": "str",
+         "v": "a"
+        },
+        {
+         "t": "map",
+         "v": [
+          [
+           {
+            "t": "str",
+            "v": "b"
+           },
+           {
+            "t": "map",
+            "v": [
+             [
+              {
+               "t": "str",
+               "v": "c"
+              },
+              {
+               "t": "seq",
+               "v": [
+                {
+                 "t": "int",
+                 "v": "1"
+                },
+                {
+                 "t": "map",
+                 "v": [
+                  [
+                   {
+                    "t": "str",
+                    "v": "d"
+                   },
+                   {
+                    "t": "int",
+                    "v": "2"
+                   }
+                  ],
+                  [
+                   {
+                    "t": "str",
+                    "v": "e"
+                   },
+                   {
+                    "t": "seq",
+                    "v": [
+                     {
+                      "t": "int",
+                      "v": "3"
+                     },
+                     {
+                      "t": "int",
+                      "v": "4"
+                     }
+                    ]
+                   }
+                  ]
+                 ]
+                }
+               ]
+              }
+             ]
+            ]
+           }
+          ]
+         ]
+        }
+       ]
+      ]
+     }
+    ]
+   ]
+  },
+  "sort=0,unicode=0": "nested:\n  a:\n    b:\n      c:\n      - 1\n      - d: 2\n        e:\n        - 3\n        - 4\n",
+  "sort=0,unicode=1": "nested:\n  a:\n    b:\n      c:\n      - 1\n      - d: 2\n        e:\n        - 3\n        - 4\n",
+  "sort=1,unicode=0": "nested:\n  a:\n    b:\n      c:\n      - 1\n      - d: 2\n        e:\n        - 3\n        - 4\n",
+  "sort=1,unicode=1": "nested:\n  a:\n    b:\n      c:\n      - 1\n      - d: 2\n        e:\n        - 3\n        - 4\n"
+ },
+ {
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "empties"
+     },
+     {
+      "t": "map",
+      "v": [
+       [
+        {
+         "t": "str",
+         "v": "m"
+        },
+        {
+         "t": "map",
+         "v": []
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "l"
+        },
+        {
+         "t": "seq",
+         "v": []
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "lm"
+        },
+        {
+         "t": "seq",
+         "v": [
+          {
+           "t": "map",
+           "v": []
+          }
+         ]
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "ll"
+        },
+        {
+         "t": "seq",
+         "v": [
+          {
+           "t": "seq",
+           "v": []
+          }
+         ]
+        }
+       ]
+      ]
+     }
+    ]
+   ]
+  },
+  "sort=0,unicode=0": "empties:\n  m: {}\n  l: []\n  lm:\n  - {}\n  ll:\n  - []\n",
+  "sort=0,unicode=1": "empties:\n  m: {}\n  l: []\n  lm:\n  - {}\n  ll:\n  - []\n",
+  "sort=1,unicode=0": "empties:\n  l: []\n  ll:\n  - []\n  lm:\n  - {}\n  m: {}\n",
+  "sort=1,unicode=1": "empties:\n  l: []\n  ll:\n  - []\n  lm:\n  - {}\n  m: {}\n"
+ },
+ {
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "seqseq"
+     },
+     {
+      "t": "seq",
+      "v": [
+       {
+        "t": "seq",
+        "v": [
+         {
+          "t": "int",
+          "v": "1"
+         },
+         {
+          "t": "int",
+          "v": "2"
+         }
+        ]
+       },
+       {
+        "t": "seq",
+        "v": [
+         {
+          "t": "int",
+          "v": "3"
+         },
+         {
+          "t": "seq",
+          "v": [
+           {
+            "t": "int",
+            "v": "4"
+           },
+           {
+            "t": "int",
+            "v": "5"
+           }
+          ]
+         }
+        ]
+       },
+       {
+        "t": "seq",
+        "v": []
+       }
+      ]
+     }
+    ]
+   ]
+  },
+  "sort=0,unicode=0": "seqseq:\n- - 1\n  - 2\n- - 3\n  - - 4\n    - 5\n- []\n",
+  "sort=0,unicode=1": "seqseq:\n- - 1\n  - 2\n- - 3\n  - - 4\n    - 5\n- []\n",
+  "sort=1,unicode=0": "seqseq:\n- - 1\n  - 2\n- - 3\n  - - 4\n    - 5\n- []\n",
+  "sort=1,unicode=1": "seqseq:\n- - 1\n  - 2\n- - 3\n  - - 4\n    - 5\n- []\n"
+ },
+ {
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "seqmap"
+     },
+     {
+      "t": "seq",
+      "v": [
+       {
+        "t": "map",
+        "v": [
+         [
+          {
+           "t": "str",
+           "v": "a"
+          },
+          {
+           "t": "int",
+           "v": "1"
+          }
+         ],
+         [
+          {
+           "t": "str",
+           "v": "b"
+          },
+          {
+           "t": "int",
+           "v": "2"
+          }
+         ]
+        ]
+       },
+       {
+        "t": "map",
+        "v": [
+         [
+          {
+           "t": "str",
+           "v": "c"
+          },
+          {
+           "t": "map",
+           "v": [
+            [
+             {
+              "t": "str",
+              "v": "d"
+             },
+             {
+              "t": "int",
+              "v": "3"
+             }
+            ]
+           ]
+          }
+         ]
+        ]
+       },
+       {
+        "t": "map",
+        "v": [
+         [
+          {
+           "t": "str",
+           "v": "e"
+          },
+          {
+           "t": "seq",
+           "v": [
+            {
+             "t": "int",
+             "v": "1"
+            },
+            {
+             "t": "int",
+             "v": "2"
+            }
+           ]
+          }
+         ]
+        ]
+       }
+      ]
+     }
+    ]
+   ]
+  },
+  "sort=0,unicode=0": "seqmap:\n- a: 1\n  b: 2\n- c:\n    d: 3\n- e:\n  - 1\n  - 2\n",
+  "sort=0,unicode=1": "seqmap:\n- a: 1\n  b: 2\n- c:\n    d: 3\n- e:\n  - 1\n  - 2\n",
+  "sort=1,unicode=0": "seqmap:\n- a: 1\n  b: 2\n- c:\n    d: 3\n- e:\n  - 1\n  - 2\n",
+  "sort=1,unicode=1": "seqmap:\n- a: 1\n  b: 2\n- c:\n    d: 3\n- e:\n  - 1\n  - 2\n"
+ },
+ {
+  "value": {
+   "t": "seq",
+   "v": [
+    {
+     "t": "int",
+     "v": "1"
+    },
+    {
+     "t": "int",
+     "v": "2"
+    },
+    {
+     "t": "int",
+     "v": "3"
+    }
+   ]
+  },
+  "sort=0,unicode=0": "- 1\n- 2\n- 3\n",
+  "sort=0,unicode=1": "- 1\n- 2\n- 3\n",
+  "sort=1,unicode=0": "- 1\n- 2\n- 3\n",
+  "sort=1,unicode=1": "- 1\n- 2\n- 3\n"
+ },
+ {
+  "value": {
+   "t": "seq",
+   "v": [
+    {
+     "t": "map",
+     "v": [
+      [
+       {
+        "t": "str",
+        "v": "a"
+       },
+       {
+        "t": "int",
+        "v": "1"
+       }
+      ]
+     ]
+    },
+    {
+     "t": "seq",
+     "v": [
+      {
+       "t": "int",
+       "v": "1"
+      },
+      {
+       "t": "int",
+       "v": "2"
+      }
+     ]
+    },
+    {
+     "t": "str",
+     "v": "x"
+    }
+   ]
+  },
+  "sort=0,unicode=0": "- a: 1\n- - 1\n  - 2\n- x\n",
+  "sort=0,unicode=1": "- a: 1\n- - 1\n  - 2\n- x\n",
+  "sort=1,unicode=0": "- a: 1\n- - 1\n  - 2\n- x\n",
+  "sort=1,unicode=1": "- a: 1\n- - 1\n  - 2\n- x\n"
+ },
+ {
+  "value": {
+   "t": "seq",
+   "v": []
+  },
+  "sort=0,unicode=0": "[]\n",
+  "sort=0,unicode=1": "[]\n",
+  "sort=1,unicode=0": "[]\n",
+  "sort=1,unicode=1": "[]\n"
+ },
+ {
+  "value": {
+   "t": "map",
+   "v": []
+  },
+  "sort=0,unicode=0": "{}\n",
+  "sort=0,unicode=1": "{}\n",
+  "sort=1,unicode=0": "{}\n",
+  "sort=1,unicode=1": "{}\n"
+ },
+ {
+  "value": {
+   "t": "str",
+   "v": "root string"
+  },
+  "sort=0,unicode=0": "root string\n...\n",
+  "sort=0,unicode=1": "root string\n...\n",
+  "sort=1,unicode=0": "root string\n...\n",
+  "sort=1,unicode=1": "root string\n...\n"
+ },
+ {
+  "value": {
+   "t": "str",
+   "v": "off"
+  },
+  "sort=0,unicode=0": "'off'\n",
+  "sort=0,unicode=1": "'off'\n",
+  "sort=1,unicode=0": "'off'\n",
+  "sort=1,unicode=1": "'off'\n"
+ },
+ {
+  "value": {
+   "t": "str",
+   "v": ""
+  },
+  "sort=0,unicode=0": "''\n",
+  "sort=0,unicode=1": "''\n",
+  "sort=1,unicode=0": "''\n",
+  "sort=1,unicode=1": "''\n"
+ },
+ {
+  "value": {
+   "t": "int",
+   "v": "42"
+  },
+  "sort=0,unicode=0": "42\n...\n",
+  "sort=0,unicode=1": "42\n...\n",
+  "sort=1,unicode=0": "42\n...\n",
+  "sort=1,unicode=1": "42\n...\n"
+ },
+ {
+  "value": {
+   "t": "float",
+   "v": "1.5"
+  },
+  "sort=0,unicode=0": "1.5\n...\n",
+  "sort=0,unicode=1": "1.5\n...\n",
+  "sort=1,unicode=0": "1.5\n...\n",
+  "sort=1,unicode=1": "1.5\n...\n"
+ },
+ {
+  "value": {
+   "t": "null"
+  },
+  "sort=0,unicode=0": "null\n...\n",
+  "sort=0,unicode=1": "null\n...\n",
+  "sort=1,unicode=0": "null\n...\n",
+  "sort=1,unicode=1": "null\n...\n"
+ },
+ {
+  "value": {
+   "t": "bool",
+   "v": true
+  },
+  "sort=0,unicode=0": "true\n...\n",
+  "sort=0,unicode=1": "true\n...\n",
+  "sort=1,unicode=0": "true\n...\n",
+  "sort=1,unicode=1": "true\n...\n"
+ },
+ {
+  "value": {
+   "t": "timestamp",
+   "v": "2020-02-02"
+  },
+  "sort=0,unicode=0": "2020-02-02\n...\n",
+  "sort=0,unicode=1": "2020-02-02\n...\n",
+  "sort=1,unicode=0": "2020-02-02\n...\n",
+  "sort=1,unicode=1": "2020-02-02\n...\n"
+ },
+ {
+  "value": {
+   "t": "str",
+   "v": "multi\nline root"
+  },
+  "sort=0,unicode=0": "'multi\n\n  line root'\n",
+  "sort=0,unicode=1": "'multi\n\n  line root'\n",
+  "sort=1,unicode=0": "'multi\n\n  line root'\n",
+  "sort=1,unicode=1": "'multi\n\n  line root'\n"
+ },
+ {
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "tools"
+     },
+     {
+      "t": "seq",
+      "v": [
+       {
+        "t": "str",
+        "v": "read"
+       },
+       {
+        "t": "str",
+        "v": "write"
+       }
+      ]
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "name"
+     },
+     {
+      "t": "str",
+      "v": "x"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "model"
+     },
+     {
+      "t": "str",
+      "v": "anthropic:claude-x"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "description"
+     },
+     {
+      "t": "str",
+      "v": "A A A A A A A A A A A A A A A A A A A A A A A A A A A A A A A A A A A A A A A A A A A A A A A A A A "
+     }
+    ]
+   ]
+  },
+  "sort=0,unicode=0": "tools:\n- read\n- write\nname: x\nmodel: anthropic:claude-x\ndescription: 'A A A A A A A A A A A A A A A A A A A A A A A A A A A A A A A A A A\n  A A A A A A A A A A A A A A A A '\n",
+  "sort=0,unicode=1": "tools:\n- read\n- write\nname: x\nmodel: anthropic:claude-x\ndescription: 'A A A A A A A A A A A A A A A A A A A A A A A A A A A A A A A A A A\n  A A A A A A A A A A A A A A A A '\n",
+  "sort=1,unicode=0": "description: 'A A A A A A A A A A A A A A A A A A A A A A A A A A A A A A A A A A\n  A A A A A A A A A A A A A A A A '\nmodel: anthropic:claude-x\nname: x\ntools:\n- read\n- write\n",
+  "sort=1,unicode=1": "description: 'A A A A A A A A A A A A A A A A A A A A A A A A A A A A A A A A A A\n  A A A A A A A A A A A A A A A A '\nmodel: anthropic:claude-x\nname: x\ntools:\n- read\n- write\n"
+ },
+ {
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "sandbox"
+     },
+     {
+      "t": "map",
+      "v": [
+       [
+        {
+         "t": "str",
+         "v": "allow"
+        },
+        {
+         "t": "seq",
+         "v": []
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "deny"
+        },
+        {
+         "t": "seq",
+         "v": [
+          {
+           "t": "str",
+           "v": "*.env"
+          }
+         ]
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "mode"
+        },
+        {
+         "t": "str",
+         "v": "workspace-write"
+        }
+       ]
+      ]
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "context"
+     },
+     {
+      "t": "map",
+      "v": [
+       [
+        {
+         "t": "str",
+         "v": "summary_trigger_tokens"
+        },
+        {
+         "t": "float",
+         "v": "60.0"
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "keep"
+        },
+        {
+         "t": "int",
+         "v": "3"
+        }
+       ]
+      ]
+     }
+    ]
+   ]
+  },
+  "sort=0,unicode=0": "sandbox:\n  allow: []\n  deny:\n  - '*.env'\n  mode: workspace-write\ncontext:\n  summary_trigger_tokens: 60.0\n  keep: 3\n",
+  "sort=0,unicode=1": "sandbox:\n  allow: []\n  deny:\n  - '*.env'\n  mode: workspace-write\ncontext:\n  summary_trigger_tokens: 60.0\n  keep: 3\n",
+  "sort=1,unicode=0": "context:\n  keep: 3\n  summary_trigger_tokens: 60.0\nsandbox:\n  allow: []\n  deny:\n  - '*.env'\n  mode: workspace-write\n",
+  "sort=1,unicode=1": "context:\n  keep: 3\n  summary_trigger_tokens: 60.0\nsandbox:\n  allow: []\n  deny:\n  - '*.env'\n  mode: workspace-write\n"
+ },
+ {
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "name"
+     },
+     {
+      "t": "str",
+      "v": "agent"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "version"
+     },
+     {
+      "t": "float",
+      "v": "1.0"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "enabled"
+     },
+     {
+      "t": "bool",
+      "v": true
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "count"
+     },
+     {
+      "t": "int",
+      "v": "7"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "created"
+     },
+     {
+      "t": "timestamp",
+      "v": "2024-01-01"
+     }
+    ]
+   ]
+  },
+  "sort=0,unicode=0": "name: agent\nversion: 1.0\nenabled: true\ncount: 7\ncreated: 2024-01-01\n",
+  "sort=0,unicode=1": "name: agent\nversion: 1.0\nenabled: true\ncount: 7\ncreated: 2024-01-01\n",
+  "sort=1,unicode=0": "count: 7\ncreated: 2024-01-01\nenabled: true\nname: agent\nversion: 1.0\n",
+  "sort=1,unicode=1": "count: 7\ncreated: 2024-01-01\nenabled: true\nname: agent\nversion: 1.0\n"
+ },
+ {
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "url"
+     },
+     {
+      "t": "str",
+      "v": "https://example.com/path?q=1#frag"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "path"
+     },
+     {
+      "t": "str",
+      "v": "C:\\Users\\x"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "email"
+     },
+     {
+      "t": "str",
+      "v": "a@b.c"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "glob"
+     },
+     {
+      "t": "str",
+      "v": "**/*.py"
+     }
+    ]
+   ]
+  },
+  "sort=0,unicode=0": "url: https://example.com/path?q=1#frag\npath: C:\\Users\\x\nemail: a@b.c\nglob: '**/*.py'\n",
+  "sort=0,unicode=1": "url: https://example.com/path?q=1#frag\npath: C:\\Users\\x\nemail: a@b.c\nglob: '**/*.py'\n",
+  "sort=1,unicode=0": "email: a@b.c\nglob: '**/*.py'\npath: C:\\Users\\x\nurl: https://example.com/path?q=1#frag\n",
+  "sort=1,unicode=1": "email: a@b.c\nglob: '**/*.py'\npath: C:\\Users\\x\nurl: https://example.com/path?q=1#frag\n"
+ },
+ {
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "ver"
+     },
+     {
+      "t": "str",
+      "v": "1.2.3"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "semver"
+     },
+     {
+      "t": "str",
+      "v": "v1.2"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "port"
+     },
+     {
+      "t": "str",
+      "v": "8080"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "ip"
+     },
+     {
+      "t": "str",
+      "v": "127.0.0.1"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "time"
+     },
+     {
+      "t": "str",
+      "v": "10:30"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "neg"
+     },
+     {
+      "t": "str",
+      "v": "-0"
+     }
+    ]
+   ]
+  },
+  "sort=0,unicode=0": "ver: 1.2.3\nsemver: v1.2\nport: '8080'\nip: 127.0.0.1\ntime: '10:30'\nneg: '-0'\n",
+  "sort=0,unicode=1": "ver: 1.2.3\nsemver: v1.2\nport: '8080'\nip: 127.0.0.1\ntime: '10:30'\nneg: '-0'\n",
+  "sort=1,unicode=0": "ip: 127.0.0.1\nneg: '-0'\nport: '8080'\nsemver: v1.2\ntime: '10:30'\nver: 1.2.3\n",
+  "sort=1,unicode=1": "ip: 127.0.0.1\nneg: '-0'\nport: '8080'\nsemver: v1.2\ntime: '10:30'\nver: 1.2.3\n"
+ },
+ {
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "keys with spaces"
+     },
+     {
+      "t": "int",
+      "v": "1"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "key:colon"
+     },
+     {
+      "t": "int",
+      "v": "2"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "key#hash"
+     },
+     {
+      "t": "int",
+      "v": "3"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "-dash"
+     },
+     {
+      "t": "int",
+      "v": "4"
+     }
+    ]
+   ]
+  },
+  "sort=0,unicode=0": "keys with spaces: 1\nkey:colon: 2\nkey#hash: 3\n-dash: 4\n",
+  "sort=0,unicode=1": "keys with spaces: 1\nkey:colon: 2\nkey#hash: 3\n-dash: 4\n",
+  "sort=1,unicode=0": "-dash: 4\nkey#hash: 3\nkey:colon: 2\nkeys with spaces: 1\n",
+  "sort=1,unicode=1": "-dash: 4\nkey#hash: 3\nkey:colon: 2\nkeys with spaces: 1\n"
+ },
+ {
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "weird"
+     },
+     {
+      "t": "str",
+      "v": "a  b   c"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "endcolon"
+     },
+     {
+      "t": "str",
+      "v": "x:"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "midcolon"
+     },
+     {
+      "t": "str",
+      "v": "a:b"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "q2"
+     },
+     {
+      "t": "str",
+      "v": "a?b"
+     }
+    ]
+   ]
+  },
+  "sort=0,unicode=0": "weird: a  b   c\nendcolon: 'x:'\nmidcolon: a:b\nq2: a?b\n",
+  "sort=0,unicode=1": "weird: a  b   c\nendcolon: 'x:'\nmidcolon: a:b\nq2: a?b\n",
+  "sort=1,unicode=0": "endcolon: 'x:'\nmidcolon: a:b\nq2: a?b\nweird: a  b   c\n",
+  "sort=1,unicode=1": "endcolon: 'x:'\nmidcolon: a:b\nq2: a?b\nweird: a  b   c\n"
+ },
+ {
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "nested_long"
+     },
+     {
+      "t": "map",
+      "v": [
+       [
+        {
+         "t": "str",
+         "v": "inner"
+        },
+        {
+         "t": "map",
+         "v": [
+          [
+           {
+            "t": "str",
+            "v": "deeper"
+           },
+           {
+            "t": "str",
+            "v": "word word word word word word word word word word word word word word word word word word word word word word word word word end"
+           }
+          ]
+         ]
+        }
+       ]
+      ]
+     }
+    ]
+   ]
+  },
+  "sort=0,unicode=0": "nested_long:\n  inner:\n    deeper: word word word word word word word word word word word word word word\n      word word word word word word word word word word word end\n",
+  "sort=0,unicode=1": "nested_long:\n  inner:\n    deeper: word word word word word word word word word word word word word word\n      word word word word word word word word word word word end\n",
+  "sort=1,unicode=0": "nested_long:\n  inner:\n    deeper: word word word word word word word word word word word word word word\n      word word word word word word word word word word word end\n",
+  "sort=1,unicode=1": "nested_long:\n  inner:\n    deeper: word word word word word word word word word word word word word word\n      word word word word word word word word word word word end\n"
+ },
+ {
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "seq_long"
+     },
+     {
+      "t": "seq",
+      "v": [
+       {
+        "t": "str",
+        "v": "word word word word word word word word word word word word word word word word word word word word word word word word word end"
+       },
+       {
+        "t": "str",
+        "v": "x"
+       }
+      ]
+     }
+    ]
+   ]
+  },
+  "sort=0,unicode=0": "seq_long:\n- word word word word word word word word word word word word word word word word\n  word word word word word word word word word end\n- x\n",
+  "sort=0,unicode=1": "seq_long:\n- word word word word word word word word word word word word word word word word\n  word word word word word word word word word end\n- x\n",
+  "sort=1,unicode=0": "seq_long:\n- word word word word word word word word word word word word word word word word\n  word word word word word word word word word end\n- x\n",
+  "sort=1,unicode=1": "seq_long:\n- word word word word word word word word word word word word word word word word\n  word word word word word word word word word end\n- x\n"
+ },
+ {
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "surrogate_free"
+     },
+     {
+      "t": "str",
+      "v": "􏿽"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "maxbmp"
+     },
+     {
+      "t": "str",
+      "v": "�"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "private"
+     },
+     {
+      "t": "str",
+      "v": ""
+     }
+    ]
+   ]
+  },
+  "sort=0,unicode=0": "surrogate_free: \"\\U0010FFFD\"\nmaxbmp: \"\\uFFFD\"\nprivate: \"\\uE000\"\n",
+  "sort=0,unicode=1": "surrogate_free: 􏿽\nmaxbmp: �\nprivate: \n",
+  "sort=1,unicode=0": "maxbmp: \"\\uFFFD\"\nprivate: \"\\uE000\"\nsurrogate_free: \"\\U0010FFFD\"\n",
+  "sort=1,unicode=1": "maxbmp: �\nprivate: \nsurrogate_free: 􏿽\n"
+ },
+ {
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "bools_in_list"
+     },
+     {
+      "t": "seq",
+      "v": [
+       {
+        "t": "str",
+        "v": "yes"
+       },
+       {
+        "t": "str",
+        "v": "no"
+       },
+       {
+        "t": "str",
+        "v": "on"
+       },
+       {
+        "t": "str",
+        "v": "off"
+       },
+       {
+        "t": "str",
+        "v": "true"
+       }
+      ]
+     }
+    ]
+   ]
+  },
+  "sort=0,unicode=0": "bools_in_list:\n- 'yes'\n- 'no'\n- 'on'\n- 'off'\n- 'true'\n",
+  "sort=0,unicode=1": "bools_in_list:\n- 'yes'\n- 'no'\n- 'on'\n- 'off'\n- 'true'\n",
+  "sort=1,unicode=0": "bools_in_list:\n- 'yes'\n- 'no'\n- 'on'\n- 'off'\n- 'true'\n",
+  "sort=1,unicode=1": "bools_in_list:\n- 'yes'\n- 'no'\n- 'on'\n- 'off'\n- 'true'\n"
+ },
+ {
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "leading_zero"
+     },
+     {
+      "t": "str",
+      "v": "0123"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "plus"
+     },
+     {
+      "t": "str",
+      "v": "+1"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "under"
+     },
+     {
+      "t": "str",
+      "v": "1_000"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "dotonly"
+     },
+     {
+      "t": "str",
+      "v": "."
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "e"
+     },
+     {
+      "t": "str",
+      "v": "e"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "dash_num"
+     },
+     {
+      "t": "str",
+      "v": "-1.5"
+     }
+    ]
+   ]
+  },
+  "sort=0,unicode=0": "leading_zero: '0123'\nplus: '+1'\nunder: '1_000'\ndotonly: .\ne: e\ndash_num: '-1.5'\n",
+  "sort=0,unicode=1": "leading_zero: '0123'\nplus: '+1'\nunder: '1_000'\ndotonly: .\ne: e\ndash_num: '-1.5'\n",
+  "sort=1,unicode=0": "dash_num: '-1.5'\ndotonly: .\ne: e\nleading_zero: '0123'\nplus: '+1'\nunder: '1_000'\n",
+  "sort=1,unicode=1": "dash_num: '-1.5'\ndotonly: .\ne: e\nleading_zero: '0123'\nplus: '+1'\nunder: '1_000'\n"
+ },
+ {
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "equals"
+     },
+     {
+      "t": "str",
+      "v": "="
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "merge"
+     },
+     {
+      "t": "str",
+      "v": "<<"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "tildes"
+     },
+     {
+      "t": "str",
+      "v": "~~"
+     }
+    ]
+   ]
+  },
+  "sort=0,unicode=0": "equals: '='\nmerge: '<<'\ntildes: ~~\n",
+  "sort=0,unicode=1": "equals: '='\nmerge: '<<'\ntildes: ~~\n",
+  "sort=1,unicode=0": "equals: '='\nmerge: '<<'\ntildes: ~~\n",
+  "sort=1,unicode=1": "equals: '='\nmerge: '<<'\ntildes: ~~\n"
+ },
+ {
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "title_generation"
+     },
+     {
+      "t": "map",
+      "v": [
+       [
+        {
+         "t": "str",
+         "v": "enabled"
+        },
+        {
+         "t": "bool",
+         "v": true
+        }
+       ]
+      ]
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "dream"
+     },
+     {
+      "t": "map",
+      "v": [
+       [
+        {
+         "t": "str",
+         "v": "enabled"
+        },
+        {
+         "t": "bool",
+         "v": false
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "schedule"
+        },
+        {
+         "t": "str",
+         "v": "0 2 * * *"
+        }
+       ]
+      ]
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "memory_extraction"
+     },
+     {
+      "t": "map",
+      "v": [
+       [
+        {
+         "t": "str",
+         "v": "enabled"
+        },
+        {
+         "t": "bool",
+         "v": true
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "min_assistant_messages"
+        },
+        {
+         "t": "int",
+         "v": "3"
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "every_n_messages"
+        },
+        {
+         "t": "int",
+         "v": "10"
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "max_input_chars"
+        },
+        {
+         "t": "int",
+         "v": "12000"
+        }
+       ]
+      ]
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "memory_vector"
+     },
+     {
+      "t": "map",
+      "v": [
+       [
+        {
+         "t": "str",
+         "v": "enabled"
+        },
+        {
+         "t": "bool",
+         "v": false
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "backend"
+        },
+        {
+         "t": "str",
+         "v": "disabled"
+        }
+       ]
+      ]
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "server"
+     },
+     {
+      "t": "map",
+      "v": [
+       [
+        {
+         "t": "str",
+         "v": "host"
+        },
+        {
+         "t": "str",
+         "v": "127.0.0.1"
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "port"
+        },
+        {
+         "t": "int",
+         "v": "4082"
+        }
+       ]
+      ]
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "providers"
+     },
+     {
+      "t": "map",
+      "v": []
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "git"
+     },
+     {
+      "t": "map",
+      "v": [
+       [
+        {
+         "t": "str",
+         "v": "network_timeout_seconds"
+        },
+        {
+         "t": "float",
+         "v": "120.0"
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "max_diff_bytes"
+        },
+        {
+         "t": "int",
+         "v": "2000000"
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "default_pull_strategy"
+        },
+        {
+         "t": "str",
+         "v": "ff_only"
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "prune_on_fetch"
+        },
+        {
+         "t": "bool",
+         "v": true
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "allow_force_push"
+        },
+        {
+         "t": "bool",
+         "v": false
+        }
+       ]
+      ]
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "context"
+     },
+     {
+      "t": "map",
+      "v": []
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "code_reviews"
+     },
+     {
+      "t": "map",
+      "v": [
+       [
+        {
+         "t": "str",
+         "v": "request_timeout_seconds"
+        },
+        {
+         "t": "float",
+         "v": "20.0"
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "retry_attempts"
+        },
+        {
+         "t": "int",
+         "v": "2"
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "retry_backoff_seconds"
+        },
+        {
+         "t": "float",
+         "v": "0.5"
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "max_concurrent_repositories"
+        },
+        {
+         "t": "int",
+         "v": "4"
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "max_pages_per_repository"
+        },
+        {
+         "t": "int",
+         "v": "5"
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "allow_mutations"
+        },
+        {
+         "t": "bool",
+         "v": true
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "allow_insecure_connections"
+        },
+        {
+         "t": "bool",
+         "v": false
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "require_successful_checks_before_merge"
+        },
+        {
+         "t": "bool",
+         "v": false
+        }
+       ]
+      ]
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "browser"
+     },
+     {
+      "t": "map",
+      "v": [
+       [
+        {
+         "t": "str",
+         "v": "allowed_domains"
+        },
+        {
+         "t": "seq",
+         "v": []
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "blocked_domains"
+        },
+        {
+         "t": "seq",
+         "v": []
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "allow_evaluate"
+        },
+        {
+         "t": "bool",
+         "v": true
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "allow_storage"
+        },
+        {
+         "t": "bool",
+         "v": true
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "allow_cookie_values"
+        },
+        {
+         "t": "bool",
+         "v": false
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "allow_http_requests"
+        },
+        {
+         "t": "bool",
+         "v": true
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "allow_clipboard_read"
+        },
+        {
+         "t": "bool",
+         "v": false
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "allow_clipboard_write"
+        },
+        {
+         "t": "bool",
+         "v": true
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "allow_file_uploads"
+        },
+        {
+         "t": "bool",
+         "v": false
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "allow_downloads"
+        },
+        {
+         "t": "bool",
+         "v": true
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "allow_agent_permission_accept"
+        },
+        {
+         "t": "bool",
+         "v": false
+        }
+       ]
+      ]
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "webbridge"
+     },
+     {
+      "t": "map",
+      "v": [
+       [
+        {
+         "t": "str",
+         "v": "enabled"
+        },
+        {
+         "t": "bool",
+         "v": true
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "agent_browsing"
+        },
+        {
+         "t": "bool",
+         "v": true
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "allowed_domains"
+        },
+        {
+         "t": "seq",
+         "v": []
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "blocked_domains"
+        },
+        {
+         "t": "seq",
+         "v": []
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "allow_evaluate"
+        },
+        {
+         "t": "bool",
+         "v": true
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "require_tab_binding"
+        },
+        {
+         "t": "bool",
+         "v": true
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "audit_log_size"
+        },
+        {
+         "t": "int",
+         "v": "200"
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "sharing"
+        },
+        {
+         "t": "map",
+         "v": [
+          [
+           {
+            "t": "str",
+            "v": "default"
+           },
+           {
+            "t": "str",
+            "v": "ask"
+           }
+          ],
+          [
+           {
+            "t": "str",
+            "v": "blocked_domains"
+           },
+           {
+            "t": "seq",
+            "v": []
+           }
+          ],
+          [
+           {
+            "t": "str",
+            "v": "allow_selection"
+           },
+           {
+            "t": "bool",
+            "v": true
+           }
+          ],
+          [
+           {
+            "t": "str",
+            "v": "allow_readable_page"
+           },
+           {
+            "t": "bool",
+            "v": true
+           }
+          ],
+          [
+           {
+            "t": "str",
+            "v": "allow_screenshot"
+           },
+           {
+            "t": "bool",
+            "v": true
+           }
+          ],
+          [
+           {
+            "t": "str",
+            "v": "max_artifact_bytes"
+           },
+           {
+            "t": "int",
+            "v": "5000000"
+           }
+          ],
+          [
+           {
+            "t": "str",
+            "v": "artifact_retention_hours"
+           },
+           {
+            "t": "int",
+            "v": "24"
+           }
+          ]
+         ]
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "interactions"
+        },
+        {
+         "t": "map",
+         "v": [
+          [
+           {
+            "t": "str",
+            "v": "allow_background_triggers"
+           },
+           {
+            "t": "bool",
+            "v": false
+           }
+          ],
+          [
+           {
+            "t": "str",
+            "v": "max_per_minute"
+           },
+           {
+            "t": "int",
+            "v": "30"
+           }
+          ]
+         ]
+        }
+       ]
+      ]
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "computer_app"
+     },
+     {
+      "t": "map",
+      "v": [
+       [
+        {
+         "t": "str",
+         "v": "enabled"
+        },
+        {
+         "t": "bool",
+         "v": false
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "allowed_apps"
+        },
+        {
+         "t": "seq",
+         "v": []
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "blocked_apps"
+        },
+        {
+         "t": "seq",
+         "v": []
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "keep_hidden"
+        },
+        {
+         "t": "bool",
+         "v": true
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "permission"
+        },
+        {
+         "t": "str",
+         "v": "ask"
+        }
+       ]
+      ]
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "import_auto_sync"
+     },
+     {
+      "t": "map",
+      "v": [
+       [
+        {
+         "t": "str",
+         "v": "enabled"
+        },
+        {
+         "t": "bool",
+         "v": false
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "scan_interval_seconds"
+        },
+        {
+         "t": "int",
+         "v": "300"
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "notify_new_items"
+        },
+        {
+         "t": "bool",
+         "v": true
+        }
+       ]
+      ]
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "conductor"
+     },
+     {
+      "t": "map",
+      "v": [
+       [
+        {
+         "t": "str",
+         "v": "enabled"
+        },
+        {
+         "t": "bool",
+         "v": false
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "url"
+        },
+        {
+         "t": "str",
+         "v": ""
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "sync_interval_seconds"
+        },
+        {
+         "t": "float",
+         "v": "60.0"
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "heartbeat_interval_seconds"
+        },
+        {
+         "t": "float",
+         "v": "60.0"
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "request_timeout_seconds"
+        },
+        {
+         "t": "float",
+         "v": "15.0"
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "enforcement_mode"
+        },
+        {
+         "t": "str",
+         "v": "report"
+        }
+       ]
+      ]
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "team_spawn"
+     },
+     {
+      "t": "map",
+      "v": [
+       [
+        {
+         "t": "str",
+         "v": "work"
+        },
+        {
+         "t": "str",
+         "v": "ask"
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "coding"
+        },
+        {
+         "t": "str",
+         "v": "ask"
+        }
+       ]
+      ]
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "follow_up"
+     },
+     {
+      "t": "map",
+      "v": [
+       [
+        {
+         "t": "str",
+         "v": "delivery"
+        },
+        {
+         "t": "str",
+         "v": "queue"
+        }
+       ]
+      ]
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "background_tasks"
+     },
+     {
+      "t": "map",
+      "v": [
+       [
+        {
+         "t": "str",
+         "v": "wake_idle"
+        },
+        {
+         "t": "bool",
+         "v": true
+        }
+       ]
+      ]
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "response_style"
+     },
+     {
+      "t": "map",
+      "v": [
+       [
+        {
+         "t": "str",
+         "v": "style"
+        },
+        {
+         "t": "str",
+         "v": "visual"
+        }
+       ]
+      ]
+     }
+    ]
+   ]
+  },
+  "sort=0,unicode=0": "title_generation:\n  enabled: true\ndream:\n  enabled: false\n  schedule: 0 2 * * *\nmemory_extraction:\n  enabled: true\n  min_assistant_messages: 3\n  every_n_messages: 10\n  max_input_chars: 12000\nmemory_vector:\n  enabled: false\n  backend: disabled\nserver:\n  host: 127.0.0.1\n  port: 4082\nproviders: {}\ngit:\n  network_timeout_seconds: 120.0\n  max_diff_bytes: 2000000\n  default_pull_strategy: ff_only\n  prune_on_fetch: true\n  allow_force_push: false\ncontext: {}\ncode_reviews:\n  request_timeout_seconds: 20.0\n  retry_attempts: 2\n  retry_backoff_seconds: 0.5\n  max_concurrent_repositories: 4\n  max_pages_per_repository: 5\n  allow_mutations: true\n  allow_insecure_connections: false\n  require_successful_checks_before_merge: false\nbrowser:\n  allowed_domains: []\n  blocked_domains: []\n  allow_evaluate: true\n  allow_storage: true\n  allow_cookie_values: false\n  allow_http_requests: true\n  allow_clipboard_read: false\n  allow_clipboard_write: true\n  allow_file_uploads: false\n  allow_downloads: true\n  allow_agent_permission_accept: false\nwebbridge:\n  enabled: true\n  agent_browsing: true\n  allowed_domains: []\n  blocked_domains: []\n  allow_evaluate: true\n  require_tab_binding: true\n  audit_log_size: 200\n  sharing:\n    default: ask\n    blocked_domains: []\n    allow_selection: true\n    allow_readable_page: true\n    allow_screenshot: true\n    max_artifact_bytes: 5000000\n    artifact_retention_hours: 24\n  interactions:\n    allow_background_triggers: false\n    max_per_minute: 30\ncomputer_app:\n  enabled: false\n  allowed_apps: []\n  blocked_apps: []\n  keep_hidden: true\n  permission: ask\nimport_auto_sync:\n  enabled: false\n  scan_interval_seconds: 300\n  notify_new_items: true\nconductor:\n  enabled: false\n  url: ''\n  sync_interval_seconds: 60.0\n  heartbeat_interval_seconds: 60.0\n  request_timeout_seconds: 15.0\n  enforcement_mode: report\nteam_spawn:\n  work: ask\n  coding: ask\nfollow_up:\n  delivery: queue\nbackground_tasks:\n  wake_idle: true\nresponse_style:\n  style: visual\n",
+  "sort=0,unicode=1": "title_generation:\n  enabled: true\ndream:\n  enabled: false\n  schedule: 0 2 * * *\nmemory_extraction:\n  enabled: true\n  min_assistant_messages: 3\n  every_n_messages: 10\n  max_input_chars: 12000\nmemory_vector:\n  enabled: false\n  backend: disabled\nserver:\n  host: 127.0.0.1\n  port: 4082\nproviders: {}\ngit:\n  network_timeout_seconds: 120.0\n  max_diff_bytes: 2000000\n  default_pull_strategy: ff_only\n  prune_on_fetch: true\n  allow_force_push: false\ncontext: {}\ncode_reviews:\n  request_timeout_seconds: 20.0\n  retry_attempts: 2\n  retry_backoff_seconds: 0.5\n  max_concurrent_repositories: 4\n  max_pages_per_repository: 5\n  allow_mutations: true\n  allow_insecure_connections: false\n  require_successful_checks_before_merge: false\nbrowser:\n  allowed_domains: []\n  blocked_domains: []\n  allow_evaluate: true\n  allow_storage: true\n  allow_cookie_values: false\n  allow_http_requests: true\n  allow_clipboard_read: false\n  allow_clipboard_write: true\n  allow_file_uploads: false\n  allow_downloads: true\n  allow_agent_permission_accept: false\nwebbridge:\n  enabled: true\n  agent_browsing: true\n  allowed_domains: []\n  blocked_domains: []\n  allow_evaluate: true\n  require_tab_binding: true\n  audit_log_size: 200\n  sharing:\n    default: ask\n    blocked_domains: []\n    allow_selection: true\n    allow_readable_page: true\n    allow_screenshot: true\n    max_artifact_bytes: 5000000\n    artifact_retention_hours: 24\n  interactions:\n    allow_background_triggers: false\n    max_per_minute: 30\ncomputer_app:\n  enabled: false\n  allowed_apps: []\n  blocked_apps: []\n  keep_hidden: true\n  permission: ask\nimport_auto_sync:\n  enabled: false\n  scan_interval_seconds: 300\n  notify_new_items: true\nconductor:\n  enabled: false\n  url: ''\n  sync_interval_seconds: 60.0\n  heartbeat_interval_seconds: 60.0\n  request_timeout_seconds: 15.0\n  enforcement_mode: report\nteam_spawn:\n  work: ask\n  coding: ask\nfollow_up:\n  delivery: queue\nbackground_tasks:\n  wake_idle: true\nresponse_style:\n  style: visual\n",
+  "sort=1,unicode=0": "background_tasks:\n  wake_idle: true\nbrowser:\n  allow_agent_permission_accept: false\n  allow_clipboard_read: false\n  allow_clipboard_write: true\n  allow_cookie_values: false\n  allow_downloads: true\n  allow_evaluate: true\n  allow_file_uploads: false\n  allow_http_requests: true\n  allow_storage: true\n  allowed_domains: []\n  blocked_domains: []\ncode_reviews:\n  allow_insecure_connections: false\n  allow_mutations: true\n  max_concurrent_repositories: 4\n  max_pages_per_repository: 5\n  request_timeout_seconds: 20.0\n  require_successful_checks_before_merge: false\n  retry_attempts: 2\n  retry_backoff_seconds: 0.5\ncomputer_app:\n  allowed_apps: []\n  blocked_apps: []\n  enabled: false\n  keep_hidden: true\n  permission: ask\nconductor:\n  enabled: false\n  enforcement_mode: report\n  heartbeat_interval_seconds: 60.0\n  request_timeout_seconds: 15.0\n  sync_interval_seconds: 60.0\n  url: ''\ncontext: {}\ndream:\n  enabled: false\n  schedule: 0 2 * * *\nfollow_up:\n  delivery: queue\ngit:\n  allow_force_push: false\n  default_pull_strategy: ff_only\n  max_diff_bytes: 2000000\n  network_timeout_seconds: 120.0\n  prune_on_fetch: true\nimport_auto_sync:\n  enabled: false\n  notify_new_items: true\n  scan_interval_seconds: 300\nmemory_extraction:\n  enabled: true\n  every_n_messages: 10\n  max_input_chars: 12000\n  min_assistant_messages: 3\nmemory_vector:\n  backend: disabled\n  enabled: false\nproviders: {}\nresponse_style:\n  style: visual\nserver:\n  host: 127.0.0.1\n  port: 4082\nteam_spawn:\n  coding: ask\n  work: ask\ntitle_generation:\n  enabled: true\nwebbridge:\n  agent_browsing: true\n  allow_evaluate: true\n  allowed_domains: []\n  audit_log_size: 200\n  blocked_domains: []\n  enabled: true\n  interactions:\n    allow_background_triggers: false\n    max_per_minute: 30\n  require_tab_binding: true\n  sharing:\n    allow_readable_page: true\n    allow_screenshot: true\n    allow_selection: true\n    artifact_retention_hours: 24\n    blocked_domains: []\n    default: ask\n    max_artifact_bytes: 5000000\n",
+  "sort=1,unicode=1": "background_tasks:\n  wake_idle: true\nbrowser:\n  allow_agent_permission_accept: false\n  allow_clipboard_read: false\n  allow_clipboard_write: true\n  allow_cookie_values: false\n  allow_downloads: true\n  allow_evaluate: true\n  allow_file_uploads: false\n  allow_http_requests: true\n  allow_storage: true\n  allowed_domains: []\n  blocked_domains: []\ncode_reviews:\n  allow_insecure_connections: false\n  allow_mutations: true\n  max_concurrent_repositories: 4\n  max_pages_per_repository: 5\n  request_timeout_seconds: 20.0\n  require_successful_checks_before_merge: false\n  retry_attempts: 2\n  retry_backoff_seconds: 0.5\ncomputer_app:\n  allowed_apps: []\n  blocked_apps: []\n  enabled: false\n  keep_hidden: true\n  permission: ask\nconductor:\n  enabled: false\n  enforcement_mode: report\n  heartbeat_interval_seconds: 60.0\n  request_timeout_seconds: 15.0\n  sync_interval_seconds: 60.0\n  url: ''\ncontext: {}\ndream:\n  enabled: false\n  schedule: 0 2 * * *\nfollow_up:\n  delivery: queue\ngit:\n  allow_force_push: false\n  default_pull_strategy: ff_only\n  max_diff_bytes: 2000000\n  network_timeout_seconds: 120.0\n  prune_on_fetch: true\nimport_auto_sync:\n  enabled: false\n  notify_new_items: true\n  scan_interval_seconds: 300\nmemory_extraction:\n  enabled: true\n  every_n_messages: 10\n  max_input_chars: 12000\n  min_assistant_messages: 3\nmemory_vector:\n  backend: disabled\n  enabled: false\nproviders: {}\nresponse_style:\n  style: visual\nserver:\n  host: 127.0.0.1\n  port: 4082\nteam_spawn:\n  coding: ask\n  work: ask\ntitle_generation:\n  enabled: true\nwebbridge:\n  agent_browsing: true\n  allow_evaluate: true\n  allowed_domains: []\n  audit_log_size: 200\n  blocked_domains: []\n  enabled: true\n  interactions:\n    allow_background_triggers: false\n    max_per_minute: 30\n  require_tab_binding: true\n  sharing:\n    allow_readable_page: true\n    allow_screenshot: true\n    allow_selection: true\n    artifact_retention_hours: 24\n    blocked_domains: []\n    default: ask\n    max_artifact_bytes: 5000000\n"
+ },
+ {
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "background_tasks"
+     },
+     {
+      "t": "map",
+      "v": [
+       [
+        {
+         "t": "str",
+         "v": "wake_idle"
+        },
+        {
+         "t": "bool",
+         "v": true
+        }
+       ]
+      ]
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "browser"
+     },
+     {
+      "t": "map",
+      "v": [
+       [
+        {
+         "t": "str",
+         "v": "allow_agent_permission_accept"
+        },
+        {
+         "t": "bool",
+         "v": false
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "allow_clipboard_read"
+        },
+        {
+         "t": "bool",
+         "v": false
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "allow_clipboard_write"
+        },
+        {
+         "t": "bool",
+         "v": true
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "allow_cookie_values"
+        },
+        {
+         "t": "bool",
+         "v": false
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "allow_downloads"
+        },
+        {
+         "t": "bool",
+         "v": true
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "allow_evaluate"
+        },
+        {
+         "t": "bool",
+         "v": true
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "allow_file_uploads"
+        },
+        {
+         "t": "bool",
+         "v": false
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "allow_http_requests"
+        },
+        {
+         "t": "bool",
+         "v": true
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "allow_storage"
+        },
+        {
+         "t": "bool",
+         "v": true
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "allowed_domains"
+        },
+        {
+         "t": "seq",
+         "v": []
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "blocked_domains"
+        },
+        {
+         "t": "seq",
+         "v": []
+        }
+       ]
+      ]
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "code_reviews"
+     },
+     {
+      "t": "map",
+      "v": [
+       [
+        {
+         "t": "str",
+         "v": "allow_insecure_connections"
+        },
+        {
+         "t": "bool",
+         "v": false
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "allow_mutations"
+        },
+        {
+         "t": "bool",
+         "v": true
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "max_concurrent_repositories"
+        },
+        {
+         "t": "int",
+         "v": "4"
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "max_pages_per_repository"
+        },
+        {
+         "t": "int",
+         "v": "5"
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "request_timeout_seconds"
+        },
+        {
+         "t": "float",
+         "v": "20.0"
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "require_successful_checks_before_merge"
+        },
+        {
+         "t": "bool",
+         "v": false
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "retry_attempts"
+        },
+        {
+         "t": "int",
+         "v": "2"
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "retry_backoff_seconds"
+        },
+        {
+         "t": "float",
+         "v": "0.5"
+        }
+       ]
+      ]
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "computer_app"
+     },
+     {
+      "t": "map",
+      "v": [
+       [
+        {
+         "t": "str",
+         "v": "allowed_apps"
+        },
+        {
+         "t": "seq",
+         "v": []
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "blocked_apps"
+        },
+        {
+         "t": "seq",
+         "v": []
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "enabled"
+        },
+        {
+         "t": "bool",
+         "v": false
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "keep_hidden"
+        },
+        {
+         "t": "bool",
+         "v": true
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "permission"
+        },
+        {
+         "t": "str",
+         "v": "ask"
+        }
+       ]
+      ]
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "conductor"
+     },
+     {
+      "t": "map",
+      "v": [
+       [
+        {
+         "t": "str",
+         "v": "enabled"
+        },
+        {
+         "t": "bool",
+         "v": false
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "enforcement_mode"
+        },
+        {
+         "t": "str",
+         "v": "report"
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "heartbeat_interval_seconds"
+        },
+        {
+         "t": "float",
+         "v": "60.0"
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "request_timeout_seconds"
+        },
+        {
+         "t": "float",
+         "v": "15.0"
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "sync_interval_seconds"
+        },
+        {
+         "t": "float",
+         "v": "60.0"
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "url"
+        },
+        {
+         "t": "str",
+         "v": ""
+        }
+       ]
+      ]
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "context"
+     },
+     {
+      "t": "map",
+      "v": []
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "dream"
+     },
+     {
+      "t": "map",
+      "v": [
+       [
+        {
+         "t": "str",
+         "v": "enabled"
+        },
+        {
+         "t": "bool",
+         "v": false
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "schedule"
+        },
+        {
+         "t": "str",
+         "v": "0 2 * * *"
+        }
+       ]
+      ]
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "follow_up"
+     },
+     {
+      "t": "map",
+      "v": [
+       [
+        {
+         "t": "str",
+         "v": "delivery"
+        },
+        {
+         "t": "str",
+         "v": "steer"
+        }
+       ]
+      ]
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "git"
+     },
+     {
+      "t": "map",
+      "v": [
+       [
+        {
+         "t": "str",
+         "v": "allow_force_push"
+        },
+        {
+         "t": "bool",
+         "v": false
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "default_pull_strategy"
+        },
+        {
+         "t": "str",
+         "v": "ff_only"
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "max_diff_bytes"
+        },
+        {
+         "t": "int",
+         "v": "2000000"
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "network_timeout_seconds"
+        },
+        {
+         "t": "float",
+         "v": "120.0"
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "prune_on_fetch"
+        },
+        {
+         "t": "bool",
+         "v": true
+        }
+       ]
+      ]
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "import_auto_sync"
+     },
+     {
+      "t": "map",
+      "v": [
+       [
+        {
+         "t": "str",
+         "v": "enabled"
+        },
+        {
+         "t": "bool",
+         "v": false
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "notify_new_items"
+        },
+        {
+         "t": "bool",
+         "v": true
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "scan_interval_seconds"
+        },
+        {
+         "t": "int",
+         "v": "300"
+        }
+       ]
+      ]
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "memory_extraction"
+     },
+     {
+      "t": "map",
+      "v": [
+       [
+        {
+         "t": "str",
+         "v": "enabled"
+        },
+        {
+         "t": "bool",
+         "v": true
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "every_n_messages"
+        },
+        {
+         "t": "int",
+         "v": "10"
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "max_input_chars"
+        },
+        {
+         "t": "int",
+         "v": "12000"
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "min_assistant_messages"
+        },
+        {
+         "t": "int",
+         "v": "3"
+        }
+       ]
+      ]
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "memory_vector"
+     },
+     {
+      "t": "map",
+      "v": [
+       [
+        {
+         "t": "str",
+         "v": "backend"
+        },
+        {
+         "t": "str",
+         "v": "disabled"
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "enabled"
+        },
+        {
+         "t": "bool",
+         "v": false
+        }
+       ]
+      ]
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "providers"
+     },
+     {
+      "t": "map",
+      "v": []
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "response_style"
+     },
+     {
+      "t": "map",
+      "v": [
+       [
+        {
+         "t": "str",
+         "v": "style"
+        },
+        {
+         "t": "str",
+         "v": "visual"
+        }
+       ]
+      ]
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "server"
+     },
+     {
+      "t": "map",
+      "v": [
+       [
+        {
+         "t": "str",
+         "v": "host"
+        },
+        {
+         "t": "str",
+         "v": "127.0.0.1"
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "port"
+        },
+        {
+         "t": "int",
+         "v": "4082"
+        }
+       ]
+      ]
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "team_spawn"
+     },
+     {
+      "t": "map",
+      "v": [
+       [
+        {
+         "t": "str",
+         "v": "coding"
+        },
+        {
+         "t": "str",
+         "v": "ask"
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "work"
+        },
+        {
+         "t": "str",
+         "v": "ask"
+        }
+       ]
+      ]
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "title_generation"
+     },
+     {
+      "t": "map",
+      "v": [
+       [
+        {
+         "t": "str",
+         "v": "enabled"
+        },
+        {
+         "t": "bool",
+         "v": true
+        }
+       ]
+      ]
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "webbridge"
+     },
+     {
+      "t": "map",
+      "v": [
+       [
+        {
+         "t": "str",
+         "v": "agent_browsing"
+        },
+        {
+         "t": "bool",
+         "v": true
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "allow_evaluate"
+        },
+        {
+         "t": "bool",
+         "v": true
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "allowed_domains"
+        },
+        {
+         "t": "seq",
+         "v": []
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "audit_log_size"
+        },
+        {
+         "t": "int",
+         "v": "200"
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "blocked_domains"
+        },
+        {
+         "t": "seq",
+         "v": []
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "enabled"
+        },
+        {
+         "t": "bool",
+         "v": true
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "interactions"
+        },
+        {
+         "t": "map",
+         "v": [
+          [
+           {
+            "t": "str",
+            "v": "allow_background_triggers"
+           },
+           {
+            "t": "bool",
+            "v": false
+           }
+          ],
+          [
+           {
+            "t": "str",
+            "v": "max_per_minute"
+           },
+           {
+            "t": "int",
+            "v": "30"
+           }
+          ]
+         ]
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "require_tab_binding"
+        },
+        {
+         "t": "bool",
+         "v": true
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "sharing"
+        },
+        {
+         "t": "map",
+         "v": [
+          [
+           {
+            "t": "str",
+            "v": "allow_readable_page"
+           },
+           {
+            "t": "bool",
+            "v": true
+           }
+          ],
+          [
+           {
+            "t": "str",
+            "v": "allow_screenshot"
+           },
+           {
+            "t": "bool",
+            "v": true
+           }
+          ],
+          [
+           {
+            "t": "str",
+            "v": "allow_selection"
+           },
+           {
+            "t": "bool",
+            "v": true
+           }
+          ],
+          [
+           {
+            "t": "str",
+            "v": "artifact_retention_hours"
+           },
+           {
+            "t": "int",
+            "v": "24"
+           }
+          ],
+          [
+           {
+            "t": "str",
+            "v": "blocked_domains"
+           },
+           {
+            "t": "seq",
+            "v": []
+           }
+          ],
+          [
+           {
+            "t": "str",
+            "v": "default"
+           },
+           {
+            "t": "str",
+            "v": "ask"
+           }
+          ],
+          [
+           {
+            "t": "str",
+            "v": "max_artifact_bytes"
+           },
+           {
+            "t": "int",
+            "v": "5000000"
+           }
+          ]
+         ]
+        }
+       ]
+      ]
+     }
+    ]
+   ]
+  },
+  "sort=0,unicode=0": "background_tasks:\n  wake_idle: true\nbrowser:\n  allow_agent_permission_accept: false\n  allow_clipboard_read: false\n  allow_clipboard_write: true\n  allow_cookie_values: false\n  allow_downloads: true\n  allow_evaluate: true\n  allow_file_uploads: false\n  allow_http_requests: true\n  allow_storage: true\n  allowed_domains: []\n  blocked_domains: []\ncode_reviews:\n  allow_insecure_connections: false\n  allow_mutations: true\n  max_concurrent_repositories: 4\n  max_pages_per_repository: 5\n  request_timeout_seconds: 20.0\n  require_successful_checks_before_merge: false\n  retry_attempts: 2\n  retry_backoff_seconds: 0.5\ncomputer_app:\n  allowed_apps: []\n  blocked_apps: []\n  enabled: false\n  keep_hidden: true\n  permission: ask\nconductor:\n  enabled: false\n  enforcement_mode: report\n  heartbeat_interval_seconds: 60.0\n  request_timeout_seconds: 15.0\n  sync_interval_seconds: 60.0\n  url: ''\ncontext: {}\ndream:\n  enabled: false\n  schedule: 0 2 * * *\nfollow_up:\n  delivery: steer\ngit:\n  allow_force_push: false\n  default_pull_strategy: ff_only\n  max_diff_bytes: 2000000\n  network_timeout_seconds: 120.0\n  prune_on_fetch: true\nimport_auto_sync:\n  enabled: false\n  notify_new_items: true\n  scan_interval_seconds: 300\nmemory_extraction:\n  enabled: true\n  every_n_messages: 10\n  max_input_chars: 12000\n  min_assistant_messages: 3\nmemory_vector:\n  backend: disabled\n  enabled: false\nproviders: {}\nresponse_style:\n  style: visual\nserver:\n  host: 127.0.0.1\n  port: 4082\nteam_spawn:\n  coding: ask\n  work: ask\ntitle_generation:\n  enabled: true\nwebbridge:\n  agent_browsing: true\n  allow_evaluate: true\n  allowed_domains: []\n  audit_log_size: 200\n  blocked_domains: []\n  enabled: true\n  interactions:\n    allow_background_triggers: false\n    max_per_minute: 30\n  require_tab_binding: true\n  sharing:\n    allow_readable_page: true\n    allow_screenshot: true\n    allow_selection: true\n    artifact_retention_hours: 24\n    blocked_domains: []\n    default: ask\n    max_artifact_bytes: 5000000\n",
+  "sort=0,unicode=1": "background_tasks:\n  wake_idle: true\nbrowser:\n  allow_agent_permission_accept: false\n  allow_clipboard_read: false\n  allow_clipboard_write: true\n  allow_cookie_values: false\n  allow_downloads: true\n  allow_evaluate: true\n  allow_file_uploads: false\n  allow_http_requests: true\n  allow_storage: true\n  allowed_domains: []\n  blocked_domains: []\ncode_reviews:\n  allow_insecure_connections: false\n  allow_mutations: true\n  max_concurrent_repositories: 4\n  max_pages_per_repository: 5\n  request_timeout_seconds: 20.0\n  require_successful_checks_before_merge: false\n  retry_attempts: 2\n  retry_backoff_seconds: 0.5\ncomputer_app:\n  allowed_apps: []\n  blocked_apps: []\n  enabled: false\n  keep_hidden: true\n  permission: ask\nconductor:\n  enabled: false\n  enforcement_mode: report\n  heartbeat_interval_seconds: 60.0\n  request_timeout_seconds: 15.0\n  sync_interval_seconds: 60.0\n  url: ''\ncontext: {}\ndream:\n  enabled: false\n  schedule: 0 2 * * *\nfollow_up:\n  delivery: steer\ngit:\n  allow_force_push: false\n  default_pull_strategy: ff_only\n  max_diff_bytes: 2000000\n  network_timeout_seconds: 120.0\n  prune_on_fetch: true\nimport_auto_sync:\n  enabled: false\n  notify_new_items: true\n  scan_interval_seconds: 300\nmemory_extraction:\n  enabled: true\n  every_n_messages: 10\n  max_input_chars: 12000\n  min_assistant_messages: 3\nmemory_vector:\n  backend: disabled\n  enabled: false\nproviders: {}\nresponse_style:\n  style: visual\nserver:\n  host: 127.0.0.1\n  port: 4082\nteam_spawn:\n  coding: ask\n  work: ask\ntitle_generation:\n  enabled: true\nwebbridge:\n  agent_browsing: true\n  allow_evaluate: true\n  allowed_domains: []\n  audit_log_size: 200\n  blocked_domains: []\n  enabled: true\n  interactions:\n    allow_background_triggers: false\n    max_per_minute: 30\n  require_tab_binding: true\n  sharing:\n    allow_readable_page: true\n    allow_screenshot: true\n    allow_selection: true\n    artifact_retention_hours: 24\n    blocked_domains: []\n    default: ask\n    max_artifact_bytes: 5000000\n",
+  "sort=1,unicode=0": "background_tasks:\n  wake_idle: true\nbrowser:\n  allow_agent_permission_accept: false\n  allow_clipboard_read: false\n  allow_clipboard_write: true\n  allow_cookie_values: false\n  allow_downloads: true\n  allow_evaluate: true\n  allow_file_uploads: false\n  allow_http_requests: true\n  allow_storage: true\n  allowed_domains: []\n  blocked_domains: []\ncode_reviews:\n  allow_insecure_connections: false\n  allow_mutations: true\n  max_concurrent_repositories: 4\n  max_pages_per_repository: 5\n  request_timeout_seconds: 20.0\n  require_successful_checks_before_merge: false\n  retry_attempts: 2\n  retry_backoff_seconds: 0.5\ncomputer_app:\n  allowed_apps: []\n  blocked_apps: []\n  enabled: false\n  keep_hidden: true\n  permission: ask\nconductor:\n  enabled: false\n  enforcement_mode: report\n  heartbeat_interval_seconds: 60.0\n  request_timeout_seconds: 15.0\n  sync_interval_seconds: 60.0\n  url: ''\ncontext: {}\ndream:\n  enabled: false\n  schedule: 0 2 * * *\nfollow_up:\n  delivery: steer\ngit:\n  allow_force_push: false\n  default_pull_strategy: ff_only\n  max_diff_bytes: 2000000\n  network_timeout_seconds: 120.0\n  prune_on_fetch: true\nimport_auto_sync:\n  enabled: false\n  notify_new_items: true\n  scan_interval_seconds: 300\nmemory_extraction:\n  enabled: true\n  every_n_messages: 10\n  max_input_chars: 12000\n  min_assistant_messages: 3\nmemory_vector:\n  backend: disabled\n  enabled: false\nproviders: {}\nresponse_style:\n  style: visual\nserver:\n  host: 127.0.0.1\n  port: 4082\nteam_spawn:\n  coding: ask\n  work: ask\ntitle_generation:\n  enabled: true\nwebbridge:\n  agent_browsing: true\n  allow_evaluate: true\n  allowed_domains: []\n  audit_log_size: 200\n  blocked_domains: []\n  enabled: true\n  interactions:\n    allow_background_triggers: false\n    max_per_minute: 30\n  require_tab_binding: true\n  sharing:\n    allow_readable_page: true\n    allow_screenshot: true\n    allow_selection: true\n    artifact_retention_hours: 24\n    blocked_domains: []\n    default: ask\n    max_artifact_bytes: 5000000\n",
+  "sort=1,unicode=1": "background_tasks:\n  wake_idle: true\nbrowser:\n  allow_agent_permission_accept: false\n  allow_clipboard_read: false\n  allow_clipboard_write: true\n  allow_cookie_values: false\n  allow_downloads: true\n  allow_evaluate: true\n  allow_file_uploads: false\n  allow_http_requests: true\n  allow_storage: true\n  allowed_domains: []\n  blocked_domains: []\ncode_reviews:\n  allow_insecure_connections: false\n  allow_mutations: true\n  max_concurrent_repositories: 4\n  max_pages_per_repository: 5\n  request_timeout_seconds: 20.0\n  require_successful_checks_before_merge: false\n  retry_attempts: 2\n  retry_backoff_seconds: 0.5\ncomputer_app:\n  allowed_apps: []\n  blocked_apps: []\n  enabled: false\n  keep_hidden: true\n  permission: ask\nconductor:\n  enabled: false\n  enforcement_mode: report\n  heartbeat_interval_seconds: 60.0\n  request_timeout_seconds: 15.0\n  sync_interval_seconds: 60.0\n  url: ''\ncontext: {}\ndream:\n  enabled: false\n  schedule: 0 2 * * *\nfollow_up:\n  delivery: steer\ngit:\n  allow_force_push: false\n  default_pull_strategy: ff_only\n  max_diff_bytes: 2000000\n  network_timeout_seconds: 120.0\n  prune_on_fetch: true\nimport_auto_sync:\n  enabled: false\n  notify_new_items: true\n  scan_interval_seconds: 300\nmemory_extraction:\n  enabled: true\n  every_n_messages: 10\n  max_input_chars: 12000\n  min_assistant_messages: 3\nmemory_vector:\n  backend: disabled\n  enabled: false\nproviders: {}\nresponse_style:\n  style: visual\nserver:\n  host: 127.0.0.1\n  port: 4082\nteam_spawn:\n  coding: ask\n  work: ask\ntitle_generation:\n  enabled: true\nwebbridge:\n  agent_browsing: true\n  allow_evaluate: true\n  allowed_domains: []\n  audit_log_size: 200\n  blocked_domains: []\n  enabled: true\n  interactions:\n    allow_background_triggers: false\n    max_per_minute: 30\n  require_tab_binding: true\n  sharing:\n    allow_readable_page: true\n    allow_screenshot: true\n    allow_selection: true\n    artifact_retention_hours: 24\n    blocked_domains: []\n    default: ask\n    max_artifact_bytes: 5000000\n"
+ },
+ {
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "background_tasks"
+     },
+     {
+      "t": "map",
+      "v": [
+       [
+        {
+         "t": "str",
+         "v": "wake_idle"
+        },
+        {
+         "t": "bool",
+         "v": true
+        }
+       ]
+      ]
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "browser"
+     },
+     {
+      "t": "map",
+      "v": [
+       [
+        {
+         "t": "str",
+         "v": "allow_agent_permission_accept"
+        },
+        {
+         "t": "bool",
+         "v": false
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "allow_clipboard_read"
+        },
+        {
+         "t": "bool",
+         "v": false
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "allow_clipboard_write"
+        },
+        {
+         "t": "bool",
+         "v": true
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "allow_cookie_values"
+        },
+        {
+         "t": "bool",
+         "v": false
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "allow_downloads"
+        },
+        {
+         "t": "bool",
+         "v": true
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "allow_evaluate"
+        },
+        {
+         "t": "bool",
+         "v": true
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "allow_file_uploads"
+        },
+        {
+         "t": "bool",
+         "v": false
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "allow_http_requests"
+        },
+        {
+         "t": "bool",
+         "v": true
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "allow_storage"
+        },
+        {
+         "t": "bool",
+         "v": true
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "allowed_domains"
+        },
+        {
+         "t": "seq",
+         "v": []
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "blocked_domains"
+        },
+        {
+         "t": "seq",
+         "v": []
+        }
+       ]
+      ]
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "code_reviews"
+     },
+     {
+      "t": "map",
+      "v": [
+       [
+        {
+         "t": "str",
+         "v": "allow_insecure_connections"
+        },
+        {
+         "t": "bool",
+         "v": false
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "allow_mutations"
+        },
+        {
+         "t": "bool",
+         "v": true
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "max_concurrent_repositories"
+        },
+        {
+         "t": "int",
+         "v": "4"
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "max_pages_per_repository"
+        },
+        {
+         "t": "int",
+         "v": "5"
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "request_timeout_seconds"
+        },
+        {
+         "t": "float",
+         "v": "20.0"
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "require_successful_checks_before_merge"
+        },
+        {
+         "t": "bool",
+         "v": false
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "retry_attempts"
+        },
+        {
+         "t": "int",
+         "v": "2"
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "retry_backoff_seconds"
+        },
+        {
+         "t": "float",
+         "v": "0.5"
+        }
+       ]
+      ]
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "computer_app"
+     },
+     {
+      "t": "map",
+      "v": [
+       [
+        {
+         "t": "str",
+         "v": "allowed_apps"
+        },
+        {
+         "t": "seq",
+         "v": []
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "blocked_apps"
+        },
+        {
+         "t": "seq",
+         "v": []
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "enabled"
+        },
+        {
+         "t": "bool",
+         "v": false
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "keep_hidden"
+        },
+        {
+         "t": "bool",
+         "v": true
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "permission"
+        },
+        {
+         "t": "str",
+         "v": "ask"
+        }
+       ]
+      ]
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "conductor"
+     },
+     {
+      "t": "map",
+      "v": [
+       [
+        {
+         "t": "str",
+         "v": "enabled"
+        },
+        {
+         "t": "bool",
+         "v": false
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "enforcement_mode"
+        },
+        {
+         "t": "str",
+         "v": "report"
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "heartbeat_interval_seconds"
+        },
+        {
+         "t": "float",
+         "v": "60.0"
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "request_timeout_seconds"
+        },
+        {
+         "t": "float",
+         "v": "15.0"
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "sync_interval_seconds"
+        },
+        {
+         "t": "float",
+         "v": "60.0"
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "url"
+        },
+        {
+         "t": "str",
+         "v": ""
+        }
+       ]
+      ]
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "context"
+     },
+     {
+      "t": "map",
+      "v": []
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "dream"
+     },
+     {
+      "t": "map",
+      "v": [
+       [
+        {
+         "t": "str",
+         "v": "enabled"
+        },
+        {
+         "t": "bool",
+         "v": false
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "schedule"
+        },
+        {
+         "t": "str",
+         "v": "0 2 * * *"
+        }
+       ]
+      ]
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "follow_up"
+     },
+     {
+      "t": "map",
+      "v": [
+       [
+        {
+         "t": "str",
+         "v": "delivery"
+        },
+        {
+         "t": "str",
+         "v": "queue"
+        }
+       ]
+      ]
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "git"
+     },
+     {
+      "t": "map",
+      "v": [
+       [
+        {
+         "t": "str",
+         "v": "allow_force_push"
+        },
+        {
+         "t": "bool",
+         "v": false
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "default_pull_strategy"
+        },
+        {
+         "t": "str",
+         "v": "ff_only"
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "max_diff_bytes"
+        },
+        {
+         "t": "int",
+         "v": "2000000"
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "network_timeout_seconds"
+        },
+        {
+         "t": "float",
+         "v": "120.0"
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "prune_on_fetch"
+        },
+        {
+         "t": "bool",
+         "v": true
+        }
+       ]
+      ]
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "import_auto_sync"
+     },
+     {
+      "t": "map",
+      "v": [
+       [
+        {
+         "t": "str",
+         "v": "enabled"
+        },
+        {
+         "t": "bool",
+         "v": false
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "notify_new_items"
+        },
+        {
+         "t": "bool",
+         "v": false
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "scan_interval_seconds"
+        },
+        {
+         "t": "int",
+         "v": "300"
+        }
+       ]
+      ]
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "memory_extraction"
+     },
+     {
+      "t": "map",
+      "v": [
+       [
+        {
+         "t": "str",
+         "v": "enabled"
+        },
+        {
+         "t": "bool",
+         "v": true
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "every_n_messages"
+        },
+        {
+         "t": "int",
+         "v": "10"
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "max_input_chars"
+        },
+        {
+         "t": "int",
+         "v": "12000"
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "min_assistant_messages"
+        },
+        {
+         "t": "int",
+         "v": "3"
+        }
+       ]
+      ]
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "memory_vector"
+     },
+     {
+      "t": "map",
+      "v": [
+       [
+        {
+         "t": "str",
+         "v": "backend"
+        },
+        {
+         "t": "str",
+         "v": "disabled"
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "enabled"
+        },
+        {
+         "t": "bool",
+         "v": false
+        }
+       ]
+      ]
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "providers"
+     },
+     {
+      "t": "map",
+      "v": []
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "response_style"
+     },
+     {
+      "t": "map",
+      "v": [
+       [
+        {
+         "t": "str",
+         "v": "style"
+        },
+        {
+         "t": "str",
+         "v": "visual"
+        }
+       ]
+      ]
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "server"
+     },
+     {
+      "t": "map",
+      "v": [
+       [
+        {
+         "t": "str",
+         "v": "host"
+        },
+        {
+         "t": "str",
+         "v": "127.0.0.1"
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "port"
+        },
+        {
+         "t": "int",
+         "v": "4082"
+        }
+       ]
+      ]
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "team_spawn"
+     },
+     {
+      "t": "map",
+      "v": [
+       [
+        {
+         "t": "str",
+         "v": "coding"
+        },
+        {
+         "t": "str",
+         "v": "ask"
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "work"
+        },
+        {
+         "t": "str",
+         "v": "ask"
+        }
+       ]
+      ]
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "title_generation"
+     },
+     {
+      "t": "map",
+      "v": [
+       [
+        {
+         "t": "str",
+         "v": "enabled"
+        },
+        {
+         "t": "bool",
+         "v": true
+        }
+       ]
+      ]
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "webbridge"
+     },
+     {
+      "t": "map",
+      "v": [
+       [
+        {
+         "t": "str",
+         "v": "agent_browsing"
+        },
+        {
+         "t": "bool",
+         "v": true
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "allow_evaluate"
+        },
+        {
+         "t": "bool",
+         "v": true
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "allowed_domains"
+        },
+        {
+         "t": "seq",
+         "v": []
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "audit_log_size"
+        },
+        {
+         "t": "int",
+         "v": "200"
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "blocked_domains"
+        },
+        {
+         "t": "seq",
+         "v": []
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "enabled"
+        },
+        {
+         "t": "bool",
+         "v": true
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "interactions"
+        },
+        {
+         "t": "map",
+         "v": [
+          [
+           {
+            "t": "str",
+            "v": "allow_background_triggers"
+           },
+           {
+            "t": "bool",
+            "v": false
+           }
+          ],
+          [
+           {
+            "t": "str",
+            "v": "max_per_minute"
+           },
+           {
+            "t": "int",
+            "v": "30"
+           }
+          ]
+         ]
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "require_tab_binding"
+        },
+        {
+         "t": "bool",
+         "v": true
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "sharing"
+        },
+        {
+         "t": "map",
+         "v": [
+          [
+           {
+            "t": "str",
+            "v": "allow_readable_page"
+           },
+           {
+            "t": "bool",
+            "v": true
+           }
+          ],
+          [
+           {
+            "t": "str",
+            "v": "allow_screenshot"
+           },
+           {
+            "t": "bool",
+            "v": true
+           }
+          ],
+          [
+           {
+            "t": "str",
+            "v": "allow_selection"
+           },
+           {
+            "t": "bool",
+            "v": true
+           }
+          ],
+          [
+           {
+            "t": "str",
+            "v": "artifact_retention_hours"
+           },
+           {
+            "t": "int",
+            "v": "24"
+           }
+          ],
+          [
+           {
+            "t": "str",
+            "v": "blocked_domains"
+           },
+           {
+            "t": "seq",
+            "v": []
+           }
+          ],
+          [
+           {
+            "t": "str",
+            "v": "default"
+           },
+           {
+            "t": "str",
+            "v": "ask"
+           }
+          ],
+          [
+           {
+            "t": "str",
+            "v": "max_artifact_bytes"
+           },
+           {
+            "t": "int",
+            "v": "5000000"
+           }
+          ]
+         ]
+        }
+       ]
+      ]
+     }
+    ]
+   ]
+  },
+  "sort=0,unicode=0": "background_tasks:\n  wake_idle: true\nbrowser:\n  allow_agent_permission_accept: false\n  allow_clipboard_read: false\n  allow_clipboard_write: true\n  allow_cookie_values: false\n  allow_downloads: true\n  allow_evaluate: true\n  allow_file_uploads: false\n  allow_http_requests: true\n  allow_storage: true\n  allowed_domains: []\n  blocked_domains: []\ncode_reviews:\n  allow_insecure_connections: false\n  allow_mutations: true\n  max_concurrent_repositories: 4\n  max_pages_per_repository: 5\n  request_timeout_seconds: 20.0\n  require_successful_checks_before_merge: false\n  retry_attempts: 2\n  retry_backoff_seconds: 0.5\ncomputer_app:\n  allowed_apps: []\n  blocked_apps: []\n  enabled: false\n  keep_hidden: true\n  permission: ask\nconductor:\n  enabled: false\n  enforcement_mode: report\n  heartbeat_interval_seconds: 60.0\n  request_timeout_seconds: 15.0\n  sync_interval_seconds: 60.0\n  url: ''\ncontext: {}\ndream:\n  enabled: false\n  schedule: 0 2 * * *\nfollow_up:\n  delivery: queue\ngit:\n  allow_force_push: false\n  default_pull_strategy: ff_only\n  max_diff_bytes: 2000000\n  network_timeout_seconds: 120.0\n  prune_on_fetch: true\nimport_auto_sync:\n  enabled: false\n  notify_new_items: false\n  scan_interval_seconds: 300\nmemory_extraction:\n  enabled: true\n  every_n_messages: 10\n  max_input_chars: 12000\n  min_assistant_messages: 3\nmemory_vector:\n  backend: disabled\n  enabled: false\nproviders: {}\nresponse_style:\n  style: visual\nserver:\n  host: 127.0.0.1\n  port: 4082\nteam_spawn:\n  coding: ask\n  work: ask\ntitle_generation:\n  enabled: true\nwebbridge:\n  agent_browsing: true\n  allow_evaluate: true\n  allowed_domains: []\n  audit_log_size: 200\n  blocked_domains: []\n  enabled: true\n  interactions:\n    allow_background_triggers: false\n    max_per_minute: 30\n  require_tab_binding: true\n  sharing:\n    allow_readable_page: true\n    allow_screenshot: true\n    allow_selection: true\n    artifact_retention_hours: 24\n    blocked_domains: []\n    default: ask\n    max_artifact_bytes: 5000000\n",
+  "sort=0,unicode=1": "background_tasks:\n  wake_idle: true\nbrowser:\n  allow_agent_permission_accept: false\n  allow_clipboard_read: false\n  allow_clipboard_write: true\n  allow_cookie_values: false\n  allow_downloads: true\n  allow_evaluate: true\n  allow_file_uploads: false\n  allow_http_requests: true\n  allow_storage: true\n  allowed_domains: []\n  blocked_domains: []\ncode_reviews:\n  allow_insecure_connections: false\n  allow_mutations: true\n  max_concurrent_repositories: 4\n  max_pages_per_repository: 5\n  request_timeout_seconds: 20.0\n  require_successful_checks_before_merge: false\n  retry_attempts: 2\n  retry_backoff_seconds: 0.5\ncomputer_app:\n  allowed_apps: []\n  blocked_apps: []\n  enabled: false\n  keep_hidden: true\n  permission: ask\nconductor:\n  enabled: false\n  enforcement_mode: report\n  heartbeat_interval_seconds: 60.0\n  request_timeout_seconds: 15.0\n  sync_interval_seconds: 60.0\n  url: ''\ncontext: {}\ndream:\n  enabled: false\n  schedule: 0 2 * * *\nfollow_up:\n  delivery: queue\ngit:\n  allow_force_push: false\n  default_pull_strategy: ff_only\n  max_diff_bytes: 2000000\n  network_timeout_seconds: 120.0\n  prune_on_fetch: true\nimport_auto_sync:\n  enabled: false\n  notify_new_items: false\n  scan_interval_seconds: 300\nmemory_extraction:\n  enabled: true\n  every_n_messages: 10\n  max_input_chars: 12000\n  min_assistant_messages: 3\nmemory_vector:\n  backend: disabled\n  enabled: false\nproviders: {}\nresponse_style:\n  style: visual\nserver:\n  host: 127.0.0.1\n  port: 4082\nteam_spawn:\n  coding: ask\n  work: ask\ntitle_generation:\n  enabled: true\nwebbridge:\n  agent_browsing: true\n  allow_evaluate: true\n  allowed_domains: []\n  audit_log_size: 200\n  blocked_domains: []\n  enabled: true\n  interactions:\n    allow_background_triggers: false\n    max_per_minute: 30\n  require_tab_binding: true\n  sharing:\n    allow_readable_page: true\n    allow_screenshot: true\n    allow_selection: true\n    artifact_retention_hours: 24\n    blocked_domains: []\n    default: ask\n    max_artifact_bytes: 5000000\n",
+  "sort=1,unicode=0": "background_tasks:\n  wake_idle: true\nbrowser:\n  allow_agent_permission_accept: false\n  allow_clipboard_read: false\n  allow_clipboard_write: true\n  allow_cookie_values: false\n  allow_downloads: true\n  allow_evaluate: true\n  allow_file_uploads: false\n  allow_http_requests: true\n  allow_storage: true\n  allowed_domains: []\n  blocked_domains: []\ncode_reviews:\n  allow_insecure_connections: false\n  allow_mutations: true\n  max_concurrent_repositories: 4\n  max_pages_per_repository: 5\n  request_timeout_seconds: 20.0\n  require_successful_checks_before_merge: false\n  retry_attempts: 2\n  retry_backoff_seconds: 0.5\ncomputer_app:\n  allowed_apps: []\n  blocked_apps: []\n  enabled: false\n  keep_hidden: true\n  permission: ask\nconductor:\n  enabled: false\n  enforcement_mode: report\n  heartbeat_interval_seconds: 60.0\n  request_timeout_seconds: 15.0\n  sync_interval_seconds: 60.0\n  url: ''\ncontext: {}\ndream:\n  enabled: false\n  schedule: 0 2 * * *\nfollow_up:\n  delivery: queue\ngit:\n  allow_force_push: false\n  default_pull_strategy: ff_only\n  max_diff_bytes: 2000000\n  network_timeout_seconds: 120.0\n  prune_on_fetch: true\nimport_auto_sync:\n  enabled: false\n  notify_new_items: false\n  scan_interval_seconds: 300\nmemory_extraction:\n  enabled: true\n  every_n_messages: 10\n  max_input_chars: 12000\n  min_assistant_messages: 3\nmemory_vector:\n  backend: disabled\n  enabled: false\nproviders: {}\nresponse_style:\n  style: visual\nserver:\n  host: 127.0.0.1\n  port: 4082\nteam_spawn:\n  coding: ask\n  work: ask\ntitle_generation:\n  enabled: true\nwebbridge:\n  agent_browsing: true\n  allow_evaluate: true\n  allowed_domains: []\n  audit_log_size: 200\n  blocked_domains: []\n  enabled: true\n  interactions:\n    allow_background_triggers: false\n    max_per_minute: 30\n  require_tab_binding: true\n  sharing:\n    allow_readable_page: true\n    allow_screenshot: true\n    allow_selection: true\n    artifact_retention_hours: 24\n    blocked_domains: []\n    default: ask\n    max_artifact_bytes: 5000000\n",
+  "sort=1,unicode=1": "background_tasks:\n  wake_idle: true\nbrowser:\n  allow_agent_permission_accept: false\n  allow_clipboard_read: false\n  allow_clipboard_write: true\n  allow_cookie_values: false\n  allow_downloads: true\n  allow_evaluate: true\n  allow_file_uploads: false\n  allow_http_requests: true\n  allow_storage: true\n  allowed_domains: []\n  blocked_domains: []\ncode_reviews:\n  allow_insecure_connections: false\n  allow_mutations: true\n  max_concurrent_repositories: 4\n  max_pages_per_repository: 5\n  request_timeout_seconds: 20.0\n  require_successful_checks_before_merge: false\n  retry_attempts: 2\n  retry_backoff_seconds: 0.5\ncomputer_app:\n  allowed_apps: []\n  blocked_apps: []\n  enabled: false\n  keep_hidden: true\n  permission: ask\nconductor:\n  enabled: false\n  enforcement_mode: report\n  heartbeat_interval_seconds: 60.0\n  request_timeout_seconds: 15.0\n  sync_interval_seconds: 60.0\n  url: ''\ncontext: {}\ndream:\n  enabled: false\n  schedule: 0 2 * * *\nfollow_up:\n  delivery: queue\ngit:\n  allow_force_push: false\n  default_pull_strategy: ff_only\n  max_diff_bytes: 2000000\n  network_timeout_seconds: 120.0\n  prune_on_fetch: true\nimport_auto_sync:\n  enabled: false\n  notify_new_items: false\n  scan_interval_seconds: 300\nmemory_extraction:\n  enabled: true\n  every_n_messages: 10\n  max_input_chars: 12000\n  min_assistant_messages: 3\nmemory_vector:\n  backend: disabled\n  enabled: false\nproviders: {}\nresponse_style:\n  style: visual\nserver:\n  host: 127.0.0.1\n  port: 4082\nteam_spawn:\n  coding: ask\n  work: ask\ntitle_generation:\n  enabled: true\nwebbridge:\n  agent_browsing: true\n  allow_evaluate: true\n  allowed_domains: []\n  audit_log_size: 200\n  blocked_domains: []\n  enabled: true\n  interactions:\n    allow_background_triggers: false\n    max_per_minute: 30\n  require_tab_binding: true\n  sharing:\n    allow_readable_page: true\n    allow_screenshot: true\n    allow_selection: true\n    artifact_retention_hours: 24\n    blocked_domains: []\n    default: ask\n    max_artifact_bytes: 5000000\n"
+ }
+]
