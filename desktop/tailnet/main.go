@@ -430,8 +430,65 @@ func (a *tailnetApp) refreshIdentity(status *ipnstate.Status) {
 	}
 }
 
+type proxyIdentityKey struct{}
+
+type proxyIdentity struct {
+	login  string
+	device string
+}
+
+func withProxyIdentity(request *http.Request, login, device string) *http.Request {
+	return request.WithContext(context.WithValue(request.Context(), proxyIdentityKey{}, proxyIdentity{login, device}))
+}
+
+func newIdentityProxy(target *url.URL, proxyKey string) *httputil.ReverseProxy {
+	return &httputil.ReverseProxy{Rewrite: func(pr *httputil.ProxyRequest) {
+		// Keep the Director proxy's query joining and inbound Host behavior.
+		pr.Out.URL.RawQuery = pr.In.URL.RawQuery
+		pr.SetURL(target)
+		pr.Out.Host = pr.In.Host
+
+		// Rewrite strips forwarding headers. Restore only those that would
+		// survive the old proxy's hop-by-hop removal, then append the client IP.
+		forwarded := pr.In.Header.Clone()
+		for _, connection := range pr.In.Header.Values("Connection") {
+			for _, header := range strings.Split(connection, ",") {
+				forwarded.Del(strings.TrimSpace(header))
+			}
+		}
+		for _, header := range []string{"Forwarded", "X-Forwarded-For", "X-Forwarded-Host", "X-Forwarded-Proto"} {
+			if values, ok := forwarded[header]; ok {
+				pr.Out.Header[header] = values
+			}
+		}
+		if clientIP, _, err := net.SplitHostPort(pr.In.RemoteAddr); err == nil {
+			prior, ok := pr.Out.Header["X-Forwarded-For"]
+			if len(prior) > 0 {
+				clientIP = strings.Join(prior, ", ") + ", " + clientIP
+			}
+			if !ok || prior != nil {
+				pr.Out.Header.Set("X-Forwarded-For", clientIP)
+			}
+		}
+
+		// Verified identity must be set after Connection-named headers are removed.
+		identity, ok := pr.In.Context().Value(proxyIdentityKey{}).(proxyIdentity)
+		pr.Out.Header.Del("Tailscale-User-Login")
+		pr.Out.Header.Del("X-EvoFlux-Device-Label")
+		pr.Out.Header.Del("X-EvoFlux-Remote-Proxy")
+		pr.Out.Header.Del("X-EvoFlux-Remote-Token")
+		if !ok || identity.login == "" {
+			return
+		}
+		pr.Out.Header.Set("Tailscale-User-Login", identity.login)
+		pr.Out.Header.Set("X-EvoFlux-Device-Label", identity.device)
+		pr.Out.Header.Set("X-EvoFlux-Remote-Proxy", proxyMarker)
+		pr.Out.Header.Set("X-EvoFlux-Remote-Token", proxyKey)
+	}}
+}
+
 func (a *tailnetApp) proxyHandler() http.Handler {
-	proxy := httputil.NewSingleHostReverseProxy(a.target)
+	proxy := newIdentityProxy(a.target, a.proxyKey)
 	proxy.ErrorHandler = func(w http.ResponseWriter, _ *http.Request, err error) {
 		log.Printf("reverse proxy error: %v", err)
 		http.Error(w, "EvoFlux backend is unavailable", http.StatusBadGateway)
@@ -468,15 +525,7 @@ func (a *tailnetApp) proxyHandler() http.Handler {
 				device = strings.TrimSuffix(identity.Node.Name, ".")
 			}
 		}
-		request.Header.Del("Tailscale-User-Login")
-		request.Header.Del("X-EvoFlux-Device-Label")
-		request.Header.Del("X-EvoFlux-Remote-Proxy")
-		request.Header.Del("X-EvoFlux-Remote-Token")
-		request.Header.Set("Tailscale-User-Login", login)
-		request.Header.Set("X-EvoFlux-Device-Label", device)
-		request.Header.Set("X-EvoFlux-Remote-Proxy", proxyMarker)
-		request.Header.Set("X-EvoFlux-Remote-Token", a.proxyKey)
-		proxy.ServeHTTP(w, request)
+		proxy.ServeHTTP(w, withProxyIdentity(request, login, device))
 	})
 }
 
