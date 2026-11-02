@@ -1,0 +1,2517 @@
+[
+ {
+  "yaml": "a: yes\nb: No\nc: ON\nd: off\ne: true\nf: FALSE\ng: y\nh: n\n",
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "a"
+     },
+     {
+      "t": "bool",
+      "v": true
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "b"
+     },
+     {
+      "t": "bool",
+      "v": false
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "c"
+     },
+     {
+      "t": "bool",
+      "v": true
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "d"
+     },
+     {
+      "t": "bool",
+      "v": false
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "e"
+     },
+     {
+      "t": "bool",
+      "v": true
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "f"
+     },
+     {
+      "t": "bool",
+      "v": false
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "g"
+     },
+     {
+      "t": "str",
+      "v": "y"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "h"
+     },
+     {
+      "t": "str",
+      "v": "n"
+     }
+    ]
+   ]
+  }
+ },
+ {
+  "yaml": "a: null\nb: ~\nc:\nd: Null\ne: NULL\nf: nil\n",
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "a"
+     },
+     {
+      "t": "null"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "b"
+     },
+     {
+      "t": "null"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "c"
+     },
+     {
+      "t": "null"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "d"
+     },
+     {
+      "t": "null"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "e"
+     },
+     {
+      "t": "null"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "f"
+     },
+     {
+      "t": "str",
+      "v": "nil"
+     }
+    ]
+   ]
+  }
+ },
+ {
+  "yaml": "name: on\n",
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "name"
+     },
+     {
+      "t": "bool",
+      "v": true
+     }
+    ]
+   ]
+  }
+ },
+ {
+  "yaml": "- yes\n- 'yes'\n- \"off\"\n- !!str on\n",
+  "value": {
+   "t": "seq",
+   "v": [
+    {
+     "t": "bool",
+     "v": true
+    },
+    {
+     "t": "str",
+     "v": "yes"
+    },
+    {
+     "t": "str",
+     "v": "off"
+    },
+    {
+     "t": "str",
+     "v": "on"
+    }
+   ]
+  }
+ },
+ {
+  "yaml": "a: 0\nb: -0\nc: +7\nd: 1_000\ne: 017\nf: 0o17\ng: 08\nh: 0x1F\ni: 0b101\nj: 190:20:30\nk: -1:30\n",
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "a"
+     },
+     {
+      "t": "int",
+      "v": "0"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "b"
+     },
+     {
+      "t": "int",
+      "v": "0"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "c"
+     },
+     {
+      "t": "int",
+      "v": "7"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "d"
+     },
+     {
+      "t": "int",
+      "v": "1000"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "e"
+     },
+     {
+      "t": "int",
+      "v": "15"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "f"
+     },
+     {
+      "t": "str",
+      "v": "0o17"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "g"
+     },
+     {
+      "t": "str",
+      "v": "08"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "h"
+     },
+     {
+      "t": "int",
+      "v": "31"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "i"
+     },
+     {
+      "t": "int",
+      "v": "5"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "j"
+     },
+     {
+      "t": "int",
+      "v": "685230"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "k"
+     },
+     {
+      "t": "int",
+      "v": "-90"
+     }
+    ]
+   ]
+  }
+ },
+ {
+  "yaml": "a: 12345678901234567890\nb: 007\nc: 0_7\nd: 0x_ff\n",
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "a"
+     },
+     {
+      "t": "int",
+      "v": "12345678901234567890"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "b"
+     },
+     {
+      "t": "int",
+      "v": "7"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "c"
+     },
+     {
+      "t": "int",
+      "v": "7"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "d"
+     },
+     {
+      "t": "int",
+      "v": "255"
+     }
+    ]
+   ]
+  }
+ },
+ {
+  "yaml": "a: 1.0\nb: .5\nc: 1.\nd: 1e3\ne: 1.0e+3\nf: 1.0e3\ng: -.inf\nh: .NaN\ni: 190:20:30.15\nj: 6.8523015e+5\nk: 1_0.5\n",
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "a"
+     },
+     {
+      "t": "float",
+      "v": "1.0"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "b"
+     },
+     {
+      "t": "float",
+      "v": "0.5"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "c"
+     },
+     {
+      "t": "float",
+      "v": "1.0"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "d"
+     },
+     {
+      "t": "str",
+      "v": "1e3"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "e"
+     },
+     {
+      "t": "float",
+      "v": "1000.0"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "f"
+     },
+     {
+      "t": "str",
+      "v": "1.0e3"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "g"
+     },
+     {
+      "t": "float",
+      "v": "-inf"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "h"
+     },
+     {
+      "t": "float",
+      "v": "nan"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "i"
+     },
+     {
+      "t": "float",
+      "v": "685230.15"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "j"
+     },
+     {
+      "t": "float",
+      "v": "685230.15"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "k"
+     },
+     {
+      "t": "float",
+      "v": "10.5"
+     }
+    ]
+   ]
+  }
+ },
+ {
+  "yaml": "a: 3.14159265358979\nb: 0.1\nc: 1.5e-10\nd: +.Inf\ne: 100.\n",
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "a"
+     },
+     {
+      "t": "float",
+      "v": "3.14159265358979"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "b"
+     },
+     {
+      "t": "float",
+      "v": "0.1"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "c"
+     },
+     {
+      "t": "float",
+      "v": "1.5e-10"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "d"
+     },
+     {
+      "t": "float",
+      "v": "inf"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "e"
+     },
+     {
+      "t": "float",
+      "v": "100.0"
+     }
+    ]
+   ]
+  }
+ },
+ {
+  "yaml": "a: 2001-12-14\nb: 2001-12-14t21:59:43.10-05:00\nc: 2001-12-14 21:59:43.10 -5\nd: 2001-12-15T02:59:43.1Z\ne: 2001-12-15 2:59:43.10\n",
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "a"
+     },
+     {
+      "t": "timestamp",
+      "v": "2001-12-14"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "b"
+     },
+     {
+      "t": "timestamp",
+      "v": "2001-12-14 21:59:43.100000-05:00"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "c"
+     },
+     {
+      "t": "timestamp",
+      "v": "2001-12-14 21:59:43.100000-05:00"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "d"
+     },
+     {
+      "t": "timestamp",
+      "v": "2001-12-15 02:59:43.100000+00:00"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "e"
+     },
+     {
+      "t": "timestamp",
+      "v": "2001-12-15 02:59:43.100000"
+     }
+    ]
+   ]
+  }
+ },
+ {
+  "yaml": "a: 2002-1-1\nb: 2002-1-1 1:02:03\nc: 2024-02-29\nd: 2001-12-14 21:59:43.1234567\n",
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "a"
+     },
+     {
+      "t": "str",
+      "v": "2002-1-1"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "b"
+     },
+     {
+      "t": "timestamp",
+      "v": "2002-01-01 01:02:03"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "c"
+     },
+     {
+      "t": "timestamp",
+      "v": "2024-02-29"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "d"
+     },
+     {
+      "t": "timestamp",
+      "v": "2001-12-14 21:59:43.123456"
+     }
+    ]
+   ]
+  }
+ },
+ {
+  "yaml": "created: 2024-01-01\nupdated: 2024-01-01 10:00:00+01:00\n",
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "created"
+     },
+     {
+      "t": "timestamp",
+      "v": "2024-01-01"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "updated"
+     },
+     {
+      "t": "timestamp",
+      "v": "2024-01-01 10:00:00+01:00"
+     }
+    ]
+   ]
+  }
+ },
+ {
+  "yaml": "a: 'single ''quoted'''\nb: \"double \\\"quoted\\\" \\t tab \\u00e9\"\nc: plain text here\nd: 'a: b'\n",
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "a"
+     },
+     {
+      "t": "str",
+      "v": "single 'quoted'"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "b"
+     },
+     {
+      "t": "str",
+      "v": "double \"quoted\" \t tab é"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "c"
+     },
+     {
+      "t": "str",
+      "v": "plain text here"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "d"
+     },
+     {
+      "t": "str",
+      "v": "a: b"
+     }
+    ]
+   ]
+  }
+ },
+ {
+  "yaml": "a: '1.0'\nb: \"123\"\nc: ''\nd: \"\"\ne: ' '\n",
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "a"
+     },
+     {
+      "t": "str",
+      "v": "1.0"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "b"
+     },
+     {
+      "t": "str",
+      "v": "123"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "c"
+     },
+     {
+      "t": "str",
+      "v": ""
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "d"
+     },
+     {
+      "t": "str",
+      "v": ""
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "e"
+     },
+     {
+      "t": "str",
+      "v": " "
+     }
+    ]
+   ]
+  }
+ },
+ {
+  "yaml": "s: café\nt: \"\\xE9\"\nu: 日本語\n",
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "s"
+     },
+     {
+      "t": "str",
+      "v": "café"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "t"
+     },
+     {
+      "t": "str",
+      "v": "é"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "u"
+     },
+     {
+      "t": "str",
+      "v": "日本語"
+     }
+    ]
+   ]
+  }
+ },
+ {
+  "yaml": "k: x # comment\n# whole line\nl: 'y # not comment'\n",
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "k"
+     },
+     {
+      "t": "str",
+      "v": "x"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "l"
+     },
+     {
+      "t": "str",
+      "v": "y # not comment"
+     }
+    ]
+   ]
+  }
+ },
+ {
+  "yaml": "lit: |\n  line one\n  line two\nfold: >\n  folded\n  text\n\n  para\n",
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "lit"
+     },
+     {
+      "t": "str",
+      "v": "line one\nline two\n"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "fold"
+     },
+     {
+      "t": "str",
+      "v": "folded text\npara\n"
+     }
+    ]
+   ]
+  }
+ },
+ {
+  "yaml": "keep: |+\n  a\n\nstrip: |-\n  b\nclip: |\n  c\n\n",
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "keep"
+     },
+     {
+      "t": "str",
+      "v": "a\n\n"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "strip"
+     },
+     {
+      "t": "str",
+      "v": "b"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "clip"
+     },
+     {
+      "t": "str",
+      "v": "c\n"
+     }
+    ]
+   ]
+  }
+ },
+ {
+  "yaml": "ind: |2\n    indented\n  less\n",
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "ind"
+     },
+     {
+      "t": "str",
+      "v": "  indented\nless\n"
+     }
+    ]
+   ]
+  }
+ },
+ {
+  "yaml": "a: this is\n  a multi line\n  plain scalar\nb: 'quoted\n  across lines'\n",
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "a"
+     },
+     {
+      "t": "str",
+      "v": "this is a multi line plain scalar"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "b"
+     },
+     {
+      "t": "str",
+      "v": "quoted across lines"
+     }
+    ]
+   ]
+  }
+ },
+ {
+  "yaml": "a: \"double\\\n  continued\"\n",
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "a"
+     },
+     {
+      "t": "str",
+      "v": "doublecontinued"
+     }
+    ]
+   ]
+  }
+ },
+ {
+  "yaml": "tools: [read, write, 'bash']\nmeta: {a: 1, b: [x, y]}\n",
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "tools"
+     },
+     {
+      "t": "seq",
+      "v": [
+       {
+        "t": "str",
+        "v": "read"
+       },
+       {
+        "t": "str",
+        "v": "write"
+       },
+       {
+        "t": "str",
+        "v": "bash"
+       }
+      ]
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "meta"
+     },
+     {
+      "t": "map",
+      "v": [
+       [
+        {
+         "t": "str",
+         "v": "a"
+        },
+        {
+         "t": "int",
+         "v": "1"
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "b"
+        },
+        {
+         "t": "seq",
+         "v": [
+          {
+           "t": "str",
+           "v": "x"
+          },
+          {
+           "t": "str",
+           "v": "y"
+          }
+         ]
+        }
+       ]
+      ]
+     }
+    ]
+   ]
+  }
+ },
+ {
+  "yaml": "- - a\n  - b\n- - c\n- {}\n- []\n",
+  "value": {
+   "t": "seq",
+   "v": [
+    {
+     "t": "seq",
+     "v": [
+      {
+       "t": "str",
+       "v": "a"
+      },
+      {
+       "t": "str",
+       "v": "b"
+      }
+     ]
+    },
+    {
+     "t": "seq",
+     "v": [
+      {
+       "t": "str",
+       "v": "c"
+      }
+     ]
+    },
+    {
+     "t": "map",
+     "v": []
+    },
+    {
+     "t": "seq",
+     "v": []
+    }
+   ]
+  }
+ },
+ {
+  "yaml": "outer:\n  inner:\n    deep: 1\n  list:\n  - 1\n  - two: 2\n    three: 3\n",
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "outer"
+     },
+     {
+      "t": "map",
+      "v": [
+       [
+        {
+         "t": "str",
+         "v": "inner"
+        },
+        {
+         "t": "map",
+         "v": [
+          [
+           {
+            "t": "str",
+            "v": "deep"
+           },
+           {
+            "t": "int",
+            "v": "1"
+           }
+          ]
+         ]
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "list"
+        },
+        {
+         "t": "seq",
+         "v": [
+          {
+           "t": "int",
+           "v": "1"
+          },
+          {
+           "t": "map",
+           "v": [
+            [
+             {
+              "t": "str",
+              "v": "two"
+             },
+             {
+              "t": "int",
+              "v": "2"
+             }
+            ],
+            [
+             {
+              "t": "str",
+              "v": "three"
+             },
+             {
+              "t": "int",
+              "v": "3"
+             }
+            ]
+           ]
+          }
+         ]
+        }
+       ]
+      ]
+     }
+    ]
+   ]
+  }
+ },
+ {
+  "yaml": "a:\n- 1\n- 2\nb:\n  - 3\n",
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "a"
+     },
+     {
+      "t": "seq",
+      "v": [
+       {
+        "t": "int",
+        "v": "1"
+       },
+       {
+        "t": "int",
+        "v": "2"
+       }
+      ]
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "b"
+     },
+     {
+      "t": "seq",
+      "v": [
+       {
+        "t": "int",
+        "v": "3"
+       }
+      ]
+     }
+    ]
+   ]
+  }
+ },
+ {
+  "yaml": "[1, 2, [3, [4, 5]]]\n",
+  "value": {
+   "t": "seq",
+   "v": [
+    {
+     "t": "int",
+     "v": "1"
+    },
+    {
+     "t": "int",
+     "v": "2"
+    },
+    {
+     "t": "seq",
+     "v": [
+      {
+       "t": "int",
+       "v": "3"
+      },
+      {
+       "t": "seq",
+       "v": [
+        {
+         "t": "int",
+         "v": "4"
+        },
+        {
+         "t": "int",
+         "v": "5"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "yaml": "{a: 1}\n",
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "a"
+     },
+     {
+      "t": "int",
+      "v": "1"
+     }
+    ]
+   ]
+  }
+ },
+ {
+  "yaml": "- a\n- b\n",
+  "value": {
+   "t": "seq",
+   "v": [
+    {
+     "t": "str",
+     "v": "a"
+    },
+    {
+     "t": "str",
+     "v": "b"
+    }
+   ]
+  }
+ },
+ {
+  "yaml": "1: one\n2.5: two\ntrue: three\nnull: four\n2024-01-01: five\n",
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "int",
+      "v": "1"
+     },
+     {
+      "t": "str",
+      "v": "three"
+     }
+    ],
+    [
+     {
+      "t": "float",
+      "v": "2.5"
+     },
+     {
+      "t": "str",
+      "v": "two"
+     }
+    ],
+    [
+     {
+      "t": "null"
+     },
+     {
+      "t": "str",
+      "v": "four"
+     }
+    ],
+    [
+     {
+      "t": "timestamp",
+      "v": "2024-01-01"
+     },
+     {
+      "t": "str",
+      "v": "five"
+     }
+    ]
+   ]
+  }
+ },
+ {
+  "yaml": "1: a\ntrue: b\n1.0: c\n",
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "int",
+      "v": "1"
+     },
+     {
+      "t": "str",
+      "v": "c"
+     }
+    ]
+   ]
+  }
+ },
+ {
+  "yaml": "a: 1\na: 2\nb: 3\n",
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "a"
+     },
+     {
+      "t": "int",
+      "v": "2"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "b"
+     },
+     {
+      "t": "int",
+      "v": "3"
+     }
+    ]
+   ]
+  }
+ },
+ {
+  "yaml": "? complex key\n: value\n",
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "complex key"
+     },
+     {
+      "t": "str",
+      "v": "value"
+     }
+    ]
+   ]
+  }
+ },
+ {
+  "yaml": "'quoted key': 1\n\"dq key\": 2\n",
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "quoted key"
+     },
+     {
+      "t": "int",
+      "v": "1"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "dq key"
+     },
+     {
+      "t": "int",
+      "v": "2"
+     }
+    ]
+   ]
+  }
+ },
+ {
+  "yaml": "yes: 1\nno: 2\non: 3\n",
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "bool",
+      "v": true
+     },
+     {
+      "t": "int",
+      "v": "3"
+     }
+    ],
+    [
+     {
+      "t": "bool",
+      "v": false
+     },
+     {
+      "t": "int",
+      "v": "2"
+     }
+    ]
+   ]
+  }
+ },
+ {
+  "yaml": "base: &b {x: 1, y: 2}\nderived:\n  <<: *b\n  y: 3\n",
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "base"
+     },
+     {
+      "t": "map",
+      "v": [
+       [
+        {
+         "t": "str",
+         "v": "x"
+        },
+        {
+         "t": "int",
+         "v": "1"
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "y"
+        },
+        {
+         "t": "int",
+         "v": "2"
+        }
+       ]
+      ]
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "derived"
+     },
+     {
+      "t": "map",
+      "v": [
+       [
+        {
+         "t": "str",
+         "v": "x"
+        },
+        {
+         "t": "int",
+         "v": "1"
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "y"
+        },
+        {
+         "t": "int",
+         "v": "3"
+        }
+       ]
+      ]
+     }
+    ]
+   ]
+  }
+ },
+ {
+  "yaml": "a: &a {k: 1}\nb: &b {k: 2, m: 2}\nc:\n  <<: [*a, *b]\n  n: 3\n",
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "a"
+     },
+     {
+      "t": "map",
+      "v": [
+       [
+        {
+         "t": "str",
+         "v": "k"
+        },
+        {
+         "t": "int",
+         "v": "1"
+        }
+       ]
+      ]
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "b"
+     },
+     {
+      "t": "map",
+      "v": [
+       [
+        {
+         "t": "str",
+         "v": "k"
+        },
+        {
+         "t": "int",
+         "v": "2"
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "m"
+        },
+        {
+         "t": "int",
+         "v": "2"
+        }
+       ]
+      ]
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "c"
+     },
+     {
+      "t": "map",
+      "v": [
+       [
+        {
+         "t": "str",
+         "v": "k"
+        },
+        {
+         "t": "int",
+         "v": "1"
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "m"
+        },
+        {
+         "t": "int",
+         "v": "2"
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "n"
+        },
+        {
+         "t": "int",
+         "v": "3"
+        }
+       ]
+      ]
+     }
+    ]
+   ]
+  }
+ },
+ {
+  "yaml": "a: &x hello\nb: *x\nc: [*x, *x]\n",
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "a"
+     },
+     {
+      "t": "str",
+      "v": "hello"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "b"
+     },
+     {
+      "t": "str",
+      "v": "hello"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "c"
+     },
+     {
+      "t": "seq",
+      "v": [
+       {
+        "t": "str",
+        "v": "hello"
+       },
+       {
+        "t": "str",
+        "v": "hello"
+       }
+      ]
+     }
+    ]
+   ]
+  }
+ },
+ {
+  "yaml": "m: &m\n  <<: {inner: 1}\n  own: 2\nn:\n  <<: *m\n",
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "m"
+     },
+     {
+      "t": "map",
+      "v": [
+       [
+        {
+         "t": "str",
+         "v": "inner"
+        },
+        {
+         "t": "int",
+         "v": "1"
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "own"
+        },
+        {
+         "t": "int",
+         "v": "2"
+        }
+       ]
+      ]
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "n"
+     },
+     {
+      "t": "map",
+      "v": [
+       [
+        {
+         "t": "str",
+         "v": "inner"
+        },
+        {
+         "t": "int",
+         "v": "1"
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "own"
+        },
+        {
+         "t": "int",
+         "v": "2"
+        }
+       ]
+      ]
+     }
+    ]
+   ]
+  }
+ },
+ {
+  "yaml": "'<<': not a merge\n",
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "<<"
+     },
+     {
+      "t": "str",
+      "v": "not a merge"
+     }
+    ]
+   ]
+  }
+ },
+ {
+  "yaml": "=: value key\n",
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "="
+     },
+     {
+      "t": "str",
+      "v": "value key"
+     }
+    ]
+   ]
+  }
+ },
+ {
+  "yaml": "list: &l [1, 2]\ncopy: *l\n",
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "list"
+     },
+     {
+      "t": "seq",
+      "v": [
+       {
+        "t": "int",
+        "v": "1"
+       },
+       {
+        "t": "int",
+        "v": "2"
+       }
+      ]
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "copy"
+     },
+     {
+      "t": "seq",
+      "v": [
+       {
+        "t": "int",
+        "v": "1"
+       },
+       {
+        "t": "int",
+        "v": "2"
+       }
+      ]
+     }
+    ]
+   ]
+  }
+ },
+ {
+  "yaml": "a: !!str 123\nb: !!int '42'\nc: !!float '1'\nd: !!bool 'yes'\ne: !!null ''\n",
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "a"
+     },
+     {
+      "t": "str",
+      "v": "123"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "b"
+     },
+     {
+      "t": "int",
+      "v": "42"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "c"
+     },
+     {
+      "t": "float",
+      "v": "1.0"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "d"
+     },
+     {
+      "t": "bool",
+      "v": true
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "e"
+     },
+     {
+      "t": "null"
+     }
+    ]
+   ]
+  }
+ },
+ {
+  "yaml": "a: ! 123\nb: ! 'yes'\nc: !!seq [1]\nd: !!map {a: 1}\n",
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "a"
+     },
+     {
+      "t": "int",
+      "v": "123"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "b"
+     },
+     {
+      "t": "bool",
+      "v": true
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "c"
+     },
+     {
+      "t": "seq",
+      "v": [
+       {
+        "t": "int",
+        "v": "1"
+       }
+      ]
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "d"
+     },
+     {
+      "t": "map",
+      "v": [
+       [
+        {
+         "t": "str",
+         "v": "a"
+        },
+        {
+         "t": "int",
+         "v": "1"
+        }
+       ]
+      ]
+     }
+    ]
+   ]
+  }
+ },
+ {
+  "yaml": "a: !!int 0o17\nb: !!float +-1\nc: !!timestamp 2020-01-02\n",
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "a"
+     },
+     {
+      "t": "int",
+      "v": "15"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "b"
+     },
+     {
+      "t": "float",
+      "v": "-1.0"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "c"
+     },
+     {
+      "t": "timestamp",
+      "v": "2020-01-02"
+     }
+    ]
+   ]
+  }
+ },
+ {
+  "yaml": "",
+  "value": {
+   "t": "null"
+  }
+ },
+ {
+  "yaml": "# only a comment\n",
+  "value": {
+   "t": "null"
+  }
+ },
+ {
+  "yaml": "---\n",
+  "value": {
+   "t": "null"
+  }
+ },
+ {
+  "yaml": "--- 42\n",
+  "value": {
+   "t": "int",
+   "v": "42"
+  }
+ },
+ {
+  "yaml": "---\na: 1\n...\n",
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "a"
+     },
+     {
+      "t": "int",
+      "v": "1"
+     }
+    ]
+   ]
+  }
+ },
+ {
+  "yaml": "plain root scalar\n",
+  "value": {
+   "t": "str",
+   "v": "plain root scalar"
+  }
+ },
+ {
+  "yaml": "'quoted root'\n",
+  "value": {
+   "t": "str",
+   "v": "quoted root"
+  }
+ },
+ {
+  "yaml": "%YAML 1.1\n---\na: 1\n",
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "a"
+     },
+     {
+      "t": "int",
+      "v": "1"
+     }
+    ]
+   ]
+  }
+ },
+ {
+  "yaml": "name: reviewer\ndescription: Reviews code — carefully.\ntools:\n  - read\n  - grep\nmodel: anthropic:claude\n",
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "name"
+     },
+     {
+      "t": "str",
+      "v": "reviewer"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "description"
+     },
+     {
+      "t": "str",
+      "v": "Reviews code — carefully."
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "tools"
+     },
+     {
+      "t": "seq",
+      "v": [
+       {
+        "t": "str",
+        "v": "read"
+       },
+       {
+        "t": "str",
+        "v": "grep"
+       }
+      ]
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "model"
+     },
+     {
+      "t": "str",
+      "v": "anthropic:claude"
+     }
+    ]
+   ]
+  }
+ },
+ {
+  "yaml": "name: off\ndescription: a skill\n",
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "name"
+     },
+     {
+      "t": "bool",
+      "v": false
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "description"
+     },
+     {
+      "t": "str",
+      "v": "a skill"
+     }
+    ]
+   ]
+  }
+ },
+ {
+  "yaml": "name: test\nversion: 1.0\nenabled: yes\ncount: 007\n",
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "name"
+     },
+     {
+      "t": "str",
+      "v": "test"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "version"
+     },
+     {
+      "t": "float",
+      "v": "1.0"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "enabled"
+     },
+     {
+      "t": "bool",
+      "v": true
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "count"
+     },
+     {
+      "t": "int",
+      "v": "7"
+     }
+    ]
+   ]
+  }
+ },
+ {
+  "yaml": "sandbox:\n  allow: []\ncontext:\n  summary_trigger_tokens: 60.0\nteam_spawn:\n  enabled: true\n",
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "sandbox"
+     },
+     {
+      "t": "map",
+      "v": [
+       [
+        {
+         "t": "str",
+         "v": "allow"
+        },
+        {
+         "t": "seq",
+         "v": []
+        }
+       ]
+      ]
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "context"
+     },
+     {
+      "t": "map",
+      "v": [
+       [
+        {
+         "t": "str",
+         "v": "summary_trigger_tokens"
+        },
+        {
+         "t": "float",
+         "v": "60.0"
+        }
+       ]
+      ]
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "team_spawn"
+     },
+     {
+      "t": "map",
+      "v": [
+       [
+        {
+         "t": "str",
+         "v": "enabled"
+        },
+        {
+         "t": "bool",
+         "v": true
+        }
+       ]
+      ]
+     }
+    ]
+   ]
+  }
+ },
+ {
+  "yaml": "response_style:\n  tone: 'off'\n  verbosity: null\n",
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "response_style"
+     },
+     {
+      "t": "map",
+      "v": [
+       [
+        {
+         "t": "str",
+         "v": "tone"
+        },
+        {
+         "t": "str",
+         "v": "off"
+        }
+       ],
+       [
+        {
+         "t": "str",
+         "v": "verbosity"
+        },
+        {
+         "t": "null"
+        }
+       ]
+      ]
+     }
+    ]
+   ]
+  }
+ },
+ {
+  "yaml": "a:    spaced   value   \nb:\ttab\n",
+  "error": "ScannerError"
+ },
+ {
+  "yaml": "emoji: \"\\U0001F600\"\nnel: \"\\N\"\nnbsp: \"\\_\"\n",
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "emoji"
+     },
+     {
+      "t": "str",
+      "v": "😀"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "nel"
+     },
+     {
+      "t": "str",
+      "v": ""
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "nbsp"
+     },
+     {
+      "t": "str",
+      "v": " "
+     }
+    ]
+   ]
+  }
+ },
+ {
+  "yaml": "long: word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word end\n",
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "long"
+     },
+     {
+      "t": "str",
+      "v": "word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word end"
+     }
+    ]
+   ]
+  }
+ },
+ {
+  "yaml": "a: [1, 2\n",
+  "error": "ParserError"
+ },
+ {
+  "yaml": "a: b: c\n",
+  "error": "ScannerError"
+ },
+ {
+  "yaml": "- a\nb: c\n",
+  "error": "ParserError"
+ },
+ {
+  "yaml": "a: *undefined\n",
+  "error": "ComposerError"
+ },
+ {
+  "yaml": "? [a]\n: b\n",
+  "error": "ConstructorError"
+ },
+ {
+  "yaml": "? {a: 1}\n: b\n",
+  "error": "ConstructorError"
+ },
+ {
+  "yaml": "a: !!int abc\n",
+  "error": "ValueError"
+ },
+ {
+  "yaml": "a: !!bool maybe\n",
+  "error": "KeyError"
+ },
+ {
+  "yaml": "a: !custom x\n",
+  "error": "ConstructorError"
+ },
+ {
+  "yaml": "a: =\n",
+  "error": "ConstructorError"
+ },
+ {
+  "yaml": "a:\n  <<: 1\n",
+  "error": "ConstructorError"
+ },
+ {
+  "yaml": "a:\n  <<: [1]\n",
+  "error": "ConstructorError"
+ },
+ {
+  "yaml": "a: !!timestamp nope\n",
+  "error": "AttributeError"
+ },
+ {
+  "yaml": "a: !!str [1]\n",
+  "error": "ConstructorError"
+ },
+ {
+  "yaml": "a: !!seq x\n",
+  "error": "ConstructorError"
+ },
+ {
+  "yaml": "--- 1\n--- 2\n",
+  "error": "ComposerError"
+ },
+ {
+  "yaml": "a: \"unterminated\n",
+  "error": "ScannerError"
+ },
+ {
+  "yaml": "\ta: 1\n",
+  "error": "ScannerError"
+ },
+ {
+  "yaml": "a:\tb\n",
+  "error": "ScannerError"
+ },
+ {
+  "yaml": "a: 1\t\n",
+  "error": "ScannerError"
+ },
+ {
+  "yaml": "- \ta\n",
+  "error": "ScannerError"
+ },
+ {
+  "yaml": "[\t1]\n",
+  "error": "ScannerError"
+ },
+ {
+  "yaml": "a: 'x\ty'\nb: \"\tz\"\nc: |\n  \tlit\n  x\ty\nd: 1 # c\tc\n# \tfull\n",
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "a"
+     },
+     {
+      "t": "str",
+      "v": "x\ty"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "b"
+     },
+     {
+      "t": "str",
+      "v": "\tz"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "c"
+     },
+     {
+      "t": "str",
+      "v": "\tlit\nx\ty\n"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "d"
+     },
+     {
+      "t": "int",
+      "v": "1"
+     }
+    ]
+   ]
+  }
+ },
+ {
+  "yaml": "a: '#x\t'\nb: >\n  f\t#\n",
+  "value": {
+   "t": "map",
+   "v": [
+    [
+     {
+      "t": "str",
+      "v": "a"
+     },
+     {
+      "t": "str",
+      "v": "#x\t"
+     }
+    ],
+    [
+     {
+      "t": "str",
+      "v": "b"
+     },
+     {
+      "t": "str",
+      "v": "f\t#\n"
+     }
+    ]
+   ]
+  }
+ },
+ {
+  "yaml": "a: 2001-02-30\n",
+  "error": "ValueError"
+ }
+]
