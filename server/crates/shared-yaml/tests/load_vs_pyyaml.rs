@@ -107,3 +107,35 @@ fn garbage_never_panics() {
         let _ = load(&doc);
     }
 }
+
+#[test]
+fn input_larger_than_sixteen_mib_is_refused_before_parsing() {
+    // A comment is otherwise valid and cheap to construct; malformed trailing
+    // syntax must not take precedence over the input-size limit.
+    let doc = format!("#{}\n[", "x".repeat(16 * 1024 * 1024));
+    assert!(matches!(load(&doc), Err(YamlError::TooLarge(_))));
+}
+
+#[test]
+fn large_scalar_alias_expansion_is_bounded_by_bytes() {
+    let doc = format!("- &a {}\n{}", "x".repeat(100_000), "- *a\n".repeat(100_000));
+    let started = std::time::Instant::now();
+    assert!(matches!(load(&doc), Err(YamlError::TooLarge(_))));
+    assert!(started.elapsed() < std::time::Duration::from_secs(10));
+}
+
+#[test]
+fn modest_scalar_aliases_still_load() {
+    let doc = format!("- &a {}\n{}", "x".repeat(100_000), "- *a\n".repeat(100));
+    assert_eq!(load(&doc).unwrap().as_seq().unwrap().len(), 101);
+}
+
+#[test]
+fn input_limit_counts_utf8_bytes_and_allows_exactly_sixteen_mib() {
+    // A forbidden line break at the start gives a cheap parser-independent
+    // syntax error only after the input-size check has accepted the length.
+    let mut doc = format!("\u{85}{}", "x".repeat(16 * 1024 * 1024 - 2));
+    assert!(matches!(load(&doc), Err(YamlError::Syntax(_))));
+    doc.push('x');
+    assert!(matches!(load(&doc), Err(YamlError::TooLarge(_))));
+}

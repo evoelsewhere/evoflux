@@ -11,7 +11,10 @@
 //! to hold: error messages are not PyYAML's; `!!binary`, `!!set`, `!!omap`
 //! and `!!pairs` are refused; integers beyond `i128` are refused; nesting
 //! deeper than [`MAX_DEPTH`] and alias expansion past [`MAX_NODES`] values
-//! are refused; raw U+0085, U+2028 and U+2029 (line breaks in YAML 1.1,
+//! are refused; construction is capped at 64 MiB ([`MAX_BYTES`], charging
+//! 64 bytes per value plus each string/timestamp's UTF-8 text length on every
+//! alias expansion), and input at 16 MiB ([`MAX_INPUT_BYTES`]); raw U+0085,
+//! U+2028 and U+2029 (line breaks in YAML 1.1,
 //! content in the YAML 1.2 scanner used here) are refused; recursive
 //! aliases are refused; a value used twice is never written with an anchor.
 
@@ -22,7 +25,7 @@ mod load;
 mod value;
 
 pub use dump::{dump, DumpOpts};
-pub use load::{load, MAX_DEPTH, MAX_NODES};
+pub use load::{load, MAX_BYTES, MAX_DEPTH, MAX_INPUT_BYTES, MAX_NODES};
 pub use value::{python_float_repr, Mapping, Time, Timestamp, Value};
 
 /// Why a document could not be loaded. Messages carry positions, never the
@@ -37,6 +40,6 @@ pub enum YamlError {
     Construct(String),
     #[error("nesting deeper than {0} levels")]
     TooDeep(usize),
-    #[error("aliases expand the document past {0} values")]
+    #[error("document exceeds the values/bytes limit of {0}")]
     TooLarge(usize),
 }

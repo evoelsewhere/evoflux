@@ -32,6 +32,31 @@ const TAG_MAP: &str = "tag:yaml.org,2002:map";
 pub const MAX_DEPTH: usize = 256;
 /// Aliases may expand a document to at most this many values.
 pub const MAX_NODES: usize = 1_000_000;
+/// Constructed values may consume at most 64 MiB of charged bytes.
+pub const MAX_BYTES: usize = 64 * 1024 * 1024;
+/// Input larger than 16 MiB is refused before scanning or parsing.
+pub const MAX_INPUT_BYTES: usize = 16 * 1024 * 1024;
+
+struct Budget {
+    nodes: usize,
+    bytes: usize,
+}
+
+impl Budget {
+    fn charge(&mut self, text_bytes: usize) -> Result<(), YamlError> {
+        self.nodes = self
+            .nodes
+            .checked_sub(1)
+            .ok_or(YamlError::TooLarge(MAX_NODES))?;
+        // Charge fixed storage even for empty strings and collection nodes.
+        self.bytes = self
+            .bytes
+            .checked_sub(64)
+            .and_then(|bytes| bytes.checked_sub(text_bytes))
+            .ok_or(YamlError::TooLarge(MAX_BYTES))?;
+        Ok(())
+    }
+}
 
 type Pattern = LazyLock<Result<Regex, regex::Error>>;
 
@@ -267,6 +292,9 @@ impl MarkedEventReceiver for Composer {
 /// `yaml.safe_load(text)`: `Value::Null` for an empty stream; an error for a
 /// stream of more than one document.
 pub fn load(text: &str) -> Result<Value, YamlError> {
+    if text.len() > MAX_INPUT_BYTES {
+        return Err(YamlError::TooLarge(MAX_INPUT_BYTES));
+    }
     // YAML 1.1 (PyYAML) reads these as line breaks, YAML 1.2 (`yaml-rust2`)
     // as content: refuse rather than load a different value.
     if let Some(ch) = text
@@ -304,7 +332,10 @@ pub fn load(text: &str) -> Result<Value, YamlError> {
     if documents.next().is_some() {
         return Err(YamlError::MultipleDocuments);
     }
-    let mut budget = MAX_NODES;
+    let mut budget = Budget {
+        nodes: MAX_NODES,
+        bytes: MAX_BYTES,
+    };
     construct(&root, &mut budget, 0)
 }
 
@@ -401,13 +432,15 @@ fn scalar<'a>(tag: &str, node: &'a Node) -> Result<&'a str, YamlError> {
     }
 }
 
-fn construct(node: &Node, budget: &mut usize, depth: usize) -> Result<Value, YamlError> {
+fn construct(node: &Node, budget: &mut Budget, depth: usize) -> Result<Value, YamlError> {
     if depth > MAX_DEPTH {
         return Err(YamlError::TooDeep(MAX_DEPTH));
     }
-    *budget = budget
-        .checked_sub(1)
-        .ok_or(YamlError::TooLarge(MAX_NODES))?;
+    let text_bytes = match node {
+        Node::Scalar { tag, value, .. } if tag == TAG_STR || tag == TAG_TIMESTAMP => value.len(),
+        _ => 0,
+    };
+    budget.charge(text_bytes)?;
     let tag = node.tag();
     match tag {
         TAG_NULL => scalar(tag, node).map(|_| Value::Null),
@@ -444,7 +477,9 @@ fn construct(node: &Node, budget: &mut usize, depth: usize) -> Result<Value, Yam
                 for (key_node, value_node) in flatten(pairs)? {
                     let key = if key_node.tag() == TAG_VALUE {
                         // `flatten_mapping` retags a `=` key as a str.
-                        Value::Str(scalar(TAG_STR, &key_node)?.to_owned())
+                        let text = scalar(TAG_STR, &key_node)?;
+                        budget.charge(text.len())?;
+                        Value::Str(text.to_owned())
                     } else {
                         construct(&key_node, budget, depth + 1)?
                     };
@@ -675,6 +710,90 @@ fn days_in_month(year: u16, month: u8) -> u8 {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn construction_budget_charges_nodes_and_bytes_independently() {
+        let mut budget = Budget {
+            nodes: 2,
+            bytes: 131,
+        };
+        assert!(budget.charge(3).is_ok());
+        assert_eq!(budget.bytes, 64);
+        assert!(budget.charge(0).is_ok());
+        assert_eq!(budget.bytes, 0);
+        assert!(matches!(
+            budget.charge(0),
+            Err(YamlError::TooLarge(MAX_NODES))
+        ));
+        let mut budget = Budget {
+            nodes: 10,
+            bytes: 64,
+        };
+        assert!(matches!(
+            budget.charge(1),
+            Err(YamlError::TooLarge(MAX_BYTES))
+        ));
+        let mut budget = Budget {
+            nodes: 10,
+            bytes: 63,
+        };
+        assert!(matches!(
+            budget.charge(0),
+            Err(YamlError::TooLarge(MAX_BYTES))
+        ));
+    }
+
+    #[test]
+    fn construction_charges_scalar_text_and_value_keys_before_copying() {
+        let (_, mark) = Parser::new_from_str("").next_token().unwrap();
+        for (tag, text, expected_bytes) in [
+            (TAG_STR, "é", 66),
+            (TAG_TIMESTAMP, "2024-01-01", 74),
+            (TAG_NULL, "null", 64),
+        ] {
+            let node = Node::Scalar {
+                tag: tag.to_owned(),
+                value: text.to_owned(),
+                mark,
+            };
+            let mut budget = Budget {
+                nodes: 1,
+                bytes: expected_bytes,
+            };
+            assert!(construct(&node, &mut budget, 0).is_ok());
+            assert_eq!(budget.bytes, 0, "{tag}");
+            let mut budget = Budget {
+                nodes: 1,
+                bytes: expected_bytes - 1,
+            };
+            assert!(matches!(
+                construct(&node, &mut budget, 0),
+                Err(YamlError::TooLarge(MAX_BYTES))
+            ));
+        }
+        let scalar = |tag: &str, value: &str| {
+            Rc::new(Node::Scalar {
+                tag: tag.to_owned(),
+                value: value.to_owned(),
+                mark,
+            })
+        };
+        let node = Node::Map {
+            tag: TAG_MAP.to_owned(),
+            pairs: vec![(scalar(TAG_VALUE, "="), scalar(TAG_NULL, ""))],
+            mark,
+        };
+        let mut budget = Budget {
+            nodes: 3,
+            bytes: 193,
+        };
+        assert_eq!(
+            construct(&node, &mut budget, 0).unwrap().get("="),
+            Some(&Value::Null)
+        );
+        assert_eq!(budget.nodes, 0);
+        assert_eq!(budget.bytes, 0);
+    }
 
     #[test]
     fn every_pattern_compiles() {
