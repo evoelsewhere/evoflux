@@ -69,13 +69,81 @@ pub(crate) fn mtime_ns(path: &Path) -> i128 {
     }
 }
 
-/// The first `max` bytes of a file.
-pub(crate) fn read_capped(path: &Path, max: usize) -> std::io::Result<Vec<u8>> {
-    let file = std::fs::File::open(path)?;
+/// The first `max` bytes of an opened file.
+pub(crate) fn read_capped(file: std::fs::File, max: usize) -> std::io::Result<Vec<u8>> {
     let mut raw = Vec::new();
     file.take(u64::try_from(max).unwrap_or(u64::MAX))
         .read_to_end(&mut raw)?;
     Ok(raw)
+}
+
+/// Open `path`, a resolved path under `root`, with every component from `root`
+/// down to the file held open first. Each component is opened as itself (a
+/// link is not followed) and refused if it is a symlink or junction; the held
+/// handles share neither delete nor rename, so no component can be swapped for
+/// a link until the file handle is open. `Err` with `PermissionDenied` names
+/// the component that is a link.
+#[cfg(windows)]
+pub(crate) fn open_pinned(root: &Path, path: &Path) -> std::io::Result<std::fs::File> {
+    use std::os::windows::fs::OpenOptionsExt;
+    const SHARE_READ_WRITE: u32 = 0x1 | 0x2;
+    const FILE_READ_ATTRIBUTES: u32 = 0x80;
+    const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
+    const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
+
+    // Hold one component as itself; a symlink or junction is refused. A
+    // component that is neither a link nor a folder makes the next open fail.
+    let pin = |component: &Path| -> std::io::Result<std::fs::File> {
+        let handle = std::fs::OpenOptions::new()
+            .access_mode(FILE_READ_ATTRIBUTES)
+            .share_mode(SHARE_READ_WRITE)
+            .custom_flags(FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT)
+            .open(component)?;
+        if handle.metadata()?.file_type().is_symlink() {
+            return Err(changed_to_link(component));
+        }
+        Ok(handle)
+    };
+
+    let mut current = root.to_path_buf();
+    let mut held = vec![pin(&current)?];
+    for part in path.components().skip(root.components().count()) {
+        current.push(part);
+        held.push(pin(&current)?);
+    }
+    // Every component down to the file itself is now held and is no link, so
+    // the normal open below (which reads the data of a cloud placeholder or
+    // other non-link reparse point) reaches the file that was checked.
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .share_mode(SHARE_READ_WRITE)
+        .open(path);
+    drop(held);
+    file
+}
+
+#[cfg(windows)]
+fn changed_to_link(path: &Path) -> std::io::Error {
+    std::io::Error::new(
+        std::io::ErrorKind::PermissionDenied,
+        format!(
+            "Path '{}' became a link while it was being opened",
+            path.display()
+        ),
+    )
+}
+
+/// Open `path` for reading, following links.
+#[cfg(unix)]
+pub(crate) fn open_read(path: &Path) -> std::io::Result<std::fs::File> {
+    std::fs::File::open(path)
+}
+
+/// The real path of an opened file, from `/proc/self/fd`.
+#[cfg(target_os = "linux")]
+pub(crate) fn opened_path(file: &std::fs::File) -> std::io::Result<std::path::PathBuf> {
+    use std::os::unix::io::AsRawFd;
+    std::fs::read_link(format!("/proc/self/fd/{}", file.as_raw_fd()))
 }
 
 /// Python's `Path.suffix`, lower-cased.
@@ -209,10 +277,56 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("f.txt");
         std::fs::write(&file, "abcdef").unwrap();
-        assert_eq!(read_capped(&file, 4).unwrap(), b"abcd");
-        assert_eq!(read_capped(&file, 100).unwrap(), b"abcdef");
-        assert_eq!(read_capped(&file, 0).unwrap(), b"");
-        assert!(read_capped(&dir.path().join("none"), 4).is_err());
+        let open = || std::fs::File::open(&file).unwrap();
+        assert_eq!(read_capped(open(), 4).unwrap(), b"abcd");
+        assert_eq!(read_capped(open(), 100).unwrap(), b"abcdef");
+        assert_eq!(read_capped(open(), 0).unwrap(), b"");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn open_pinned_refuses_a_component_that_is_a_link() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        let root = std::path::PathBuf::from(root.display().to_string().trim_start_matches(r"\\?\"));
+        std::fs::create_dir_all(root.join("d")).unwrap();
+        std::fs::write(root.join("d/f.txt"), "inside").unwrap();
+        let file = open_pinned(&root, &root.join("d").join("f.txt")).unwrap();
+        assert_eq!(read_capped(file, 100).unwrap(), b"inside");
+
+        std::fs::create_dir(root.join("real")).unwrap();
+        std::fs::write(root.join("real/f.txt"), "behind").unwrap();
+        crate::testutil::link_dir(&root.join("real"), &root.join("alias"));
+        let err = open_pinned(&root, &root.join("alias").join("f.txt")).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::PermissionDenied);
+        assert!(err.to_string().contains("alias"), "{err}");
+        assert!(open_pinned(&root, &root.join("d").join("none")).is_err());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn open_pinned_reads_a_file_another_program_is_writing() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        let root = std::path::PathBuf::from(root.display().to_string().trim_start_matches(r"\\?\"));
+        std::fs::create_dir(root.join("d")).unwrap();
+        let path = root.join("d").join("log.txt");
+        std::fs::write(&path, "line").unwrap();
+        let _writer = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap();
+        // A folder another program lists (a file watcher, Explorer).
+        let _lister = {
+            use std::os::windows::fs::OpenOptionsExt;
+            std::fs::OpenOptions::new()
+                .read(true)
+                .custom_flags(0x0200_0000)
+                .open(root.join("d"))
+                .unwrap()
+        };
+        let file = open_pinned(&root, &path).unwrap();
+        assert_eq!(read_capped(file, 100).unwrap(), b"line");
     }
 
     #[test]

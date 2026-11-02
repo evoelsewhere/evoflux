@@ -48,13 +48,18 @@ Parity is checked by `contract-tests/tools` (324 cases on fixture workspaces) an
 The Rust checks follow the shape of Python's, so these are not regressions, but
 they need a decision before these tools run agents.
 
-- **Check, then open.** `validate_path` resolves a path and the tool opens it
-  afterwards, and `grep` checks `permits_link` before it opens a file. Another
-  process that keeps swapping a folder between a real folder and a link to
-  outside the workspace can win that race (reproduced on Windows with a junction
-  swap: `read d/secret.txt` returned the outside file after a few tries). Python
-  validates and then opens in the same way, so this matches Python; no handle-based
-  recheck without a new dependency.
+- **Check, then open (macOS only).** `validate_path` resolves a path and the tool
+  opens it afterwards. On Windows `read` and `grep` open the file through
+  `Sandbox::open_confined`, which holds every component from the workspace root
+  down (opened as itself, without delete or rename sharing) and refuses one that
+  is a symlink or junction, so no folder can be swapped for a link until the file
+  handle is open; on Linux it checks the opened handle's real path
+  (`/proc/self/fd`) against the root and the deny patterns. macOS has no std way
+  to read a handle's path (`F_GETPATH` needs `libc`), so there a process that
+  keeps swapping a folder for a link can still win the race, as in Python. A
+  workspace folder another program holds open with delete access makes the read
+  fail with a sharing violation on Windows. The workspace root's own parents are
+  not held.
 - **Hard links.** A hard link inside the workspace to a file outside it, or to
   `.env`, reads as an ordinary file; only symlinks and reparse points are judged.
 - **Metadata of link targets.** `ls` shows the size of a file behind a link that

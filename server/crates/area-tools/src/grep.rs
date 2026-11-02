@@ -17,7 +17,7 @@ use crate::fnmatch::fnmatch;
 use crate::fsutil::{children, is_dir, is_file, is_symlink, mtime_ns, read_capped};
 use crate::ignore::{is_skipped_dir, Rules};
 use crate::pyfmt::{char_prefix, splitlines};
-use crate::sandbox::Sandbox;
+use crate::sandbox::{resolve, Sandbox};
 use crate::{definition, property, run_blocking, search_root, Tool, ToolCtx, ToolOutput};
 
 pub(crate) struct GrepTool;
@@ -299,7 +299,16 @@ impl Scan<'_> {
 
     /// `false` once `stop_after` matching lines have been seen.
     fn scan_file(&mut self, path: &Path) -> Result<bool, String> {
-        let Ok(raw) = read_capped(path, MAX_FILE_BYTES + 1) else {
+        // Open the resolved file through the sandbox, so a folder swapped for
+        // a link after `readable` cannot redirect the read.
+        let Some(real) = resolve(path) else {
+            return Ok(true);
+        };
+        let Ok(raw) = self
+            .sandbox
+            .open_confined(&real)
+            .and_then(|file| read_capped(file, MAX_FILE_BYTES + 1))
+        else {
             return Ok(true);
         };
         if raw.len() > MAX_FILE_BYTES {

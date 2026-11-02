@@ -145,7 +145,10 @@ pub(crate) fn run(
         ));
     }
 
-    let raw = read_capped(&resolved, MAX_READ_BYTES).map_err(|e| e.to_string())?;
+    let raw = sandbox
+        .open_confined(&resolved)
+        .and_then(|file| read_capped(file, MAX_READ_BYTES))
+        .map_err(|e| e.to_string())?;
     // Normalize newlines so CRLF files never leak `\r` into the numbered lines.
     let text = decode(raw).replace("\r\n", "\n").replace('\r', "\n");
 

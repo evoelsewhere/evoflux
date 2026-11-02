@@ -132,6 +132,33 @@ impl Sandbox {
         Ok(resolved)
     }
 
+    /// Open a resolved path for reading so that the file read is the file that
+    /// was judged: a folder swapped for a link between `validate_path` and the
+    /// open cannot redirect it. Windows holds every component from the root
+    /// down while it opens; Linux checks the opened handle's real path. Other
+    /// Unix systems open by path (see `server/KNOWN_DIFFERENCES.md`).
+    pub(crate) fn open_confined(&self, resolved: &Path) -> std::io::Result<std::fs::File> {
+        if !self.is_allowed(resolved) || self.denied_by(resolved).is_some() {
+            return Err(refused(resolved));
+        }
+        #[cfg(windows)]
+        {
+            crate::fsutil::open_pinned(&self.root, resolved)
+        }
+        #[cfg(unix)]
+        {
+            let file = crate::fsutil::open_read(resolved)?;
+            #[cfg(target_os = "linux")]
+            {
+                let real = crate::fsutil::opened_path(&file)?;
+                if !self.is_allowed(&real) || self.denied_by(&real).is_some() {
+                    return Err(refused(&real));
+                }
+            }
+            Ok(file)
+        }
+    }
+
     /// `display_path`: workspace-relative with `/`, else the absolute path.
     pub(crate) fn display_path(&self, resolved: &Path) -> String {
         if is_under(resolved, &self.root) {
@@ -143,6 +170,10 @@ impl Sandbox {
         }
         resolved.display().to_string()
     }
+}
+
+fn refused(path: &Path) -> std::io::Error {
+    std::io::Error::new(std::io::ErrorKind::PermissionDenied, outside_message(path))
 }
 
 fn too_many_links(path: &Path) -> String {
@@ -548,6 +579,100 @@ mod tests {
                 Path::new("/ws/l0").display()
             )
         );
+    }
+
+    /// `ws/d/secret.txt` exists as a real folder, and `outside/secret.txt` sits
+    /// next to the workspace.
+    fn swap_fixture() -> (tempfile::TempDir, Sandbox, PathBuf, PathBuf) {
+        let (dir, sandbox) = sandbox();
+        let root = sandbox.root().to_path_buf();
+        std::fs::create_dir(root.join("d")).unwrap();
+        std::fs::write(root.join("d").join("secret.txt"), "inside").unwrap();
+        let outside = resolve(dir.path()).unwrap().join("outside");
+        std::fs::create_dir(&outside).unwrap();
+        std::fs::write(outside.join("secret.txt"), "OUTSIDE").unwrap();
+        (dir, sandbox, root, outside)
+    }
+
+    fn read_confined(sandbox: &Sandbox, resolved: &Path) -> std::io::Result<Vec<u8>> {
+        sandbox
+            .open_confined(resolved)
+            .and_then(|file| crate::fsutil::read_capped(file, 100))
+    }
+
+    #[test]
+    fn open_confined_reads_a_validated_file() {
+        let (_dir, sandbox, root, _outside) = swap_fixture();
+        let resolved = sandbox.validate_path("d/secret.txt").unwrap();
+        assert_eq!(read_confined(&sandbox, &resolved).unwrap(), b"inside");
+        crate::testutil::link_dir(&root.join("d"), &root.join("alias"));
+        let through_inside_link = resolve(&root.join("alias").join("secret.txt")).unwrap();
+        assert_eq!(
+            read_confined(&sandbox, &through_inside_link).unwrap(),
+            b"inside"
+        );
+    }
+
+    #[test]
+    fn open_confined_refuses_paths_outside_or_denied() {
+        let (_dir, sandbox, root, outside) = swap_fixture();
+        std::fs::write(root.join(".env"), "KEY=1").unwrap();
+        for path in [outside.join("secret.txt"), root.join(".env")] {
+            let err = read_confined(&sandbox, &path).unwrap_err();
+            assert_eq!(err.kind(), std::io::ErrorKind::PermissionDenied, "{err}");
+        }
+    }
+
+    /// The race in one step: the folder is swapped for a link to outside
+    /// after `validate_path` judged it and before the file is opened.
+    #[cfg(any(windows, target_os = "linux"))]
+    #[test]
+    fn a_folder_swapped_for_a_link_after_validation_is_refused() {
+        let (_dir, sandbox, root, outside) = swap_fixture();
+        let resolved = sandbox.validate_path("d/secret.txt").unwrap();
+        std::fs::rename(root.join("d"), root.join("d-real")).unwrap();
+        crate::testutil::link_dir(&outside, &root.join("d"));
+        let err = read_confined(&sandbox, &resolved).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::PermissionDenied, "{err}");
+    }
+
+    /// A thread keeps swapping `d` between the real folder and a link to
+    /// outside while `read` runs: the outside content is never returned.
+    #[cfg(any(windows, target_os = "linux"))]
+    #[test]
+    fn read_never_returns_outside_content_while_a_folder_is_swapped() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let (_dir, sandbox, root, outside) = swap_fixture();
+        let stop = std::sync::Arc::new(AtomicBool::new(false));
+        let swapper = {
+            let stop = std::sync::Arc::clone(&stop);
+            let (real, parked, link) = (root.join("d"), root.join("d-real"), root.join("d"));
+            std::thread::spawn(move || {
+                while !stop.load(Ordering::Relaxed) {
+                    if std::fs::rename(&real, &parked).is_err() {
+                        continue;
+                    }
+                    crate::testutil::link_dir(&outside, &link);
+                    // A junction is a folder to remove_dir; a symlink is a file elsewhere.
+                    let _ = std::fs::remove_dir(&link).or_else(|_| std::fs::remove_file(&link));
+                    while std::fs::rename(&parked, &real).is_err() {
+                        if stop.load(Ordering::Relaxed) {
+                            return;
+                        }
+                    }
+                }
+            })
+        };
+        let mut inside_reads = 0;
+        for _ in 0..300 {
+            if let Ok(text) = crate::read::run(&sandbox, "d/secret.txt", 1, None) {
+                assert!(!text.contains("OUTSIDE"), "outside file read: {text}");
+                inside_reads += 1;
+            }
+        }
+        stop.store(true, Ordering::Relaxed);
+        swapper.join().unwrap();
+        eprintln!("inside reads: {inside_reads} of 300");
     }
 
     #[test]
