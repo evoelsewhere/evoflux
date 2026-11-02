@@ -15,6 +15,7 @@ All notable changes to EvoFlux are documented in this file.
   The default folder's exemption now requires it to resolve to itself, so a symlink or junction to `keyrings` cannot allow that credential folder; overlapping allowed roots also cannot override a credential-folder refusal.
 
 - The v4 Rust agent file tools `read` and `grep` now open a file in a way that another program cannot redirect: on Windows every folder from the workspace down to the file is held open, and refused if it is a link, until the file is open; on Linux the opened file's real location is checked again. A folder swapped for a link to outside the workspace between the check and the read can no longer make them read a file outside the workspace. macOS still checks before opening. Python still runs agents, so nothing changes in the app yet.
+- The v4 `evoflux-server` now accepts a remote-access login header from a proxy other than EvoFlux's own phone-access proxy only when `EVOFLUX_REMOTE_USE_PROVIDER=external` is set, so another program on your computer can no longer skip the desktop token with forged headers when the server runs without the bundled proxy (development runs, headless). If you use your own `tailscale serve`, set `EVOFLUX_REMOTE_USE_PROVIDER=external`.
 
 - The v4 `evoflux-server` gateway now trusts web pages on the Vite ports (5173, 4173) only in a development build or with `EVOFLUX_DEV=1`, so another program listening on those ports can no longer call your local API in a release build; list them in `EVOFLUX_ALLOWED_ORIGINS` if you need them.
 

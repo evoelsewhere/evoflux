@@ -14,6 +14,11 @@ async fn server(router: Router) -> u64 {
     tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
     u64::from(port)
 }
+/// Remote claims are judged for an explicitly external identity provider
+/// (`EVOFLUX_REMOTE_USE_PROVIDER=external`), which trusts a bare login header.
+fn external_provider() -> DesktopAuth {
+    DesktopAuth::new(None, "secret".into()).with_embedded_proxy_required(false)
+}
 fn headers() -> [(&'static str, &'static str); 2] {
     [
         ("Tailscale-User-Login", "alice"),
@@ -29,7 +34,7 @@ async fn remote_health_never_claims_or_writes() {
         .route("/api/health/ready", get(|| async { "ok" }));
     let port = server(app::rust_routes_with_db(
         routes,
-        DesktopAuth::new(None, "secret".into()),
+        external_provider(),
         Some(db.clone()),
     ))
     .await;
@@ -67,7 +72,7 @@ async fn remote_rust_route_claims() {
     let routes = Router::new().route("/api/ping", get(|| async { "ok" }));
     let port = server(app::rust_routes_with_db(
         routes,
-        DesktopAuth::new(None, "secret".into()),
+        external_provider(),
         Some(db.clone()),
     ))
     .await;
@@ -81,12 +86,7 @@ async fn remote_rust_route_claims() {
 #[tokio::test]
 async fn remote_websocket_upgrade_is_refused() {
     let routes = Router::new().route("/api/health/live", get(|| async { "ok" }));
-    let port = server(app::rust_routes_with_db(
-        routes,
-        DesktopAuth::new(None, "secret".into()),
-        None,
-    ))
-    .await;
+    let port = server(app::rust_routes_with_db(routes, external_provider(), None)).await;
     let headers = [("Tailscale-User-Login", "alice"), ("Upgrade", "websocket")];
     let (status, body) = common::http_get(port, "/api/health/live", &headers).await;
     assert_eq!(status, 403);
@@ -107,7 +107,7 @@ async fn distinct_non_ascii_device_labels_conflict() {
     db.write(|tx| { tx.execute_batch("CREATE TABLE remote_use_sessions (id TEXT PRIMARY KEY NOT NULL, user_login TEXT NOT NULL, device_label TEXT, claimed_at DATETIME NOT NULL, last_seen_at DATETIME NOT NULL, released_at DATETIME, idle_expires_at DATETIME NOT NULL)")?; Ok(()) }).await.unwrap();
     let port = server(app::rust_routes_with_db(
         Router::new().route("/api/ping", get(|| async { "ok" })),
-        DesktopAuth::new(None, "secret".into()),
+        external_provider(),
         Some(db),
     ))
     .await;
@@ -141,12 +141,7 @@ async fn distinct_non_ascii_device_labels_conflict() {
 #[tokio::test]
 async fn remote_websocket_upgrade_token_list_is_refused() {
     let routes = Router::new().route("/api/ping", get(|| async { "ok" }));
-    let port = server(app::rust_routes_with_db(
-        routes,
-        DesktopAuth::new(None, "secret".into()),
-        None,
-    ))
-    .await;
+    let port = server(app::rust_routes_with_db(routes, external_provider(), None)).await;
     let headers = [
         ("Tailscale-User-Login", "alice"),
         ("Upgrade", "websocket, other"),

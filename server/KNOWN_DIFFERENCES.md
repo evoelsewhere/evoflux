@@ -307,6 +307,16 @@ alike are covered. Python alone (`evoflux serve` without the gateway) is unchang
   `tailscale serve` (`EVOFLUX_REMOTE_USE_PROVIDER=external`) need their origin
   in `EVOFLUX_ALLOWED_ORIGINS`.
 
+- **Remote proxy identity (`server/crates/core/src/auth.rs`, SR-003).** A
+  `Tailscale-User-Login` with a proxy marker other than the bundled proxy's
+  `tsnet` (or none) is trusted in place of the desktop token only when
+  `EVOFLUX_REMOTE_USE_PROVIDER=external` is set. Python's
+  `_embedded_proxy_required` also trusts it whenever `EVOFLUX_TSNET_BIN` is
+  unset (dev runs, `make run`, headless), so any local process could skip the
+  token with two forged headers; Rust answers 401 `untrusted_tailnet_identity`
+  there. The bundled app sets `EVOFLUX_TSNET_BIN` and is unchanged. Tests:
+  `auth::tests` and `crates/core/tests/auth.rs`.
+
 Tests: `origin::tests` (unit, DNS rebinding through tsnet included) and
 `contract-tests/origin` (no Origin, own and app origins, fetch metadata other
 than `cross-site`, a cross-site request with the token on both backends; evil

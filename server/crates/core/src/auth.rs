@@ -84,14 +84,18 @@ impl DesktopAuth {
     /// `token` of `None` or `""` disables token auth. `remote_proxy_secret` is
     /// the per-process secret shared with the bundled tsnet child.
     ///
-    /// Whether an unrecognised proxy marker is trusted follows Python's
-    /// `_embedded_proxy_required` (`EVOFLUX_REMOTE_USE_PROVIDER` /
-    /// `EVOFLUX_TSNET_BIN`), read here once.
+    /// An unrecognised proxy marker is trusted only when
+    /// `EVOFLUX_REMOTE_USE_PROVIDER=external` is set, read here once. Python's
+    /// `_embedded_proxy_required` also trusts it whenever `EVOFLUX_TSNET_BIN`
+    /// is unset, which lets any local process skip the desktop token with
+    /// forged headers (`server/KNOWN_DIFFERENCES.md`).
     pub fn new(token: Option<String>, remote_proxy_secret: String) -> Self {
         let provider = std::env::var("EVOFLUX_REMOTE_USE_PROVIDER").unwrap_or_default();
-        let tsnet_bin = std::env::var("EVOFLUX_TSNET_BIN").unwrap_or_default();
-        let required = provider.trim().to_lowercase() != "external" && !tsnet_bin.is_empty();
-        Self::build(token, remote_proxy_secret, required)
+        Self::build(
+            token,
+            remote_proxy_secret,
+            embedded_proxy_required(&provider),
+        )
     }
 
     /// Override whether non-`tsnet` proxy markers are rejected.
@@ -257,6 +261,12 @@ impl DesktopAuth {
     }
 }
 
+/// Whether only the bundled tsnet proxy's marker is trusted: always, unless
+/// the remote provider is explicitly `external`.
+fn embedded_proxy_required(provider: &str) -> bool {
+    provider.trim().to_lowercase() != "external"
+}
+
 fn token_matches(provided: Option<&str>, expected: &str) -> bool {
     match provided {
         Some(p) if !p.is_empty() && !expected.is_empty() => {
@@ -402,4 +412,19 @@ fn quote_plus(s: &str) -> String {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::embedded_proxy_required;
+
+    #[test]
+    fn only_an_explicit_external_provider_trusts_other_markers() {
+        for provider in ["", "tailscale", "tsnet", "externals"] {
+            assert!(embedded_proxy_required(provider), "{provider:?}");
+        }
+        for provider in ["external", " External ", "EXTERNAL"] {
+            assert!(!embedded_proxy_required(provider), "{provider:?}");
+        }
+    }
 }

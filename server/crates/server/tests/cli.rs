@@ -224,7 +224,13 @@ async fn unreadable_claim_database_keeps_local_gateway_available() {
     let data = home.path().join("data");
     std::fs::create_dir_all(&data).unwrap();
     std::fs::write(data.join("evoflux.db"), b"not sqlite").unwrap();
-    let mut server = spawn_server(&home, &fake_upstream(), &[], &[]);
+    // A bare login header is trusted only for an explicit external provider.
+    let mut server = spawn_server(
+        &home,
+        &fake_upstream(),
+        &[],
+        &[("EVOFLUX_REMOTE_USE_PROVIDER", "external")],
+    );
     let handshake = handshake_json(&mut server).await;
     let port = handshake["port"].as_u64().unwrap();
     assert_eq!(http_get(port, "/api/gateway/ping", &[]).await.0, 200);

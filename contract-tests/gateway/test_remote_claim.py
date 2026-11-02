@@ -9,6 +9,8 @@ import httpx
 import pytest
 from backends import REPO_ROOT, RUST_BINARY, start_backend
 
+EXTERNAL = {"EVOFLUX_REMOTE_USE_PROVIDER": "external"}
+
 
 @pytest.fixture(scope="session", autouse=True)
 def build_contract_binaries():
@@ -47,7 +49,9 @@ def production(tmp_path):
         / "examples"
         / ("remote_claim_gateway.exe" if os.name == "nt" else "remote_claim_gateway")
     )
-    backend = start_backend("gateway", tmp_path, binary=binary)
+    # A bare login header is a trusted identity only for an explicit external
+    # provider (SR-003); Python trusts it there too.
+    backend = start_backend("gateway", tmp_path, binary=binary, extra_env=EXTERNAL)
     try:
         yield backend, tmp_path / "data" / "evoflux.db"
     finally:
@@ -86,7 +90,10 @@ def test_production_gateway_claims_the_python_database_override(tmp_path):
         "gateway",
         tmp_path,
         binary=RUST_BINARY,
-        extra_env={"DATABASE_URL": f"sqlite+aiosqlite:///{custom.as_posix()}"},
+        extra_env={
+            **EXTERNAL,
+            "DATABASE_URL": f"sqlite+aiosqlite:///{custom.as_posix()}",
+        },
     )
     try:
         first = {

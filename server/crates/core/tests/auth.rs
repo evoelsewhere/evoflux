@@ -267,6 +267,23 @@ async fn auth_remote_unknown_marker_trust_follows_embedded_proxy_requirement() {
     assert_eq!(body, UNTRUSTED);
 }
 
+/// SR-003: without `EVOFLUX_REMOTE_USE_PROVIDER=external` a forged login and
+/// a foreign marker no longer skip the token, even with `EVOFLUX_TSNET_BIN`
+/// unset (dev runs, headless). Python trusts them in that case.
+#[tokio::test]
+async fn auth_forged_remote_headers_without_external_provider_are_401() {
+    if std::env::var_os("EVOFLUX_REMOTE_USE_PROVIDER").is_some() {
+        eprintln!("SKIPPED: EVOFLUX_REMOTE_USE_PROVIDER is set in this environment");
+        return;
+    }
+    let auth = DesktopAuth::new(Some(TOKEN.to_owned()), SECRET.to_owned());
+    for marker in [Some("x"), Some("tailscale"), None] {
+        let (status, body) = call(app_with(auth.clone()), remote(marker, None)).await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED, "{marker:?}");
+        assert_eq!(body, UNTRUSTED, "{marker:?}");
+    }
+}
+
 #[test]
 fn carries_valid_token_checks_bearer_and_query_token() {
     let auth = DesktopAuth::new(Some(TOKEN.to_owned()), SECRET.to_owned());
