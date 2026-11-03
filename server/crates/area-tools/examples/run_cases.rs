@@ -23,6 +23,10 @@ async fn main() {
     let ctx = ToolCtx {
         workspace_root: request["workspace"].as_str().unwrap().into(),
         session_id: "parity".into(),
+        denied_patterns: match request["config_dir"].as_str() {
+            Some(dir) => evoflux_area_tools::load_denied_patterns(dir.into()).await,
+            None => Vec::new(),
+        },
     };
     let tools = read_only_tools();
     let mut outputs = Vec::new();

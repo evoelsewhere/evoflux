@@ -15,28 +15,43 @@ const SYMLINK_LIMIT: usize = 40;
 
 pub(crate) struct Sandbox {
     root: PathBuf,
+    denied_patterns: Vec<String>,
 }
 
 impl Sandbox {
     /// `SandboxConfig(workspace=...)`: the root is resolved once.
     pub(crate) fn new(workspace_root: &Path) -> Self {
         Self {
+            denied_patterns: Vec::new(),
             root: resolve(workspace_root)
                 .unwrap_or_else(|| lexical_normalize(&absolute(workspace_root))),
         }
     }
 
+    pub(crate) fn with_denied_patterns(mut self, patterns: Vec<String>) -> Self {
+        self.denied_patterns = patterns;
+        self
+    }
+
+    #[cfg(test)]
     pub(crate) fn root(&self) -> &Path {
         &self.root
     }
 
-    fn denied_by(&self, resolved: &Path) -> Option<&'static str> {
+    fn denied_by(&self, resolved: &Path) -> Option<&str> {
         // Case-insensitive on every platform: `.ENV` is `.env` on a
         // case-insensitive file system, and the patterns are lower case.
-        let posix = posix_string(resolved).to_lowercase();
+        let posix = posix_string(resolved);
+        let lower = posix.to_lowercase();
         DENIED_PATTERNS
             .into_iter()
-            .find(|pattern| fnmatchcase(&posix, pattern))
+            .find(|pattern| fnmatchcase(&lower, pattern))
+            .or_else(|| {
+                self.denied_patterns
+                    .iter()
+                    .find(|pattern| fnmatchcase(&posix, pattern))
+                    .map(String::as_str)
+            })
     }
 
     fn is_allowed(&self, resolved: &Path) -> bool {
@@ -54,6 +69,11 @@ impl Sandbox {
             return false;
         };
         self.is_allowed(&resolved) && self.denied_by(&resolved).is_none()
+    }
+
+    /// A discovery result must stay confined and clear of saved deny patterns.
+    pub(crate) fn permits_entry(&self, path: &Path) -> bool {
+        resolve(path).is_some_and(|real| self.is_allowed(&real) && self.denied_by(&real).is_none())
     }
 
     /// Resolve `path` and refuse anything outside the workspace or on a deny list.
@@ -386,6 +406,30 @@ mod tests {
             Err(message) => message,
             Ok(resolved) => panic!("{path} resolved to {}", resolved.display()),
         }
+    }
+
+    #[test]
+    fn saved_patterns_match_resolved_posix_paths_case_sensitively_above_the_floor() {
+        let (dir, sandbox) = sandbox();
+        let sandbox = sandbox.with_denied_patterns(vec!["**/secret*".into(), "**/Key.PEM".into()]);
+        assert!(sandbox
+            .validate_path("secret.txt")
+            .unwrap_err()
+            .ends_with("is inside a denied sandbox root: **/secret*"));
+        assert!(sandbox.validate_path("Key.PEM").is_err());
+        assert!(sandbox.validate_path("key.pem").is_ok());
+        assert!(sandbox.validate_path(".ENV").is_err());
+        assert!(!sandbox.permits_entry(&sandbox.root().join("secret.txt")));
+        assert!(sandbox.permits_entry(&sandbox.root().join("a.txt")));
+        assert!(!sandbox.permits_entry(&dir.path().join("secret.txt")));
+        assert!(sandbox
+            .open_confined(&sandbox.root().join("secret.txt"))
+            .is_err());
+        crate::testutil::link_dir(&sandbox.root().join("sub"), &sandbox.root().join("alias"));
+        assert!(sandbox.permits_link(&sandbox.root().join("alias")));
+        let sandbox = sandbox.with_denied_patterns(vec!["**/sub".into()]);
+        assert!(!sandbox.permits_link(&sandbox.root().join("alias")));
+        assert!(sandbox.validate_path("alias").is_err());
     }
 
     #[test]

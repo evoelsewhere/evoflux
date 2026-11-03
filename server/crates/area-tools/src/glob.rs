@@ -12,9 +12,9 @@ use serde_json::{json, Value};
 
 use crate::args::{self, Field, Kind, Val};
 use crate::fnmatch::{compiled, fnmatch};
-use crate::fsutil::{children, is_dir, is_file, is_link, is_symlink, mtime_ns};
+use crate::fsutil::{children, is_dir, is_file, is_symlink, mtime_ns};
 use crate::ignore::{is_skipped_dir, Rules};
-use crate::sandbox::{is_under, resolve, Sandbox};
+use crate::sandbox::Sandbox;
 use crate::{definition, property, run_blocking, search_root, Tool, ToolCtx, ToolOutput};
 
 pub(crate) struct GlobTool;
@@ -109,7 +109,7 @@ fn scan_name(sandbox: &Sandbox, root: &Path, pattern: &str, rules: &Rules) -> Ve
             if rules.is_ignored(&rel_posix(&path, root), false) {
                 continue;
             }
-            if fnmatch(&name, pattern) {
+            if sandbox.permits_entry(&path) && fnmatch(&name, pattern) {
                 hits.push((mtime_ns(&path), sandbox.display_path(&path)));
                 if hits.len() >= MAX_SCAN {
                     return newest_first(hits);
@@ -156,11 +156,6 @@ fn pattern_parts(pattern: &str) -> Result<Vec<String>, String> {
         parts.push(String::new());
     }
     Ok(parts)
-}
-
-/// Whether `link` (a symlink) leads outside the workspace.
-fn escapes(sandbox: &Sandbox, path: &Path) -> bool {
-    is_link(path) && !resolve(path).is_some_and(|real| is_under(&real, sandbox.root()))
 }
 
 struct Selector<'a> {
@@ -221,7 +216,7 @@ impl Selector<'_> {
                 continue;
             }
             if regex.is_match(&name) {
-                if dironly && escapes(self.sandbox, &path) {
+                if dironly && !self.sandbox.permits_link(&path) {
                     continue;
                 }
                 self.select(&path, rest)?;
@@ -261,7 +256,7 @@ fn scan_path(
     }
     let mut hits: Vec<Hit> = Vec::new();
     let mut sink = |m: PathBuf| {
-        if !is_file(&m) {
+        if !sandbox.permits_entry(&m) || !is_file(&m) {
             return ControlFlow::Continue(());
         }
         let rel = m.strip_prefix(root).unwrap_or(&m);
@@ -346,9 +341,10 @@ impl Tool for GlobTool {
             Err(message) => return ToolOutput::error(&message),
         };
         let root = ctx.workspace_root.clone();
+        let denied_patterns = ctx.denied_patterns.clone();
         run_blocking("glob", move || {
             run(
-                &Sandbox::new(&root),
+                &Sandbox::new(&root).with_denied_patterns(denied_patterns),
                 &parsed.str("pattern"),
                 &parsed.str("directory"),
                 &parsed.str("match"),
@@ -697,5 +693,27 @@ mod tests {
             "real/a.txt",
             "`**` does not enter a link"
         );
+    }
+
+    #[test]
+    fn file_links_outside_the_workspace_are_not_glob_hits() {
+        let (dir, _) =
+            crate::testutil::workspace(&[("ws/ok.txt", "ok"), ("outside/id_rsa", "private")]);
+        let ws = dir.path().join("ws");
+        if !crate::testutil::link_file(&dir.path().join("outside/id_rsa"), &ws.join("key.txt")) {
+            return;
+        }
+        let sandbox = Sandbox::new(&ws);
+        for mode in ["path", "name"] {
+            assert_eq!(
+                run(&sandbox, "**/*", ".", mode, 200, 0).unwrap(),
+                if mode == "name" {
+                    format!("No files matching '**/*' in {}", sandbox.root().display())
+                } else {
+                    "ok.txt".to_owned()
+                }
+            );
+            assert_eq!(run(&sandbox, "*.txt", ".", mode, 200, 0).unwrap(), "ok.txt");
+        }
     }
 }

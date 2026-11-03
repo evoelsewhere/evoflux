@@ -195,11 +195,17 @@ impl Tool for ReadTool {
             Err(message) => return ToolOutput::error(&message),
         };
         let root = ctx.workspace_root.clone();
+        let denied_patterns = ctx.denied_patterns.clone();
         let path = parsed.str("path");
         let offset = parsed.int("offset");
         let limit = parsed.opt_int("limit");
         run_blocking("read", move || {
-            run(&Sandbox::new(&root), &path, offset, limit)
+            run(
+                &Sandbox::new(&root).with_denied_patterns(denied_patterns),
+                &path,
+                offset,
+                limit,
+            )
         })
         .await
     }
@@ -506,6 +512,7 @@ mod tests {
         let ctx = ToolCtx {
             workspace_root: dir.path().to_path_buf(),
             session_id: "s".into(),
+            denied_patterns: Vec::new(),
         };
         let tool = ReadTool;
         assert_eq!(tool.name(), "read");

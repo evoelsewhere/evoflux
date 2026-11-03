@@ -669,6 +669,7 @@ impl Tool for GrepTool {
             Err(message) => return ToolOutput::error(&message),
         };
         let root = ctx.workspace_root.clone();
+        let denied_patterns = ctx.denied_patterns.clone();
         run_blocking("grep", move || {
             let query = Query {
                 pattern: &parsed.str("pattern"),
@@ -683,7 +684,10 @@ impl Tool for GrepTool {
                 multiline: parsed.flag("multiline"),
                 context: parsed.int("context"),
             };
-            run(&Sandbox::new(&root), &query)
+            run(
+                &Sandbox::new(&root).with_denied_patterns(denied_patterns),
+                &query,
+            )
         })
         .await
     }

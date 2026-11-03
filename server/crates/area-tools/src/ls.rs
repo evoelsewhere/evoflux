@@ -32,6 +32,7 @@ pub(crate) fn run(sandbox: &Sandbox, path: &str) -> Result<String, String> {
     let mut entries: Vec<(bool, String, std::path::PathBuf)> = std::fs::read_dir(&resolved)
         .map_err(|e| e.to_string())?
         .filter_map(Result::ok)
+        .filter(|entry| sandbox.permits_link(&entry.path()))
         .map(|entry| {
             let path = entry.path();
             (
@@ -106,8 +107,15 @@ impl Tool for LsTool {
             Err(message) => return ToolOutput::error(&message),
         };
         let root = ctx.workspace_root.clone();
+        let denied_patterns = ctx.denied_patterns.clone();
         let path = parsed.str("path");
-        run_blocking("ls", move || run(&Sandbox::new(&root), &path)).await
+        run_blocking("ls", move || {
+            run(
+                &Sandbox::new(&root).with_denied_patterns(denied_patterns),
+                &path,
+            )
+        })
+        .await
     }
 }
 
@@ -206,6 +214,7 @@ mod tests {
         let ctx = ToolCtx {
             workspace_root: d.path().to_path_buf(),
             session_id: "s".into(),
+            denied_patterns: Vec::new(),
         };
         let listed = LsTool.call(json!({}), &ctx).await;
         assert_eq!(
@@ -226,5 +235,18 @@ mod tests {
         let invalid = LsTool.call(json!({"path": 3}), &ctx).await;
         assert!(invalid.is_error && invalid.content.contains("Input should be a valid string"));
         assert_eq!(LsTool.name(), "ls");
+    }
+
+    #[test]
+    fn refused_links_are_hidden_before_target_metadata_is_read() {
+        let (dir, _) =
+            crate::testutil::workspace(&[("ws/ok.txt", "ok"), ("outside/id_rsa", "private")]);
+        let ws = dir.path().join("ws");
+        crate::testutil::link_dir(&dir.path().join("outside"), &ws.join("out"));
+        let sandbox = Sandbox::new(&ws);
+        assert_eq!(run(&sandbox, ".").unwrap(), "[f] ok.txt  (2 bytes)");
+        if crate::testutil::link_file(&dir.path().join("outside/id_rsa"), &ws.join("key")) {
+            assert_eq!(run(&sandbox, ".").unwrap(), "[f] ok.txt  (2 bytes)");
+        }
     }
 }

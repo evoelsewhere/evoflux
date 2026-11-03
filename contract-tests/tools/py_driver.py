@@ -11,9 +11,11 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
+from pathlib import Path
 
 from app.agent.sandbox import SandboxConfig, set_sandbox
-from app.agent.sandbox_config import DEFAULT_DENIED_PATTERNS
+
+from app.agent.sandbox_config import DEFAULT_DENIED_PATTERNS, load_config
 from app.agent.tools.builtin.date import get_date
 from app.agent.tools.builtin.filesystem.glob import glob_files
 from app.agent.tools.builtin.filesystem.grep import grep_files
@@ -44,7 +46,13 @@ async def main() -> None:
         SandboxConfig(
             workspace=request["workspace"],
             denied_roots=[],
-            denied_patterns=list(DEFAULT_DENIED_PATTERNS),
+            denied_patterns=(
+                load_config(
+                    Path(request["config_dir"]) / "sandbox.yaml"
+                ).denied_patterns
+                if "config_dir" in request
+                else list(DEFAULT_DENIED_PATTERNS)
+            ),
         )
     )
     out = [await run_case(c) for c in request["cases"]]

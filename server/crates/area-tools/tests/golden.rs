@@ -47,6 +47,7 @@ async fn rust_tools_answer_like_python() {
         let ctx = ToolCtx {
             workspace_root: workspace.ws.clone(),
             session_id: "golden".into(),
+            denied_patterns: Vec::new(),
         };
         for case in data["cases"].as_array().unwrap() {
             let fixture_name = case

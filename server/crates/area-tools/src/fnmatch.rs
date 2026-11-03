@@ -130,6 +130,9 @@ fn escape_set_ops(class: &str) -> String {
     out
 }
 
+/// Maximum compiled patterns retained, including invalid patterns.
+const MAX_CACHE_ENTRIES: usize = 4096;
+
 /// Compile `translate(pat)`, remembering the result; `None` when it is not a valid regex.
 pub(crate) fn compiled(pat: &str, ignore_case: bool) -> Option<Arc<Regex>> {
     type Cache = Mutex<HashMap<(String, bool), Option<Arc<Regex>>>>;
@@ -149,7 +152,7 @@ pub(crate) fn compiled(pat: &str, ignore_case: bool) -> Option<Arc<Regex>> {
     };
     let regex = Regex::new(&source).ok().map(Arc::new);
     let mut guard = cache.lock().unwrap_or_else(|e| e.into_inner());
-    if guard.len() >= 4096 {
+    if guard.len() >= MAX_CACHE_ENTRIES {
         guard.clear();
     }
     guard.insert(key, regex.clone());
@@ -404,6 +407,23 @@ mod tests {
             assert!(compiled(&format!("fill{n}*"), false).is_some());
         }
         assert!(compiled("keep-one*", false).unwrap().is_match("keep-one!"));
+    }
+
+    #[test]
+    fn cache_evicts_compiled_regexes_when_unique_patterns_exceed_the_cap() {
+        let mut entries = Vec::new();
+        for n in 0..4097 {
+            let regex = compiled(&format!("bounded-{n}*"), false).unwrap();
+            assert!(regex.is_match(&format!("bounded-{n}!")));
+            entries.push(Arc::downgrade(&regex));
+        }
+        let retained = entries
+            .iter()
+            .filter(|entry| entry.strong_count() > 0)
+            .count();
+        assert!(retained <= 4096, "cache retained {retained} unique regexes");
+        assert!(fnmatchcase("bounded-0!", "bounded-0*"));
+        assert!(!fnmatchcase("different", "bounded-0*"));
     }
 
     #[test]

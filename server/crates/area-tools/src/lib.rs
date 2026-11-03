@@ -22,6 +22,8 @@ mod ls;
 mod pyfmt;
 mod read;
 mod sandbox;
+mod sandbox_config;
+pub use sandbox_config::load_denied_patterns;
 mod search_root;
 #[cfg(test)]
 mod testutil;
@@ -31,6 +33,8 @@ mod testutil;
 pub struct ToolCtx {
     pub workspace_root: PathBuf,
     pub session_id: String,
+    /// Saved sandbox policy for this turn; built-in secret patterns remain a floor.
+    pub denied_patterns: Vec<String>,
 }
 
 /// What the model gets back. A failure carries the `Error: ...` text the agent

@@ -67,6 +67,7 @@ mod tests {
         let ctx = ToolCtx {
             workspace_root: std::env::temp_dir(),
             session_id: "s".into(),
+            denied_patterns: Vec::new(),
         };
         let out = DateTool.call(json!({"anything": 1}), &ctx).await;
         assert!(!out.is_error);

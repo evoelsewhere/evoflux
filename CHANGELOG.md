@@ -7,6 +7,8 @@ All notable changes to EvoFlux are documented in this file.
 ### Security
 
 - Added an address-pinned HTTPS downloader for the v4 Rust server: it checks every DNS answer and redirect, refuses private destinations unless explicitly allowed, and caps downloaded bytes. Future marketplace and seed downloads can use it to prevent DNS rebinding; Python still serves those features.
+- The v4 Rust file tools now enforce the deny patterns saved in **Settings ? Sandbox** on each chat turn, and `glob` and `grep` skip denied files in discovery results. `ls` and `glob` also hide links to files outside the workspace or behind a deny rule before reading their metadata. The pattern cache also has an eviction regression test for its 4,096-entry bound. Python still runs agents, so app behavior is unchanged until cutover.
+
 - Phone access through **Settings → Remote Control** now prevents a device on the tailnet from dropping the verified identity EvoFlux attaches to its requests with a crafted `Connection` header. Requests without a verified login carry no proxy identity headers.
 - The v4 `evoflux-server` gateway now answers 403 to any request whose `Origin` is not EvoFlux itself (a `localhost`/`127.0.0.1` page, the desktop window or the WebBridge extension) or whose `Host` is not this machine, for every route, so a website open in your browser can no longer call the local API, including through DNS rebinding. CORS now echoes only the allowed origin instead of `*`. Add other origins with `EVOFLUX_ALLOWED_ORIGINS`.
 - The v4 `evoflux-server` gateway now also refuses (403) phone-access requests whose address is not a Tailscale name (`*.ts.net`) or address, so a website that rebinds its own name to your tailnet IP can no longer act as you; pages on other local ports than EvoFlux's own and the Vite ports (5173, 4173); and requests your browser marks as coming from another website (`Sec-Fetch-Site: cross-site`, such as another site's image or form) unless they carry the desktop token.
@@ -48,6 +50,7 @@ All notable changes to EvoFlux are documented in this file.
 ### Changed
 
 - Recorded verification and security-review requirements for the v4 Rust HTTPS downloader and locked its test dependencies.
+
 - The v4 Rust chat migration notes now record the accepted local directory-creation race and cleanup limitations, and mark the workspace hardening as needing security review.
 - `server/KNOWN_DIFFERENCES.md` records the decision to keep reading hard-linked files in the v4 Rust agent file tools as Python does.
 - Added contract tests for the workspace file routes (`/api/team/workspace/files/**`, `status`, `git-diff`, `browse`, `validate`, the language-server and LSP routes, and the per-session `files`, `workspace` and `uploads` routes, including path confinement, Windows name rules, links and uploads) using only temporary folders and repositories, and a `workspace-files` area crate stub with migration notes covering the files, git and language-server processes, and security findings about the missing workspace allowlist, repository git hooks, `.env` access and uncapped uploads. It affects tests and notes only, so nothing changes in the app.
