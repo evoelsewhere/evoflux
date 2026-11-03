@@ -239,7 +239,7 @@ where
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::indexing_slicing)]
 mod tests {
     use super::*;
 
@@ -312,5 +312,61 @@ mod tests {
             task.await.unwrap();
         }
         assert_eq!(load(&path).await.unwrap().providers.len(), 16);
+    }
+
+    /// `cfg.providers.get(id)`, `cfg.providers[id] = ...` and
+    /// `cfg.providers.pop(id, None)` on a loaded file.
+    #[test]
+    fn provider_lookups_follow_the_python_dict() {
+        let text = "providers:\n  openai:\n    visible_models: [gpt-4o, o3]\n  anthropic: {}\n";
+        let (mut settings, _) = parse_report(text).unwrap();
+        assert_eq!(
+            settings.provider("openai").unwrap().visible_models,
+            ["gpt-4o", "o3"]
+        );
+        assert!(settings
+            .provider("anthropic")
+            .unwrap()
+            .visible_models
+            .is_empty());
+        assert!(settings.provider("missing").is_none());
+        let by_id = settings.providers_by_id();
+        assert_eq!(
+            by_id.keys().copied().collect::<Vec<_>>(),
+            ["anthropic", "openai"]
+        );
+        assert_eq!(by_id["openai"].visible_models, ["gpt-4o", "o3"]);
+
+        assert!(settings.remove_provider("missing").is_none());
+        let removed = settings.remove_provider("openai").unwrap();
+        assert_eq!(removed.visible_models, ["gpt-4o", "o3"]);
+        assert!(settings.provider("openai").is_none());
+        assert!(settings.remove_provider("openai").is_none());
+        assert_eq!(settings.to_yaml().matches("openai").count(), 0);
+        assert_eq!(settings.providers.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn save_writes_the_file_and_returns_its_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = settings_path(&dir.path().join("new"));
+        let mut settings = RuntimeSettings::default();
+        settings.follow_up.delivery = "steer";
+        assert_eq!(settings.save(&path).await.unwrap(), path);
+        let written = tokio::fs::read_to_string(&path).await.unwrap();
+        assert_eq!(written, settings.to_yaml());
+    }
+
+    /// Only a missing file means defaults; Python's `read_text` raises for
+    /// anything else, such as a folder in the file's place.
+    #[tokio::test]
+    async fn an_unreadable_file_is_an_error_not_defaults() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = settings_path(dir.path());
+        tokio::fs::create_dir(&path).await.unwrap();
+        assert!(matches!(
+            load_report(&path).await,
+            Err(SettingsError::Io(_))
+        ));
     }
 }

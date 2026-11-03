@@ -482,24 +482,18 @@ fn coerce_float(input: &Value) -> Result<f64, (&'static str, &'static str)> {
     }
 }
 
-/// Python's `float(str)`: whitespace, `_` between digits, `inf`/`nan`.
+/// pydantic-core's string to float (not Python's `float(str)`): the trimmed
+/// text as a float (`inf`/`nan` included); failing that, the untrimmed text
+/// with every `_` removed, unless it starts or ends with `_` or holds `__`.
+/// So `1._5` and `i_nf` parse, and surrounding whitespace with a `_` does not.
 fn parse_float_str(s: &str) -> Option<f64> {
-    let s = s.trim();
+    if let Ok(value) = s.trim().parse() {
+        return Some(value);
+    }
     if s.starts_with('_') || s.ends_with('_') || s.contains("__") {
         return None;
     }
-    let mut prev = ' ';
-    for (i, c) in s.char_indices() {
-        if c == '_' {
-            let next = s.get(i + 1..).and_then(|r| r.chars().next()).unwrap_or(' ');
-            if !prev.is_ascii_digit() || !next.is_ascii_digit() {
-                return None;
-            }
-        }
-        prev = c;
-    }
-    let clean: String = s.chars().filter(|&c| c != '_').collect();
-    clean.parse().ok()
+    s.replace('_', "").parse().ok()
 }
 
 /// `ge` then `le`, as pydantic-core checks them; NaN fails `le` only.
@@ -555,7 +549,13 @@ mod tests {
         assert_eq!(parse_float_str("1e2"), Some(100.0));
         assert_eq!(parse_float_str("inf"), Some(f64::INFINITY));
         assert_eq!(parse_float_str("1__0"), None);
-        assert_eq!(parse_float_str("1_.0"), None);
+        // pydantic-core, unlike `float()`, accepts a `_` next to a non-digit
+        // (`TypeAdapter(float).validate_python("1_.0") == 1.0`).
+        assert_eq!(parse_float_str("1_.0"), Some(1.0));
+        assert_eq!(parse_float_str("i_nf"), Some(f64::INFINITY));
+        assert_eq!(parse_float_str("_1.5"), None);
+        assert_eq!(parse_float_str("1.5_"), None);
+        assert_eq!(parse_float_str(" 1_5 "), None);
         assert_eq!(parse_float_str("x"), None);
     }
 
