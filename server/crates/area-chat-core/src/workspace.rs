@@ -137,7 +137,12 @@ impl Protected {
                     home_sensitive.push(home.join(name));
                 }
             }
-            default_workspace.push(home.join(DEFAULT_WORKSPACE));
+            let default = strip_verbatim(home.join(DEFAULT_WORKSPACE));
+            if resolve(&default.to_string_lossy(), home)
+                .is_some_and(|real| parts(&default) == parts(&real))
+            {
+                default_workspace.push(default);
+            }
         }
         let both = dedup_both;
         let home_paths = if home.as_os_str().is_empty() {
@@ -162,7 +167,8 @@ impl Protected {
             config: both(vec![config_dir.to_path_buf()]),
             home_sensitive: both(home_sensitive),
             local_share: both(local_share),
-            default_workspace: both(default_workspace),
+            // Unlike protected folders, an exemption must never gain a link's target.
+            default_workspace,
         }
     }
 
@@ -275,19 +281,24 @@ impl Allowed {
         if !path.is_absolute() {
             return Some("not an absolute local path");
         }
-        let mut reason = None;
+        let mut matched = false;
         for root in self.roots.iter().filter(|root| within(&root.path, &path)) {
-            let denied = self
+            matched = true;
+            if let Some(why) = self
                 .protected
                 .refusal_with(&path, root.default)
-                .or_else(|| credential_inside(&root.path, &path));
-            // Clear of the denylist in one root is enough: accepted.
-            reason = Some(denied?);
+                .or_else(|| credential_inside(&root.path, &path))
+            {
+                // Every matching root must be clear; an inner root cannot undo
+                // a credential-folder refusal relative to an outer root.
+                return Some(why);
+            }
+        }
+        if matched {
+            return None;
         }
         // Outside every root, a denylist reason is the more useful one to give.
-        reason
-            .or_else(|| self.protected.refusal(&path))
-            .or(Some(OUTSIDE_ROOTS))
+        self.protected.refusal(&path).or(Some(OUTSIDE_ROOTS))
     }
 }
 
@@ -927,6 +938,25 @@ mod tests {
     }
 
     #[test]
+    fn overlapping_roots_cannot_override_a_credential_folder_refusal() {
+        let (_dir, root, _guard) = protected();
+        let home = root.join("home");
+        let projects = home.join("projects");
+        let credentials = projects.join("sub").join(".ssh");
+        for roots in [
+            [projects.clone(), credentials.clone()],
+            [credentials.clone(), projects.clone()],
+        ] {
+            let allowed = allowed(&home, &roots);
+            assert_eq!(
+                allowed.refusal(&credentials.join("new")),
+                Some("a credentials or configuration folder")
+            );
+            assert_eq!(allowed.refusal(&projects.join("sub").join("plain")), None);
+        }
+    }
+
+    #[test]
     fn a_root_the_denylist_refuses_is_ignored() {
         let (_dir, root, _guard) = protected();
         let home = root.join("home");
@@ -986,6 +1016,73 @@ mod tests {
         ]);
         let settings = Settings::from_vars(&vars, Some(home), &config).unwrap();
         Allowed::current(&settings)
+    }
+
+    #[test]
+    fn an_existing_default_workspace_is_still_allowed() {
+        let (_dir, root, _guard) = protected();
+        let home = root.join("home");
+        let default = home.join(DEFAULT_WORKSPACE);
+        std::fs::create_dir_all(&default).unwrap();
+        for allowed in [allowed(&home, &[]), allowed_default(&home, &default)] {
+            assert_eq!(allowed.refusal(&default), None);
+            assert_eq!(allowed.refusal(&default.join("sid")), None);
+        }
+    }
+
+    #[cfg(any(windows, unix))]
+    fn assert_linked_default_is_refused() {
+        let (_dir, root, _guard) = protected();
+        let home = root.join("home");
+        let share = home.join(".local").join("share");
+        let keyrings = share.join("keyrings");
+        let default = share.join("evoflux-workspace");
+        std::fs::create_dir_all(&keyrings).unwrap();
+        // Do not silently skip: Windows must exercise a real junction, Unix a symlink.
+        #[cfg(windows)]
+        {
+            #[allow(clippy::disallowed_methods)] // synchronous junction fixture
+            let output = std::process::Command::new("cmd")
+                .args(["/C", "mklink", "/J"])
+                .arg(&default)
+                .arg(&keyrings)
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "junction fixture: {} {}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&keyrings, &default).unwrap();
+        let requested = default.join("sid");
+        let resolved = resolve(&requested.to_string_lossy(), &home).unwrap();
+        assert_eq!(resolved, keyrings.join("sid"));
+        for allowed in [
+            allowed(&home, &[]),
+            allowed_default(&home, &default),
+            allowed_default(&home, &keyrings),
+        ] {
+            assert_eq!(
+                allowed.refusal(&resolved),
+                Some("a credentials or configuration folder")
+            );
+            assert!(allowed.roots.is_empty());
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_default_workspace_junction_to_keyrings_is_refused() {
+        assert_linked_default_is_refused();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_default_workspace_symlink_to_keyrings_is_refused() {
+        assert_linked_default_is_refused();
     }
 
     #[test]
