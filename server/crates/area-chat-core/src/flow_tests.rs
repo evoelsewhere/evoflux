@@ -581,3 +581,40 @@ async fn a_repeated_tool_call_is_announced_once_and_run_twice() {
     assert_eq!(data(&frames, "tool_start").len(), 2);
     assert_eq!(data(&frames, "tool_end").len(), 2);
 }
+
+#[tokio::test]
+async fn saved_sandbox_patterns_are_reloaded_each_turn() {
+    let env = Env::new().await;
+    env.script(sse_text("ready"));
+    let (body, _) = env.chat_frames("message=setup").await;
+    let sid = body["session_id"].as_str().unwrap();
+    let ws = env.state.settings.workspace_dir.join(sid);
+    std::fs::create_dir_all(&ws).unwrap();
+    std::fs::write(ws.join("secret.txt"), "hidden payload").unwrap();
+    let config = env.state.settings.config_dir.join("sandbox.yaml");
+    std::fs::write(&config, "denied_patterns: ['**/secret*']\n").unwrap();
+    let form = format!("message=inspect&session_id={sid}");
+    env.script(sse_tool("c1", "read", r#"{"path":"secret.txt"}"#));
+    env.script(sse_text("done"));
+    let (body, frames) = env.chat_frames(&form).await;
+    let ends = data(&frames, "tool_end");
+    let result = ends[0]["result"].as_str().unwrap();
+    assert!(
+        result.ends_with("is inside a denied sandbox root: **/secret*"),
+        "{result}"
+    );
+    assert!(!result.contains("hidden payload"));
+    std::fs::write(&config, "denied_patterns: []\n").unwrap();
+    env.script(sse_tool("c2", "read", r#"{"path":"secret.txt"}"#));
+    env.script(sse_text("done"));
+    let (_, frames) = env
+        .chat_frames(&format!(
+            "message=again&session_id={}",
+            body["session_id"].as_str().unwrap()
+        ))
+        .await;
+    assert!(data(&frames, "tool_end")[0]["result"]
+        .as_str()
+        .unwrap()
+        .contains("hidden payload"));
+}

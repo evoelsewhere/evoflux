@@ -722,11 +722,13 @@ dependencies = [
  "async-trait",
  "chrono",
  "evoflux-core",
+ "evoflux-shared-yaml",
  "fancy-regex",
  "regex",
  "serde_json",
  "tempfile",
  "tokio",
+ "tracing",
 ]
 
 [[package]]

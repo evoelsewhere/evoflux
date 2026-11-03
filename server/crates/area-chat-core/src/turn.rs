@@ -397,6 +397,10 @@ impl Turn {
         let ctx = ToolCtx {
             workspace_root,
             session_id: self.input.sid.clone(),
+            denied_patterns: evoflux_area_tools::load_denied_patterns(
+                self.state.settings.config_dir.clone(),
+            )
+            .await,
         };
         let mut empty_after_tool = 0;
         let mut last_assistant: Option<(String, Value)> = None;

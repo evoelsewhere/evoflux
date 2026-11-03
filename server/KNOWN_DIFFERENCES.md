@@ -44,6 +44,23 @@ Parity is checked by `contract-tests/tools` (324 cases on fixture workspaces) an
 
 ### Hardening (Rust is stricter on purpose)
 
+- **Saved sandbox deny patterns (DS3-003).** Chat-core reloads the `denied_patterns`
+  field of `<config>/sandbox.yaml` on the blocking pool once per turn, using the
+  shared YAML 1.1 loader; blank strings are dropped, malformed/unreadable policy
+  logs `sandbox_config_load_failed` and supplies no user patterns. The built-in
+  case-insensitive `.env` floor remains even if the file removes those patterns.
+  User patterns match resolved POSIX paths case-sensitively as in Python.
+  `read`, `ls` and search-root errors match Python. Rust also filters each `glob`
+  result and each opened `grep` file; Python's scans only validate the search
+  root. This reader consumes only deny patterns, not the other sandbox settings.
+  `write` and `edit` remain Python-only tools, refused by the Rust chat loop;
+  future Rust writers must carry the same `ToolCtx.denied_patterns` into path
+  validation before mutation.
+- **Metadata of link targets (DS3-004).** `ls` hides entries whose link target is
+  outside the workspace or denied, before reading target type or size; `glob`
+  omits such file hits before reading their modification time. Python exposes
+  these entries. Ordinary allowed entries keep the Python formatting.
+
 - **Links found while walking are not followed out of the workspace.** Python's
   `glob` and `grep` follow a symlink or junction inside the search root even when
   it leads outside the workspace, so `grep` can read a file the `read` tool would
@@ -84,8 +101,6 @@ they need a decision before these tools run agents.
   legitimate hard-linked trees (pnpm `node_modules` stores, `git clone --local`
   objects). Std exposes the link count only on Unix, so Windows would also need
   a new dependency.
-- **Metadata of link targets.** `ls` shows the size of a file behind a link that
-  leads outside, and `glob` lists such files; their contents are not read.
 
 ### Not ported yet (AR3 or later decides)
 
@@ -98,9 +113,6 @@ they need a decision before these tools run agents.
   Python's `SandboxConfig` also allows extra project roots, read-only roots, the
   session uploads directory and EvoFlux's own log and session-artifact
   directories. Rust refuses those paths.
-- **Deny patterns.** Rust applies the built-in defaults (`**/.env`, `**/.env.*`).
-  A user's own `sandbox.yaml` `denied_patterns` are not read, so a pattern the user
-  added is not enforced by these tools until `ToolCtx` can carry them.
 - **`read` of PDF and HTML** returns `Error: Document conversion (PDF and HTML)
   is not available in the Rust agent runtime yet: <path>`; Python converts them
   with `app.services.document_text`.

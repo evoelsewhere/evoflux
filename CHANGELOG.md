@@ -7,7 +7,7 @@ All notable changes to EvoFlux are documented in this file.
 ### Security
 
 - Added an address-pinned HTTPS downloader for the v4 Rust server: it checks every DNS answer and redirect, refuses private destinations unless explicitly allowed, and caps downloaded bytes. Future marketplace and seed downloads can use it to prevent DNS rebinding; Python still serves those features.
-- The v4 Rust file tools now enforce the deny patterns saved in **Settings ? Sandbox** on each chat turn, and `glob` and `grep` skip denied files in discovery results. `ls` and `glob` also hide links to files outside the workspace or behind a deny rule before reading their metadata. The pattern cache also has an eviction regression test for its 4,096-entry bound. Python still runs agents, so app behavior is unchanged until cutover.
+- The v4 Rust file tools now enforce the deny patterns saved in **Settings → Sandbox** on each chat turn, and `glob` and `grep` skip denied files in discovery results. `ls` and `glob` also hide links to files outside the workspace or behind a deny rule before reading their metadata. The pattern cache also has an eviction regression test for its 4,096-entry bound. Python still runs agents, so app behavior is unchanged until cutover.
 
 - Phone access through **Settings → Remote Control** now prevents a device on the tailnet from dropping the verified identity EvoFlux attaches to its requests with a crafted `Connection` header. Requests without a verified login carry no proxy identity headers.
 - The v4 `evoflux-server` gateway now answers 403 to any request whose `Origin` is not EvoFlux itself (a `localhost`/`127.0.0.1` page, the desktop window or the WebBridge extension) or whose `Host` is not this machine, for every route, so a website open in your browser can no longer call the local API, including through DNS rebinding. CORS now echoes only the allowed origin instead of `*`. Add other origins with `EVOFLUX_ALLOWED_ORIGINS`.
@@ -50,6 +50,8 @@ All notable changes to EvoFlux are documented in this file.
 ### Changed
 
 - Recorded verification and security-review requirements for the v4 Rust HTTPS downloader and locked its test dependencies.
+- Recorded the v4 Rust tools sandbox verification, known parity differences, and pending security review in the migration ledger.
+
 
 - The v4 Rust chat migration notes now record the accepted local directory-creation race and cleanup limitations, and mark the workspace hardening as needing security review.
 - `server/KNOWN_DIFFERENCES.md` records the decision to keep reading hard-linked files in the v4 Rust agent file tools as Python does.
