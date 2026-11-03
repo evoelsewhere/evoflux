@@ -1,0 +1,3665 @@
+{
+ "team_spawn": [
+  {
+   "input": {},
+   "ok": {
+    "work": "ask",
+    "coding": "ask"
+   }
+  },
+  {
+   "input": {
+    "work": "auto"
+   },
+   "ok": {
+    "work": "auto",
+    "coding": "ask"
+   }
+  },
+  {
+   "input": {
+    "work": "x",
+    "coding": 1
+   },
+   "errors": [
+    {
+     "type": "literal_error",
+     "loc": [
+      "body",
+      "work"
+     ],
+     "msg": "Input should be 'ask' or 'auto'",
+     "input": "x",
+     "ctx": {
+      "expected": "'ask' or 'auto'"
+     }
+    },
+    {
+     "type": "literal_error",
+     "loc": [
+      "body",
+      "coding"
+     ],
+     "msg": "Input should be 'ask' or 'auto'",
+     "input": 1,
+     "ctx": {
+      "expected": "'ask' or 'auto'"
+     }
+    }
+   ]
+  },
+  {
+   "input": {
+    "other": "ask"
+   },
+   "errors": [
+    {
+     "type": "extra_forbidden",
+     "loc": [
+      "body",
+      "other"
+     ],
+     "msg": "Extra inputs are not permitted",
+     "input": "ask"
+    }
+   ]
+  },
+  {
+   "input": {
+    "work": "ask"
+   },
+   "ok": {
+    "work": "ask",
+    "coding": "ask"
+   }
+  },
+  {
+   "input": {
+    "work": "auto"
+   },
+   "ok": {
+    "work": "auto",
+    "coding": "ask"
+   }
+  },
+  {
+   "input": {
+    "work": "x"
+   },
+   "errors": [
+    {
+     "type": "literal_error",
+     "loc": [
+      "body",
+      "work"
+     ],
+     "msg": "Input should be 'ask' or 'auto'",
+     "input": "x",
+     "ctx": {
+      "expected": "'ask' or 'auto'"
+     }
+    }
+   ]
+  },
+  {
+   "input": {
+    "work": ""
+   },
+   "errors": [
+    {
+     "type": "literal_error",
+     "loc": [
+      "body",
+      "work"
+     ],
+     "msg": "Input should be 'ask' or 'auto'",
+     "input": "",
+     "ctx": {
+      "expected": "'ask' or 'auto'"
+     }
+    }
+   ]
+  },
+  {
+   "input": {
+    "work": 1
+   },
+   "errors": [
+    {
+     "type": "literal_error",
+     "loc": [
+      "body",
+      "work"
+     ],
+     "msg": "Input should be 'ask' or 'auto'",
+     "input": 1,
+     "ctx": {
+      "expected": "'ask' or 'auto'"
+     }
+    }
+   ]
+  },
+  {
+   "input": {
+    "work": 1.5
+   },
+   "errors": [
+    {
+     "type": "literal_error",
+     "loc": [
+      "body",
+      "work"
+     ],
+     "msg": "Input should be 'ask' or 'auto'",
+     "input": 1.5,
+     "ctx": {
+      "expected": "'ask' or 'auto'"
+     }
+    }
+   ]
+  },
+  {
+   "input": {
+    "work": true
+   },
+   "errors": [
+    {
+     "type": "literal_error",
+     "loc": [
+      "body",
+      "work"
+     ],
+     "msg": "Input should be 'ask' or 'auto'",
+     "input": true,
+     "ctx": {
+      "expected": "'ask' or 'auto'"
+     }
+    }
+   ]
+  },
+  {
+   "input": {
+    "work": null
+   },
+   "errors": [
+    {
+     "type": "literal_error",
+     "loc": [
+      "body",
+      "work"
+     ],
+     "msg": "Input should be 'ask' or 'auto'",
+     "input": null,
+     "ctx": {
+      "expected": "'ask' or 'auto'"
+     }
+    }
+   ]
+  },
+  {
+   "input": {
+    "work": []
+   },
+   "errors": [
+    {
+     "type": "literal_error",
+     "loc": [
+      "body",
+      "work"
+     ],
+     "msg": "Input should be 'ask' or 'auto'",
+     "input": [],
+     "ctx": {
+      "expected": "'ask' or 'auto'"
+     }
+    }
+   ]
+  },
+  {
+   "input": {
+    "work": {}
+   },
+   "errors": [
+    {
+     "type": "literal_error",
+     "loc": [
+      "body",
+      "work"
+     ],
+     "msg": "Input should be 'ask' or 'auto'",
+     "input": {},
+     "ctx": {
+      "expected": "'ask' or 'auto'"
+     }
+    }
+   ]
+  },
+  {
+   "input": {
+    "work": "ASK"
+   },
+   "errors": [
+    {
+     "type": "literal_error",
+     "loc": [
+      "body",
+      "work"
+     ],
+     "msg": "Input should be 'ask' or 'auto'",
+     "input": "ASK",
+     "ctx": {
+      "expected": "'ask' or 'auto'"
+     }
+    }
+   ]
+  },
+  {
+   "input": {
+    "work": " ask"
+   },
+   "errors": [
+    {
+     "type": "literal_error",
+     "loc": [
+      "body",
+      "work"
+     ],
+     "msg": "Input should be 'ask' or 'auto'",
+     "input": " ask",
+     "ctx": {
+      "expected": "'ask' or 'auto'"
+     }
+    }
+   ]
+  }
+ ],
+ "follow_up": [
+  {
+   "input": {},
+   "ok": {
+    "delivery": "queue"
+   }
+  },
+  {
+   "input": {
+    "delivery": "steer"
+   },
+   "ok": {
+    "delivery": "steer"
+   }
+  },
+  {
+   "input": {
+    "delivery": null
+   },
+   "errors": [
+    {
+     "type": "literal_error",
+     "loc": [
+      "body",
+      "delivery"
+     ],
+     "msg": "Input should be 'steer' or 'queue'",
+     "input": null,
+     "ctx": {
+      "expected": "'steer' or 'queue'"
+     }
+    }
+   ]
+  },
+  {
+   "input": {
+    "delivery": "queue",
+    "x": 1
+   },
+   "errors": [
+    {
+     "type": "extra_forbidden",
+     "loc": [
+      "body",
+      "x"
+     ],
+     "msg": "Extra inputs are not permitted",
+     "input": 1
+    }
+   ]
+  }
+ ],
+ "background_tasks": [
+  {
+   "input": {},
+   "ok": {
+    "wake_idle": true
+   }
+  },
+  {
+   "input": {
+    "x": true
+   },
+   "errors": [
+    {
+     "type": "extra_forbidden",
+     "loc": [
+      "body",
+      "x"
+     ],
+     "msg": "Extra inputs are not permitted",
+     "input": true
+    }
+   ]
+  },
+  {
+   "input": {
+    "wake_idle": true
+   },
+   "ok": {
+    "wake_idle": true
+   }
+  },
+  {
+   "input": {
+    "wake_idle": false
+   },
+   "ok": {
+    "wake_idle": false
+   }
+  },
+  {
+   "input": {
+    "wake_idle": 0
+   },
+   "ok": {
+    "wake_idle": false
+   }
+  },
+  {
+   "input": {
+    "wake_idle": 1
+   },
+   "ok": {
+    "wake_idle": true
+   }
+  },
+  {
+   "input": {
+    "wake_idle": 2
+   },
+   "errors": [
+    {
+     "type": "bool_parsing",
+     "loc": [
+      "body",
+      "wake_idle"
+     ],
+     "msg": "Input should be a valid boolean, unable to interpret input",
+     "input": 2
+    }
+   ]
+  },
+  {
+   "input": {
+    "wake_idle": -1
+   },
+   "errors": [
+    {
+     "type": "bool_parsing",
+     "loc": [
+      "body",
+      "wake_idle"
+     ],
+     "msg": "Input should be a valid boolean, unable to interpret input",
+     "input": -1
+    }
+   ]
+  },
+  {
+   "input": {
+    "wake_idle": 0.0
+   },
+   "ok": {
+    "wake_idle": false
+   }
+  },
+  {
+   "input": {
+    "wake_idle": 1.0
+   },
+   "ok": {
+    "wake_idle": true
+   }
+  },
+  {
+   "input": {
+    "wake_idle": 1.5
+   },
+   "errors": [
+    {
+     "type": "bool_type",
+     "loc": [
+      "body",
+      "wake_idle"
+     ],
+     "msg": "Input should be a valid boolean",
+     "input": 1.5
+    }
+   ]
+  },
+  {
+   "input": {
+    "wake_idle": 2.0
+   },
+   "errors": [
+    {
+     "type": "bool_parsing",
+     "loc": [
+      "body",
+      "wake_idle"
+     ],
+     "msg": "Input should be a valid boolean, unable to interpret input",
+     "input": 2.0
+    }
+   ]
+  },
+  {
+   "input": {
+    "wake_idle": -0.0
+   },
+   "ok": {
+    "wake_idle": false
+   }
+  },
+  {
+   "input": {
+    "wake_idle": "yes"
+   },
+   "ok": {
+    "wake_idle": true
+   }
+  },
+  {
+   "input": {
+    "wake_idle": "no"
+   },
+   "ok": {
+    "wake_idle": false
+   }
+  },
+  {
+   "input": {
+    "wake_idle": "YES"
+   },
+   "ok": {
+    "wake_idle": true
+   }
+  },
+  {
+   "input": {
+    "wake_idle": "On"
+   },
+   "ok": {
+    "wake_idle": true
+   }
+  },
+  {
+   "input": {
+    "wake_idle": "off"
+   },
+   "ok": {
+    "wake_idle": false
+   }
+  },
+  {
+   "input": {
+    "wake_idle": "t"
+   },
+   "ok": {
+    "wake_idle": true
+   }
+  },
+  {
+   "input": {
+    "wake_idle": "f"
+   },
+   "ok": {
+    "wake_idle": false
+   }
+  },
+  {
+   "input": {
+    "wake_idle": "y"
+   },
+   "ok": {
+    "wake_idle": true
+   }
+  },
+  {
+   "input": {
+    "wake_idle": "n"
+   },
+   "ok": {
+    "wake_idle": false
+   }
+  },
+  {
+   "input": {
+    "wake_idle": "1"
+   },
+   "ok": {
+    "wake_idle": true
+   }
+  },
+  {
+   "input": {
+    "wake_idle": "0"
+   },
+   "ok": {
+    "wake_idle": false
+   }
+  },
+  {
+   "input": {
+    "wake_idle": "true"
+   },
+   "ok": {
+    "wake_idle": true
+   }
+  },
+  {
+   "input": {
+    "wake_idle": "False"
+   },
+   "ok": {
+    "wake_idle": false
+   }
+  },
+  {
+   "input": {
+    "wake_idle": " true"
+   },
+   "errors": [
+    {
+     "type": "bool_parsing",
+     "loc": [
+      "body",
+      "wake_idle"
+     ],
+     "msg": "Input should be a valid boolean, unable to interpret input",
+     "input": " true"
+    }
+   ]
+  },
+  {
+   "input": {
+    "wake_idle": "maybe"
+   },
+   "errors": [
+    {
+     "type": "bool_parsing",
+     "loc": [
+      "body",
+      "wake_idle"
+     ],
+     "msg": "Input should be a valid boolean, unable to interpret input",
+     "input": "maybe"
+    }
+   ]
+  },
+  {
+   "input": {
+    "wake_idle": ""
+   },
+   "errors": [
+    {
+     "type": "bool_parsing",
+     "loc": [
+      "body",
+      "wake_idle"
+     ],
+     "msg": "Input should be a valid boolean, unable to interpret input",
+     "input": ""
+    }
+   ]
+  },
+  {
+   "input": {
+    "wake_idle": null
+   },
+   "errors": [
+    {
+     "type": "bool_type",
+     "loc": [
+      "body",
+      "wake_idle"
+     ],
+     "msg": "Input should be a valid boolean",
+     "input": null
+    }
+   ]
+  },
+  {
+   "input": {
+    "wake_idle": []
+   },
+   "errors": [
+    {
+     "type": "bool_type",
+     "loc": [
+      "body",
+      "wake_idle"
+     ],
+     "msg": "Input should be a valid boolean",
+     "input": []
+    }
+   ]
+  },
+  {
+   "input": {
+    "wake_idle": {}
+   },
+   "errors": [
+    {
+     "type": "bool_type",
+     "loc": [
+      "body",
+      "wake_idle"
+     ],
+     "msg": "Input should be a valid boolean",
+     "input": {}
+    }
+   ]
+  }
+ ],
+ "response_style": [
+  {
+   "input": {},
+   "ok": {
+    "style": "visual"
+   }
+  },
+  {
+   "input": {
+    "style": "fancy"
+   },
+   "errors": [
+    {
+     "type": "literal_error",
+     "loc": [
+      "body",
+      "style"
+     ],
+     "msg": "Input should be 'simple' or 'visual'",
+     "input": "fancy",
+     "ctx": {
+      "expected": "'simple' or 'visual'"
+     }
+    }
+   ]
+  },
+  {
+   "input": {
+    "style": 3
+   },
+   "errors": [
+    {
+     "type": "literal_error",
+     "loc": [
+      "body",
+      "style"
+     ],
+     "msg": "Input should be 'simple' or 'visual'",
+     "input": 3,
+     "ctx": {
+      "expected": "'simple' or 'visual'"
+     }
+    }
+   ]
+  },
+  {
+   "input": {
+    "style": "simple",
+    "x": 1,
+    "y": 2
+   },
+   "errors": [
+    {
+     "type": "extra_forbidden",
+     "loc": [
+      "body",
+      "x"
+     ],
+     "msg": "Extra inputs are not permitted",
+     "input": 1
+    },
+    {
+     "type": "extra_forbidden",
+     "loc": [
+      "body",
+      "y"
+     ],
+     "msg": "Extra inputs are not permitted",
+     "input": 2
+    }
+   ]
+  }
+ ],
+ "sandbox": [
+  {
+   "input": {},
+   "ok": {
+    "denied_patterns": [],
+    "worktree_location": "repository",
+    "inherit_shell_environment": false,
+    "load_shell_profile": false,
+    "outbound_data_policy": "off",
+    "outbound_pii_policy": "off",
+    "max_execution_seconds": 600,
+    "max_output_bytes": 131072
+   }
+  },
+  {
+   "input": {
+    "denied_patterns": [
+     " a ",
+     "",
+     "a"
+    ]
+   },
+   "ok": {
+    "denied_patterns": [
+     " a ",
+     "",
+     "a"
+    ],
+    "worktree_location": "repository",
+    "inherit_shell_environment": false,
+    "load_shell_profile": false,
+    "outbound_data_policy": "off",
+    "outbound_pii_policy": "off",
+    "max_execution_seconds": 600,
+    "max_output_bytes": 131072
+   }
+  },
+  {
+   "input": {
+    "denied_patterns": "a"
+   },
+   "errors": [
+    {
+     "type": "list_type",
+     "loc": [
+      "body",
+      "denied_patterns"
+     ],
+     "msg": "Input should be a valid list",
+     "input": "a"
+    }
+   ]
+  },
+  {
+   "input": {
+    "denied_patterns": [
+     1,
+     null,
+     "x"
+    ]
+   },
+   "errors": [
+    {
+     "type": "string_type",
+     "loc": [
+      "body",
+      "denied_patterns",
+      0
+     ],
+     "msg": "Input should be a valid string",
+     "input": 1
+    },
+    {
+     "type": "string_type",
+     "loc": [
+      "body",
+      "denied_patterns",
+      1
+     ],
+     "msg": "Input should be a valid string",
+     "input": null
+    }
+   ]
+  },
+  {
+   "input": {
+    "denied_patterns": null
+   },
+   "errors": [
+    {
+     "type": "list_type",
+     "loc": [
+      "body",
+      "denied_patterns"
+     ],
+     "msg": "Input should be a valid list",
+     "input": null
+    }
+   ]
+  },
+  {
+   "input": {
+    "denied_patterns": [
+     "a"
+    ]
+   },
+   "ok": {
+    "denied_patterns": [
+     "a"
+    ],
+    "worktree_location": "repository",
+    "inherit_shell_environment": false,
+    "load_shell_profile": false,
+    "outbound_data_policy": "off",
+    "outbound_pii_policy": "off",
+    "max_execution_seconds": 600,
+    "max_output_bytes": 131072
+   }
+  },
+  {
+   "input": {
+    "worktree_location": "x",
+    "max_execution_seconds": 1,
+    "unknown": 1
+   },
+   "errors": [
+    {
+     "type": "literal_error",
+     "loc": [
+      "body",
+      "worktree_location"
+     ],
+     "msg": "Input should be 'repository' or 'user_data'",
+     "input": "x",
+     "ctx": {
+      "expected": "'repository' or 'user_data'"
+     }
+    },
+    {
+     "type": "greater_than_equal",
+     "loc": [
+      "body",
+      "max_execution_seconds"
+     ],
+     "msg": "Input should be greater than or equal to 5",
+     "input": 1,
+     "ctx": {
+      "ge": 5
+     }
+    },
+    {
+     "type": "extra_forbidden",
+     "loc": [
+      "body",
+      "unknown"
+     ],
+     "msg": "Extra inputs are not permitted",
+     "input": 1
+    }
+   ]
+  },
+  {
+   "input": {
+    "outbound_data_policy": "redact",
+    "outbound_pii_policy": "strict"
+   },
+   "ok": {
+    "denied_patterns": [],
+    "worktree_location": "repository",
+    "inherit_shell_environment": false,
+    "load_shell_profile": false,
+    "outbound_data_policy": "redact",
+    "outbound_pii_policy": "strict",
+    "max_execution_seconds": 600,
+    "max_output_bytes": 131072
+   }
+  },
+  {
+   "input": {
+    "max_output_bytes": 4095
+   },
+   "errors": [
+    {
+     "type": "greater_than_equal",
+     "loc": [
+      "body",
+      "max_output_bytes"
+     ],
+     "msg": "Input should be greater than or equal to 4096",
+     "input": 4095,
+     "ctx": {
+      "ge": 4096
+     }
+    }
+   ]
+  },
+  {
+   "input": {
+    "max_output_bytes": 1048577
+   },
+   "errors": [
+    {
+     "type": "less_than_equal",
+     "loc": [
+      "body",
+      "max_output_bytes"
+     ],
+     "msg": "Input should be less than or equal to 1048576",
+     "input": 1048577,
+     "ctx": {
+      "le": 1048576
+     }
+    }
+   ]
+  },
+  {
+   "input": {
+    "max_execution_seconds": 3600,
+    "max_output_bytes": 4096
+   },
+   "ok": {
+    "denied_patterns": [],
+    "worktree_location": "repository",
+    "inherit_shell_environment": false,
+    "load_shell_profile": false,
+    "outbound_data_policy": "off",
+    "outbound_pii_policy": "off",
+    "max_execution_seconds": 3600,
+    "max_output_bytes": 4096
+   }
+  },
+  {
+   "input": {
+    "max_execution_seconds": 3
+   },
+   "errors": [
+    {
+     "type": "greater_than_equal",
+     "loc": [
+      "body",
+      "max_execution_seconds"
+     ],
+     "msg": "Input should be greater than or equal to 5",
+     "input": 3,
+     "ctx": {
+      "ge": 5
+     }
+    }
+   ]
+  },
+  {
+   "input": {
+    "max_execution_seconds": -1
+   },
+   "errors": [
+    {
+     "type": "greater_than_equal",
+     "loc": [
+      "body",
+      "max_execution_seconds"
+     ],
+     "msg": "Input should be greater than or equal to 5",
+     "input": -1,
+     "ctx": {
+      "ge": 5
+     }
+    }
+   ]
+  },
+  {
+   "input": {
+    "max_execution_seconds": 0
+   },
+   "errors": [
+    {
+     "type": "greater_than_equal",
+     "loc": [
+      "body",
+      "max_execution_seconds"
+     ],
+     "msg": "Input should be greater than or equal to 5",
+     "input": 0,
+     "ctx": {
+      "ge": 5
+     }
+    }
+   ]
+  },
+  {
+   "input": {
+    "max_execution_seconds": 2.0
+   },
+   "errors": [
+    {
+     "type": "greater_than_equal",
+     "loc": [
+      "body",
+      "max_execution_seconds"
+     ],
+     "msg": "Input should be greater than or equal to 5",
+     "input": 2.0,
+     "ctx": {
+      "ge": 5
+     }
+    }
+   ]
+  },
+  {
+   "input": {
+    "max_execution_seconds": 2.5
+   },
+   "errors": [
+    {
+     "type": "int_from_float",
+     "loc": [
+      "body",
+      "max_execution_seconds"
+     ],
+     "msg": "Input should be a valid integer, got a number with a fractional part",
+     "input": 2.5
+    }
+   ]
+  },
+  {
+   "input": {
+    "max_execution_seconds": "3"
+   },
+   "errors": [
+    {
+     "type": "greater_than_equal",
+     "loc": [
+      "body",
+      "max_execution_seconds"
+     ],
+     "msg": "Input should be greater than or equal to 5",
+     "input": "3",
+     "ctx": {
+      "ge": 5
+     }
+    }
+   ]
+  },
+  {
+   "input": {
+    "max_execution_seconds": " 3 "
+   },
+   "errors": [
+    {
+     "type": "greater_than_equal",
+     "loc": [
+      "body",
+      "max_execution_seconds"
+     ],
+     "msg": "Input should be greater than or equal to 5",
+     "input": " 3 ",
+     "ctx": {
+      "ge": 5
+     }
+    }
+   ]
+  },
+  {
+   "input": {
+    "max_execution_seconds": "+3"
+   },
+   "errors": [
+    {
+     "type": "greater_than_equal",
+     "loc": [
+      "body",
+      "max_execution_seconds"
+     ],
+     "msg": "Input should be greater than or equal to 5",
+     "input": "+3",
+     "ctx": {
+      "ge": 5
+     }
+    }
+   ]
+  },
+  {
+   "input": {
+    "max_execution_seconds": "-3"
+   },
+   "errors": [
+    {
+     "type": "greater_than_equal",
+     "loc": [
+      "body",
+      "max_execution_seconds"
+     ],
+     "msg": "Input should be greater than or equal to 5",
+     "input": "-3",
+     "ctx": {
+      "ge": 5
+     }
+    }
+   ]
+  },
+  {
+   "input": {
+    "max_execution_seconds": "3.0"
+   },
+   "errors": [
+    {
+     "type": "greater_than_equal",
+     "loc": [
+      "body",
+      "max_execution_seconds"
+     ],
+     "msg": "Input should be greater than or equal to 5",
+     "input": "3.0",
+     "ctx": {
+      "ge": 5
+     }
+    }
+   ]
+  },
+  {
+   "input": {
+    "max_execution_seconds": "3.5"
+   },
+   "errors": [
+    {
+     "type": "int_parsing",
+     "loc": [
+      "body",
+      "max_execution_seconds"
+     ],
+     "msg": "Input should be a valid integer, unable to parse string as an integer",
+     "input": "3.5"
+    }
+   ]
+  },
+  {
+   "input": {
+    "max_execution_seconds": "1_000"
+   },
+   "ok": {
+    "denied_patterns": [],
+    "worktree_location": "repository",
+    "inherit_shell_environment": false,
+    "load_shell_profile": false,
+    "outbound_data_policy": "off",
+    "outbound_pii_policy": "off",
+    "max_execution_seconds": 1000,
+    "max_output_bytes": 131072
+   }
+  },
+  {
+   "input": {
+    "max_execution_seconds": "0x10"
+   },
+   "errors": [
+    {
+     "type": "int_parsing",
+     "loc": [
+      "body",
+      "max_execution_seconds"
+     ],
+     "msg": "Input should be a valid integer, unable to parse string as an integer",
+     "input": "0x10"
+    }
+   ]
+  },
+  {
+   "input": {
+    "max_execution_seconds": "three"
+   },
+   "errors": [
+    {
+     "type": "int_parsing",
+     "loc": [
+      "body",
+      "max_execution_seconds"
+     ],
+     "msg": "Input should be a valid integer, unable to parse string as an integer",
+     "input": "three"
+    }
+   ]
+  },
+  {
+   "input": {
+    "max_execution_seconds": ""
+   },
+   "errors": [
+    {
+     "type": "int_parsing",
+     "loc": [
+      "body",
+      "max_execution_seconds"
+     ],
+     "msg": "Input should be a valid integer, unable to parse string as an integer",
+     "input": ""
+    }
+   ]
+  },
+  {
+   "input": {
+    "max_execution_seconds": true
+   },
+   "errors": [
+    {
+     "type": "greater_than_equal",
+     "loc": [
+      "body",
+      "max_execution_seconds"
+     ],
+     "msg": "Input should be greater than or equal to 5",
+     "input": true,
+     "ctx": {
+      "ge": 5
+     }
+    }
+   ]
+  },
+  {
+   "input": {
+    "max_execution_seconds": false
+   },
+   "errors": [
+    {
+     "type": "greater_than_equal",
+     "loc": [
+      "body",
+      "max_execution_seconds"
+     ],
+     "msg": "Input should be greater than or equal to 5",
+     "input": false,
+     "ctx": {
+      "ge": 5
+     }
+    }
+   ]
+  },
+  {
+   "input": {
+    "max_execution_seconds": null
+   },
+   "errors": [
+    {
+     "type": "int_type",
+     "loc": [
+      "body",
+      "max_execution_seconds"
+     ],
+     "msg": "Input should be a valid integer",
+     "input": null
+    }
+   ]
+  },
+  {
+   "input": {
+    "max_execution_seconds": []
+   },
+   "errors": [
+    {
+     "type": "int_type",
+     "loc": [
+      "body",
+      "max_execution_seconds"
+     ],
+     "msg": "Input should be a valid integer",
+     "input": []
+    }
+   ]
+  },
+  {
+   "input": {
+    "max_execution_seconds": {}
+   },
+   "errors": [
+    {
+     "type": "int_type",
+     "loc": [
+      "body",
+      "max_execution_seconds"
+     ],
+     "msg": "Input should be a valid integer",
+     "input": {}
+    }
+   ]
+  },
+  {
+   "input": {
+    "max_execution_seconds": 1e+20
+   },
+   "errors": [
+    {
+     "type": "int_parsing_size",
+     "loc": [
+      "body",
+      "max_execution_seconds"
+     ],
+     "msg": "Unable to parse input string as an integer, exceeded maximum size",
+     "input": 1e+20
+    }
+   ]
+  },
+  {
+   "input": {
+    "max_execution_seconds": "99999999999999999999"
+   },
+   "errors": [
+    {
+     "type": "less_than_equal",
+     "loc": [
+      "body",
+      "max_execution_seconds"
+     ],
+     "msg": "Input should be less than or equal to 3600",
+     "input": "99999999999999999999",
+     "ctx": {
+      "le": 3600
+     }
+    }
+   ]
+  },
+  {
+   "input": {
+    "inherit_shell_environment": true
+   },
+   "ok": {
+    "denied_patterns": [],
+    "worktree_location": "repository",
+    "inherit_shell_environment": true,
+    "load_shell_profile": false,
+    "outbound_data_policy": "off",
+    "outbound_pii_policy": "off",
+    "max_execution_seconds": 600,
+    "max_output_bytes": 131072
+   }
+  },
+  {
+   "input": {
+    "inherit_shell_environment": false
+   },
+   "ok": {
+    "denied_patterns": [],
+    "worktree_location": "repository",
+    "inherit_shell_environment": false,
+    "load_shell_profile": false,
+    "outbound_data_policy": "off",
+    "outbound_pii_policy": "off",
+    "max_execution_seconds": 600,
+    "max_output_bytes": 131072
+   }
+  },
+  {
+   "input": {
+    "inherit_shell_environment": 0
+   },
+   "ok": {
+    "denied_patterns": [],
+    "worktree_location": "repository",
+    "inherit_shell_environment": false,
+    "load_shell_profile": false,
+    "outbound_data_policy": "off",
+    "outbound_pii_policy": "off",
+    "max_execution_seconds": 600,
+    "max_output_bytes": 131072
+   }
+  },
+  {
+   "input": {
+    "inherit_shell_environment": 1
+   },
+   "ok": {
+    "denied_patterns": [],
+    "worktree_location": "repository",
+    "inherit_shell_environment": true,
+    "load_shell_profile": false,
+    "outbound_data_policy": "off",
+    "outbound_pii_policy": "off",
+    "max_execution_seconds": 600,
+    "max_output_bytes": 131072
+   }
+  },
+  {
+   "input": {
+    "inherit_shell_environment": 2
+   },
+   "errors": [
+    {
+     "type": "bool_parsing",
+     "loc": [
+      "body",
+      "inherit_shell_environment"
+     ],
+     "msg": "Input should be a valid boolean, unable to interpret input",
+     "input": 2
+    }
+   ]
+  },
+  {
+   "input": {
+    "inherit_shell_environment": -1
+   },
+   "errors": [
+    {
+     "type": "bool_parsing",
+     "loc": [
+      "body",
+      "inherit_shell_environment"
+     ],
+     "msg": "Input should be a valid boolean, unable to interpret input",
+     "input": -1
+    }
+   ]
+  },
+  {
+   "input": {
+    "inherit_shell_environment": 0.0
+   },
+   "ok": {
+    "denied_patterns": [],
+    "worktree_location": "repository",
+    "inherit_shell_environment": false,
+    "load_shell_profile": false,
+    "outbound_data_policy": "off",
+    "outbound_pii_policy": "off",
+    "max_execution_seconds": 600,
+    "max_output_bytes": 131072
+   }
+  },
+  {
+   "input": {
+    "inherit_shell_environment": 1.0
+   },
+   "ok": {
+    "denied_patterns": [],
+    "worktree_location": "repository",
+    "inherit_shell_environment": true,
+    "load_shell_profile": false,
+    "outbound_data_policy": "off",
+    "outbound_pii_policy": "off",
+    "max_execution_seconds": 600,
+    "max_output_bytes": 131072
+   }
+  },
+  {
+   "input": {
+    "inherit_shell_environment": 1.5
+   },
+   "errors": [
+    {
+     "type": "bool_type",
+     "loc": [
+      "body",
+      "inherit_shell_environment"
+     ],
+     "msg": "Input should be a valid boolean",
+     "input": 1.5
+    }
+   ]
+  },
+  {
+   "input": {
+    "inherit_shell_environment": 2.0
+   },
+   "errors": [
+    {
+     "type": "bool_parsing",
+     "loc": [
+      "body",
+      "inherit_shell_environment"
+     ],
+     "msg": "Input should be a valid boolean, unable to interpret input",
+     "input": 2.0
+    }
+   ]
+  },
+  {
+   "input": {
+    "inherit_shell_environment": -0.0
+   },
+   "ok": {
+    "denied_patterns": [],
+    "worktree_location": "repository",
+    "inherit_shell_environment": false,
+    "load_shell_profile": false,
+    "outbound_data_policy": "off",
+    "outbound_pii_policy": "off",
+    "max_execution_seconds": 600,
+    "max_output_bytes": 131072
+   }
+  },
+  {
+   "input": {
+    "inherit_shell_environment": "yes"
+   },
+   "ok": {
+    "denied_patterns": [],
+    "worktree_location": "repository",
+    "inherit_shell_environment": true,
+    "load_shell_profile": false,
+    "outbound_data_policy": "off",
+    "outbound_pii_policy": "off",
+    "max_execution_seconds": 600,
+    "max_output_bytes": 131072
+   }
+  },
+  {
+   "input": {
+    "inherit_shell_environment": "no"
+   },
+   "ok": {
+    "denied_patterns": [],
+    "worktree_location": "repository",
+    "inherit_shell_environment": false,
+    "load_shell_profile": false,
+    "outbound_data_policy": "off",
+    "outbound_pii_policy": "off",
+    "max_execution_seconds": 600,
+    "max_output_bytes": 131072
+   }
+  },
+  {
+   "input": {
+    "inherit_shell_environment": "YES"
+   },
+   "ok": {
+    "denied_patterns": [],
+    "worktree_location": "repository",
+    "inherit_shell_environment": true,
+    "load_shell_profile": false,
+    "outbound_data_policy": "off",
+    "outbound_pii_policy": "off",
+    "max_execution_seconds": 600,
+    "max_output_bytes": 131072
+   }
+  },
+  {
+   "input": {
+    "inherit_shell_environment": "On"
+   },
+   "ok": {
+    "denied_patterns": [],
+    "worktree_location": "repository",
+    "inherit_shell_environment": true,
+    "load_shell_profile": false,
+    "outbound_data_policy": "off",
+    "outbound_pii_policy": "off",
+    "max_execution_seconds": 600,
+    "max_output_bytes": 131072
+   }
+  },
+  {
+   "input": {
+    "inherit_shell_environment": "off"
+   },
+   "ok": {
+    "denied_patterns": [],
+    "worktree_location": "repository",
+    "inherit_shell_environment": false,
+    "load_shell_profile": false,
+    "outbound_data_policy": "off",
+    "outbound_pii_policy": "off",
+    "max_execution_seconds": 600,
+    "max_output_bytes": 131072
+   }
+  },
+  {
+   "input": {
+    "inherit_shell_environment": "t"
+   },
+   "ok": {
+    "denied_patterns": [],
+    "worktree_location": "repository",
+    "inherit_shell_environment": true,
+    "load_shell_profile": false,
+    "outbound_data_policy": "off",
+    "outbound_pii_policy": "off",
+    "max_execution_seconds": 600,
+    "max_output_bytes": 131072
+   }
+  },
+  {
+   "input": {
+    "inherit_shell_environment": "f"
+   },
+   "ok": {
+    "denied_patterns": [],
+    "worktree_location": "repository",
+    "inherit_shell_environment": false,
+    "load_shell_profile": false,
+    "outbound_data_policy": "off",
+    "outbound_pii_policy": "off",
+    "max_execution_seconds": 600,
+    "max_output_bytes": 131072
+   }
+  },
+  {
+   "input": {
+    "inherit_shell_environment": "y"
+   },
+   "ok": {
+    "denied_patterns": [],
+    "worktree_location": "repository",
+    "inherit_shell_environment": true,
+    "load_shell_profile": false,
+    "outbound_data_policy": "off",
+    "outbound_pii_policy": "off",
+    "max_execution_seconds": 600,
+    "max_output_bytes": 131072
+   }
+  },
+  {
+   "input": {
+    "inherit_shell_environment": "n"
+   },
+   "ok": {
+    "denied_patterns": [],
+    "worktree_location": "repository",
+    "inherit_shell_environment": false,
+    "load_shell_profile": false,
+    "outbound_data_policy": "off",
+    "outbound_pii_policy": "off",
+    "max_execution_seconds": 600,
+    "max_output_bytes": 131072
+   }
+  },
+  {
+   "input": {
+    "inherit_shell_environment": "1"
+   },
+   "ok": {
+    "denied_patterns": [],
+    "worktree_location": "repository",
+    "inherit_shell_environment": true,
+    "load_shell_profile": false,
+    "outbound_data_policy": "off",
+    "outbound_pii_policy": "off",
+    "max_execution_seconds": 600,
+    "max_output_bytes": 131072
+   }
+  },
+  {
+   "input": {
+    "inherit_shell_environment": "0"
+   },
+   "ok": {
+    "denied_patterns": [],
+    "worktree_location": "repository",
+    "inherit_shell_environment": false,
+    "load_shell_profile": false,
+    "outbound_data_policy": "off",
+    "outbound_pii_policy": "off",
+    "max_execution_seconds": 600,
+    "max_output_bytes": 131072
+   }
+  },
+  {
+   "input": {
+    "inherit_shell_environment": "true"
+   },
+   "ok": {
+    "denied_patterns": [],
+    "worktree_location": "repository",
+    "inherit_shell_environment": true,
+    "load_shell_profile": false,
+    "outbound_data_policy": "off",
+    "outbound_pii_policy": "off",
+    "max_execution_seconds": 600,
+    "max_output_bytes": 131072
+   }
+  },
+  {
+   "input": {
+    "inherit_shell_environment": "False"
+   },
+   "ok": {
+    "denied_patterns": [],
+    "worktree_location": "repository",
+    "inherit_shell_environment": false,
+    "load_shell_profile": false,
+    "outbound_data_policy": "off",
+    "outbound_pii_policy": "off",
+    "max_execution_seconds": 600,
+    "max_output_bytes": 131072
+   }
+  },
+  {
+   "input": {
+    "inherit_shell_environment": " true"
+   },
+   "errors": [
+    {
+     "type": "bool_parsing",
+     "loc": [
+      "body",
+      "inherit_shell_environment"
+     ],
+     "msg": "Input should be a valid boolean, unable to interpret input",
+     "input": " true"
+    }
+   ]
+  },
+  {
+   "input": {
+    "inherit_shell_environment": "maybe"
+   },
+   "errors": [
+    {
+     "type": "bool_parsing",
+     "loc": [
+      "body",
+      "inherit_shell_environment"
+     ],
+     "msg": "Input should be a valid boolean, unable to interpret input",
+     "input": "maybe"
+    }
+   ]
+  },
+  {
+   "input": {
+    "inherit_shell_environment": ""
+   },
+   "errors": [
+    {
+     "type": "bool_parsing",
+     "loc": [
+      "body",
+      "inherit_shell_environment"
+     ],
+     "msg": "Input should be a valid boolean, unable to interpret input",
+     "input": ""
+    }
+   ]
+  },
+  {
+   "input": {
+    "inherit_shell_environment": null
+   },
+   "errors": [
+    {
+     "type": "bool_type",
+     "loc": [
+      "body",
+      "inherit_shell_environment"
+     ],
+     "msg": "Input should be a valid boolean",
+     "input": null
+    }
+   ]
+  },
+  {
+   "input": {
+    "inherit_shell_environment": []
+   },
+   "errors": [
+    {
+     "type": "bool_type",
+     "loc": [
+      "body",
+      "inherit_shell_environment"
+     ],
+     "msg": "Input should be a valid boolean",
+     "input": []
+    }
+   ]
+  },
+  {
+   "input": {
+    "inherit_shell_environment": {}
+   },
+   "errors": [
+    {
+     "type": "bool_type",
+     "loc": [
+      "body",
+      "inherit_shell_environment"
+     ],
+     "msg": "Input should be a valid boolean",
+     "input": {}
+    }
+   ]
+  }
+ ],
+ "context": [
+  {
+   "input": {},
+   "ok": {
+    "summary_trigger_tokens": null,
+    "summary_max_tokens": null,
+    "keep_recent_turns": null,
+    "tool_result_offload_chars": null,
+    "keep_recent_tool_batches": null,
+    "defaults": {},
+    "coding_defaults": {},
+    "ignored": [],
+    "max_tokens": 0,
+    "context_ratio": 0.0
+   }
+  },
+  {
+   "input": {
+    "summary_trigger_tokens": null
+   },
+   "ok": {
+    "summary_trigger_tokens": null,
+    "summary_max_tokens": null,
+    "keep_recent_turns": null,
+    "tool_result_offload_chars": null,
+    "keep_recent_tool_batches": null,
+    "defaults": {},
+    "coding_defaults": {},
+    "ignored": [],
+    "max_tokens": 0,
+    "context_ratio": 0.0
+   }
+  },
+  {
+   "input": {
+    "summary_trigger_tokens": 19999
+   },
+   "errors": [
+    {
+     "type": "greater_than_equal",
+     "loc": [
+      "body",
+      "summary_trigger_tokens"
+     ],
+     "msg": "Input should be greater than or equal to 20000",
+     "input": 19999,
+     "ctx": {
+      "ge": 20000
+     }
+    }
+   ]
+  },
+  {
+   "input": {
+    "summary_trigger_tokens": 2000001
+   },
+   "errors": [
+    {
+     "type": "less_than_equal",
+     "loc": [
+      "body",
+      "summary_trigger_tokens"
+     ],
+     "msg": "Input should be less than or equal to 2000000",
+     "input": 2000001,
+     "ctx": {
+      "le": 2000000
+     }
+    }
+   ]
+  },
+  {
+   "input": {
+    "keep_recent_turns": "3",
+    "keep_recent_tool_batches": 2.0
+   },
+   "ok": {
+    "summary_trigger_tokens": null,
+    "summary_max_tokens": null,
+    "keep_recent_turns": 3,
+    "tool_result_offload_chars": null,
+    "keep_recent_tool_batches": 2,
+    "defaults": {},
+    "coding_defaults": {},
+    "ignored": [],
+    "max_tokens": 0,
+    "context_ratio": 0.0
+   }
+  },
+  {
+   "input": {
+    "keep_recent_turns": 2.5
+   },
+   "errors": [
+    {
+     "type": "int_from_float",
+     "loc": [
+      "body",
+      "keep_recent_turns"
+     ],
+     "msg": "Input should be a valid integer, got a number with a fractional part",
+     "input": 2.5
+    }
+   ]
+  },
+  {
+   "input": {
+    "keep_recent_turns": "three"
+   },
+   "errors": [
+    {
+     "type": "int_parsing",
+     "loc": [
+      "body",
+      "keep_recent_turns"
+     ],
+     "msg": "Input should be a valid integer, unable to parse string as an integer",
+     "input": "three"
+    }
+   ]
+  },
+  {
+   "input": {
+    "keep_recent_turns": 11,
+    "keep_recent_tool_batches": 0,
+    "x": 1
+   },
+   "errors": [
+    {
+     "type": "less_than_equal",
+     "loc": [
+      "body",
+      "keep_recent_turns"
+     ],
+     "msg": "Input should be less than or equal to 10",
+     "input": 11,
+     "ctx": {
+      "le": 10
+     }
+    },
+    {
+     "type": "greater_than_equal",
+     "loc": [
+      "body",
+      "keep_recent_tool_batches"
+     ],
+     "msg": "Input should be greater than or equal to 1",
+     "input": 0,
+     "ctx": {
+      "ge": 1
+     }
+    },
+    {
+     "type": "extra_forbidden",
+     "loc": [
+      "body",
+      "x"
+     ],
+     "msg": "Extra inputs are not permitted",
+     "input": 1
+    }
+   ]
+  },
+  {
+   "input": {
+    "defaults": {
+     "a": 1
+    },
+    "coding_defaults": {
+     "b": "2"
+    }
+   },
+   "ok": {
+    "summary_trigger_tokens": null,
+    "summary_max_tokens": null,
+    "keep_recent_turns": null,
+    "tool_result_offload_chars": null,
+    "keep_recent_tool_batches": null,
+    "defaults": {
+     "a": 1
+    },
+    "coding_defaults": {
+     "b": 2
+    },
+    "ignored": [],
+    "max_tokens": 0,
+    "context_ratio": 0.0
+   }
+  },
+  {
+   "input": {
+    "defaults": {
+     "a": "x"
+    }
+   },
+   "errors": [
+    {
+     "type": "int_parsing",
+     "loc": [
+      "body",
+      "defaults",
+      "a"
+     ],
+     "msg": "Input should be a valid integer, unable to parse string as an integer",
+     "input": "x"
+    }
+   ]
+  },
+  {
+   "input": {
+    "defaults": []
+   },
+   "errors": [
+    {
+     "type": "dict_type",
+     "loc": [
+      "body",
+      "defaults"
+     ],
+     "msg": "Input should be a valid dictionary",
+     "input": []
+    }
+   ]
+  },
+  {
+   "input": {
+    "ignored": [
+     {
+      "field": "x",
+      "message": "y"
+     }
+    ]
+   },
+   "ok": {
+    "summary_trigger_tokens": null,
+    "summary_max_tokens": null,
+    "keep_recent_turns": null,
+    "tool_result_offload_chars": null,
+    "keep_recent_tool_batches": null,
+    "defaults": {},
+    "coding_defaults": {},
+    "ignored": [
+     {
+      "field": "x",
+      "message": "y"
+     }
+    ],
+    "max_tokens": 0,
+    "context_ratio": 0.0
+   }
+  },
+  {
+   "input": {
+    "ignored": [
+     {
+      "field": "x",
+      "message": "y",
+      "extra": 1
+     }
+    ]
+   },
+   "errors": [
+    {
+     "type": "extra_forbidden",
+     "loc": [
+      "body",
+      "ignored",
+      0,
+      "extra"
+     ],
+     "msg": "Extra inputs are not permitted",
+     "input": 1
+    }
+   ]
+  },
+  {
+   "input": {
+    "ignored": [
+     {
+      "field": 1
+     }
+    ]
+   },
+   "errors": [
+    {
+     "type": "string_type",
+     "loc": [
+      "body",
+      "ignored",
+      0,
+      "field"
+     ],
+     "msg": "Input should be a valid string",
+     "input": 1
+    },
+    {
+     "type": "missing",
+     "loc": [
+      "body",
+      "ignored",
+      0,
+      "message"
+     ],
+     "msg": "Field required",
+     "input": {
+      "field": 1
+     }
+    }
+   ]
+  },
+  {
+   "input": {
+    "ignored": "x"
+   },
+   "errors": [
+    {
+     "type": "list_type",
+     "loc": [
+      "body",
+      "ignored"
+     ],
+     "msg": "Input should be a valid list",
+     "input": "x"
+    }
+   ]
+  },
+  {
+   "input": {
+    "ignored": [
+     1,
+     null,
+     {
+      "field": "a",
+      "message": "b"
+     }
+    ]
+   },
+   "errors": [
+    {
+     "type": "model_type",
+     "loc": [
+      "body",
+      "ignored",
+      0
+     ],
+     "msg": "Input should be a valid dictionary or instance of IgnoredSettingBody",
+     "input": 1,
+     "ctx": {
+      "class_name": "IgnoredSettingBody"
+     }
+    },
+    {
+     "type": "model_type",
+     "loc": [
+      "body",
+      "ignored",
+      1
+     ],
+     "msg": "Input should be a valid dictionary or instance of IgnoredSettingBody",
+     "input": null,
+     "ctx": {
+      "class_name": "IgnoredSettingBody"
+     }
+    }
+   ]
+  },
+  {
+   "input": {
+    "defaults": {
+     "a": 1.5,
+     "b": true,
+     "c": null
+    }
+   },
+   "errors": [
+    {
+     "type": "int_from_float",
+     "loc": [
+      "body",
+      "defaults",
+      "a"
+     ],
+     "msg": "Input should be a valid integer, got a number with a fractional part",
+     "input": 1.5
+    },
+    {
+     "type": "int_type",
+     "loc": [
+      "body",
+      "defaults",
+      "c"
+     ],
+     "msg": "Input should be a valid integer",
+     "input": null
+    }
+   ]
+  },
+  {
+   "input": {
+    "max_tokens": -1,
+    "context_ratio": 1.5
+   },
+   "errors": [
+    {
+     "type": "greater_than_equal",
+     "loc": [
+      "body",
+      "max_tokens"
+     ],
+     "msg": "Input should be greater than or equal to 0",
+     "input": -1,
+     "ctx": {
+      "ge": 0
+     }
+    },
+    {
+     "type": "less_than_equal",
+     "loc": [
+      "body",
+      "context_ratio"
+     ],
+     "msg": "Input should be less than or equal to 1",
+     "input": 1.5,
+     "ctx": {
+      "le": 1.0
+     }
+    }
+   ]
+  },
+  {
+   "input": {
+    "max_tokens": "5",
+    "context_ratio": "0.5"
+   },
+   "ok": {
+    "summary_trigger_tokens": null,
+    "summary_max_tokens": null,
+    "keep_recent_turns": null,
+    "tool_result_offload_chars": null,
+    "keep_recent_tool_batches": null,
+    "defaults": {},
+    "coding_defaults": {},
+    "ignored": [],
+    "max_tokens": 5,
+    "context_ratio": 0.5
+   }
+  },
+  {
+   "input": {
+    "context_ratio": -0.1
+   },
+   "errors": [
+    {
+     "type": "greater_than_equal",
+     "loc": [
+      "body",
+      "context_ratio"
+     ],
+     "msg": "Input should be greater than or equal to 0",
+     "input": -0.1,
+     "ctx": {
+      "ge": 0.0
+     }
+    }
+   ]
+  },
+  {
+   "input": {
+    "keep_recent_turns": 3
+   },
+   "ok": {
+    "summary_trigger_tokens": null,
+    "summary_max_tokens": null,
+    "keep_recent_turns": 3,
+    "tool_result_offload_chars": null,
+    "keep_recent_tool_batches": null,
+    "defaults": {},
+    "coding_defaults": {},
+    "ignored": [],
+    "max_tokens": 0,
+    "context_ratio": 0.0
+   }
+  },
+  {
+   "input": {
+    "keep_recent_turns": -1
+   },
+   "errors": [
+    {
+     "type": "greater_than_equal",
+     "loc": [
+      "body",
+      "keep_recent_turns"
+     ],
+     "msg": "Input should be greater than or equal to 0",
+     "input": -1,
+     "ctx": {
+      "ge": 0
+     }
+    }
+   ]
+  },
+  {
+   "input": {
+    "keep_recent_turns": 0
+   },
+   "ok": {
+    "summary_trigger_tokens": null,
+    "summary_max_tokens": null,
+    "keep_recent_turns": 0,
+    "tool_result_offload_chars": null,
+    "keep_recent_tool_batches": null,
+    "defaults": {},
+    "coding_defaults": {},
+    "ignored": [],
+    "max_tokens": 0,
+    "context_ratio": 0.0
+   }
+  },
+  {
+   "input": {
+    "keep_recent_turns": 2.0
+   },
+   "ok": {
+    "summary_trigger_tokens": null,
+    "summary_max_tokens": null,
+    "keep_recent_turns": 2,
+    "tool_result_offload_chars": null,
+    "keep_recent_tool_batches": null,
+    "defaults": {},
+    "coding_defaults": {},
+    "ignored": [],
+    "max_tokens": 0,
+    "context_ratio": 0.0
+   }
+  },
+  {
+   "input": {
+    "keep_recent_turns": 2.5
+   },
+   "errors": [
+    {
+     "type": "int_from_float",
+     "loc": [
+      "body",
+      "keep_recent_turns"
+     ],
+     "msg": "Input should be a valid integer, got a number with a fractional part",
+     "input": 2.5
+    }
+   ]
+  },
+  {
+   "input": {
+    "keep_recent_turns": "3"
+   },
+   "ok": {
+    "summary_trigger_tokens": null,
+    "summary_max_tokens": null,
+    "keep_recent_turns": 3,
+    "tool_result_offload_chars": null,
+    "keep_recent_tool_batches": null,
+    "defaults": {},
+    "coding_defaults": {},
+    "ignored": [],
+    "max_tokens": 0,
+    "context_ratio": 0.0
+   }
+  },
+  {
+   "input": {
+    "keep_recent_turns": " 3 "
+   },
+   "ok": {
+    "summary_trigger_tokens": null,
+    "summary_max_tokens": null,
+    "keep_recent_turns": 3,
+    "tool_result_offload_chars": null,
+    "keep_recent_tool_batches": null,
+    "defaults": {},
+    "coding_defaults": {},
+    "ignored": [],
+    "max_tokens": 0,
+    "context_ratio": 0.0
+   }
+  },
+  {
+   "input": {
+    "keep_recent_turns": "+3"
+   },
+   "ok": {
+    "summary_trigger_tokens": null,
+    "summary_max_tokens": null,
+    "keep_recent_turns": 3,
+    "tool_result_offload_chars": null,
+    "keep_recent_tool_batches": null,
+    "defaults": {},
+    "coding_defaults": {},
+    "ignored": [],
+    "max_tokens": 0,
+    "context_ratio": 0.0
+   }
+  },
+  {
+   "input": {
+    "keep_recent_turns": "-3"
+   },
+   "errors": [
+    {
+     "type": "greater_than_equal",
+     "loc": [
+      "body",
+      "keep_recent_turns"
+     ],
+     "msg": "Input should be greater than or equal to 0",
+     "input": "-3",
+     "ctx": {
+      "ge": 0
+     }
+    }
+   ]
+  },
+  {
+   "input": {
+    "keep_recent_turns": "3.0"
+   },
+   "ok": {
+    "summary_trigger_tokens": null,
+    "summary_max_tokens": null,
+    "keep_recent_turns": 3,
+    "tool_result_offload_chars": null,
+    "keep_recent_tool_batches": null,
+    "defaults": {},
+    "coding_defaults": {},
+    "ignored": [],
+    "max_tokens": 0,
+    "context_ratio": 0.0
+   }
+  },
+  {
+   "input": {
+    "keep_recent_turns": "3.5"
+   },
+   "errors": [
+    {
+     "type": "int_parsing",
+     "loc": [
+      "body",
+      "keep_recent_turns"
+     ],
+     "msg": "Input should be a valid integer, unable to parse string as an integer",
+     "input": "3.5"
+    }
+   ]
+  },
+  {
+   "input": {
+    "keep_recent_turns": "1_000"
+   },
+   "errors": [
+    {
+     "type": "less_than_equal",
+     "loc": [
+      "body",
+      "keep_recent_turns"
+     ],
+     "msg": "Input should be less than or equal to 10",
+     "input": "1_000",
+     "ctx": {
+      "le": 10
+     }
+    }
+   ]
+  },
+  {
+   "input": {
+    "keep_recent_turns": "0x10"
+   },
+   "errors": [
+    {
+     "type": "int_parsing",
+     "loc": [
+      "body",
+      "keep_recent_turns"
+     ],
+     "msg": "Input should be a valid integer, unable to parse string as an integer",
+     "input": "0x10"
+    }
+   ]
+  },
+  {
+   "input": {
+    "keep_recent_turns": "three"
+   },
+   "errors": [
+    {
+     "type": "int_parsing",
+     "loc": [
+      "body",
+      "keep_recent_turns"
+     ],
+     "msg": "Input should be a valid integer, unable to parse string as an integer",
+     "input": "three"
+    }
+   ]
+  },
+  {
+   "input": {
+    "keep_recent_turns": ""
+   },
+   "errors": [
+    {
+     "type": "int_parsing",
+     "loc": [
+      "body",
+      "keep_recent_turns"
+     ],
+     "msg": "Input should be a valid integer, unable to parse string as an integer",
+     "input": ""
+    }
+   ]
+  },
+  {
+   "input": {
+    "keep_recent_turns": true
+   },
+   "ok": {
+    "summary_trigger_tokens": null,
+    "summary_max_tokens": null,
+    "keep_recent_turns": 1,
+    "tool_result_offload_chars": null,
+    "keep_recent_tool_batches": null,
+    "defaults": {},
+    "coding_defaults": {},
+    "ignored": [],
+    "max_tokens": 0,
+    "context_ratio": 0.0
+   }
+  },
+  {
+   "input": {
+    "keep_recent_turns": false
+   },
+   "ok": {
+    "summary_trigger_tokens": null,
+    "summary_max_tokens": null,
+    "keep_recent_turns": 0,
+    "tool_result_offload_chars": null,
+    "keep_recent_tool_batches": null,
+    "defaults": {},
+    "coding_defaults": {},
+    "ignored": [],
+    "max_tokens": 0,
+    "context_ratio": 0.0
+   }
+  },
+  {
+   "input": {
+    "keep_recent_turns": null
+   },
+   "ok": {
+    "summary_trigger_tokens": null,
+    "summary_max_tokens": null,
+    "keep_recent_turns": null,
+    "tool_result_offload_chars": null,
+    "keep_recent_tool_batches": null,
+    "defaults": {},
+    "coding_defaults": {},
+    "ignored": [],
+    "max_tokens": 0,
+    "context_ratio": 0.0
+   }
+  },
+  {
+   "input": {
+    "keep_recent_turns": []
+   },
+   "errors": [
+    {
+     "type": "int_type",
+     "loc": [
+      "body",
+      "keep_recent_turns"
+     ],
+     "msg": "Input should be a valid integer",
+     "input": []
+    }
+   ]
+  },
+  {
+   "input": {
+    "keep_recent_turns": {}
+   },
+   "errors": [
+    {
+     "type": "int_type",
+     "loc": [
+      "body",
+      "keep_recent_turns"
+     ],
+     "msg": "Input should be a valid integer",
+     "input": {}
+    }
+   ]
+  },
+  {
+   "input": {
+    "keep_recent_turns": 1e+20
+   },
+   "errors": [
+    {
+     "type": "int_parsing_size",
+     "loc": [
+      "body",
+      "keep_recent_turns"
+     ],
+     "msg": "Unable to parse input string as an integer, exceeded maximum size",
+     "input": 1e+20
+    }
+   ]
+  },
+  {
+   "input": {
+    "keep_recent_turns": "99999999999999999999"
+   },
+   "errors": [
+    {
+     "type": "less_than_equal",
+     "loc": [
+      "body",
+      "keep_recent_turns"
+     ],
+     "msg": "Input should be less than or equal to 10",
+     "input": "99999999999999999999",
+     "ctx": {
+      "le": 10
+     }
+    }
+   ]
+  }
+ ],
+ "version_control": [
+  {
+   "input": {},
+   "errors": [
+    {
+     "type": "missing",
+     "loc": [
+      "body",
+      "network_timeout_seconds"
+     ],
+     "msg": "Field required",
+     "input": {}
+    },
+    {
+     "type": "missing",
+     "loc": [
+      "body",
+      "max_diff_bytes"
+     ],
+     "msg": "Field required",
+     "input": {}
+    },
+    {
+     "type": "missing",
+     "loc": [
+      "body",
+      "default_pull_strategy"
+     ],
+     "msg": "Field required",
+     "input": {}
+    },
+    {
+     "type": "missing",
+     "loc": [
+      "body",
+      "prune_on_fetch"
+     ],
+     "msg": "Field required",
+     "input": {}
+    },
+    {
+     "type": "missing",
+     "loc": [
+      "body",
+      "allow_force_push"
+     ],
+     "msg": "Field required",
+     "input": {}
+    },
+    {
+     "type": "missing",
+     "loc": [
+      "body",
+      "review_request_timeout_seconds"
+     ],
+     "msg": "Field required",
+     "input": {}
+    },
+    {
+     "type": "missing",
+     "loc": [
+      "body",
+      "review_retry_attempts"
+     ],
+     "msg": "Field required",
+     "input": {}
+    },
+    {
+     "type": "missing",
+     "loc": [
+      "body",
+      "review_retry_backoff_seconds"
+     ],
+     "msg": "Field required",
+     "input": {}
+    },
+    {
+     "type": "missing",
+     "loc": [
+      "body",
+      "review_max_concurrent_repositories"
+     ],
+     "msg": "Field required",
+     "input": {}
+    },
+    {
+     "type": "missing",
+     "loc": [
+      "body",
+      "review_max_pages_per_repository"
+     ],
+     "msg": "Field required",
+     "input": {}
+    },
+    {
+     "type": "missing",
+     "loc": [
+      "body",
+      "allow_review_mutations"
+     ],
+     "msg": "Field required",
+     "input": {}
+    },
+    {
+     "type": "missing",
+     "loc": [
+      "body",
+      "allow_insecure_connections"
+     ],
+     "msg": "Field required",
+     "input": {}
+    },
+    {
+     "type": "missing",
+     "loc": [
+      "body",
+      "require_successful_checks_before_merge"
+     ],
+     "msg": "Field required",
+     "input": {}
+    }
+   ]
+  },
+  {
+   "input": {
+    "network_timeout_seconds": 60,
+    "max_diff_bytes": 1000000,
+    "default_pull_strategy": "rebase",
+    "prune_on_fetch": true,
+    "allow_force_push": false,
+    "review_request_timeout_seconds": 30,
+    "review_retry_attempts": 2,
+    "review_retry_backoff_seconds": 1.5,
+    "review_max_concurrent_repositories": 4,
+    "review_max_pages_per_repository": 5,
+    "allow_review_mutations": false,
+    "allow_insecure_connections": false,
+    "require_successful_checks_before_merge": true
+   },
+   "ok": {
+    "network_timeout_seconds": 60.0,
+    "max_diff_bytes": 1000000,
+    "default_pull_strategy": "rebase",
+    "prune_on_fetch": true,
+    "allow_force_push": false,
+    "review_request_timeout_seconds": 30.0,
+    "review_retry_attempts": 2,
+    "review_retry_backoff_seconds": 1.5,
+    "review_max_concurrent_repositories": 4,
+    "review_max_pages_per_repository": 5,
+    "allow_review_mutations": false,
+    "allow_insecure_connections": false,
+    "require_successful_checks_before_merge": true
+   }
+  },
+  {
+   "input": {
+    "network_timeout_seconds": 60,
+    "max_diff_bytes": 1000000,
+    "default_pull_strategy": "rebase",
+    "prune_on_fetch": true,
+    "allow_force_push": false,
+    "review_request_timeout_seconds": 30,
+    "review_retry_attempts": 2,
+    "review_retry_backoff_seconds": 1.5,
+    "review_max_concurrent_repositories": 4,
+    "review_max_pages_per_repository": 5,
+    "allow_review_mutations": false,
+    "allow_insecure_connections": false,
+    "require_successful_checks_before_merge": true,
+    "extra": 1
+   },
+   "errors": [
+    {
+     "type": "extra_forbidden",
+     "loc": [
+      "body",
+      "extra"
+     ],
+     "msg": "Extra inputs are not permitted",
+     "input": 1
+    }
+   ]
+  },
+  {
+   "input": {
+    "network_timeout_seconds": 60,
+    "max_diff_bytes": "1000000",
+    "default_pull_strategy": "rebase",
+    "prune_on_fetch": "yes",
+    "allow_force_push": false,
+    "review_request_timeout_seconds": 30,
+    "review_retry_attempts": 2,
+    "review_retry_backoff_seconds": 1.5,
+    "review_max_concurrent_repositories": 4,
+    "review_max_pages_per_repository": 5,
+    "allow_review_mutations": false,
+    "allow_insecure_connections": false,
+    "require_successful_checks_before_merge": true
+   },
+   "ok": {
+    "network_timeout_seconds": 60.0,
+    "max_diff_bytes": 1000000,
+    "default_pull_strategy": "rebase",
+    "prune_on_fetch": true,
+    "allow_force_push": false,
+    "review_request_timeout_seconds": 30.0,
+    "review_retry_attempts": 2,
+    "review_retry_backoff_seconds": 1.5,
+    "review_max_concurrent_repositories": 4,
+    "review_max_pages_per_repository": 5,
+    "allow_review_mutations": false,
+    "allow_insecure_connections": false,
+    "require_successful_checks_before_merge": true
+   }
+  },
+  {
+   "input": {
+    "network_timeout_seconds": 60,
+    "max_diff_bytes": 1000000,
+    "default_pull_strategy": "rebase",
+    "prune_on_fetch": true,
+    "allow_force_push": false,
+    "review_request_timeout_seconds": 30,
+    "review_retry_attempts": 2,
+    "review_retry_backoff_seconds": 1.5,
+    "review_max_concurrent_repositories": 4,
+    "review_max_pages_per_repository": 5,
+    "allow_review_mutations": false,
+    "allow_insecure_connections": false,
+    "require_successful_checks_before_merge": true
+   },
+   "ok": {
+    "network_timeout_seconds": 60.0,
+    "max_diff_bytes": 1000000,
+    "default_pull_strategy": "rebase",
+    "prune_on_fetch": true,
+    "allow_force_push": false,
+    "review_request_timeout_seconds": 30.0,
+    "review_retry_attempts": 2,
+    "review_retry_backoff_seconds": 1.5,
+    "review_max_concurrent_repositories": 4,
+    "review_max_pages_per_repository": 5,
+    "allow_review_mutations": false,
+    "allow_insecure_connections": false,
+    "require_successful_checks_before_merge": true
+   }
+  },
+  {
+   "input": {
+    "network_timeout_seconds": 60.5,
+    "max_diff_bytes": 1000000,
+    "default_pull_strategy": "rebase",
+    "prune_on_fetch": true,
+    "allow_force_push": false,
+    "review_request_timeout_seconds": 30,
+    "review_retry_attempts": 2,
+    "review_retry_backoff_seconds": 1.5,
+    "review_max_concurrent_repositories": 4,
+    "review_max_pages_per_repository": 5,
+    "allow_review_mutations": false,
+    "allow_insecure_connections": false,
+    "require_successful_checks_before_merge": true
+   },
+   "ok": {
+    "network_timeout_seconds": 60.5,
+    "max_diff_bytes": 1000000,
+    "default_pull_strategy": "rebase",
+    "prune_on_fetch": true,
+    "allow_force_push": false,
+    "review_request_timeout_seconds": 30.0,
+    "review_retry_attempts": 2,
+    "review_retry_backoff_seconds": 1.5,
+    "review_max_concurrent_repositories": 4,
+    "review_max_pages_per_repository": 5,
+    "allow_review_mutations": false,
+    "allow_insecure_connections": false,
+    "require_successful_checks_before_merge": true
+   }
+  },
+  {
+   "input": {
+    "network_timeout_seconds": "60",
+    "max_diff_bytes": 1000000,
+    "default_pull_strategy": "rebase",
+    "prune_on_fetch": true,
+    "allow_force_push": false,
+    "review_request_timeout_seconds": 30,
+    "review_retry_attempts": 2,
+    "review_retry_backoff_seconds": 1.5,
+    "review_max_concurrent_repositories": 4,
+    "review_max_pages_per_repository": 5,
+    "allow_review_mutations": false,
+    "allow_insecure_connections": false,
+    "require_successful_checks_before_merge": true
+   },
+   "ok": {
+    "network_timeout_seconds": 60.0,
+    "max_diff_bytes": 1000000,
+    "default_pull_strategy": "rebase",
+    "prune_on_fetch": true,
+    "allow_force_push": false,
+    "review_request_timeout_seconds": 30.0,
+    "review_retry_attempts": 2,
+    "review_retry_backoff_seconds": 1.5,
+    "review_max_concurrent_repositories": 4,
+    "review_max_pages_per_repository": 5,
+    "allow_review_mutations": false,
+    "allow_insecure_connections": false,
+    "require_successful_checks_before_merge": true
+   }
+  },
+  {
+   "input": {
+    "network_timeout_seconds": "60.5",
+    "max_diff_bytes": 1000000,
+    "default_pull_strategy": "rebase",
+    "prune_on_fetch": true,
+    "allow_force_push": false,
+    "review_request_timeout_seconds": 30,
+    "review_retry_attempts": 2,
+    "review_retry_backoff_seconds": 1.5,
+    "review_max_concurrent_repositories": 4,
+    "review_max_pages_per_repository": 5,
+    "allow_review_mutations": false,
+    "allow_insecure_connections": false,
+    "require_successful_checks_before_merge": true
+   },
+   "ok": {
+    "network_timeout_seconds": 60.5,
+    "max_diff_bytes": 1000000,
+    "default_pull_strategy": "rebase",
+    "prune_on_fetch": true,
+    "allow_force_push": false,
+    "review_request_timeout_seconds": 30.0,
+    "review_retry_attempts": 2,
+    "review_retry_backoff_seconds": 1.5,
+    "review_max_concurrent_repositories": 4,
+    "review_max_pages_per_repository": 5,
+    "allow_review_mutations": false,
+    "allow_insecure_connections": false,
+    "require_successful_checks_before_merge": true
+   }
+  },
+  {
+   "input": {
+    "network_timeout_seconds": " 61 ",
+    "max_diff_bytes": 1000000,
+    "default_pull_strategy": "rebase",
+    "prune_on_fetch": true,
+    "allow_force_push": false,
+    "review_request_timeout_seconds": 30,
+    "review_retry_attempts": 2,
+    "review_retry_backoff_seconds": 1.5,
+    "review_max_concurrent_repositories": 4,
+    "review_max_pages_per_repository": 5,
+    "allow_review_mutations": false,
+    "allow_insecure_connections": false,
+    "require_successful_checks_before_merge": true
+   },
+   "ok": {
+    "network_timeout_seconds": 61.0,
+    "max_diff_bytes": 1000000,
+    "default_pull_strategy": "rebase",
+    "prune_on_fetch": true,
+    "allow_force_push": false,
+    "review_request_timeout_seconds": 30.0,
+    "review_retry_attempts": 2,
+    "review_retry_backoff_seconds": 1.5,
+    "review_max_concurrent_repositories": 4,
+    "review_max_pages_per_repository": 5,
+    "allow_review_mutations": false,
+    "allow_insecure_connections": false,
+    "require_successful_checks_before_merge": true
+   }
+  },
+  {
+   "input": {
+    "network_timeout_seconds": "1e2",
+    "max_diff_bytes": 1000000,
+    "default_pull_strategy": "rebase",
+    "prune_on_fetch": true,
+    "allow_force_push": false,
+    "review_request_timeout_seconds": 30,
+    "review_retry_attempts": 2,
+    "review_retry_backoff_seconds": 1.5,
+    "review_max_concurrent_repositories": 4,
+    "review_max_pages_per_repository": 5,
+    "allow_review_mutations": false,
+    "allow_insecure_connections": false,
+    "require_successful_checks_before_merge": true
+   },
+   "ok": {
+    "network_timeout_seconds": 100.0,
+    "max_diff_bytes": 1000000,
+    "default_pull_strategy": "rebase",
+    "prune_on_fetch": true,
+    "allow_force_push": false,
+    "review_request_timeout_seconds": 30.0,
+    "review_retry_attempts": 2,
+    "review_retry_backoff_seconds": 1.5,
+    "review_max_concurrent_repositories": 4,
+    "review_max_pages_per_repository": 5,
+    "allow_review_mutations": false,
+    "allow_insecure_connections": false,
+    "require_successful_checks_before_merge": true
+   }
+  },
+  {
+   "input": {
+    "network_timeout_seconds": "inf",
+    "max_diff_bytes": 1000000,
+    "default_pull_strategy": "rebase",
+    "prune_on_fetch": true,
+    "allow_force_push": false,
+    "review_request_timeout_seconds": 30,
+    "review_retry_attempts": 2,
+    "review_retry_backoff_seconds": 1.5,
+    "review_max_concurrent_repositories": 4,
+    "review_max_pages_per_repository": 5,
+    "allow_review_mutations": false,
+    "allow_insecure_connections": false,
+    "require_successful_checks_before_merge": true
+   },
+   "errors": [
+    {
+     "type": "less_than_equal",
+     "loc": [
+      "body",
+      "network_timeout_seconds"
+     ],
+     "msg": "Input should be less than or equal to 1800",
+     "input": "inf",
+     "ctx": {
+      "le": 1800.0
+     }
+    }
+   ]
+  },
+  {
+   "input": {
+    "network_timeout_seconds": "nan",
+    "max_diff_bytes": 1000000,
+    "default_pull_strategy": "rebase",
+    "prune_on_fetch": true,
+    "allow_force_push": false,
+    "review_request_timeout_seconds": 30,
+    "review_retry_attempts": 2,
+    "review_retry_backoff_seconds": 1.5,
+    "review_max_concurrent_repositories": 4,
+    "review_max_pages_per_repository": 5,
+    "allow_review_mutations": false,
+    "allow_insecure_connections": false,
+    "require_successful_checks_before_merge": true
+   },
+   "errors": [
+    {
+     "type": "less_than_equal",
+     "loc": [
+      "body",
+      "network_timeout_seconds"
+     ],
+     "msg": "Input should be less than or equal to 1800",
+     "input": "nan",
+     "ctx": {
+      "le": 1800.0
+     }
+    }
+   ]
+  },
+  {
+   "input": {
+    "network_timeout_seconds": "abc",
+    "max_diff_bytes": 1000000,
+    "default_pull_strategy": "rebase",
+    "prune_on_fetch": true,
+    "allow_force_push": false,
+    "review_request_timeout_seconds": 30,
+    "review_retry_attempts": 2,
+    "review_retry_backoff_seconds": 1.5,
+    "review_max_concurrent_repositories": 4,
+    "review_max_pages_per_repository": 5,
+    "allow_review_mutations": false,
+    "allow_insecure_connections": false,
+    "require_successful_checks_before_merge": true
+   },
+   "errors": [
+    {
+     "type": "float_parsing",
+     "loc": [
+      "body",
+      "network_timeout_seconds"
+     ],
+     "msg": "Input should be a valid number, unable to parse string as a number",
+     "input": "abc"
+    }
+   ]
+  },
+  {
+   "input": {
+    "network_timeout_seconds": "",
+    "max_diff_bytes": 1000000,
+    "default_pull_strategy": "rebase",
+    "prune_on_fetch": true,
+    "allow_force_push": false,
+    "review_request_timeout_seconds": 30,
+    "review_retry_attempts": 2,
+    "review_retry_backoff_seconds": 1.5,
+    "review_max_concurrent_repositories": 4,
+    "review_max_pages_per_repository": 5,
+    "allow_review_mutations": false,
+    "allow_insecure_connections": false,
+    "require_successful_checks_before_merge": true
+   },
+   "errors": [
+    {
+     "type": "float_parsing",
+     "loc": [
+      "body",
+      "network_timeout_seconds"
+     ],
+     "msg": "Input should be a valid number, unable to parse string as a number",
+     "input": ""
+    }
+   ]
+  },
+  {
+   "input": {
+    "network_timeout_seconds": true,
+    "max_diff_bytes": 1000000,
+    "default_pull_strategy": "rebase",
+    "prune_on_fetch": true,
+    "allow_force_push": false,
+    "review_request_timeout_seconds": 30,
+    "review_retry_attempts": 2,
+    "review_retry_backoff_seconds": 1.5,
+    "review_max_concurrent_repositories": 4,
+    "review_max_pages_per_repository": 5,
+    "allow_review_mutations": false,
+    "allow_insecure_connections": false,
+    "require_successful_checks_before_merge": true
+   },
+   "errors": [
+    {
+     "type": "greater_than_equal",
+     "loc": [
+      "body",
+      "network_timeout_seconds"
+     ],
+     "msg": "Input should be greater than or equal to 10",
+     "input": true,
+     "ctx": {
+      "ge": 10.0
+     }
+    }
+   ]
+  },
+  {
+   "input": {
+    "network_timeout_seconds": false,
+    "max_diff_bytes": 1000000,
+    "default_pull_strategy": "rebase",
+    "prune_on_fetch": true,
+    "allow_force_push": false,
+    "review_request_timeout_seconds": 30,
+    "review_retry_attempts": 2,
+    "review_retry_backoff_seconds": 1.5,
+    "review_max_concurrent_repositories": 4,
+    "review_max_pages_per_repository": 5,
+    "allow_review_mutations": false,
+    "allow_insecure_connections": false,
+    "require_successful_checks_before_merge": true
+   },
+   "errors": [
+    {
+     "type": "greater_than_equal",
+     "loc": [
+      "body",
+      "network_timeout_seconds"
+     ],
+     "msg": "Input should be greater than or equal to 10",
+     "input": false,
+     "ctx": {
+      "ge": 10.0
+     }
+    }
+   ]
+  },
+  {
+   "input": {
+    "network_timeout_seconds": null,
+    "max_diff_bytes": 1000000,
+    "default_pull_strategy": "rebase",
+    "prune_on_fetch": true,
+    "allow_force_push": false,
+    "review_request_timeout_seconds": 30,
+    "review_retry_attempts": 2,
+    "review_retry_backoff_seconds": 1.5,
+    "review_max_concurrent_repositories": 4,
+    "review_max_pages_per_repository": 5,
+    "allow_review_mutations": false,
+    "allow_insecure_connections": false,
+    "require_successful_checks_before_merge": true
+   },
+   "errors": [
+    {
+     "type": "float_type",
+     "loc": [
+      "body",
+      "network_timeout_seconds"
+     ],
+     "msg": "Input should be a valid number",
+     "input": null
+    }
+   ]
+  },
+  {
+   "input": {
+    "network_timeout_seconds": [],
+    "max_diff_bytes": 1000000,
+    "default_pull_strategy": "rebase",
+    "prune_on_fetch": true,
+    "allow_force_push": false,
+    "review_request_timeout_seconds": 30,
+    "review_retry_attempts": 2,
+    "review_retry_backoff_seconds": 1.5,
+    "review_max_concurrent_repositories": 4,
+    "review_max_pages_per_repository": 5,
+    "allow_review_mutations": false,
+    "allow_insecure_connections": false,
+    "require_successful_checks_before_merge": true
+   },
+   "errors": [
+    {
+     "type": "float_type",
+     "loc": [
+      "body",
+      "network_timeout_seconds"
+     ],
+     "msg": "Input should be a valid number",
+     "input": []
+    }
+   ]
+  },
+  {
+   "input": {
+    "network_timeout_seconds": 9.9,
+    "max_diff_bytes": 1000000,
+    "default_pull_strategy": "rebase",
+    "prune_on_fetch": true,
+    "allow_force_push": false,
+    "review_request_timeout_seconds": 30,
+    "review_retry_attempts": 2,
+    "review_retry_backoff_seconds": 1.5,
+    "review_max_concurrent_repositories": 4,
+    "review_max_pages_per_repository": 5,
+    "allow_review_mutations": false,
+    "allow_insecure_connections": false,
+    "require_successful_checks_before_merge": true
+   },
+   "errors": [
+    {
+     "type": "greater_than_equal",
+     "loc": [
+      "body",
+      "network_timeout_seconds"
+     ],
+     "msg": "Input should be greater than or equal to 10",
+     "input": 9.9,
+     "ctx": {
+      "ge": 10.0
+     }
+    }
+   ]
+  },
+  {
+   "input": {
+    "network_timeout_seconds": 1800.1,
+    "max_diff_bytes": 1000000,
+    "default_pull_strategy": "rebase",
+    "prune_on_fetch": true,
+    "allow_force_push": false,
+    "review_request_timeout_seconds": 30,
+    "review_retry_attempts": 2,
+    "review_retry_backoff_seconds": 1.5,
+    "review_max_concurrent_repositories": 4,
+    "review_max_pages_per_repository": 5,
+    "allow_review_mutations": false,
+    "allow_insecure_connections": false,
+    "require_successful_checks_before_merge": true
+   },
+   "errors": [
+    {
+     "type": "less_than_equal",
+     "loc": [
+      "body",
+      "network_timeout_seconds"
+     ],
+     "msg": "Input should be less than or equal to 1800",
+     "input": 1800.1,
+     "ctx": {
+      "le": 1800.0
+     }
+    }
+   ]
+  },
+  {
+   "input": {
+    "network_timeout_seconds": 60,
+    "max_diff_bytes": 1000000,
+    "default_pull_strategy": "rebase",
+    "prune_on_fetch": true,
+    "allow_force_push": false,
+    "review_request_timeout_seconds": 30,
+    "review_retry_attempts": 2,
+    "review_retry_backoff_seconds": -0.1,
+    "review_max_concurrent_repositories": 4,
+    "review_max_pages_per_repository": 5,
+    "allow_review_mutations": false,
+    "allow_insecure_connections": false,
+    "require_successful_checks_before_merge": true
+   },
+   "errors": [
+    {
+     "type": "greater_than_equal",
+     "loc": [
+      "body",
+      "review_retry_backoff_seconds"
+     ],
+     "msg": "Input should be greater than or equal to 0",
+     "input": -0.1,
+     "ctx": {
+      "ge": 0.0
+     }
+    }
+   ]
+  },
+  {
+   "input": {
+    "network_timeout_seconds": 60,
+    "max_diff_bytes": 1000000,
+    "default_pull_strategy": "rebase",
+    "prune_on_fetch": true,
+    "allow_force_push": false,
+    "review_request_timeout_seconds": 30,
+    "review_retry_attempts": 2,
+    "review_retry_backoff_seconds": 10.1,
+    "review_max_concurrent_repositories": 4,
+    "review_max_pages_per_repository": 5,
+    "allow_review_mutations": false,
+    "allow_insecure_connections": false,
+    "require_successful_checks_before_merge": true
+   },
+   "errors": [
+    {
+     "type": "less_than_equal",
+     "loc": [
+      "body",
+      "review_retry_backoff_seconds"
+     ],
+     "msg": "Input should be less than or equal to 10",
+     "input": 10.1,
+     "ctx": {
+      "le": 10.0
+     }
+    }
+   ]
+  },
+  {
+   "input": {
+    "network_timeout_seconds": 60,
+    "max_diff_bytes": 1000000,
+    "default_pull_strategy": "rebase",
+    "prune_on_fetch": true,
+    "allow_force_push": false,
+    "review_request_timeout_seconds": 30,
+    "review_retry_attempts": 2,
+    "review_retry_backoff_seconds": 0,
+    "review_max_concurrent_repositories": 4,
+    "review_max_pages_per_repository": 5,
+    "allow_review_mutations": false,
+    "allow_insecure_connections": false,
+    "require_successful_checks_before_merge": true
+   },
+   "ok": {
+    "network_timeout_seconds": 60.0,
+    "max_diff_bytes": 1000000,
+    "default_pull_strategy": "rebase",
+    "prune_on_fetch": true,
+    "allow_force_push": false,
+    "review_request_timeout_seconds": 30.0,
+    "review_retry_attempts": 2,
+    "review_retry_backoff_seconds": 0.0,
+    "review_max_concurrent_repositories": 4,
+    "review_max_pages_per_repository": 5,
+    "allow_review_mutations": false,
+    "allow_insecure_connections": false,
+    "require_successful_checks_before_merge": true
+   }
+  },
+  {
+   "input": {
+    "network_timeout_seconds": 60,
+    "max_diff_bytes": 1000000,
+    "default_pull_strategy": "rebase",
+    "prune_on_fetch": true,
+    "allow_force_push": false,
+    "review_request_timeout_seconds": 30,
+    "review_retry_attempts": 2,
+    "review_retry_backoff_seconds": 10,
+    "review_max_concurrent_repositories": 4,
+    "review_max_pages_per_repository": 5,
+    "allow_review_mutations": false,
+    "allow_insecure_connections": false,
+    "require_successful_checks_before_merge": true
+   },
+   "ok": {
+    "network_timeout_seconds": 60.0,
+    "max_diff_bytes": 1000000,
+    "default_pull_strategy": "rebase",
+    "prune_on_fetch": true,
+    "allow_force_push": false,
+    "review_request_timeout_seconds": 30.0,
+    "review_retry_attempts": 2,
+    "review_retry_backoff_seconds": 10.0,
+    "review_max_concurrent_repositories": 4,
+    "review_max_pages_per_repository": 5,
+    "allow_review_mutations": false,
+    "allow_insecure_connections": false,
+    "require_successful_checks_before_merge": true
+   }
+  },
+  {
+   "input": {
+    "network_timeout_seconds": 60,
+    "max_diff_bytes": 1000000,
+    "default_pull_strategy": "squash",
+    "prune_on_fetch": true,
+    "allow_force_push": false,
+    "review_request_timeout_seconds": 30,
+    "review_retry_attempts": 2,
+    "review_retry_backoff_seconds": 1.5,
+    "review_max_concurrent_repositories": 4,
+    "review_max_pages_per_repository": 5,
+    "allow_review_mutations": false,
+    "allow_insecure_connections": false,
+    "require_successful_checks_before_merge": true
+   },
+   "errors": [
+    {
+     "type": "literal_error",
+     "loc": [
+      "body",
+      "default_pull_strategy"
+     ],
+     "msg": "Input should be 'ff_only', 'merge' or 'rebase'",
+     "input": "squash",
+     "ctx": {
+      "expected": "'ff_only', 'merge' or 'rebase'"
+     }
+    }
+   ]
+  },
+  {
+   "input": {
+    "network_timeout_seconds": 60,
+    "max_diff_bytes": 1000000,
+    "default_pull_strategy": "ff_only",
+    "prune_on_fetch": true,
+    "allow_force_push": false,
+    "review_request_timeout_seconds": 30,
+    "review_retry_attempts": 2,
+    "review_retry_backoff_seconds": 1.5,
+    "review_max_concurrent_repositories": 4,
+    "review_max_pages_per_repository": 5,
+    "allow_review_mutations": false,
+    "allow_insecure_connections": false,
+    "require_successful_checks_before_merge": true
+   },
+   "ok": {
+    "network_timeout_seconds": 60.0,
+    "max_diff_bytes": 1000000,
+    "default_pull_strategy": "ff_only",
+    "prune_on_fetch": true,
+    "allow_force_push": false,
+    "review_request_timeout_seconds": 30.0,
+    "review_retry_attempts": 2,
+    "review_retry_backoff_seconds": 1.5,
+    "review_max_concurrent_repositories": 4,
+    "review_max_pages_per_repository": 5,
+    "allow_review_mutations": false,
+    "allow_insecure_connections": false,
+    "require_successful_checks_before_merge": true
+   }
+  },
+  {
+   "input": {
+    "network_timeout_seconds": 60,
+    "max_diff_bytes": 1000000,
+    "default_pull_strategy": null,
+    "prune_on_fetch": true,
+    "allow_force_push": false,
+    "review_request_timeout_seconds": 30,
+    "review_retry_attempts": 2,
+    "review_retry_backoff_seconds": 1.5,
+    "review_max_concurrent_repositories": 4,
+    "review_max_pages_per_repository": 5,
+    "allow_review_mutations": false,
+    "allow_insecure_connections": false,
+    "require_successful_checks_before_merge": true
+   },
+   "errors": [
+    {
+     "type": "literal_error",
+     "loc": [
+      "body",
+      "default_pull_strategy"
+     ],
+     "msg": "Input should be 'ff_only', 'merge' or 'rebase'",
+     "input": null,
+     "ctx": {
+      "expected": "'ff_only', 'merge' or 'rebase'"
+     }
+    }
+   ]
+  }
+ ],
+ "oauth_callback": [
+  {
+   "input": {},
+   "errors": [
+    {
+     "type": "missing",
+     "loc": [
+      "body",
+      "code"
+     ],
+     "msg": "Field required",
+     "input": {}
+    }
+   ]
+  },
+  {
+   "input": {
+    "code": "c"
+   },
+   "ok": {
+    "code": "c"
+   }
+  },
+  {
+   "input": {
+    "code": "c",
+    "x": 1
+   },
+   "errors": [
+    {
+     "type": "extra_forbidden",
+     "loc": [
+      "body",
+      "x"
+     ],
+     "msg": "Extra inputs are not permitted",
+     "input": 1
+    }
+   ]
+  },
+  {
+   "input": {
+    "code": 5
+   },
+   "errors": [
+    {
+     "type": "string_type",
+     "loc": [
+      "body",
+      "code"
+     ],
+     "msg": "Input should be a valid string",
+     "input": 5
+    }
+   ]
+  },
+  {
+   "input": {
+    "code": null
+   },
+   "errors": [
+    {
+     "type": "string_type",
+     "loc": [
+      "body",
+      "code"
+     ],
+     "msg": "Input should be a valid string",
+     "input": null
+    }
+   ]
+  }
+ ]
+}

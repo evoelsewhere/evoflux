@@ -14,9 +14,13 @@ is `area-settings-providers` and the tests live in `contract-tests/settings-prov
 (the task brief said `area-settings` / `contract-tests/settings`; the harness maps a
 test folder to its unit by the board lane name, so the board name wins).
 
-**Status:** La (this crate's stub, NOTES, contract tests). The crate is not mounted:
-`units.rs` is untouched, as for `area-imports`, because a mounted empty router would
-answer 404 for a unit still owned by Python. Lb sizing and dependencies are at the end.
+**Status:** Lb in slices. Ported: `/api/auth/**` (DS2-001; the OAuth flows stay
+Python-owned, `KNOWN_DIFFERENCES.md` settings-providers) and the request-body
+validator every route uses (`src/body.rs`, `src/models.rs`: FastAPI body parsing and
+pydantic lax coercion, pinned by `tests/body_golden.json`, which
+`tests/gen_body_golden.py` regenerates from the real pydantic models). The crate is
+mounted in `units.rs` but not listed in `rust-ready.toml`: the unit stays on Python
+until every slice and the adapter land. Lb sizing and dependencies are at the end.
 
 ## Scope: which routes the unit really serves
 
