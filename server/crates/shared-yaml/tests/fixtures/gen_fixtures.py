@@ -181,7 +181,46 @@ DUMP_CASES = [
     {"bools_in_list": ["yes", "no", "on", "off", "true"]},
     {"leading_zero": "0123", "plus": "+1", "under": "1_000", "dotonly": ".", "e": "e", "dash_num": "-1.5"},
     {"equals": "=", "merge": "<<", "tildes": "~~"},
+    # The simple-key limit counts the `!!str` tag: 122 characters are simple, 123 are not.
+    {"k" * 122: "simple", "q" * 123: "complex"},
+    # A sequence value after a quoted key or a `?` key.
+    {"- x": [1, 2], "k" * 130: [3, 4], "multi\nline": [5, {"a": 6}]},
+    # Single-quoted scalars folded more than once (a leading quote rules out plain).
+    {"longsq2": "'" + "it is " * 60 + "done"},
+    [{"x": "'" + "it is " * 40 + "end"}, "'" + "it is " * 35 + "x"],
+    # Unicode next to an escape keeps the double quotes.
+    {"mix": "café\tbar", "jp": "日本\x07語", "pua": "\x1b", "cr": "é\r"},
+    # A double-quoted value that starts past the width.
+    {"k" * 100: "\x07 abc", "j" * 85: " \x07", "m" * 90: "\x07" * 3},
+    # Mixed keys Python cannot or can order.
+    {datetime.datetime(2024, 1, 2): "naive", datetime.datetime(2024, 1, 1, tzinfo=datetime.timezone.utc): "aware"},
+    {2: "two", True: "true", 0.5: "half", -1: "neg", False: "false"},
+    {
+        datetime.datetime(2024, 1, 2, 0, 0): "midnight",
+        datetime.datetime(2024, 1, 1, 23, 0): "late",
+        datetime.datetime(2024, 1, 1, 10, 0): "ten",
+        datetime.datetime(2024, 1, 1, 9, 30): "nine thirty",
+        datetime.datetime(2024, 1, 1, 9, 5): "nine oh five",
+    },
+    {
+        datetime.datetime(2024, 1, 1, 10, 0, tzinfo=datetime.timezone(datetime.timedelta(hours=2))): "ten +2",
+        datetime.datetime(2024, 1, 1, 9, 0, tzinfo=datetime.timezone.utc): "nine utc",
+        datetime.datetime(2023, 12, 31, 23, 30, tzinfo=datetime.timezone(datetime.timedelta(hours=-1))): "new year -1",
+    },
 ]
+
+# Scalars folded at every column near the width, so each width comparison is
+# exercised on both sides of its boundary.
+for _n in range(60, 100):
+    DUMP_CASES.append(
+        {
+            "sq": "'" + "a" * _n + " b " + "c" * 30 + " d",
+            "dq": "a" * _n + " \x07z",
+            "dqe": "a" * _n + "\x07z",
+            "dqs": "\x07" + "a" * _n + " ",
+            "dqm": ("b" * (_n - 50) + " \x07") * 4,
+        }
+    )
 
 
 def tagged(value):
