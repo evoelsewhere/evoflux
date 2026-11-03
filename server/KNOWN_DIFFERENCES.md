@@ -410,3 +410,53 @@ bounds DNS and each request, including its decoded body; the caller's size cap
 applies to decoded bytes. Backslashes in initial URLs are refused. No Python
 caller or routing behavior changes until a future consumer adopts the crate.
 Needs security review (SSRF, DNS rebinding).
+
+## settings-providers (Lb, `server/crates/area-settings-providers`; unit still on Python)
+
+Ported so far: `/api/auth/**` and the seven P-008 settings section GET/PUT pairs
+(`sandbox`, `context`, `version-control`, `team-spawn`, `follow-up`,
+`background-tasks`, `response-style`). Other settings routes are pending slices.
+
+- **OAuth flows not ported.** `GET /api/auth/{codex,copilot,xiaomi}/login` answers
+  `200 text/event-stream` with one `failed` event (`{"message": "...", "reason":
+  "not_ported"}`) and closes; Python runs the provider's device-code or browser
+  login in a thread and streams `started` … `success`. Provider plugins are Python
+  modules Rust cannot load, so a plugin's login is Rust's `404 Unknown OAuth
+  provider` and every `POST /api/auth/{id}/callback` with a valid body is
+  `404 OAuth callback unsupported for '<id>'` (Python calls the plugin's
+  `oauth_callback`). Both stay Python-owned until `adapter:settings-providers`.
+- **Request body size.** Rust reads at most 2 MiB of a request body (axum's
+  default limit, `413`); Python reads any size.
+- **Settings/sandbox YAML diagnostics.** Invalid YAML retains status 422 and
+  `settings.yaml YAML parse error: ...` or `Invalid YAML in <path>: ...`, but the
+  shared YAML parser's message tail is not PyYAML's. Shared-settings' documented
+  input limits and UTF-8/I/O diagnostic differences also apply to section routes.
+- **Windows settings file newlines (shared dependency).** Shared-settings
+  `RuntimeSettings::save_unlocked` writes the shared dump as LF bytes, whereas
+  Python's text-mode tempfile writer emits CRLF on Windows. P-008 cannot alter
+  that owned dependency or inject a newline conversion into `modify`; sandbox's
+  own atomic writer does preserve Windows CRLF. Parsed settings are identical.
+- **Sandbox file validation text.** Invalid file fields return a string `detail`
+  with the pydantic model name, field, message, type and input. String/container
+  repr and truncation, the pydantic documentation version in its URL, and YAML
+  non-JSON values (dates, non-string keys and non-finite floats converted through
+  shared YAML's JSON projection) may differ from Python's `str(ValidationError)`.
+  HTTP request validation still uses the golden-tested pydantic JSON error list.
+- **S1, key echoed in a 422 (Python bug, fixed in Rust only).** Python's
+  `POST /api/settings/providers/{id}/test` without `model` answers a 422 whose
+  `detail[].input` is the whole body, `api_key` included (NOTES S1). Rust never
+  echoes a request value in a 4xx on the provider routes: their validation errors
+  carry no `input`. The provider routes come with slice P-009 under SR-004; until
+  then this crate does not serve them and they stay on Python, and
+  `test_known_leak_a_missing_model_422_echoes_the_whole_request_body` pins the
+  Python behaviour only.
+- **S2, `.env` name and newline injection (Python bug, fixed in Rust only).**
+  Python's `PUT /api/settings/providers/{id}` writes any `extra` name and value to
+  `.env` and `os.environ`, so `{"FOO": "x
+BAR=y"}` adds two lines (NOTES S2).
+  Rust limits `extra` to the provider's declared credential and base-url
+  variables, refuses values holding CR, LF or NUL with a 422 and writes nothing,
+  never writes `PATH`, `PYTHONPATH`, `LD_PRELOAD`, `DYLD_*`, `NODE_OPTIONS` or
+  `EVOFLUX_*`, and writes `.env` 0600 where the OS supports it. Same slice (P-009,
+  SR-004): the P-008 section routes write no `.env` and no credentials.
+

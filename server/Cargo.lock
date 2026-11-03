@@ -692,6 +692,13 @@ name = "evoflux-area-settings-providers"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "evoflux-area-commands",
+ "evoflux-core",
+ "evoflux-shared-settings",
+ "evoflux-shared-yaml",
+ "serde_json",
+ "tokio",
+ "tower",
 ]
 
 [[package]]
@@ -828,6 +835,7 @@ dependencies = [
  "evoflux-area-health-live",
  "evoflux-area-observability",
  "evoflux-area-quote",
+ "evoflux-area-settings-providers",
  "evoflux-area-snippets",
  "evoflux-core",
  "evoflux-gateway",

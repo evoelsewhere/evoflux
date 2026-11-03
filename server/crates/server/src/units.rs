@@ -43,6 +43,9 @@ pub fn router(_state: &UnitState) -> Router {
             &_state.settings.state_dir,
             otel_config(),
         ))
+        .merge(evoflux_area_settings_providers::router(
+            _state.paths.config_dir.clone(),
+        ))
         .merge(evoflux_area_chat_core::router(
             _state.settings.clone(),
             _state.db.clone(),
