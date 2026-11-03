@@ -1,12 +1,14 @@
 //! The one shared HTTPS client of the v4 server (design: rust-http-client-and-stack-recheck).
 //!
-//! Every outbound HTTP call goes through [`build_client`]'s client, which units
+//! Regular outbound calls go through [`build_client`]'s client, which units
 //! receive through `UnitState`. It uses rustls with the aws-lc-rs provider and
 //! the OS trust store, honours the environment and system proxy, and has connect
 //! and read (idle) timeouts but no total timeout, so streaming responses can run
 //! as long as bytes keep arriving. A total timeout is a per-request choice.
-//! Redirects are never followed (as with Python httpx), so a request header such
+//! That client never follows redirects (as with Python httpx), so a request header such
 //! as `X-Api-Key` cannot be forwarded to another host; a 3xx is the caller's to handle.
+//! Untrusted download URLs instead use [`pinned_client`], which checks and pins
+//! every destination, re-checks redirects, and enforces decoded response limits.
 
 #![forbid(unsafe_code)]
 
@@ -14,6 +16,8 @@ use std::sync::Once;
 use std::time::Duration;
 
 pub use reqwest::Client;
+mod pinned;
+pub use pinned::{pinned_client, PinError, PinnedClient, Policy, SystemResolver};
 
 pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 pub const READ_TIMEOUT: Duration = Duration::from_secs(60);
