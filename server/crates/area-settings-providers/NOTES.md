@@ -22,6 +22,43 @@ pydantic lax coercion, pinned by `tests/body_golden.json`, which
 mounted in `units.rs` but not listed in `rust-ready.toml`: the unit stays on Python
 until every slice and the adapter land. Lb sizing and dependencies are at the end.
 
+P-008 adds GET/PUT `/api/settings/{sandbox,context,version-control,team-spawn,
+follow-up,background-tasks,response-style}`. The router takes the application
+`paths.config_dir` (the core config's `EVOFLUX_CONFIG_DIR`). Other settings routes,
+including visible-models and providers, remain for later slices. The existing
+section contract file also calls providers, WebBridge and Computer App; those
+cross-slice cases cannot all pass against this slice's Rust router alone.
+
+### P-008 implementation and verification
+
+- `settings_service.rs` uses shared-settings `load_report` and its process-wide
+  per-file `modify` lock, preserving whole-file rewrites, tolerant invalid-value
+  pruning, ignored context fields, ordering and float types. Context's trigger is
+  computed from the pure compaction cost formula in `summarization.py`, not a
+  provider lookup (333842 with the bundled constants).
+- **S0 retained:** the four unguarded section GETs return status 500, plain text
+  `Internal Server Error`, content type `text/plain; charset=utf-8`. All section
+  PUT bodies validate before any file access. Guarded settings file failures
+  retain the shared SettingsError text in a string `detail` with status 422.
+  Filesystem OSError equivalents, including failed saves, retain Python's 500.
+- `sandbox.rs` drops the two legacy process-control keys only on file reads,
+  seeds missing denied_patterns only in the file model, removes blank patterns
+  without trimming nonblank patterns on read, and trims on PUT. Reads never
+  create files. Writes take a per-path tokio mutex and flush/sync a sibling
+  create-new temp file before atomic rename; failed writes remove that temp.
+  Its text bytes use native newlines like Python (CRLF on Windows); the owned
+  shared-settings writer's LF-only behavior is recorded as a known difference.
+- `sections_tests.rs` ports all seven route families: defaults, round trips,
+  required/unknown field errors, exact methods/Allow, slash redirects, numeric
+  JSON spelling, context derivations/ignored fields, legacy sandbox files,
+  invalid-file precedence, whole-file rewrite and 16 parallel writers. The
+  existing request-model golden tests retain the full lax-validation coverage.
+  Float formatting follows FastAPI 0.135.3's Pydantic response serialization
+  (`60.0` and `1e-7`), rather than Starlette's bypassed `json.dumps` path.
+- The mutation and contract results are recorded in the bridge report. Sandbox
+  YAML diagnostics and pydantic human-readable repr limitations are recorded in
+  `server/KNOWN_DIFFERENCES.md`; the HTTP request 422 list remains unchanged.
+
 ## Scope: which routes the unit really serves
 
 `/api/settings/**` and `/api/auth/**`, minus two more-specific prefixes that other

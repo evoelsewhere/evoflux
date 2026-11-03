@@ -11,7 +11,10 @@ workspace = true
 axum = { version = "0.8", default-features = false, features = ["http1", "tokio"] }
 evoflux-area-commands = { path = "../area-commands" }
 evoflux-core = { path = "../core" }
+evoflux-shared-settings = { path = "../shared-settings" }
+evoflux-shared-yaml = { path = "../shared-yaml" }
 serde_json = { version = "1", features = ["preserve_order"] }
+tokio = { version = "1", features = ["fs", "io-util", "sync"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt"] }

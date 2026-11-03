@@ -50,6 +50,7 @@ pub(crate) enum Default {
     Str(&'static str),
     EmptyList,
     EmptyDict,
+    Strings(&'static [&'static str]),
 }
 
 impl Default {
@@ -62,6 +63,9 @@ impl Default {
             Default::Str(value) => Value::from(value),
             Default::EmptyList => Value::Array(Vec::new()),
             Default::EmptyDict => Value::Object(Map::new()),
+            Default::Strings(values) => {
+                Value::Array(values.iter().map(|v| Value::from(*v)).collect())
+            }
         }
     }
 }

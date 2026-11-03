@@ -76,6 +76,23 @@ pub(crate) const SANDBOX: &[Field] = &[
     ),
 ];
 
+/// SandboxFileConfig differs from the HTTP body only in its seeded deny-list.
+pub(crate) fn sandbox_file() -> Vec<Field> {
+    SANDBOX
+        .iter()
+        .map(|field| {
+            if field.name == "denied_patterns" {
+                Field {
+                    default: Some(D::Strings(&["**/.env", "**/.env.*"])),
+                    ..*field
+                }
+            } else {
+                *field
+            }
+        })
+        .collect()
+}
+
 const IGNORED_SETTING: &[Field] = &[required("field", Kind::Str), required("message", Kind::Str)];
 
 pub(crate) const CONTEXT: &[Field] = &[
