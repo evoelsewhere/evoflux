@@ -153,8 +153,12 @@ history snapshots, and Python reading the rows Rust wrote). Differences:
   `.vscode`, `Library` or `snap` folder is refused too). On Windows a folder name
   ending in `.` or a space, or containing `:`, is refused because Windows opens
   another folder. The default workspace folder is exempt from the `~/.local/share` rule
-  only, and only at `~/.local/share/evoflux-workspace`; a default that is any other
-  credential folder, or `~/.local/share/keyrings`, is ignored with a warning. After the folder is
+  only, and only when `~/.local/share/evoflux-workspace` resolves to itself;
+  a symlink or Windows junction to `~/.local/share/keyrings` does not exempt
+  its target, even with `EVOFLUX_WORKSPACE_DIR` set directly to that target.
+  A default that is any other credential folder is ignored with a warning.
+  Credential names are checked below every matching root, so configuring both
+  `R` and `R/sub/.ssh` cannot allow `R/sub/.ssh/new`. After the folder is
   created the path is resolved and checked again, allowlist included, and a
   folder this request made that is then refused is removed if empty. Windows and
   macOS compare case-insensitively, Linux case-sensitively. This closes the Linux
@@ -165,6 +169,20 @@ history snapshots, and Python reading the rows Rust wrote). Differences:
   `test_restricted_workspace_is_refused` (Rust only; Python is skipped; the
   contract harness sets `EVOFLUX_WORKSPACE_ROOTS` to `<home>/projects`) and the
   `workspace.rs` unit tests.
+- **Workspace mkdir race (accepted residual for SR-011(1), owner-authorized
+  option 2026-11-03; needs security review).** A local process with write access
+  inside an allowed root can replace an already checked parent with a symlink
+  or junction between the check and the next `create_dir`. The request can then
+  create an empty directory in a credential folder before the final resolved-path
+  check refuses the workspace. Rejection attempts `remove_dir` on the paths
+  found missing, deepest first, stopping on an error (for example, if the
+  racing writer has populated a directory). Cleanup does not verify directory
+  identity: an empty replacement can be removed, and a directory can remain
+  after a cleanup error. No chat turn or file-tool read starts
+  with that refused workspace. Per-create path verification still leaves the
+  parent replacement and cleanup races: a reliable fix requires holding parent
+  directory handles and creating relative to them across Windows, Linux and
+  macOS, beyond a small path-check change with the current std/Tokio APIs.
 - **Unported tools end the turn.** A call to one of Python's built-in tools that
   Rust does not run (`shell`, `edit`, `web_search`, `get_goal`, ... the
   `PYTHON_ONLY_TOOLS` list in `turn.rs`) gets the tool result Python gives an
