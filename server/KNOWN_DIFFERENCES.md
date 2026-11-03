@@ -382,3 +382,19 @@ Python reads the span files with DuckDB (`read_json`, `union_by_name`); Rust rea
   once when the server starts; Python re-reads the environment on each request or sweep.
 - **Float text.** A cost below `1e-4` prints as `1e-5` (Rust) instead of `1e-05` (Python); both parse
   to the same number.
+
+## P-006: pinned HTTPS downloads (shared library; not mounted)
+
+Python `app/plugin_platform/marketplaces.py::_fetch_bytes` validates DNS, then
+httpx independently resolves again. Rust's `evoflux_net::pinned_client` connects
+only to the addresses it validated and disables proxies for these downloads;
+the general provider client continues to honor proxies. Each redirect resolves
+and validates anew. Explicit private-network permission is per normalized host,
+so a redirect to another host does not inherit it. Mapped IPv6 and transition/
+unallocated/special-use address ranges are conservatively refused (including
+some Python-global special-use exceptions). The URL remains HTTPS with normal
+certificate verification and original SNI/Host. A caller-supplied deadline
+bounds DNS and each request, including its decoded body; the caller's size cap
+applies to decoded bytes. Backslashes in initial URLs are refused. No Python
+caller or routing behavior changes until a future consumer adopts the crate.
+Needs security review (SSRF, DNS rebinding).

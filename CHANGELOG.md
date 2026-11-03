@@ -47,6 +47,7 @@ All notable changes to EvoFlux are documented in this file.
 
 ### Changed
 
+- Recorded verification and security-review requirements for the v4 Rust HTTPS downloader and locked its test dependencies.
 - The v4 Rust chat migration notes now record the accepted local directory-creation race and cleanup limitations, and mark the workspace hardening as needing security review.
 - `server/KNOWN_DIFFERENCES.md` records the decision to keep reading hard-linked files in the v4 Rust agent file tools as Python does.
 - Added contract tests for the workspace file routes (`/api/team/workspace/files/**`, `status`, `git-diff`, `browse`, `validate`, the language-server and LSP routes, and the per-session `files`, `workspace` and `uploads` routes, including path confinement, Windows name rules, links and uploads) using only temporary folders and repositories, and a `workspace-files` area crate stub with migration notes covering the files, git and language-server processes, and security findings about the missing workspace allowlist, repository git hooks, `.env` access and uncapped uploads. It affects tests and notes only, so nothing changes in the app.
