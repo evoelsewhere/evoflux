@@ -60,7 +60,7 @@ impl Timestamp {
     }
 
     /// Days since 1970-01-01 of the calendar date (proleptic Gregorian).
-    fn days_from_civil(&self) -> i64 {
+    pub(crate) fn days_from_civil(&self) -> i64 {
         let (y, m, d) = (
             i64::from(self.year),
             i64::from(self.month),

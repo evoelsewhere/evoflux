@@ -98,3 +98,71 @@ fn defaults_match_the_settings_writer() {
         "context:\n  summary_trigger_tokens: 60.0\nname: \"caf\\xE9\"\nmode: 'off'\n"
     );
 }
+
+#[test]
+fn sorted_aware_timestamp_keys_follow_utc_across_midnight() {
+    let value =
+        load("2020-01-01 23:30:00-02:00: later\n2020-01-02 00:30:00+00:00: earlier\n").unwrap();
+    assert_eq!(
+        dump(
+            &value,
+            DumpOpts {
+                sort_keys: true,
+                allow_unicode: false,
+            },
+        ),
+        "2020-01-02 00:30:00+00:00: earlier\n2020-01-01 23:30:00-02:00: later\n"
+    );
+}
+
+#[test]
+fn sorted_numeric_and_timestamp_keys_match_pyyaml() {
+    let cases = [
+        (
+            "3: three\n1.5: float\ntrue: bool\n",
+            "true: bool\n1.5: float\n3: three\n",
+        ),
+        (
+            "2020-01-02: b\n2020-01-01: a\n",
+            "2020-01-01: a\n2020-01-02: b\n",
+        ),
+        (
+            "2020-01-01 12:00:00: b\n2020-01-01 09:15:00: a\n",
+            "2020-01-01 09:15:00: a\n2020-01-01 12:00:00: b\n",
+        ),
+        (
+            "2020-01-01 12:00:00+02:00: b\n2020-01-01 09:15:00+00:00: a\n",
+            "2020-01-01 09:15:00+00:00: a\n2020-01-01 12:00:00+02:00: b\n",
+        ),
+    ];
+    for (input, expected) in cases {
+        let value = load(input).unwrap();
+        assert_eq!(
+            dump(
+                &value,
+                DumpOpts {
+                    sort_keys: true,
+                    allow_unicode: false
+                }
+            ),
+            expected
+        );
+    }
+}
+
+#[test]
+fn double_quoted_control_characters_match_pyyaml() {
+    for (input, expected) in [
+        ("\u{8}", "\"\\b\"\n"),
+        ("\u{b}", "\"\\v\"\n"),
+        ("\u{c}", "\"\\f\"\n"),
+        ("\"\u{8}", "\"\\\"\\b\"\n"),
+        ("\\\u{8}", "\"\\\\\\b\"\n"),
+        ("\u{2029}", "\"\\P\"\n"),
+    ] {
+        assert_eq!(
+            dump(&Value::Str(input.into()), DumpOpts::default()),
+            expected
+        );
+    }
+}

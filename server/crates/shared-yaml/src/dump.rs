@@ -756,16 +756,10 @@ fn timestamp_order(
                 microsecond: 0,
                 offset_minutes: None,
             });
-            let minutes = i64::from(time.hour) * 60 + i64::from(time.minute)
-                - i64::from(time.offset_minutes.unwrap_or(0));
-            (
-                t.year,
-                t.month,
-                t.day,
-                minutes,
-                time.second,
-                time.microsecond,
-            )
+            let minutes =
+                t.days_from_civil() * 1440 + i64::from(time.hour) * 60 + i64::from(time.minute)
+                    - i64::from(time.offset_minutes.unwrap_or(0));
+            (minutes, time.second, time.microsecond)
         })
     };
     key(a).cmp(&key(b))
