@@ -314,7 +314,9 @@ alike are covered. Python alone (`evoflux serve` without the gateway) is unchang
   `_embedded_proxy_required` also trusts it whenever `EVOFLUX_TSNET_BIN` is
   unset (dev runs, `make run`, headless), so any local process could skip the
   token with two forged headers; Rust answers 401 `untrusted_tailnet_identity`
-  there. The bundled app sets `EVOFLUX_TSNET_BIN` and is unchanged. Tests:
+  there. Deployments using `tailscale serve` with `EVOFLUX_TSNET_BIN` unset
+  must set `EVOFLUX_REMOTE_USE_PROVIDER=external`. The bundled app sets
+  `EVOFLUX_TSNET_BIN` and is unchanged. Tests:
   `auth::tests` and `crates/core/tests/auth.rs`.
 
 Tests: `origin::tests` (unit, DNS rebinding through tsnet included) and
