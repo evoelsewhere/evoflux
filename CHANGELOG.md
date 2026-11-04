@@ -6,6 +6,8 @@ All notable changes to EvoFlux are documented in this file.
 
 ### Security
 
+- The v4 Rust archive extractor now refuses entry names shaped like Windows 8.3 short names (such as `LONGDI~1`), which could otherwise place files in an existing folder under a different name and get past the duplicate-name screening.
+
 - The v4 Rust `.env` writer now also refuses names and values containing Unicode and control line separators (vertical tab, form feed, `\x1c`-`\x1e`, NEL, U+2028, U+2029), which could otherwise turn into extra environment assignments the next time the file is saved.
 
 - The v4 Rust gateway no longer forwards tailnet identity headers to Python unless they come from the bundled tailnet proxy with its secret (or an explicitly configured external provider), so a local process can no longer skip the desktop token on Python-served routes with forged headers.

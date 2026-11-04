@@ -31,6 +31,11 @@ Archive filenames are decoded and validated as Unicode before OS path interpreta
 (tar names require UTF-8; ZIP retains its format-defined decoding):
 no absolute, traversal, empty/dot components, backslash, control characters,
 Windows device/stream names, trailing dots/spaces or paths longer than 4096 bytes.
+Components shaped like a Windows 8.3 short name (the base name up to the first `.`
+ends in `~` and ASCII digits: `LONGDI~1`, `FILENA~12.TXT`, `~1`) are refused on
+every OS, because on an 8.3-enabled volume they can open an existing directory
+under its long name and bypass the duplicate screening (SR-014). Other names with
+`~` are extracted as is: `a~b`, `~tmp`, `a~`, `~`, `a~1b`, `x.y~1`, `back~up.txt`.
 Case-colliding names use full Unicode 16 case folding (`caseless`), including
 expansions such as sharp-s and final sigma. Archive symbolic/hard links, devices, FIFOs,
 GNU sparse records and other special entries are refused, including internal links.

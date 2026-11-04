@@ -31,3 +31,10 @@ Equivalent (no observable difference):
 Untestable on Windows (`#[cfg(unix)] portable_permissions`, not compiled here):
 - replace body with `Ok(())`; `&` to `|`; `&` to `^`; `!=` to `==` in
   `mode & 0o111 != 0`.
+
+## SR-014 (8.3 short-name aliases)
+
+`git diff --relative=server origin/migrate/rust-v4 -- crates/shared-archive`
+before the fix commit, `cargo mutants --in-diff ... -p evoflux-shared-archive
+--test-tool nextest` (Windows, 2026-11-04): 7 mutations (`components` and the
+new `short_name_alias`), **7 caught, 0 missed**.

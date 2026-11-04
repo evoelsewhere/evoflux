@@ -609,3 +609,91 @@ fn files_larger_than_one_copy_buffer_extract_completely() {
         assert_eq!(std::fs::read(dest.join("big.bin")).unwrap(), data);
     }
 }
+
+#[test]
+fn refuses_windows_short_name_aliases_on_every_platform() {
+    // SR-014: `~` and digits ending the base name, in any component.
+    for zipped in [true, false] {
+        for name in [
+            "LONGDI~1/b.txt",
+            "longdi~1/b.txt",
+            "FILENA~12.TXT",
+            "dir/PROGRA~1/x.txt",
+            "a~1",
+            "~1",
+            "x~0099.t",
+            "LO1A2B~1.TAR.GZ",
+            "a~b~2",
+        ] {
+            let temp = tempfile::tempdir().unwrap();
+            let dest = temp.path().join("out");
+            let src = regular(zipped, &[("ok.txt", b"ok"), (name, b"bad")], false);
+            assert!(
+                matches!(
+                    extract(zipped, &src, &dest, Limits::default()),
+                    Err(ArchiveError::Path)
+                ),
+                "{name}, zip={zipped}"
+            );
+            let top = name.split('/').next().unwrap();
+            assert!(!dest.join(top).exists(), "{name} was written");
+        }
+    }
+}
+
+#[test]
+fn keeps_tilde_names_that_are_not_short_name_aliases() {
+    let names = [
+        "a~b",
+        "~tmp",
+        "a~",
+        "~",
+        "a~1b",
+        "x.y~1",
+        "back~up.txt",
+        "v~.1",
+        "~~",
+    ];
+    for zipped in [true, false] {
+        let temp = tempfile::tempdir().unwrap();
+        let dest = temp.path().join("out");
+        let entries: Vec<(&str, &[u8])> = names.iter().map(|n| (*n, &b"x"[..])).collect();
+        let src = regular(zipped, &entries, false);
+        let extracted = extract(zipped, &src, &dest, Limits::default()).unwrap();
+        assert_eq!(extracted.entries, names.len(), "zip={zipped}");
+        for name in names {
+            assert_eq!(std::fs::read(dest.join(name)).unwrap(), b"x", "{name}");
+        }
+    }
+}
+
+#[cfg(windows)]
+#[test]
+fn short_name_alias_cannot_land_in_an_existing_long_directory_on_windows() {
+    // The SR-014 PoC on a volume that creates 8.3 names (the system temp dir).
+    for zipped in [true, false] {
+        let temp = tempfile::tempdir().unwrap();
+        let dest = temp.path().join("out");
+        std::fs::create_dir_all(dest.join("longdirectoryname")).unwrap();
+        if !dest.join("LONGDI~1").is_dir() {
+            eprintln!(
+                "skipped: 8.3 short names are not created in {}",
+                temp.path().display()
+            );
+            return;
+        }
+        let src = regular(
+            zipped,
+            &[("longdirectoryname/a.txt", b"a"), ("LONGDI~1/b.txt", b"b")],
+            false,
+        );
+        assert!(
+            matches!(
+                extract(zipped, &src, &dest, Limits::default()),
+                Err(ArchiveError::Path)
+            ),
+            "zip={zipped}"
+        );
+        assert!(!dest.join("longdirectoryname").join("b.txt").exists());
+    }
+}

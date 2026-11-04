@@ -481,7 +481,9 @@ BAR=y"}` adds two lines (NOTES S2).
 root checks and GitHub prefix/subtree selection remain caller responsibilities.
 Compared with Python plugin extraction, all archive links and special files are
 refused, portable Windows names and case collisions are screened on every OS,
-and existing files are never overwritten. Destination root/components use
+components shaped like Windows 8.3 short names (base name ending in `~` and
+digits, such as `LONGDI~1`; SR-014) are refused on every OS, and existing files
+are never overwritten. Destination root/components use
 capability-based no-follow directory opens; file creation is exclusive, including
 when an existing file is a hard link to outside the destination. The caller grants
 access to the destination's existing parent, owns staging, and must run these

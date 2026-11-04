@@ -41,8 +41,23 @@ fn components(name: &str, directory: bool) -> Result<Vec<&str>, ArchiveError> {
         }) {
             return Err(ArchiveError::Path);
         }
+        if short_name_alias(part) {
+            return Err(ArchiveError::Path);
+        }
     }
     Ok(parts)
+}
+
+/// Whether `part` has the form of a Windows 8.3 short name: a base name (up to
+/// the first `.`) ending in `~` and ASCII digits, as in `LONGDI~1` or
+/// `FILENA~12.TXT`. On a volume with 8.3 names such a component can open an
+/// existing directory under a different long name, which bypasses the
+/// duplicate screening (SR-014), so it is refused on every platform. Other
+/// names with `~` (`a~b`, `~tmp`, `a~`, `a~1b`, `x.y~1`) are kept.
+fn short_name_alias(part: &str) -> bool {
+    let base = part.split('.').next().unwrap_or(part);
+    base.rsplit_once('~')
+        .is_some_and(|(_, tail)| !tail.is_empty() && tail.bytes().all(|b| b.is_ascii_digit()))
 }
 
 fn create_directory(parent: &Dir, name: impl AsRef<Path>) -> Result<Dir, ArchiveError> {
