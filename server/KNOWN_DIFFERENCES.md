@@ -198,11 +198,19 @@ history snapshots, and Python reading the rows Rust wrote). Differences:
   macOS compare case-insensitively, Linux case-sensitively. This closes the Linux
   `/home/<other>` gap. A project outside the default folder needs its folder in
   `EVOFLUX_WORKSPACE_ROOTS`.
-  Sessions already stored with a workspace are not re-checked. The `commands` and
-  `snippets` routes' `workspace` query is not covered. Tests:
-  `test_restricted_workspace_is_refused` (Rust only; Python is skipped; the
-  contract harness sets `EVOFLUX_WORKSPACE_ROOTS` to `<home>/projects`) and the
-  `workspace.rs` unit tests.
+  Stored session workspaces (also those written by Python-owned routes such as
+  fork, import, suggested tasks and webbridge) are resolved and checked again
+  before each turn (SR-001, owner decision: refuse, no grandfathering); a
+  refusal returns 422 with the allowlist hint, logs `stored_workspace_refused`
+  and starts no turn, including for older v3 sessions. The file tools are rooted
+  at the checked path, never at a value re-read from the row; the stored text is
+  left unchanged. The `commands` and `snippets` routes' `workspace` query is not
+  covered. Tests: `test_restricted_workspace_is_refused` (Rust only; Python is
+  skipped; the contract harness sets `EVOFLUX_WORKSPACE_ROOTS` to
+  `<home>/projects`), the `workspace.rs` unit tests, and the chat-core
+  `stored_workspaces_are_resolved_and_checked_again`,
+  `stored_disallowed_workspace_is_refused_before_turn` and
+  `tools_run_in_the_checked_workspace_of_new_and_stored_sessions` tests.
 - **Workspace mkdir race (accepted residual for SR-011(1), owner-authorized
   option 2026-11-03; needs security review).** A local process with write access
   inside an allowed root can replace an already checked parent with a symlink

@@ -6,6 +6,8 @@ All notable changes to EvoFlux are documented in this file.
 
 ### Security
 
+- Recorded the landing of the SR-001 stored-workspace check in the v4 Rust chat and its known-differences update; it needs a security review.
+
 - Recorded the landing of the v4 Rust pinned request builder for provider calls; it needs a security review.
 
 - Recorded the landing of the SR-012 gateway identity, SR-013 `.env` separator and SR-014 archive short-name fixes; they need a security review.
