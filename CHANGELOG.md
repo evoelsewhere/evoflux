@@ -61,6 +61,8 @@ All notable changes to EvoFlux are documented in this file.
 
 - Added the v4 shared provider catalog with Python's provider forms, bundled models, defaults and lookup order, including models.dev data for offline starts. Python continues to serve the provider routes.
 - Recorded the v4 provider catalog's locked dependencies, parity evidence and pending credential-resolution security review in the migration ledger.
+- Recorded the v4 Rust workspace allowlist API verification in the migration ledger.
+
 - The v4 Rust workspace allowlist is available for other server components to reuse.
 
 - Recorded verification and security-review requirements for the v4 Rust HTTPS downloader and locked its test dependencies.
