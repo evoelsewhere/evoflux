@@ -21,7 +21,7 @@ mod testkit;
 mod title;
 mod turn;
 mod usage;
-mod workspace;
+pub mod workspace;
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard};

@@ -225,7 +225,7 @@ impl Protected {
 const OUTSIDE_ROOTS: &str = "outside the allowed workspace folders";
 
 /// What every refusal tells the user to do about it.
-pub(crate) const ALLOW_HINT: &str = "To allow a folder, add it to EVOFLUX_WORKSPACE_ROOTS (a list of folders, separated by ';' on Windows and ':' elsewhere).";
+pub const ALLOW_HINT: &str = "To allow a folder, add it to EVOFLUX_WORKSPACE_ROOTS (a list of folders, separated by ';' on Windows and ':' elsewhere).";
 
 /// One allowed root, resolved at startup.
 struct Root {
@@ -236,7 +236,7 @@ struct Root {
 }
 
 /// The folders a chat workspace may be in, with the denylist as a second layer.
-pub(crate) struct Allowed {
+pub struct Allowed {
     roots: Vec<Root>,
     protected: Protected,
 }
@@ -245,7 +245,7 @@ impl Allowed {
     /// The allowed roots of these settings: `workspace_dir` plus
     /// `workspace_roots`, each resolved (`~`, `..`, links) once, here. A root
     /// that is not absolute or that the denylist refuses is ignored with a warning.
-    pub(crate) fn current(settings: &Settings) -> Self {
+    pub fn current(settings: &Settings) -> Self {
         let protected = Protected::current(&settings.home_dir, &settings.config_dir);
         let candidates = std::iter::once((settings.workspace_dir.as_path(), true)).chain(
             settings
@@ -273,7 +273,7 @@ impl Allowed {
     /// Why `path` (already resolved) cannot be a workspace, if it cannot: it
     /// must be a local disk path, equal to or inside a root, and clear of the
     /// denylist. The answer completes "it is ...".
-    pub(crate) fn refusal(&self, path: &Path) -> Option<&'static str> {
+    pub fn refusal(&self, path: &Path) -> Option<&'static str> {
         let path = strip_verbatim(path.to_path_buf());
         if is_network_or_device(&path) {
             return Some("a network share or device path");
@@ -335,7 +335,7 @@ fn dedup_both(paths: Vec<PathBuf>) -> Vec<PathBuf> {
 /// `path` with `~` expanded, folded and link-resolved without requiring it to
 /// exist: the deepest existing part is canonicalized, the rest is appended.
 /// `None` when the path is not absolute.
-pub(crate) fn resolve(raw: &str, home: &Path) -> Option<PathBuf> {
+pub fn resolve(raw: &str, home: &Path) -> Option<PathBuf> {
     let expanded = match raw.strip_prefix('~') {
         Some(rest) if rest.is_empty() || rest.starts_with(['/', '\\']) => {
             home.join(rest.trim_start_matches(['/', '\\']))
@@ -368,7 +368,7 @@ pub(crate) fn resolve(raw: &str, home: &Path) -> Option<PathBuf> {
 /// (`\\?\C:\x` is `C:\x`) and from a share (`\\?\UNC\s\x` is `\\s\x`). Other
 /// verbatim paths (`\\?\Volume{GUID}\`, `\\?\GLOBALROOT\...`) keep their prefix,
 /// so they are still seen as device paths.
-pub(crate) fn strip_verbatim(path: PathBuf) -> PathBuf {
+pub fn strip_verbatim(path: PathBuf) -> PathBuf {
     use std::path::Prefix;
     let text = path.to_string_lossy();
     let rest = match path.components().next() {
