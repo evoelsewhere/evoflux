@@ -346,6 +346,15 @@ alike are covered. Python alone (`evoflux serve` without the gateway) is unchang
   must set `EVOFLUX_REMOTE_USE_PROVIDER=external`. The bundled app sets
   `EVOFLUX_TSNET_BIN` and is unchanged. Tests:
   `auth::tests` and `crates/core/tests/auth.rs`.
+  The gateway applies the same check to Python-owned routes (SR-012): it
+  removes `Tailscale-User-Login`, `X-EvoFlux-Remote-Proxy`,
+  `X-EvoFlux-Remote-Token` and `X-EvoFlux-Device-Label` from every request it
+  forwards to Python unless `DesktopAuth::trusted_remote_identity` accepts
+  them, so Python sees no identity and asks for the desktop token (401) where
+  Python alone would trust the forged headers. Verified `tsnet` requests from
+  `desktop/tailnet` and the explicit external provider keep them. Tests:
+  `crates/server/tests/app.rs`, `crates/gateway/tests/proxy.rs` and
+  `contract-tests/gateway/test_remote_identity.py`.
 
 Tests: `origin::tests` (unit, DNS rebinding through tsnet included) and
 `contract-tests/origin` (no Origin, own and app origins, fetch metadata other

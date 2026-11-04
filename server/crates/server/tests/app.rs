@@ -126,6 +126,121 @@ async fn rust_routes_without_database_fail_closed_for_tailnet_requests() {
     assert_eq!(http_get(port, "/api/ping", &untrusted).await.0, 401);
 }
 
+async fn fake_python() -> Arc<PythonSupervisor> {
+    let entry = common::fake_upstream();
+    Arc::new(
+        PythonSupervisor::start(PythonConfig {
+            python_bin: common::python(),
+            site_packages: entry.parent().unwrap().to_path_buf(),
+            cli_entry: entry,
+            desktop_token: None,
+            gateway_secret: "test-gateway-secret".to_owned(),
+            remote_proxy_secret: "remote-secret".to_owned(),
+            gateway_port: 1,
+            disabled_services: vec![],
+            env_passthrough: vec![],
+            startup_timeout: Duration::from_secs(30),
+        })
+        .await
+        .unwrap(),
+    )
+}
+
+/// The headers the fake Python saw for a GET of `/fake/headers`.
+async fn python_saw(port: u64, headers: &[(&str, &str)]) -> serde_json::Value {
+    let (status, body) = http_get(port, "/fake/headers", headers).await;
+    assert_eq!(status, 200, "{body}");
+    serde_json::from_str(&body).unwrap()
+}
+
+const IDENTITY: [&str; 4] = [
+    "tailscale-user-login",
+    "x-evoflux-remote-proxy",
+    "x-evoflux-remote-token",
+    "x-evoflux-device-label",
+];
+
+#[tokio::test(flavor = "multi_thread")]
+async fn forged_identity_headers_never_reach_python() {
+    // SR-012: Python trusts any marker when EVOFLUX_TSNET_BIN is unset, so the
+    // gateway must not forward an identity its own DesktopAuth would refuse.
+    let sup = fake_python().await;
+    let auth = DesktopAuth::new(Some("k".to_owned()), "remote-secret".to_owned())
+        .with_embedded_proxy_required(true);
+    let port = serve(app::router(python_only(), Arc::clone(&sup), auth)).await;
+    let forgeries: [&[(&str, &str)]; 4] = [
+        &[
+            ("Tailscale-User-Login", "attacker@example.com"),
+            ("X-EvoFlux-Remote-Proxy", "x"),
+        ],
+        &[("Tailscale-User-Login", "attacker@example.com")],
+        &[
+            ("Tailscale-User-Login", "attacker@example.com"),
+            ("X-EvoFlux-Remote-Proxy", "tsnet"),
+            ("X-EvoFlux-Remote-Token", "wrong"),
+            ("X-EvoFlux-Device-Label", "phone"),
+        ],
+        &[
+            ("X-EvoFlux-Remote-Proxy", "tsnet"),
+            ("X-EvoFlux-Remote-Token", "remote-secret"),
+            ("X-EvoFlux-Device-Label", "phone"),
+        ],
+    ];
+    for forged in forgeries {
+        let seen = python_saw(port, forged).await;
+        for name in IDENTITY {
+            assert!(seen.get(name).is_none(), "{name} reached Python: {seen}");
+        }
+    }
+    // A verified tsnet request (desktop/tailnet sets all four) keeps them.
+    let verified = [
+        ("Tailscale-User-Login", "user@example.com"),
+        ("X-EvoFlux-Remote-Proxy", "tsnet"),
+        ("X-EvoFlux-Remote-Token", "remote-secret"),
+        ("X-EvoFlux-Device-Label", "phone"),
+    ];
+    let seen = python_saw(port, &verified).await;
+    assert_eq!(seen["tailscale-user-login"], "user@example.com");
+    assert_eq!(seen["x-evoflux-remote-proxy"], "tsnet");
+    assert_eq!(seen["x-evoflux-remote-token"], "remote-secret");
+    assert_eq!(seen["x-evoflux-device-label"], "phone");
+    sup.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn external_provider_identity_still_reaches_python() {
+    let sup = fake_python().await;
+    let auth = DesktopAuth::new(Some("k".to_owned()), "remote-secret".to_owned())
+        .with_embedded_proxy_required(false);
+    let port = serve(app::router(python_only(), Arc::clone(&sup), auth)).await;
+    let seen = python_saw(
+        port,
+        &[
+            ("Tailscale-User-Login", "user@example.com"),
+            ("X-EvoFlux-Device-Label", "phone"),
+        ],
+    )
+    .await;
+    assert_eq!(seen["tailscale-user-login"], "user@example.com");
+    assert_eq!(seen["x-evoflux-device-label"], "phone");
+    sup.shutdown().await;
+}
+
+fn python_only() -> Arc<RoutingTable> {
+    Arc::new(
+        RoutingTable::from_toml(
+            "[[unit]]
+name = \"web\"
+owner = \"python\"
+routes = [\"/**\"]
+services = []
+",
+            None,
+        )
+        .unwrap(),
+    )
+}
+
 fn token_with(env: &[(&str, &str)], yaml: Option<&str>) -> Result<Option<String>, AccessKeyError> {
     let dir = tempfile::tempdir().unwrap();
     if let Some(yaml) = yaml {

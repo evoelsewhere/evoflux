@@ -14,10 +14,14 @@ use crate::supervisor::PythonSupervisor;
 use axum::body::{Body, HttpBody};
 use axum::extract::{Request, State};
 use axum::http::header::{CONNECTION, UPGRADE};
-use axum::http::{HeaderName, HeaderValue, Method, StatusCode};
+use axum::http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::Router;
 use axum_reverse_proxy::{HostBehaviour, ProxyError, ProxyPolicy, ReverseProxy, XForwardedFor};
+use evoflux_core::auth::{
+    REMOTE_DEVICE_LABEL_HEADER, REMOTE_PROXY_MARKER_HEADER, REMOTE_PROXY_TOKEN_HEADER,
+    REMOTE_USER_LOGIN_HEADER,
+};
 use evoflux_core::ApiError;
 use futures_util::StreamExt;
 use http_body_util::{BodyStream, StreamBody};
@@ -51,7 +55,21 @@ struct ProxyState {
     /// The forwarder for the current Python address; rebuilt after a restart.
     http: Mutex<Option<(SocketAddr, HttpProxy)>>,
     options: GatewayOptions,
+    identity: Option<IdentityCheck>,
 }
+
+/// Whether a request's remote identity headers are verified and may reach
+/// Python (`DesktopAuth::trusted_remote_identity` in `evoflux-server`).
+pub type IdentityCheck = Arc<dyn Fn(&HeaderMap) -> bool + Send + Sync>;
+
+/// The headers that attribute a request to a tailnet session. Only the bundled
+/// tsnet proxy (`desktop/tailnet`) sets them, together with its secret.
+pub const REMOTE_IDENTITY_HEADERS: [&str; 4] = [
+    REMOTE_USER_LOGIN_HEADER,
+    REMOTE_PROXY_MARKER_HEADER,
+    REMOTE_PROXY_TOKEN_HEADER,
+    REMOTE_DEVICE_LABEL_HEADER,
+];
 
 /// Optional gateway features: shadow comparison and traffic recording.
 #[derive(Clone, Default)]
@@ -86,6 +104,20 @@ pub fn router_with(
     rust_routes: Router,
     options: GatewayOptions,
 ) -> Router {
+    router_with_identity(table, sup, rust_routes, options, None)
+}
+
+/// [`router_with`] plus a remote identity check: when `identity` is set,
+/// [`REMOTE_IDENTITY_HEADERS`] are removed from every request forwarded to
+/// Python that it refuses, so Python never sees a forged identity (SR-012).
+/// Without it they pass through unchanged.
+pub fn router_with_identity(
+    table: Arc<RoutingTable>,
+    sup: Arc<PythonSupervisor>,
+    rust_routes: Router,
+    options: GatewayOptions,
+    identity: Option<IdentityCheck>,
+) -> Router {
     // A secret that is not a valid header value can never match Python's
     // check; send an empty value so Python answers 403 instead of us panicking.
     let secret =
@@ -102,6 +134,7 @@ pub fn router_with(
         client,
         http: Mutex::new(None),
         options,
+        identity,
     });
     Router::new().fallback(dispatch).with_state(state)
 }
@@ -266,6 +299,7 @@ async fn forward_to_python(state: &ProxyState, mut req: Request) -> Response {
     let Some(addr) = state.sup.upstream() else {
         return ApiError::backend_unavailable().into_response();
     };
+    strip_untrusted_identity(state.identity.as_ref(), req.headers_mut());
     req.headers_mut()
         .insert(GATEWAY_HEADER, state.secret.clone());
     if is_websocket_upgrade(&req) {
@@ -284,6 +318,21 @@ async fn forward_to_python(state: &ProxyState, mut req: Request) -> Response {
         return ApiError::backend_unavailable().into_response();
     }
     response
+}
+
+/// Drop the remote identity headers unless `check` verifies them.
+fn strip_untrusted_identity(check: Option<&IdentityCheck>, headers: &mut HeaderMap) {
+    let Some(check) = check else {
+        return;
+    };
+    if check(headers) {
+        return;
+    }
+    for name in REMOTE_IDENTITY_HEADERS {
+        if headers.remove(name).is_some() {
+            tracing::warn!(header = name, "remote_identity_header_stripped");
+        }
+    }
 }
 
 impl ProxyState {

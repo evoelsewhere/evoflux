@@ -68,11 +68,26 @@ pub struct Gateway {
 
 /// Serve the gateway router in front of the fake upstream.
 pub async fn serve(table: RoutingTable, rust_routes: axum::Router) -> Gateway {
+    serve_with(table, rust_routes, None).await
+}
+
+/// [`serve`] with a remote identity check.
+pub async fn serve_with(
+    table: RoutingTable,
+    rust_routes: axum::Router,
+    identity: Option<proxy::IdentityCheck>,
+) -> Gateway {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let cfg = fake_config(addr.port(), table.disabled_python_services());
     let sup = Arc::new(PythonSupervisor::start(cfg).await.unwrap());
-    let app = proxy::router(Arc::new(table), Arc::clone(&sup), rust_routes);
+    let app = proxy::router_with_identity(
+        Arc::new(table),
+        Arc::clone(&sup),
+        rust_routes,
+        proxy::GatewayOptions::default(),
+        identity,
+    );
     tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
     Gateway { addr, sup }
 }

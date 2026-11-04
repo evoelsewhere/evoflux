@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use axum::extract::Request;
 use axum::http::header::CONTENT_TYPE;
-use axum::http::StatusCode;
+use axum::http::{HeaderMap, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
@@ -72,7 +72,12 @@ pub fn router_with_options_and_db(
 ) -> Router {
     let units = rust_routes_with_db(units, auth.clone(), db.clone());
     // Layers only wrap routes added before them, so the proxy fallback below
-    // stays outside the Rust auth: Python authenticates its own routes.
+    // stays outside the Rust auth: Python authenticates its own routes. It
+    // does not get identity headers Rust would refuse (SR-012): Python trusts
+    // any marker when `EVOFLUX_TSNET_BIN` is unset.
+    let check = auth.clone();
+    let identity: proxy::IdentityCheck =
+        Arc::new(move |headers: &HeaderMap| check.trusted_remote_identity(headers));
     let own = rust_routes_with_db(
         Router::new()
             .route(GATEWAY_METRICS_PATH, get(gateway_metrics))
@@ -80,7 +85,13 @@ pub fn router_with_options_and_db(
         auth,
         db,
     );
-    catch_panics(own.fallback_service(proxy::router_with(table, sup, units, options)))
+    catch_panics(own.fallback_service(proxy::router_with_identity(
+        table,
+        sup,
+        units,
+        options,
+        Some(identity),
+    )))
 }
 
 /// Design §6.1 gate 2: a panicking handler answers Python's 500 body and the

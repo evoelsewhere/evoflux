@@ -316,3 +316,29 @@ fn trusted_embedded_proxy_needs_login_tsnet_marker_and_the_secret() {
         .unwrap();
     assert!(!trusted(no_login));
 }
+
+#[test]
+fn trusted_remote_identity_matches_the_auth_decision() {
+    // SR-012: the gateway strips identity headers this check refuses.
+    let strict = DesktopAuth::new(None, SECRET.to_owned()).with_embedded_proxy_required(true);
+    let lax = DesktopAuth::new(None, SECRET.to_owned()).with_embedded_proxy_required(false);
+    for auth in [&strict, &lax] {
+        let trusted = |req: Request<Body>| auth.trusted_remote_identity(req.headers());
+        assert!(trusted(remote(Some(" tsnet "), Some(SECRET))));
+        assert!(!trusted(remote(Some("tsnet"), Some("wrong"))));
+        assert!(!trusted(remote(Some("tsnet"), None)));
+        let no_login = Request::get("/")
+            .header("Tailscale-User-Login", " ")
+            .header("X-EvoFlux-Remote-Proxy", "tsnet")
+            .header("X-EvoFlux-Remote-Token", SECRET)
+            .body(Body::empty())
+            .unwrap();
+        assert!(!trusted(no_login));
+        assert!(!trusted(Request::get("/").body(Body::empty()).unwrap()));
+    }
+    // Any other marker (or none) only for an explicit external provider.
+    for marker in [Some("x"), Some(""), None] {
+        assert!(!strict.trusted_remote_identity(remote(marker, Some(SECRET)).headers()));
+        assert!(lax.trusted_remote_identity(remote(marker, None).headers()));
+    }
+}

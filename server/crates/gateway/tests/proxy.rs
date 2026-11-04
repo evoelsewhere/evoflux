@@ -10,6 +10,7 @@ mod common;
 use axum::body::Body;
 use axum::routing::get as route_get;
 use common::*;
+use evoflux_gateway::proxy;
 use evoflux_gateway::routing::RoutingTable;
 use http_body_util::BodyExt;
 use std::time::{Duration, Instant};
@@ -97,6 +98,46 @@ async fn gateway_header_replaces_client_copy_and_auth_headers_pass() {
         "hop-by-hop header forwarded"
     );
     assert!(headers.get("x-forwarded-for").is_none());
+    gw.sup.shutdown().await;
+}
+
+async fn forwarded_headers(addr: std::net::SocketAddr, token: &str) -> serde_json::Value {
+    let request = hyper::Request::get(format!("http://{addr}/fake/headers"))
+        .header("authorization", "Bearer abc")
+        .header("tailscale-user-login", "user@example.com")
+        .header("x-evoflux-remote-proxy", "tsnet")
+        .header("x-evoflux-remote-token", token)
+        .header("x-evoflux-device-label", "phone")
+        .body(Body::empty())
+        .unwrap();
+    let response = client().request(request).await.unwrap();
+    assert_eq!(response.status(), 200);
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    serde_json::from_slice(&bytes).unwrap()
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn identity_check_strips_refused_identity_headers_only() {
+    // SR-012: with a check installed, Python sees an identity only when the
+    // check verifies it; other headers are untouched.
+    let check: proxy::IdentityCheck = std::sync::Arc::new(|headers: &hyper::HeaderMap| {
+        headers
+            .get("x-evoflux-remote-token")
+            .is_some_and(|v| v == "verified")
+    });
+    let gw = serve_with(python_only(), axum::Router::new(), Some(check)).await;
+    let forged = forwarded_headers(gw.addr, "forged").await;
+    for name in proxy::REMOTE_IDENTITY_HEADERS {
+        let lower = name.to_ascii_lowercase();
+        assert!(forged.get(&lower).is_none(), "{name} forwarded: {forged}");
+    }
+    assert_eq!(forged["authorization"], "Bearer abc");
+    assert_eq!(forged["x-evoflux-gateway"], SECRET);
+    let kept = forwarded_headers(gw.addr, "verified").await;
+    assert_eq!(kept["tailscale-user-login"], "user@example.com");
+    assert_eq!(kept["x-evoflux-remote-proxy"], "tsnet");
+    assert_eq!(kept["x-evoflux-remote-token"], "verified");
+    assert_eq!(kept["x-evoflux-device-label"], "phone");
     gw.sup.shutdown().await;
 }
 

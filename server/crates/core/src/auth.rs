@@ -190,15 +190,9 @@ enum Decision {
 impl DesktopAuth {
     fn decide(&self, mut req: Request) -> Decision {
         let headers = req.headers();
-        let remote_login = header_text(headers, REMOTE_USER_LOGIN_HEADER)
-            .map(|v| py_strip(&v).to_owned())
-            .unwrap_or_default();
+        let remote_login = remote_login(headers);
         if !remote_login.is_empty() {
-            let marker = header_text(headers, REMOTE_PROXY_MARKER_HEADER)
-                .map(|v| py_strip(&v).to_owned())
-                .unwrap_or_default();
-            let provided = header_text(headers, REMOTE_PROXY_TOKEN_HEADER).unwrap_or_default();
-            if !self.trusted_remote_proxy_headers(&marker, &provided) {
+            if !self.trusted_remote_identity(headers) {
                 tracing::warn!("remote_proxy_identity_rejected");
                 return Decision::Reject(ApiError::untrusted_tailnet_identity());
             }
@@ -242,6 +236,20 @@ impl DesktopAuth {
                 provided.as_bytes(),
                 self.inner.remote_proxy_secret.as_bytes(),
             )
+    }
+
+    /// Whether `headers` carry a remote identity this layer trusts: a
+    /// non-empty tailnet login with the `tsnet` marker and this process's
+    /// proxy secret, or, only for `EVOFLUX_REMOTE_USE_PROVIDER=external`, any
+    /// marker. The same check [`Self::decide`] applies; the gateway uses it to
+    /// strip forged identity headers before forwarding to Python (SR-012).
+    pub fn trusted_remote_identity(&self, headers: &HeaderMap) -> bool {
+        if remote_login(headers).is_empty() {
+            return false;
+        }
+        let marker = header_text(headers, REMOTE_PROXY_MARKER_HEADER).unwrap_or_default();
+        let provided = header_text(headers, REMOTE_PROXY_TOKEN_HEADER).unwrap_or_default();
+        self.trusted_remote_proxy_headers(py_strip(&marker), &provided)
     }
 
     /// Whether the request carries the configured desktop token, as a bearer
@@ -293,6 +301,13 @@ fn path_is_exempt(path: &str) -> bool {
 
 fn path_is_custom_auth(path: &str) -> bool {
     CUSTOM_AUTH_EXACT.contains(&path) || CUSTOM_AUTH_PREFIXES.iter().any(|p| path.starts_with(p))
+}
+
+/// The stripped `Tailscale-User-Login`; empty when absent.
+fn remote_login(headers: &HeaderMap) -> String {
+    header_text(headers, REMOTE_USER_LOGIN_HEADER)
+        .map(|v| py_strip(&v).to_owned())
+        .unwrap_or_default()
 }
 
 /// Starlette decodes header bytes as latin-1.
