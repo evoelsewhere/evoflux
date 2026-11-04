@@ -13,9 +13,15 @@ Owner-accepted hardening in the P-005 brief; callers are not switched over yet.
   overwrites the file directly and applies permissions afterwards; a crash can
   leave partial contents. The credential writer already replaces atomically.
 - **Refuse environment-line injection (S2).** Both writers reject names outside
-  `^[A-Za-z_][A-Za-z0-9_]*$` and values containing CR, LF or NUL, before changing
-  any file or creating its parent. Python accepts these inputs, allowing extra
-  assignments to be injected. Errors name no values. This is the accepted S2
+  `^[A-Za-z_][A-Za-z0-9_]*$` and values containing NUL or any line boundary of
+  Python's `str.splitlines`: LF, CR, VT `\x0b`, FF `\x0c`, `\x1c`, `\x1d`,
+  `\x1e`, NEL `\x85`, U+2028 and U+2029 (SR-013), before changing any file or
+  creating its parent. python-dotenv reads only CR and LF as line ends, but the
+  merge re-splits the existing file with `str.splitlines`, so any of the others
+  in a value would become extra assignments on the next write. Python accepts
+  these inputs, allowing extra assignments to be injected. Errors name no values.
+  A hand-edited file that already holds one of the non-CR/LF boundaries is still
+  re-split the way Python does (golden `write-22`). This is the accepted S2
   hardening for settings-providers and MCP-management; it does not add a variable
   allow-list. Callers own updates to the process environment.
 

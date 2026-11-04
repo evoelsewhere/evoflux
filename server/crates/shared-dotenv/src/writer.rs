@@ -43,6 +43,14 @@ impl<'a> WriteOpts<'a> {
     }
 }
 
+/// Every character Python's `str.splitlines` ends a line at; `merge` re-splits
+/// the existing file with it. python-dotenv and [`crate::read`] only end lines
+/// at CR and LF, so a value holding any other of these reads back as one line
+/// but becomes extra assignments on the next merge (SR-013).
+const LINE_BOUNDARIES: [char; 10] = [
+    '\n', '\r', '\u{b}', '\u{c}', '\u{1c}', '\u{1d}', '\u{1e}', '\u{85}', '\u{2028}', '\u{2029}',
+];
+
 fn validate(updates: &[(&str, &str)]) -> Result<(), DotenvError> {
     for (key, value) in updates {
         let mut chars = key.chars();
@@ -53,7 +61,7 @@ fn validate(updates: &[(&str, &str)]) -> Result<(), DotenvError> {
         {
             return Err(DotenvError::InvalidName);
         }
-        if value.contains(['\r', '\n', '\0']) {
+        if value.contains(LINE_BOUNDARIES) || value.contains('\0') {
             return Err(DotenvError::InvalidValue {
                 key: (*key).to_owned(),
             });
@@ -76,11 +84,8 @@ fn splitlines(text: &str) -> Vec<&str> {
     if text.is_empty() {
         return Vec::new();
     }
-    let mut lines: Vec<_> = text
-        .split([
-            '\n', '\u{b}', '\u{c}', '\u{1c}', '\u{1d}', '\u{1e}', '\u{85}', '\u{2028}', '\u{2029}',
-        ])
-        .collect();
+    // `text` has universal newlines already, so it holds no CR.
+    let mut lines: Vec<_> = text.split(LINE_BOUNDARIES).collect();
     if lines.last() == Some(&"") {
         lines.pop();
     }

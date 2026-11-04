@@ -60,6 +60,106 @@ async fn validation_rejects_injected_values_without_leaking_them() {
     }
 }
 
+/// Python `str.splitlines` boundaries, NUL, and CR LF together (SR-013).
+const SEPARATORS: [&str; 12] = [
+    "\n", "\r", "\r\n", "\u{b}", "\u{c}", "\u{1c}", "\u{1d}", "\u{1e}", "\u{85}", "\u{2028}",
+    "\u{2029}", "\0",
+];
+
+#[tokio::test]
+async fn validation_rejects_every_line_boundary_in_values_for_both_profiles() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join(".env");
+    tokio::fs::write(&path, "OLD=keep\n").await.unwrap();
+    for sep in SEPARATORS {
+        for value in [
+            format!("sk-live-SECRET{sep}OPENAI_BASE_URL=http://evil.example"),
+            format!("{sep}sk-live-SECRET"),
+            format!("sk-live-SECRET{sep}"),
+        ] {
+            for opts in [WriteOpts::credentials(&[]), WriteOpts::mcp()] {
+                let error = merge_write(&path, &[("A", "ok"), ("KEY", &value)], &opts)
+                    .await
+                    .unwrap_err();
+                assert!(
+                    matches!(&error, DotenvError::InvalidValue { key } if key == "KEY"),
+                    "{sep:?}: {error:?}"
+                );
+                assert!(!error.to_string().contains("sk-live-SECRET"));
+                assert!(!format!("{error:?}").contains("sk-live-SECRET"));
+                assert_eq!(tokio::fs::read(&path).await.unwrap(), b"OLD=keep\n");
+                let missing = dir.path().join("absent").join(".env");
+                assert!(merge_write(&missing, &[("KEY", &value)], &opts)
+                    .await
+                    .is_err());
+                assert!(!missing.parent().unwrap().exists());
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn validation_rejects_every_line_boundary_in_names_for_both_profiles() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join(".env");
+    tokio::fs::write(&path, "OLD=keep\n").await.unwrap();
+    for sep in SEPARATORS {
+        for name in [
+            format!("KEY{sep}OTHER"),
+            format!("{sep}KEY"),
+            format!("KEY{sep}"),
+        ] {
+            for opts in [WriteOpts::credentials(&[]), WriteOpts::mcp()] {
+                let result = merge_write(&path, &[("A", "ok"), (&name, "x")], &opts).await;
+                assert!(
+                    matches!(result, Err(DotenvError::InvalidName)),
+                    "{sep:?}: {result:?}"
+                );
+                assert_eq!(tokio::fs::read(&path).await.unwrap(), b"OLD=keep\n");
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn refused_separator_cannot_inject_an_assignment_on_the_next_merge() {
+    // The SR-013 PoC: a value with a separator, then any other merge.
+    for sep in SEPARATORS {
+        for mcp in [false, true] {
+            let opts = if mcp {
+                WriteOpts::mcp()
+            } else {
+                WriteOpts::credentials(&[])
+            };
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join(".env");
+            let value = format!("sk-abc{sep}OPENAI_BASE_URL=http://evil.example");
+            assert!(merge_write(&path, &[("OPENAI_API_KEY", &value)], &opts)
+                .await
+                .is_err());
+            merge_write(&path, &[("OTHER", "1")], &opts).await.unwrap();
+            let values = read(&path, &|_: &str| None).await.unwrap();
+            assert!(!values.contains_key("OPENAI_BASE_URL"), "{sep:?}");
+            assert!(!values.contains_key("OPENAI_API_KEY"), "{sep:?}");
+            assert_eq!(values.get("OTHER"), Some(&Some("1".to_owned())));
+        }
+    }
+}
+
+#[tokio::test]
+async fn values_with_other_control_and_unicode_characters_are_written() {
+    // Not line boundaries for str.splitlines or python-dotenv: kept as is.
+    for value in ["a\tb", "a\u{1f}b", "a\u{a0}b", "a\u{1b}b", "\u{7f}", "雪☃"] {
+        for opts in [WriteOpts::credentials(&[]), WriteOpts::mcp()] {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join(".env");
+            merge_write(&path, &[("KEY", value)], &opts).await.unwrap();
+            let text = tokio::fs::read_to_string(&path).await.unwrap();
+            assert!(text.contains(value), "{value:?}");
+        }
+    }
+}
+
 #[tokio::test]
 async fn invalid_utf8_is_never_rewritten_and_errors_do_not_contain_contents() {
     let dir = tempfile::tempdir().unwrap();
