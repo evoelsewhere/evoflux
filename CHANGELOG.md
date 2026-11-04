@@ -15,6 +15,7 @@ All notable changes to EvoFlux are documented in this file.
 - The v4 Rust `.env` writer now also refuses names and values containing Unicode and control line separators (vertical tab, form feed, `\x1c`-`\x1e`, NEL, U+2028, U+2029), which could otherwise turn into extra environment assignments the next time the file is saved.
 
 - The v4 Rust gateway no longer forwards tailnet identity headers to Python unless they come from the bundled tailnet proxy with its secret (or an explicitly configured external provider), so a local process can no longer skip the desktop token on Python-served routes with forged headers.
+- The v4 Rust chat refuses a stored session workspace outside the allowed folders before starting a turn, including workspaces saved by Python routes.
 
 - Added safe ZIP and tar/gzip extraction for future v4 Rust installers and imports, with path confinement, link and overwrite refusals, and limits on entries, bytes and compression ratios.
 - Recorded the P-007 archive crate dependencies (zip, tar, flate2, cap-std, caseless), its known differences and landing; it needs a security review.

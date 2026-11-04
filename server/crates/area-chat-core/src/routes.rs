@@ -285,6 +285,21 @@ fn workspace_refused(why: &str) -> ApiError {
     ))
 }
 
+/// SR-001: a stored session workspace, resolved (`~`, `..`, links) and checked
+/// against the allowlist again, since Python-owned routes still write rows
+/// without the Rust check. `Err` is the refusal reason; nothing is created.
+fn stored_workspace_root(
+    raw: &str,
+    home: &std::path::Path,
+    allowed: &workspace::Allowed,
+) -> Result<std::path::PathBuf, &'static str> {
+    let resolved = workspace::resolve(raw, home).ok_or("not an absolute local path")?;
+    match allowed.refusal(&resolved) {
+        Some(why) => Err(why),
+        None => Ok(resolved),
+    }
+}
+
 /// The first half of `_normalize_work_workspace_or_422`: expand `~`, require an
 /// absolute path and apply the Rust-only allowlist in `workspace.rs`. The path
 /// is resolved (`..` and links) and checked before anything is created; nothing
@@ -481,6 +496,22 @@ pub(crate) async fn team_chat(
         state.interrupt(&sid);
         return Ok(Json(json!({"status": "interrupted", "session_id": sid})).into_response());
     }
+    // Existing rows may have been written by Python-owned routes (fork, import,
+    // suggested tasks, webbridge). Resolve and check their workspace before a
+    // turn can start; the tools are rooted at this checked path, never at a
+    // value re-read from the row during the turn. The stored text is kept.
+    let mut workspace_root = match workspace.as_deref() {
+        Some(raw) => {
+            match stored_workspace_root(raw, &state.settings.home_dir, &state.workspaces) {
+                Ok(root) => Some(root),
+                Err(why) => {
+                    tracing::warn!(session_id = %sid, why, "stored_workspace_refused");
+                    return Err(workspace_refused(why));
+                }
+            }
+        }
+        None => None,
+    };
     let message = form.message.clone().unwrap_or_default();
     match slash_command(&message) {
         Some("loop") => {
@@ -522,7 +553,10 @@ pub(crate) async fn team_chat(
     }
     if let Some(path) = new_workspace {
         match create_work_workspace(path, &state.workspaces).await {
-            Ok(created) => workspace = Some(created),
+            Ok(created) => {
+                workspace_root = Some(std::path::PathBuf::from(&created));
+                workspace = Some(created);
+            }
             Err(error) => {
                 state.finish_turn(&sid);
                 return Err(error);
@@ -559,6 +593,7 @@ pub(crate) async fn team_chat(
         model: model_provided.then_some(model),
         thinking_level: thinking_provided.then_some(thinking_level),
         workspace,
+        workspace_root,
         cancel,
     };
     tokio::spawn(turn::run(state.clone(), input));
@@ -1061,6 +1096,91 @@ mod tests {
             Ok(response) => response.status().as_u16(),
             Err(error) => error.into_response().status().as_u16(),
         }
+    }
+
+    #[test]
+    fn stored_workspaces_are_resolved_and_checked_again() {
+        let home = tempfile::tempdir().unwrap();
+        let config = tempfile::tempdir().unwrap();
+        let ws = home.path().join("ws");
+        std::fs::create_dir_all(ws.join(".ssh")).unwrap();
+        let allowed = allowed(home.path(), config.path(), std::slice::from_ref(&ws));
+        let canonical = workspace::strip_verbatim(std::fs::canonicalize(&ws).unwrap());
+        let check = |raw: &str| stored_workspace_root(raw, home.path(), &allowed);
+        assert_eq!(
+            check("~/ws").map(workspace::strip_verbatim),
+            Ok(canonical.clone())
+        );
+        assert_eq!(
+            check(&ws.join("sub").join("..").to_string_lossy()).map(workspace::strip_verbatim),
+            Ok(canonical)
+        );
+        assert_eq!(check("relative"), Err("not an absolute local path"));
+        assert_eq!(check(""), Err("not an absolute local path"));
+        assert!(check(&home.path().to_string_lossy()).is_err());
+        assert!(check(&ws.join(".ssh").to_string_lossy()).is_err());
+        assert!(check("~").is_err());
+    }
+
+    #[tokio::test]
+    async fn stored_disallowed_workspace_is_refused_before_turn() {
+        let config = tempfile::tempdir().unwrap();
+        let home = tempfile::tempdir().unwrap();
+        let state = chat_state(home.path(), config.path()).await;
+        let sid = "06ae6ab0-636d-720e-8000-b0d548016ce8";
+        let workspace = home.path().to_string_lossy().into_owned();
+        state.db.as_ref().unwrap().write_exclusive(move |tx| {
+            tx.execute(
+                "INSERT INTO chat_sessions (id, mode, workspace, permission_mode, created_at, updated_at) VALUES (?1, 'work', ?2, 'auto', '', '')",
+                rusqlite::params!["06ae6ab0636d720e8000b0d548016ce8", workspace],
+            )?;
+            Ok(())
+        }).await.unwrap();
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "content-type",
+            "application/x-www-form-urlencoded".parse().unwrap(),
+        );
+        let form = format!("message=hi&session_id={sid}");
+        let response = team_chat(State(state.clone()), headers, Bytes::from(form))
+            .await
+            .unwrap_err()
+            .into_response();
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert!(body["detail"]
+            .as_str()
+            .unwrap()
+            .contains(workspace::ALLOW_HINT));
+        assert!(!state.active().contains_key(sid));
+
+        let allowed = home.path().join("ws").to_string_lossy().into_owned();
+        state
+            .db
+            .as_ref()
+            .unwrap()
+            .write_exclusive(move |tx| {
+                tx.execute("UPDATE chat_sessions SET workspace = ?1", [&allowed])?;
+                Ok(())
+            })
+            .await
+            .unwrap();
+        // A valid stored workspace gets past policy validation to lead lookup.
+        assert_eq!(post_chat(&state, sid, &home.path().join("ws")).await, 404);
+        state
+            .db
+            .as_ref()
+            .unwrap()
+            .write_exclusive(|tx| {
+                tx.execute("UPDATE chat_sessions SET workspace = 'relative'", [])?;
+                Ok(())
+            })
+            .await
+            .unwrap();
+        assert_eq!(post_chat(&state, sid, &home.path().join("ws")).await, 422);
     }
 
     #[tokio::test]

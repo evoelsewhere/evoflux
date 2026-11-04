@@ -210,11 +210,21 @@ impl Env {
                 "EVOFLUX_WORKSPACE_DIR".to_owned(),
                 dir.path().join("workspaces").to_string_lossy().into_owned(),
             ),
+            // As the contract harness: a folder chat tests may use as a workspace.
+            (
+                "EVOFLUX_WORKSPACE_ROOTS".to_owned(),
+                dir.path()
+                    .join("home")
+                    .join("projects")
+                    .to_string_lossy()
+                    .into_owned(),
+            ),
             ("ROUTER9_BASE_URL".to_owned(), format!("http://{addr}/v1")),
             ("ROUTER9_API_KEY".to_owned(), "k".to_owned()),
         ]);
         let home = dir.path().join("home");
         std::fs::create_dir_all(&home).unwrap();
+        std::fs::create_dir_all(home.join("projects")).unwrap();
         let settings = Settings::from_vars(&vars, Some(&home), dir.path()).unwrap();
         let state = crate::new_state(
             Arc::new(settings),

@@ -98,7 +98,19 @@ pub(crate) struct TurnInput {
     pub model: Option<Option<String>>,
     pub thinking_level: Option<Option<String>>,
     pub workspace: Option<String>,
+    /// The file tools' root: the workspace after the allowlist check, or the
+    /// session folder when there is none.
+    pub workspace_root: Option<std::path::PathBuf>,
     pub cancel: CancellationToken,
+}
+
+/// The file tools' root: the checked workspace, else the session's own folder.
+/// Never re-read from the session row, which may change during the turn.
+fn tool_root(input: &TurnInput, workspace_dir: &std::path::Path) -> std::path::PathBuf {
+    match &input.workspace_root {
+        Some(root) => root.clone(),
+        None => workspace_dir.join(&input.sid),
+    }
 }
 
 /// Why a turn stopped early.
@@ -369,10 +381,7 @@ impl Turn {
             .as_ref()
             .and_then(|s| s.thinking_level.clone())
             .or_else(|| self.input.lead.thinking_level.clone());
-        let workspace_root = match session.as_ref().and_then(|s| s.workspace.clone()) {
-            Some(workspace) => std::path::PathBuf::from(workspace),
-            None => self.state.settings.workspace_dir.join(&self.input.sid),
-        };
+        let workspace_root = tool_root(&self.input, &self.state.settings.workspace_dir);
         self.push(
             "agent_status",
             status(self.agent(), "working", json!({"phase": "model_calling"})),
@@ -1023,10 +1032,41 @@ mod tests {
             model: None,
             thinking_level: None,
             workspace: None,
+            workspace_root: None,
             cancel,
         };
         run(state.clone(), input).await;
         assert!(state.begin_turn("s"));
+    }
+
+    /// SR-001: the tools are rooted at the checked path, not the raw stored text.
+    #[test]
+    fn tools_are_rooted_at_the_checked_workspace_or_the_session_folder() {
+        let input = |workspace: Option<&str>, root: Option<&str>| TurnInput {
+            sid_hex: "abc".into(),
+            sid: "a-b-c".into(),
+            content: String::new(),
+            lead: LeadAgent {
+                name: "lead".into(),
+                model: None,
+                thinking_level: None,
+                prompt: String::new(),
+            },
+            model: None,
+            thinking_level: None,
+            workspace: workspace.map(str::to_owned),
+            workspace_root: root.map(std::path::PathBuf::from),
+            cancel: CancellationToken::new(),
+        };
+        let sessions = std::path::Path::new("sessions");
+        assert_eq!(
+            tool_root(&input(None, None), sessions),
+            sessions.join("a-b-c")
+        );
+        assert_eq!(
+            tool_root(&input(Some("~/raw"), Some("checked")), sessions),
+            std::path::PathBuf::from("checked")
+        );
     }
 
     #[test]

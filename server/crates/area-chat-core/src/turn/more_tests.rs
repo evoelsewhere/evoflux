@@ -129,6 +129,7 @@ async fn finish_with(env: &Env, sql: &str, sid_hex: &str) -> Value {
             model: None,
             thinking_level: None,
             workspace: None,
+            workspace_root: None,
             cancel: CancellationToken::new(),
         },
         started: Instant::now(),
@@ -184,4 +185,105 @@ async fn the_done_notification_names_the_session() {
     assert_eq!(n["title"], "Session completed");
     assert_eq!(n["body"], "Session 06ae6ab0");
     assert_eq!(n["metadata"]["mode"], Value::Null);
+}
+
+fn chat_form(pairs: &[(&str, &str)]) -> String {
+    let mut form = form_urlencoded::Serializer::new(String::new());
+    for (key, value) in pairs {
+        form.append_pair(key, value);
+    }
+    form.finish()
+}
+
+/// SR-001: the file tools run in the checked workspace, for a new session and
+/// for a stored one, and a stored workspace outside the allowlist starts no turn.
+#[tokio::test]
+async fn tools_run_in_the_checked_workspace_of_new_and_stored_sessions() {
+    let env = Env::new().await;
+    let ws = env.state.settings.home_dir.join("projects").join("proj");
+    std::fs::create_dir_all(&ws).unwrap();
+    std::fs::write(ws.join("marker.txt"), "x").unwrap();
+    let listed = |frames: &[crate::stream_store::Frame]| {
+        frames_named(frames, "tool_end")[0]["result"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    };
+
+    env.script(sse_tool("c1", "ls", "{}"));
+    env.script(sse_text("done"));
+    let ws_text = ws.to_string_lossy().into_owned();
+    let (body, frames) = env
+        .chat_frames(&chat_form(&[("message", "go"), ("workspace", &ws_text)]))
+        .await;
+    assert!(
+        listed(&frames).contains("marker.txt"),
+        "{}",
+        listed(&frames)
+    );
+    let sid = body["session_id"].as_str().unwrap().to_owned();
+    let sid_hex = sid.replace('-', "");
+
+    // A stored, unnormalized but allowed workspace: tools use the resolved path
+    // and the stored text is left as it was.
+    let raw = ws.join("missing").join("..").to_string_lossy().into_owned();
+    let (id, text) = (sid_hex.clone(), raw.clone());
+    env.db
+        .write_exclusive(move |tx| {
+            tx.execute(
+                "UPDATE chat_sessions SET workspace = ?2 WHERE id = ?1",
+                rusqlite::params![id, text],
+            )?;
+            Ok(())
+        })
+        .await
+        .unwrap();
+    env.script(sse_tool("c2", "ls", "{}"));
+    env.script(sse_text("done"));
+    let (_, frames) = env
+        .chat_frames(&chat_form(&[("message", "again"), ("session_id", &sid)]))
+        .await;
+    assert!(
+        listed(&frames).contains("marker.txt"),
+        "{}",
+        listed(&frames)
+    );
+    let id = sid_hex.clone();
+    let stored: Option<String> = env
+        .query(move |c| {
+            c.query_row(
+                "SELECT workspace FROM chat_sessions WHERE id = ?1",
+                [id],
+                |r| r.get(0),
+            )
+        })
+        .await;
+    assert_eq!(stored.as_deref(), Some(raw.as_str()));
+
+    // Written by a Python route with the home folder: refused, no turn.
+    let (id, home) = (
+        sid_hex.clone(),
+        env.state.settings.home_dir.to_string_lossy().into_owned(),
+    );
+    env.db
+        .write_exclusive(move |tx| {
+            tx.execute(
+                "UPDATE chat_sessions SET workspace = ?2 WHERE id = ?1",
+                rusqlite::params![id, home],
+            )?;
+            Ok(())
+        })
+        .await
+        .unwrap();
+    let before = env.seen.lock().unwrap().len();
+    let (status, body) = env
+        .post(&chat_form(&[("message", "third"), ("session_id", &sid)]))
+        .await;
+    assert_eq!(status, 422, "{body}");
+    assert!(body["detail"]
+        .as_str()
+        .unwrap()
+        .contains(crate::workspace::ALLOW_HINT));
+    assert!(env.state.active().is_empty());
+    assert_eq!(env.seen.lock().unwrap().len(), before);
 }
