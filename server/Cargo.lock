@@ -875,6 +875,7 @@ dependencies = [
  "rcgen",
  "reqwest",
  "rustls",
+ "serde",
  "serde_json",
  "thiserror",
  "tokio",

@@ -6,6 +6,8 @@ All notable changes to EvoFlux are documented in this file.
 
 ### Security
 
+- Recorded the landing of the v4 Rust pinned request builder for provider calls; it needs a security review.
+
 - Recorded the landing of the SR-012 gateway identity, SR-013 `.env` separator and SR-014 archive short-name fixes; they need a security review.
 
 - The v4 Rust archive extractor now refuses entry names shaped like Windows 8.3 short names (such as `LONGDI~1`), which could otherwise place files in an existing folder under a different name and get past the duplicate-name screening.
