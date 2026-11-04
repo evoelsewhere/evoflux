@@ -460,3 +460,35 @@ BAR=y"}` adds two lines (NOTES S2).
   `EVOFLUX_*`, and writes `.env` 0600 where the OS supports it. Same slice (P-009,
   SR-004): the P-008 section routes write no `.env` and no credentials.
 
+## P-007: shared archive extraction (library; not mounted)
+
+`shared_archive` serves future plugin/import/seed ports; format-specific plugin
+root checks and GitHub prefix/subtree selection remain caller responsibilities.
+Compared with Python plugin extraction, all archive links and special files are
+refused, portable Windows names and case collisions are screened on every OS,
+and existing files are never overwritten. Destination root/components use
+capability-based no-follow directory opens; file creation is exclusive, including
+when an existing file is a hard link to outside the destination. The caller grants
+access to the destination's existing parent, owns staging, and must run these
+synchronous APIs on the bounded blocking pool from async code. Errors may leave
+partial staging output and do not publish or install it.
+
+Limits apply to actual file bytes plus declared entry sizes; ZIP entry ratios are
+checked without Python's 1 MiB threshold. Tar input, decoded stream (file budget
+plus bounded metadata allowance), total extracted bytes, entries and compression
+ratio are capped, whereas Python seed extraction has no corresponding bounds.
+Malformed PAX records, sparse/device/link entries and global PAX path/size/link
+overrides are refused; GNU long names, local PAX paths and GitHub global comments
+are supported. Only the Unix executable signal is preserved, as in plugins;
+archive ownership, setuid and writable mode bits are never applied. Async request
+cancellation and installation policy remain the adopting caller's responsibility.
+Needs security review (path confinement, archive writes, resource limits).
+P-007 review clarification: ZIP uses the exact-pinned 9.3.0 iterable reader to bound
+entry counts before central-directory metadata allocation and checks local/central
+header consistency. Duplicate detection uses full Unicode 16 case folding; Python's
+Unicode table depends on its interpreter version. Local PAX `size` must agree with
+the raw header size: conflicting layouts are deliberately refused before extraction,
+although Python can accept them. This conservative restriction preserves the raw
+special-record screening pass. A regression covers both refusal and agreeing sizes.
+A local PAX header that repeats `size` is refused (tar-rs takes the first value,
+Python the last), so the screening and extraction passes cannot disagree.

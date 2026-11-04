@@ -7,6 +7,7 @@ All notable changes to EvoFlux are documented in this file.
 ### Security
 
 - Added safe ZIP and tar/gzip extraction for future v4 Rust installers and imports, with path confinement, link and overwrite refusals, and limits on entries, bytes and compression ratios.
+- Recorded the P-007 archive crate dependencies (zip, tar, flate2, cap-std, caseless), its known differences and landing; it needs a security review.
 - Added an address-pinned HTTPS downloader for the v4 Rust server: it checks every DNS answer and redirect, refuses private destinations unless explicitly allowed, and caps downloaded bytes. Future marketplace and seed downloads can use it to prevent DNS rebinding; Python still serves those features.
 - The v4 Rust file tools now enforce the deny patterns saved in **Settings → Sandbox** on each chat turn, and `glob` and `grep` skip denied files in discovery results. `ls` and `glob` also hide links to files outside the workspace or behind a deny rule before reading their metadata. The pattern cache also has an eviction regression test for its 4,096-entry bound. Python still runs agents, so app behavior is unchanged until cutover.
 
