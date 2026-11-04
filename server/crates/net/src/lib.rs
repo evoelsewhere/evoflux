@@ -17,7 +17,11 @@ use std::time::Duration;
 
 pub use reqwest::Client;
 mod pinned;
-pub use pinned::{pinned_client, PinError, PinnedClient, Policy, SystemResolver};
+pub use pinned::{
+    pinned_client, PinError, PinnedClient, PinnedRequest, PinnedResponse, Policy, SystemResolver,
+    DEFAULT_RESPONSE_LIMIT,
+};
+pub use reqwest::{Method, StatusCode};
 
 pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 pub const READ_TIMEOUT: Duration = Duration::from_secs(60);
