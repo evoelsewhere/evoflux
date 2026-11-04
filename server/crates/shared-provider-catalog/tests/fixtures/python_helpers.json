@@ -1,0 +1,103 @@
+{
+  "payload": {
+    "catalog-named": {
+      "name": "Catalog name",
+      "doc": "  https://docs  ",
+      "env": [
+        "",
+        "ALT_KEY",
+        3
+      ],
+      "api": "  https://api  "
+    },
+    "blank-label": {
+      "name": "",
+      "api": "https://${HOST}"
+    },
+    "non-string": {
+      "name": 7,
+      "doc": 3,
+      "api": 5,
+      "env": "BAD"
+    },
+    "alias": {
+      "id": "DIFFERENT-ID",
+      "api": "https://alias",
+      "env": [
+        "A"
+      ]
+    }
+  },
+  "cases": [
+    {
+      "id": "catalog-named",
+      "label": "Catalog name",
+      "docs": "https://docs",
+      "env": [
+        "ALT_KEY"
+      ],
+      "base_url": "https://api"
+    },
+    {
+      "id": "blank-label",
+      "label": "blank-label",
+      "docs": "",
+      "env": [],
+      "base_url": ""
+    },
+    {
+      "id": "non-string",
+      "label": "non-string",
+      "docs": "",
+      "env": [],
+      "base_url": ""
+    },
+    {
+      "id": "alias",
+      "label": "alias",
+      "docs": "",
+      "env": [],
+      "base_url": ""
+    },
+    {
+      "id": "unknown",
+      "label": "unknown",
+      "docs": "",
+      "env": [],
+      "base_url": ""
+    }
+  ],
+  "envelopes": {
+    "catalog-named": {
+      "name": "Catalog name",
+      "env": [
+        "",
+        "ALT_KEY",
+        3
+      ],
+      "api": "  https://api  ",
+      "doc": "  https://docs  ",
+      "id": "catalog-named"
+    },
+    "blank-label": {
+      "name": "",
+      "api": "https://${HOST}",
+      "id": "blank-label"
+    },
+    "non-string": {
+      "name": 7,
+      "env": "BAD",
+      "api": 5,
+      "doc": 3,
+      "id": "non-string"
+    },
+    "different-id": {
+      "id": "different-id",
+      "env": [
+        "A"
+      ],
+      "api": "https://alias"
+    }
+  },
+  "empty_alias": "empty-alias"
+}
