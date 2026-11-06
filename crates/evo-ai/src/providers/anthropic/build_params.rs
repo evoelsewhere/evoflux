@@ -84,6 +84,10 @@ pub enum AnthropicContentBlock {
         #[serde(skip_serializing_if = "Option::is_none")]
         content: Option<ToolResultContent>,
         is_error: bool,
+        /// Agent-loop requests usually end with a user turn made only of
+        /// tool results, so this is where the conversation breakpoint lands.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cache_control: Option<CacheControlEphemeral>,
     },
     ToolReference {
         tool_name: String,
@@ -1414,6 +1418,7 @@ fn convert_tool_result(
             tool_use_id: msg.tool_call_id.clone(),
             content: Some(ToolResultContent::Blocks(references)),
             is_error: msg.is_error,
+            cache_control: None,
         };
         (tool_result, siblings)
     } else {
@@ -1421,6 +1426,7 @@ fn convert_tool_result(
             tool_use_id: msg.tool_call_id.clone(),
             content: Some(converted_content),
             is_error: msg.is_error,
+            cache_control: None,
         };
         (tool_result, Vec::new())
     }
@@ -1531,9 +1537,11 @@ fn set_cache_control_on_block(
     match block {
         AnthropicContentBlock::Text { cache_control, .. }
         | AnthropicContentBlock::Image { cache_control, .. }
-        | AnthropicContentBlock::ToolUse { cache_control, .. } => {
+        | AnthropicContentBlock::ToolUse { cache_control, .. }
+        | AnthropicContentBlock::ToolResult { cache_control, .. } => {
             *cache_control = cc;
         }
+        // Thinking blocks and tool references cannot carry cache_control.
         _ => {}
     }
 }
@@ -2152,6 +2160,40 @@ mod tests {
                 transform_messages(&messages[..end], &model)
             );
         }
+    }
+
+    #[test]
+    fn tool_result_turn_carries_the_conversation_cache_breakpoint() {
+        let model = model_with_compat(Default::default());
+        let mut assistant =
+            AssistantMessage::empty(model.api.clone(), &model.provider, &model.id, 0);
+        assistant.content = vec![Content::tool_call("call", "echo", json!({"text":"hi"}))];
+        let result = ToolResultMessage {
+            role: crate::types::ToolResultRole,
+            tool_call_id: "call".into(),
+            tool_name: "echo".into(),
+            content: vec![Content::text("hi")],
+            details: None,
+            usage: None,
+            added_tool_names: vec![],
+            is_error: false,
+            timestamp: 0,
+        };
+        let ctx = crate::types::Context::new(vec![
+            UserMessage::new("prompt", 0).into(),
+            Message::Assistant(Box::new(assistant)),
+            Message::ToolResult(Box::new(result)),
+        ]);
+        let built = build_params(&model, &ctx, false, &SimpleStreamOptions::default());
+        let body = serde_json::to_value(&built.request).unwrap();
+        let last = body["messages"].as_array().unwrap().last().unwrap().clone();
+        assert_eq!(last["role"], json!("user"));
+        let block = last["content"].as_array().unwrap().last().unwrap();
+        assert_eq!(block["type"], json!("tool_result"));
+        assert_eq!(
+            block["cache_control"],
+            json!({ "type": "ephemeral", "ttl": "1h" })
+        );
     }
 
     #[test]
