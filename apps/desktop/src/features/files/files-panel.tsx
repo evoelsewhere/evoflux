@@ -36,6 +36,7 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatBytes } from "@/lib/format";
+import { git } from "@/lib/git";
 import { modKey } from "@/lib/platform";
 import { cn } from "@/lib/utils";
 import { useEngineStore } from "@/stores/engine-store";
@@ -52,11 +53,14 @@ import {
   type GrepHit,
   type SearchHit,
 } from "./fs";
+import { fileGit, inRepo, rowGit, type RowGit } from "./git-state";
 import { PathMenuItems } from "./path-menu";
 
 /** How often the open file is checked for changes on disk. */
 const DISK_POLL_MS = 1500;
 const AUTOSAVE_MS = 600;
+/** How often git status is read while Files is open (and visible). */
+const GIT_POLL_MS = 2000;
 /** Content search results asked for at most. */
 const GREP_LIMIT = 300;
 /** Narrower than this, the tree and the editor take turns instead of sitting side by side. */
@@ -130,6 +134,32 @@ function FileKindIcon({ name, className }: { name: string; className?: string })
   return <Icon className={className} />;
 }
 
+/** Letter, colour and label of a changed file in the tree. */
+const FILE_MARK: Partial<Record<RowGit, { letter: string; className: string; label: string }>> = {
+  modified: { letter: "M", className: "text-status-warn", label: "Modified" },
+  added: { letter: "A", className: "text-status-ok", label: "Added or untracked" },
+  deleted: { letter: "D", className: "text-status-error", label: "Deleted" },
+};
+
+/** The git mark at the end of a tree row: a letter for files, a dot for folders holding changes. */
+function GitMark({ mark }: { mark: RowGit }) {
+  if (mark === "folder-modified" || mark === "folder-added") {
+    return (
+      <span
+        aria-label="Contains changes"
+        className={cn("mr-0.5 ml-auto size-1.5 shrink-0 rounded-full", mark === "folder-added" ? "bg-status-ok" : "bg-status-warn")}
+      />
+    );
+  }
+  const file = FILE_MARK[mark];
+  if (!file) return null;
+  return (
+    <span aria-label={file.label} className={cn("ml-auto w-3 shrink-0 text-center font-mono text-[10.5px] font-medium", file.className)}>
+      {file.letter}
+    </span>
+  );
+}
+
 /** The folder caret: a small solid triangle, turned down when open. */
 function Caret({ open }: { open: boolean }) {
   return (
@@ -169,6 +199,8 @@ const TreeCtx = React.createContext<TreeContext | null>(null);
 function TreeNode({ entry, depth }: { entry: DirEntry; depth: number }) {
   const ctx = React.useContext(TreeCtx)!;
   const expanded = useFilesStore((s) => entry.dir && s.expanded.includes(entry.path));
+  const mark = useFilesStore((s) => rowGit(s.git, entry.path, entry.dir));
+  const markLabel = FILE_MARK[mark]?.label;
   const { toggleFolder, open } = useFilesStore.getState();
   const [children, setChildren] = React.useState<DirEntry[] | null>(() => listings.get(entry.path) ?? null);
   const [error, setError] = React.useState<string | null>(null);
@@ -209,9 +241,13 @@ function TreeNode({ entry, depth }: { entry: DirEntry; depth: number }) {
               aria-selected={selected}
               data-tree-path={entry.path}
               onClick={activate}
-              title={relativePath(ctx.root, entry.path) || entry.path}
+              title={`${relativePath(ctx.root, entry.path) || entry.path}${markLabel ? ` — ${markLabel}` : ""}`}
               style={{ paddingLeft: rowPadding(depth) }}
-              className={cn(rowClass, selected && "bg-brand/12 hover:bg-brand/14", entry.dimmed && !selected && "text-muted-foreground")}
+              className={cn(
+                rowClass,
+                selected && "bg-brand/12 hover:bg-brand/14",
+                (entry.dimmed || mark === "ignored") && !selected && "text-muted-foreground",
+              )}
             />
           }
         >
@@ -223,6 +259,7 @@ function TreeNode({ entry, depth }: { entry: DirEntry; depth: number }) {
             </span>
           )}
           <span className="truncate">{entry.name}</span>
+          <GitMark mark={mark} />
         </ContextMenuTrigger>
         <ContextMenuContent className="w-56">
           <PathMenuItems path={entry.path} root={ctx.root} dir={entry.dir} onOpen={() => void open(entry.path)} />
@@ -597,6 +634,7 @@ function FileView({ file, root }: { file: OpenFile; root: string }) {
   const content = file.content;
   const isText = content?.kind === "text";
   const markdown = isText && MARKDOWN.test(file.path);
+  const gitBase = useGitBase(root, file.path, isText);
 
   // Edits made on disk (the agent, git, another editor) show up here.
   React.useEffect(() => {
@@ -755,6 +793,7 @@ function FileView({ file, root }: { file: OpenFile; root: string }) {
               readOnly={content.lossy}
               revealLine={reveal?.line}
               revealNonce={reveal?.nonce}
+              gitBase={gitBase}
               onCursor={(line, column) => {
                 setCursor({ line, column });
                 if (reveal) consumeReveal();
@@ -787,6 +826,34 @@ function FileView({ file, root }: { file: OpenFile; root: string }) {
       )}
     </div>
   );
+}
+
+/**
+ * The open file's text at HEAD for the editor's change markers: read again
+ * when HEAD moves or the file starts or stops being new. A new (untracked or
+ * staged) file compares with nothing, so every line is added; a file git does
+ * not track, or one over 1 MB, gets no markers.
+ */
+function useGitBase(root: string, path: string, isText: boolean): string | null {
+  const head = useFilesStore((s) => s.git?.head ?? null);
+  const tracked = useFilesStore((s) => inRepo(s.git, path));
+  const added = useFilesStore((s) => fileGit(s.git, path) === "added");
+  const [base, setBase] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    if (!isText || !tracked) {
+      setBase(null);
+      return;
+    }
+    let live = true;
+    git
+      .fileBase(root, path)
+      .then((text) => live && setBase(text ?? (added ? "" : null)))
+      .catch(() => live && setBase(null));
+    return () => {
+      live = false;
+    };
+  }, [root, path, isText, tracked, added, head]);
+  return base;
 }
 
 // ── Panel ───────────────────────────────────────────────────────────────────
@@ -905,7 +972,7 @@ export function FilesPanel() {
   const autoSave = useFilesStore((s) => s.autoSave);
   const treeVisible = useFilesStore((s) => s.treeVisible);
   const treeWidth = useFilesStore((s) => s.treeWidth);
-  const { setTreeVisible, setAutoSave, collapseAll, closeAll } = useFilesStore.getState();
+  const { setTreeVisible, setAutoSave, collapseAll, closeAll, refreshGit } = useFilesStore.getState();
   const [home, setHome] = React.useState("");
   const [query, setQuery] = React.useState("");
   const [generation, setGeneration] = React.useState(0);
@@ -921,6 +988,21 @@ export function FilesPanel() {
   }, [cwd]);
   const root = cwd || home;
   const file = active ? files[active] : undefined;
+
+  // Git marks: read now, then while the window is visible and on focus.
+  React.useEffect(() => {
+    if (!root) return;
+    void refreshGit(root, true);
+    const tick = () => {
+      if (document.visibilityState === "visible") void refreshGit(root);
+    };
+    const interval = setInterval(tick, GIT_POLL_MS);
+    window.addEventListener("focus", tick);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("focus", tick);
+    };
+  }, [root, refreshGit]);
 
   React.useLayoutEffect(() => {
     const node = containerRef.current;
@@ -995,6 +1077,7 @@ export function FilesPanel() {
                   onClick={() => {
                     listings.clear();
                     setGeneration((g) => g + 1);
+                    if (root) void refreshGit(root, true);
                   }}
                 >
                   Refresh

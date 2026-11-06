@@ -1,6 +1,7 @@
 // The Files tool's editor: CodeMirror 6 with the app's colours, the language
-// picked from the file name, search, and an editor state kept per file (undo
-// history and selection survive switching tabs).
+// picked from the file name, search, changed-line markers against HEAD
+// (git-gutter.ts), and an editor state kept per file (undo history and
+// selection survive switching tabs).
 
 import * as React from "react";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
@@ -23,6 +24,7 @@ import {
 } from "@codemirror/view";
 import { tags as t } from "@lezer/highlight";
 import { hasMod, isMac } from "@/lib/platform";
+import { gitGutter, setGitBase } from "./git-gutter";
 
 /** Token colours come from CSS variables (index.css), so light and dark follow the theme. */
 const highlight = HighlightStyle.define([
@@ -111,9 +113,22 @@ interface Props {
   revealLine?: number | null;
   revealNonce?: number;
   onCursor?(line: number, column: number): void;
+  /** The file's text at HEAD for the change markers; `null` draws none. */
+  gitBase?: string | null;
 }
 
-export function CodeEditor({ path, text, revision, readOnly, onChange, onSave, revealLine, revealNonce, onCursor }: Props) {
+export function CodeEditor({
+  path,
+  text,
+  revision,
+  readOnly,
+  onChange,
+  onSave,
+  revealLine,
+  revealNonce,
+  onCursor,
+  gitBase = null,
+}: Props) {
   const host = React.useRef<HTMLDivElement>(null);
   const view = React.useRef<EditorView | null>(null);
   const language = React.useRef(new Compartment());
@@ -126,6 +141,7 @@ export function CodeEditor({ path, text, revision, readOnly, onChange, onSave, r
   const extensions = React.useCallback(
     (): Extension[] => [
       lineNumbers(),
+      gitGutter(),
       foldGutter(),
       highlightActiveLineGutter(),
       highlightSpecialChars(),
@@ -209,6 +225,11 @@ export function CodeEditor({ path, text, revision, readOnly, onChange, onSave, r
     });
     callbacks.current.onChange(text, false);
   }, [text, revision]);
+
+  // HEAD text (re)read: markers follow it; the editor diffs as you type.
+  React.useEffect(() => {
+    view.current?.dispatch({ effects: setGitBase.of(gitBase) });
+  }, [gitBase, path]);
 
   React.useEffect(() => {
     view.current?.dispatch({

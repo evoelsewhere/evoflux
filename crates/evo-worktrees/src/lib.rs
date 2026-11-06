@@ -494,6 +494,53 @@ pub struct Changes {
     pub patch: String,
 }
 
+/// Largest file whose `HEAD` text is read for line markers.
+const HEAD_TEXT_MAX: usize = 1_000_000;
+
+/// Paths under `dir`'s repository that git ignores, as absolute paths with
+/// forward slashes (a folder ends with `/`). Read-only; `None` outside a
+/// repository.
+pub fn ignored_paths(dir: &Path) -> Result<Option<Vec<String>>, String> {
+    let Ok(root) = git(dir, &["rev-parse", "--show-toplevel"]) else {
+        return Ok(None);
+    };
+    let root = root.replace('\\', "/");
+    let list = git_raw(
+        Path::new(&root),
+        &["-c", "core.quotePath=false", "ls-files", "--others", "--ignored", "--exclude-standard", "--directory", "-z"],
+    )?;
+    let top = root.trim_end_matches('/');
+    Ok(Some(list.split('\0').filter(|p| !p.is_empty()).map(|p| format!("{top}/{p}")).collect()))
+}
+
+/// The text of `path` at `HEAD`. `None` when the file is untracked, binary,
+/// too big, outside the repository, or there is no repository or commit yet.
+pub fn file_at_head(dir: &Path, path: &Path) -> Result<Option<String>, String> {
+    let Ok(root) = git(dir, &["rev-parse", "--show-toplevel"]) else {
+        return Ok(None);
+    };
+    let root = root.replace('\\', "/");
+    let root = root.trim_end_matches('/');
+    let absolute = if path.is_absolute() { path.to_path_buf() } else { dir.join(path) };
+    let absolute = absolute.to_string_lossy().replace('\\', "/");
+    let fold = |s: &str| if cfg!(any(windows, target_os = "macos")) { s.to_lowercase() } else { s.to_string() };
+    let prefix = format!("{}/", fold(root));
+    if !fold(&absolute).starts_with(&prefix) || absolute.len() <= prefix.len() || !absolute.is_char_boundary(prefix.len()) {
+        return Ok(None);
+    }
+    let relative = &absolute[prefix.len()..];
+    if relative.split('/').any(|part| part == "..") {
+        return Ok(None);
+    }
+    let Ok(text) = git_raw(Path::new(root), &["-c", "core.fsmonitor=false", "show", &format!("HEAD:{relative}")]) else {
+        return Ok(None);
+    };
+    if text.len() > HEAD_TEXT_MAX || text.contains('\0') {
+        return Ok(None);
+    }
+    Ok(Some(text))
+}
+
 /// `git` output as is (a patch must keep its trailing newline).
 fn git_raw(dir: &Path, args: &[&str]) -> Result<String, String> {
     let mut command = Command::new("git");
@@ -562,6 +609,30 @@ mod tests {
         assert_eq!(file("src/new file.rs").status, "added");
         assert_eq!(file("src/new file.rs").added, Some(3));
         assert_eq!((status.added, status.removed), (6, 1));
+    }
+
+    #[test]
+    fn head_text_and_ignored_paths() {
+        let Some((dir, root)) = repo() else { return };
+        assert_eq!(file_at_head(dir.path(), &dir.path().join("x")).unwrap(), None, "outside a repository");
+
+        std::fs::write(root.join("src/main.rs"), "changed\n").unwrap();
+        let head = file_at_head(&root, &root.join("src/main.rs")).unwrap();
+        assert_eq!(head.as_deref(), Some("fn main() {}\n"));
+        assert_eq!(file_at_head(&root.join("src"), Path::new("main.rs")).unwrap().as_deref(), Some("fn main() {}\n"));
+        std::fs::write(root.join("src/new.rs"), "x").unwrap();
+        assert_eq!(file_at_head(&root, &root.join("src/new.rs")).unwrap(), None, "untracked");
+        assert_eq!(file_at_head(&root, &dir.path().join("elsewhere.txt")).unwrap(), None, "outside the root");
+        assert_eq!(file_at_head(&root, &root.join("src/../src/main.rs")).unwrap(), None, "parent segments");
+
+        std::fs::write(root.join(".gitignore"), "target/\n*.log\n").unwrap();
+        std::fs::create_dir_all(root.join("target")).unwrap();
+        std::fs::write(root.join("target/a"), "1").unwrap();
+        std::fs::write(root.join("a.log"), "1").unwrap();
+        let ignored = ignored_paths(&root).unwrap().unwrap();
+        assert!(ignored.iter().any(|p| p.ends_with("/target/")), "{ignored:?}");
+        assert!(ignored.iter().any(|p| p.ends_with("/a.log")), "{ignored:?}");
+        assert_eq!(ignored_paths(dir.path()).unwrap(), None);
     }
 
     #[test]

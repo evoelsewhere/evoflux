@@ -11,6 +11,7 @@ workflow: [docs/README.md](../README.md). Template:
 | [Application database and provider settings](app-database/sdd.md) — `evo.db`, migrations, models.dev cache | Implemented (planned tables open) | `evo-store`, engine, shell | legacy |
 | [Code intelligence](code-intelligence/sdd.md) — language servers and the `lsp` tool | Implemented | `evo-lsp`, engine, desktop UI | legacy |
 | [Customize: skills, connectors, plugins, hooks](customize-skills-plugins-connectors/sdd.md) | Implemented (phases 1–5) | engine, `evo-mcp`, `evo-plugins`, `evo-hooks`, desktop | legacy |
+| [Git in the Files tool](files-git/sdd.md) — changed files in the tree, changed lines in the editor | Implemented | `evo-worktrees`, shell, desktop UI | template |
 | [Memory and the Scheduler](memory-and-scheduler/sdd.md) | Implemented | engine, desktop UI | legacy |
 | [Notifications](notifications/sdd.md) — toasts, bell, OS notifications | Implemented | desktop UI, shell | legacy |
 | [Session mesh protocol](session-mesh-protocol/sdd.md) | Implemented (phases 1–4); phase 5 proposed | `evo-mesh`, `evo-protocol`, engine, shell | legacy |
