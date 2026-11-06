@@ -15,6 +15,7 @@ consequences and the alternatives rejected. The
 | [0005](0005-real-engine-and-live-reload.md) | The app always runs the real engine; configuration reloads live | Accepted | 2026-11-06 |
 | [0006](0006-documentation-follows-add-and-sdd.md) | Design documentation follows ADD, SDD and ADR | Accepted | 2026-11-06 |
 | [0007](0007-one-transcript-file-per-chat.md) | Each chat's transcript is a SQLite file of its own, written only by that chat's engine | Accepted | 2026-11-06 |
+| [0008](0008-optional-libreoffice-runtime.md) | Office documents use an optional, pinned LibreOffice runtime downloaded on demand | Accepted | 2026-11-07 |
 
 ## Rules
 
