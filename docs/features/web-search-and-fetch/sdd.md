@@ -1,5 +1,14 @@
 # Web search and web fetch
 
+| | |
+| --- | --- |
+| Status | Implemented (layers 1–2); layer 3 proposed |
+| Area | crate `evo-web`, engine |
+| Format | Legacy — predates [the SDD template](../../templates/sdd.md); move to it on the next substantial edit |
+| Updated | 2026-11-06 |
+| ADD sections | [4. Process view](../../architecture/README.md#4-process-view) |
+| ADRs | none |
+
 Status: layers 1 and 2 are built (2026-11-06) — `web_fetch`, and `web_search`
 through DuckDuckGo's HTML page; layer 3 (the provider's own search) is not.
 

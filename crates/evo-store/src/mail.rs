@@ -1,5 +1,5 @@
 //! Mail between sessions, kept by the desktop shell's mesh hub
-//! (`crates/evo-mesh`, `docs/design/session-mesh-protocol.md`). A message is
+//! (`crates/evo-mesh`, `docs/features/session-mesh-protocol/sdd.md`). A message is
 //! stored before it is sent and marked delivered once the receiving engine
 //! answers it; whatever is still undelivered goes out when that engine starts.
 

@@ -1,5 +1,14 @@
 # Customize: skills, connectors (MCP), plugins and hooks
 
+| | |
+| --- | --- |
+| Status | Implemented (phases 1–5) |
+| Area | engine, crates `evo-mcp` `evo-plugins` `evo-hooks`, desktop |
+| Format | Legacy — predates [the SDD template](../../templates/sdd.md); move to it on the next substantial edit |
+| Updated | 2026-11-06 |
+| ADD sections | [4. Process view](../../architecture/README.md#4-process-view) |
+| ADRs | none |
+
 Status: phase 1 is built (skills and commands, the `skill` tool, `/name`,
 the `/` menu, Customize → Skills and Subagents); phase 2a is built
 (connectors: the MCP client and shared pool, tools in every chat, Customize

@@ -1,5 +1,14 @@
 # Notifications
 
+| | |
+| --- | --- |
+| Status | Implemented |
+| Area | desktop UI, desktop shell |
+| Format | Legacy — predates [the SDD template](../../templates/sdd.md); move to it on the next substantial edit |
+| Updated | 2026-11-06 |
+| ADD sections | [9. Cross-cutting concepts](../../architecture/README.md#9-cross-cutting-concepts) |
+| ADRs | none |
+
 How the desktop app tells the user that something happened, and how a feature
 plugs into it. Read this before adding a toast, a badge or an OS notification
 anywhere in the app — there is one pipeline, and features should not build

@@ -7,7 +7,7 @@
 //   window not focused  → an OS notification (unless `system: false`)
 //
 // Do not disturb, or muting the source, silences both channels; the bell still
-// collects everything. See /docs/notifications.md at the repo root.
+// collects everything. See /docs/features/notifications/sdd.md at the repo root.
 
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 import { inTauri } from "@/lib/platform";

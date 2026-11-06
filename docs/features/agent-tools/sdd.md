@@ -1,5 +1,14 @@
 # Agent tools for working with the person
 
+| | |
+| --- | --- |
+| Status | Implemented |
+| Area | engine, desktop UI |
+| Format | Legacy — predates [the SDD template](../../templates/sdd.md); move to it on the next substantial edit |
+| Updated | 2026-11-06 |
+| ADD sections | [4. Process view](../../architecture/README.md#4-process-view) |
+| ADRs | [0001](../../architecture/decisions/0001-desktop-app-is-the-only-front-end.md) |
+
 Status: `ask_user` and `update_todos` are built (2026-11-06). The rest of
 this page lists what a full desktop agent offers and what evo has.
 
@@ -42,6 +51,17 @@ this page lists what a full desktop agent offers and what evo has.
 Both checked with a real model over RPC: it wrote a task list, asked a
 question, got the answer through the dialog channel, and finished the list.
 
+### `send_file` and `notify`
+
+Desktop tools every chat gets (`apps/desktop/src/features/chat/user-tools.ts`):
+
+- `send_file {paths (1–10), caption?}` — checks the files exist and puts them
+  in the chat as cards (name, size, folder; Open, View in Files, Show in
+  folder). The cards stay visible when the finished turn folds its steps.
+- `notify {title, body?}` — an app notification (and a system one when the
+  window is in the background) that opens the chat; at most one per chat
+  every 30 seconds; Do not disturb and muting apply.
+
 ## What a full desktop agent has, and evo
 
 | Capability | evo |
@@ -60,4 +80,4 @@ question, got the answer through the dialog channel, and finished the list.
 | Send a file to the person (a card in the chat) | `send_file` |
 | End-of-turn summary with a next-step question | not yet |
 | Notify the person when a long run needs them | `notify` |
-| Code intelligence (diagnostics, definitions, references) | `lsp` (see `code-intelligence.md`) |
+| Code intelligence (diagnostics, definitions, references) | `lsp` (see [code intelligence](../code-intelligence/sdd.md)) |

@@ -1,5 +1,5 @@
 //! Peer messaging between the conversations this engine hosts (session mesh
-//! phase 4, `docs/design/session-mesh-protocol.md`): the `send_message`,
+//! phase 4, `docs/features/session-mesh-protocol/sdd.md`): the `send_message`,
 //! `ask`, `reply`, `list_nodes` and `cancel_node` tools.
 //!
 //! The session has one instance of each (bound to the session's node); every

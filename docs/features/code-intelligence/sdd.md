@@ -1,5 +1,14 @@
 # Code intelligence (language servers)
 
+| | |
+| --- | --- |
+| Status | Implemented |
+| Area | crate `evo-lsp`, engine, desktop UI |
+| Format | Legacy — predates [the SDD template](../../templates/sdd.md); move to it on the next substantial edit |
+| Updated | 2026-11-06 |
+| ADD sections | [4. Process view](../../architecture/README.md#4-process-view) |
+| ADRs | none |
+
 Status: built (2026-11-06).
 
 The agent's `lsp` tool asks the project's language servers instead of
@@ -68,14 +77,3 @@ types and docs, outlines.
   parallel) and answered correctly.
 - Installing from npm and GitHub was not run here: installs download and run
   code from the internet, so they happen when you press Install.
-
-# Reaching the person: `send_file` and `notify`
-
-Desktop tools every chat gets (`features/chat/user-tools.ts`):
-
-- `send_file {paths (1–10), caption?}` — checks the files exist and puts them
-  in the chat as cards (name, size, folder; Open, View in Files, Show in
-  folder). The cards stay visible when the finished turn folds its steps.
-- `notify {title, body?}` — an app notification (and a system one when the
-  window is in the background) that opens the chat; at most one per chat
-  every 30 seconds; Do not disturb and muting apply.

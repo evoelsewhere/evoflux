@@ -1,5 +1,14 @@
 # Application database (`evo.db`) and provider settings
 
+| | |
+| --- | --- |
+| Status | Implemented (planned tables open) |
+| Area | crate `evo-store`, engine, desktop shell |
+| Format | Legacy — predates [the SDD template](../../templates/sdd.md); move to it on the next substantial edit |
+| Updated | 2026-11-06 |
+| ADD sections | [7. Data view](../../architecture/README.md#7-data-view) |
+| ADRs | [0002](../../architecture/decisions/0002-models-dev-is-the-model-database.md) |
+
 Status: v2 schema shipped (provider settings, models.dev cache). This note
 records the design and the planned tables so later features extend it the
 same way.
