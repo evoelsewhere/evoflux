@@ -209,11 +209,11 @@ function ServerRow({
           {server.error && (
             <p className="flex items-start gap-1.5 text-destructive">
               <CircleAlertIcon className="mt-0.5 size-3.5 shrink-0" />
-              <span className="whitespace-pre-wrap">{server.error}</span>
+              <span className="min-w-0 whitespace-pre-wrap [overflow-wrap:anywhere]">{server.error}</span>
             </p>
           )}
           {server.log.length > 0 && (
-            <pre className="scrollbar-slim max-h-40 overflow-auto rounded-md bg-muted px-2 py-1.5 font-mono text-[11px] leading-4 dark:bg-accent/40">
+            <pre className="scrollbar-slim max-h-40 overflow-auto whitespace-pre-wrap rounded-md [overflow-wrap:anywhere] bg-muted px-2 py-1.5 font-mono text-[11px] leading-4 dark:bg-accent/40">
               {server.log.join("\n")}
             </pre>
           )}
