@@ -161,9 +161,12 @@ pub struct Args {
     /// scopedModels — the same set /scoped-models edits). Empty = all models.
     pub models: Option<Vec<String>>,
     pub session_dir: Option<PathBuf>,
-    /// `--session-db <file>`: keep the session in this SQLite database (the
-    /// app database, `evo.db`) instead of a JSONL file. With `--session-id`
-    /// the session is opened, or created when it does not exist yet.
+    /// `--session-db <file>`: keep the session in this SQLite file instead of
+    /// a JSONL file — the chat's own transcript file
+    /// (`<agent dir>/transcripts/<chat id>.db`, what the desktop passes), or
+    /// the app database `evo.db` (what older desktops passed). With
+    /// `--session-id` the session is opened, or created when it does not
+    /// exist yet.
     pub session_db: Option<PathBuf>,
     /// `--sandbox-config <json>`: process security for shell and file tools
     /// (`evo_tools::sandbox::SandboxConfig`, camelCase), set by the desktop.
@@ -688,7 +691,7 @@ pub fn print_help() {
   --resume, -r                   Browse and select a session to resume
   --session <id|path>            Use a specific session (partial UUID or file)
   --session-dir <dir>            Directory for session storage
-  --session-db <file>            Keep the session in an evo SQLite database
+  --session-db <file>            Keep the session in an evo SQLite transcript file
   --experimental-native-store <dir>
                                 Fresh --print text/json only; requires experimental-native-store build feature
   --no-session                   Ephemeral mode (do not persist the session)

@@ -601,6 +601,11 @@ async fn run_inner() -> i32 {
             .await
         }
         RunMode::Rpc => {
+            // A chat's engine (the desktop passes the chat id) keeps the
+            // chat's usage and cost history in evo.db.
+            if let Some(chat_id) = parsed.session_id.clone() {
+                crate::usage_log::start(Some(chat_id));
+            }
             // Headless lifecycle (P0): no TUI, but a session still starts/ends —
             // extensions (e.g. evo-server) auto-start on SessionStart and clean
             // up on SessionShutdown, exactly as in interactive mode. This is why
@@ -691,6 +696,7 @@ async fn run_inner() -> i32 {
                         "[evo] extension vetoed SessionShutdown (ignored, closing): {reason}"
                     );
                 }
+                crate::usage_log::flush(std::time::Duration::from_secs(3));
                 code
             }
         }

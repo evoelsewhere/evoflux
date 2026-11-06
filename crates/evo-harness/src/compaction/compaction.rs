@@ -120,6 +120,13 @@ impl std::error::Error for CompactionError {}
 pub struct CompactionDetails {
     pub read_files: Vec<String>,
     pub modified_files: Vec<String>,
+    /// The character-based estimate of the context this compaction replaced
+    /// (`tokens_before` is the provider-measured one). Their ratio calibrates
+    /// the estimate of the compacted context until a request measures it
+    /// again ([`crate::compaction::estimate_context_tokens`]). Absent on
+    /// entries written before it existed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub estimated_before: Option<i64>,
 }
 
 /// Generated compaction data ready to be persisted as a compaction entry.
@@ -315,14 +322,14 @@ pub fn prepare_compaction(
 
     // `tokensBefore` uses the ORIGINAL path entries (not compactable), matching
     // TS `buildSessionContext(pathEntries).messages`.
-    let tokens_before =
-        estimate_context_tokens(&build_session_context(path_entries).messages).tokens;
+    let context = build_session_context(path_entries).messages;
+    let tokens_before = estimate_context_tokens(&context).tokens;
 
     let cut_point = find_cut_point(
         &compactable_entries,
         0,
         boundary_end,
-        settings.keep_recent_tokens,
+        keep_recent_estimated(settings.keep_recent_tokens, tokens_before, &context),
     );
     let history_end = if cut_point.is_split_turn {
         cut_point
@@ -804,8 +811,46 @@ pub async fn compact(
         details: Some(CompactionDetails {
             read_files,
             modified_files,
+            estimated_before: Some(estimated_before(preparation)),
         }),
     })
+}
+
+/// `keep_recent_tokens` (provider tokens) on the scale the cut point counts
+/// in: the character estimate of each message. `tokens_before` is the
+/// context as the provider measured it (its last usage); over the character
+/// estimate of the same `context` it says how many provider tokens one
+/// estimated token is here (often 2–3 for code, tool output or text that is
+/// not English). Without the conversion "keep the last 20k" kept 40–60k, and
+/// compacting an already compacted chat changed nothing.
+pub(crate) fn keep_recent_estimated(
+    keep_recent_tokens: i64,
+    tokens_before: i64,
+    context: &[AgentMessage],
+) -> i64 {
+    let estimated: i64 = context.iter().map(crate::compaction::estimate_tokens).sum();
+    if estimated <= 0 || tokens_before <= estimated {
+        return keep_recent_tokens;
+    }
+    let ratio = (tokens_before as f64 / estimated as f64).min(8.0);
+    ((keep_recent_tokens as f64 / ratio).round() as i64).max(1)
+}
+
+/// The character-based estimate of the context a compaction replaces: the
+/// previous summary, then every message it summarizes or keeps.
+fn estimated_before(preparation: &CompactionPreparation) -> i64 {
+    let previous = preparation
+        .previous_summary
+        .as_deref()
+        .map_or(0, |summary| (summary.chars().count() as i64 + 3) / 4);
+    previous
+        + preparation
+            .messages_to_summarize
+            .iter()
+            .chain(&preparation.turn_prefix_messages)
+            .chain(&preparation.retained_tail)
+            .map(crate::compaction::estimate_tokens)
+            .sum::<i64>()
 }
 
 #[cfg(test)]
@@ -999,5 +1044,21 @@ mod tests {
         assert!(is_retryable_assistant_error(&error(
             "503 service unavailable"
         )));
+    }
+
+    #[test]
+    fn keep_recent_tokens_are_provider_tokens() {
+        let user = |chars: usize| {
+            AgentMessage::from(evo_ai::types::UserMessage::new("x".repeat(chars), 1))
+        };
+        let context = vec![user(4_000), user(4_000)]; // 2,000 estimated
+                                                      // Measured at three times the estimate: keep a third as many estimated tokens.
+        assert_eq!(keep_recent_estimated(20_000, 6_000, &context), 6_667);
+        // Unmeasured (or measured below the estimate): unchanged.
+        assert_eq!(keep_recent_estimated(20_000, 2_000, &context), 20_000);
+        assert_eq!(keep_recent_estimated(20_000, 1_000, &context), 20_000);
+        assert_eq!(keep_recent_estimated(20_000, 5_000, &[]), 20_000);
+        // A wild measurement is bounded.
+        assert_eq!(keep_recent_estimated(20_000, 1_000_000, &context), 2_500);
     }
 }

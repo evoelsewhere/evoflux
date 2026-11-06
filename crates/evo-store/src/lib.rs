@@ -1,10 +1,19 @@
-//! evo's application database (`~/.evo/agent/evo.db`), stored on this machine.
+//! evo's application database (`~/.evo/agent/evo.db`) and chat transcript
+//! files, stored on this machine.
 //!
-//! One SQLite file holds everything the desktop and the engine keep: provider
-//! settings, the models.dev cache, workspaces and chats, chat transcripts (the
-//! evo-harness SQLite session tables), shared app settings and the run log.
-//! Both the engine and the desktop shell open it through this crate, so there
-//! is one schema and one migration history (`docs/features/app-database/sdd.md`).
+//! `evo.db` holds what the desktop and the engine share: provider settings,
+//! the models.dev cache, workspaces and chats, the chats' search text, shared
+//! app settings, mail between sessions, usage and cost history and the run
+//! log. Both the engine and
+//! the desktop shell open it through this crate, so there is one schema and
+//! one migration history (`docs/features/app-database/sdd.md`).
+//!
+//! Each chat's transcript is a file of its own (`transcripts/<chat id>.db`,
+//! [`transcripts`]), written only by that chat's engine, so engines never wait
+//! on one another's write lock
+//! (`docs/architecture/decisions/0007-one-transcript-file-per-chat.md`).
+//! Older builds kept transcripts in `evo.db`; the shell moves them out at
+//! startup ([`transcripts::adopt_legacy`]).
 //!
 //! # Migrations
 //!
@@ -16,14 +25,16 @@
 //!
 //! Rules (enforced at open):
 //! - migrations are append-only: an applied migration whose SQL changed is an
-//!   error rather than a silent divergence between installs;
+//!   error rather than a silent divergence between installs (line endings do
+//!   not count: a CRLF checkout of the same SQL is the same migration);
 //! - a database written by a newer engine (a version this binary does not
 //!   know) is refused instead of being written by older code;
 //! - versions are contiguous from 1.
 //!
-//! Several engine processes (one per window) share the file: it runs in WAL
-//! mode with a busy timeout, and migration takes an immediate (write) lock so
-//! two processes starting at once apply each migration exactly once.
+//! The shell and every engine (one per open chat) share `evo.db`: it runs in
+//! WAL mode with a busy timeout, every write transaction takes the write lock
+//! up front (`BEGIN IMMEDIATE`), and migration does too, so two processes
+//! starting at once apply each migration exactly once.
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -42,6 +53,8 @@ pub mod chats;
 pub mod logs;
 pub mod mail;
 pub mod settings;
+pub mod transcripts;
+pub mod usage;
 
 /// The SQLite binding this crate is built on, for callers that hold a connection.
 pub use rusqlite;
@@ -79,6 +92,21 @@ pub const MIGRATIONS: &[Migration] = &[
         name: "mail",
         sql: include_str!("migrations/0006_mail.sql"),
     },
+    Migration {
+        version: 7,
+        name: "chat_search",
+        sql: include_str!("migrations/0007_chat_search.sql"),
+    },
+    Migration {
+        version: 8,
+        name: "usage_events",
+        sql: include_str!("migrations/0008_usage_events.sql"),
+    },
+    Migration {
+        version: 9,
+        name: "usage_durations",
+        sql: include_str!("migrations/0009_usage_durations.sql"),
+    },
 ];
 
 /// `application_id` stamped on the file ("evo1"), so tools and evo itself can
@@ -103,6 +131,16 @@ pub enum DbError {
     TooNew { path: PathBuf, found: i64, known: i64 },
     #[error("migration {version} ({name}) changed after it was applied; add a new migration instead")]
     Tampered { version: i64, name: String },
+    #[error("{0:?} is not a valid chat id")]
+    InvalidId(String),
+    #[error("{path} already exists")]
+    Exists { path: PathBuf },
+    #[error("{path}: {source}")]
+    Io {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
 }
 
 /// `EVO_CODING_AGENT_DIR` (absolute), else `~/.evo/agent` — the engine's
@@ -190,9 +228,25 @@ fn enable_wal(connection: &Connection) -> rusqlite::Result<()> {
     }
 }
 
-fn checksum(sql: &str) -> String {
-    let digest = Sha256::digest(sql.as_bytes());
+fn sha256_hex(text: &str) -> String {
+    let digest = Sha256::digest(text.as_bytes());
     digest.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+/// The checksum recorded for a migration: SHA-256 of its SQL with CRLF line
+/// endings turned into LF. `include_str!` embeds the file as checked out, and
+/// Git on Windows (`core.autocrlf`) may check it out with CRLF; the same SQL
+/// must not read as "changed after it was applied" because of that.
+fn checksum(sql: &str) -> String {
+    sha256_hex(&sql.replace("\r\n", "\n"))
+}
+
+/// Whether `recorded` is the checksum of `sql`. Builds before line endings
+/// were normalized recorded the file's raw bytes, LF or CRLF; both still
+/// match, so no existing database needs repairing.
+fn checksum_matches(recorded: &str, sql: &str) -> bool {
+    let lf = sql.replace("\r\n", "\n");
+    recorded == sha256_hex(&lf) || recorded == sha256_hex(&lf.replace('\n', "\r\n"))
 }
 
 /// Whether the database is evo's and has exactly `migrations` applied, with
@@ -217,7 +271,7 @@ fn up_to_date(connection: &Connection, migrations: &[Migration]) -> bool {
                 .iter()
                 .zip(migrations)
                 .all(|((version, sum), migration)| {
-                    *version == migration.version && *sum == checksum(migration.sql)
+                    *version == migration.version && checksum_matches(sum, migration.sql)
                 }))
     };
     check().unwrap_or(false)
@@ -285,7 +339,7 @@ pub(crate) fn migrate(
     }
     for (version, name, sum) in &applied {
         let migration = &migrations[(*version - 1) as usize];
-        if checksum(migration.sql) != *sum {
+        if !checksum_matches(sum, migration.sql) {
             return Err(DbError::Tampered {
                 version: *version,
                 name: name.clone(),
@@ -436,6 +490,86 @@ mod tests {
     }
 
     #[test]
+    fn line_endings_do_not_change_a_migration() {
+        let lf = "CREATE TABLE a (\n    x INTEGER\n);\n";
+        let crlf = "CREATE TABLE a (\r\n    x INTEGER\r\n);\r\n";
+        assert_eq!(checksum(lf), checksum(crlf));
+        let dir = tempfile::tempdir().unwrap();
+        // A database recorded by an LF build, opened by a CRLF build, and the
+        // other way round (older builds recorded the raw bytes of either).
+        for (recorded_by, opened_by, file) in [(lf, crlf, "lf.db"), (crlf, lf, "crlf.db")] {
+            let path = dir.path().join(file);
+            let mut connection = Connection::open(&path).unwrap();
+            let recorded = [Migration {
+                version: 1,
+                name: "a",
+                sql: recorded_by,
+            }];
+            migrate(&mut connection, &path, &recorded).unwrap();
+            connection
+                .execute(
+                    "UPDATE schema_migrations SET checksum = ?1",
+                    [sha256_hex(recorded_by)],
+                )
+                .unwrap();
+            let opened = [Migration {
+                version: 1,
+                name: "a",
+                sql: opened_by,
+            }];
+            assert!(up_to_date(&connection, &opened), "{file}: read check");
+            migrate(&mut connection, &path, &opened).unwrap();
+        }
+        // A real change is still refused, whatever its line endings.
+        let path = dir.path().join("lf.db");
+        let mut connection = Connection::open(&path).unwrap();
+        let edited = [Migration {
+            version: 1,
+            name: "a",
+            sql: "CREATE TABLE a (\r\n    x TEXT\r\n);\r\n",
+        }];
+        assert!(!up_to_date(&connection, &edited));
+        assert!(matches!(
+            migrate(&mut connection, &path, &edited),
+            Err(DbError::Tampered { version: 1, .. })
+        ));
+    }
+
+    #[test]
+    fn chat_search_arrives_without_touching_legacy_transcripts() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("evo.db");
+        let mut connection = Connection::open(&path).unwrap();
+        connection.pragma_update(None, "foreign_keys", "ON").unwrap();
+        migrate(&mut connection, &path, &MIGRATIONS[..6]).unwrap();
+        connection
+            .execute_batch(
+                "INSERT INTO chats (id, title, created_at, updated_at) VALUES ('c', 'C', 0, 0);
+                 INSERT INTO sessions (id, created_at, state_json) VALUES ('c', 0, '{}');",
+            )
+            .unwrap();
+        drop(connection);
+        let connection = open_at(&path).unwrap();
+        assert_eq!(version(&connection), MIGRATIONS.len() as i64);
+        let (chats, sessions, search): (i64, i64, i64) = connection
+            .query_row(
+                "SELECT (SELECT COUNT(*) FROM chats), (SELECT COUNT(*) FROM sessions), (SELECT COUNT(*) FROM chat_search)",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!((chats, sessions, search), (1, 1, 0), "the shell moves transcripts, not the migration");
+        connection
+            .execute("INSERT INTO chat_search (chat_id, stamp, body) VALUES ('c', 's', 'text')", [])
+            .unwrap();
+        connection.execute("DELETE FROM chats WHERE id = 'c'", []).unwrap();
+        let left: i64 = connection
+            .query_row("SELECT COUNT(*) FROM chat_search", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(left, 0, "search text goes with its chat");
+    }
+
+    #[test]
     fn refuses_a_foreign_database() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("other.db");
@@ -461,5 +595,40 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM provider_models", [], |row| row.get(0))
             .unwrap();
         assert_eq!(left, 0);
+    }
+
+    #[test]
+    fn usage_events_arrive_empty_and_keep_existing_chats() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("evo.db");
+        let mut connection = Connection::open(&path).unwrap();
+        connection.pragma_update(None, "foreign_keys", "ON").unwrap();
+        migrate(&mut connection, &path, &MIGRATIONS[..7]).unwrap();
+        connection
+            .execute(
+                "INSERT INTO chats (id, title, created_at, updated_at, cost_usd) VALUES ('c', 'C', 0, 0, 1.5)",
+                [],
+            )
+            .unwrap();
+        drop(connection);
+        let connection = open_at(&path).unwrap();
+        assert_eq!(version(&connection), MIGRATIONS.len() as i64);
+        let (cost, events): (f64, i64) = connection
+            .query_row(
+                "SELECT (SELECT cost_usd FROM chats WHERE id = 'c'), (SELECT COUNT(*) FROM usage_events)",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            (cost, events),
+            (1.5, 0),
+            "history starts empty; chat totals stay"
+        );
+        let refused = connection.execute(
+            "INSERT INTO usage_events (at_ms, source, provider_id, model_id) VALUES (0, 'elsewhere', 'p', 'm')",
+            [],
+        );
+        assert!(refused.is_err(), "unknown sources are refused");
     }
 }

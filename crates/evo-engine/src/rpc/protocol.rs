@@ -495,6 +495,11 @@ pub fn model_descriptor(model: &evo_ai::Model) -> Value {
         "input": model.input,
         "contextWindow": model.context_window,
         "maxTokens": model.max_tokens,
+        // USD per million tokens from models.dev (`input`, `output`,
+        // `cacheRead`, `cacheWrite`, long-context `tiers`); the desktop's
+        // Usage page shows them beside what each model cost.
+        "cost": model.cost,
+        "costConfigured": model.cost_configured,
     })
 }
 

@@ -27,7 +27,7 @@ use std::time::Instant;
 use evo_agent::message::AgentMessage;
 use evo_ai::types::StopReason;
 
-use crate::messages::{create_branch_summary_message, create_compaction_summary_message};
+use crate::messages::create_branch_summary_message;
 use crate::session::types::{
     is_tool_program_body_type, BranchSummaryEntry, CompactionEntry, CustomEntry, Entry,
 };
@@ -166,11 +166,7 @@ pub(crate) fn build_session_context_owned(
                 }
             }
             Entry::Compaction(compaction) => {
-                messages.push(create_compaction_summary_message(
-                    &compaction.summary,
-                    compaction.tokens_before,
-                    compaction.base.timestamp,
-                ));
+                messages.push(crate::messages::compaction_summary_message_of(&compaction));
                 messages.extend(compaction.retained_tail);
             }
             Entry::BranchSummary(summary) if !summary.summary.is_empty() => {
@@ -222,11 +218,7 @@ pub(crate) fn build_session_context_from_borrowed(path_entries: &[&Entry]) -> Se
                 }
             }
             Entry::Compaction(compaction) => {
-                messages.push(create_compaction_summary_message(
-                    &compaction.summary,
-                    compaction.tokens_before,
-                    compaction.base.timestamp,
-                ));
+                messages.push(crate::messages::compaction_summary_message_of(compaction));
                 messages.extend(compaction.retained_tail.iter().cloned());
             }
             Entry::BranchSummary(summary) if !summary.summary.is_empty() => {
@@ -291,11 +283,7 @@ pub fn session_entry_to_context_messages(
 /// plus the retained tail. Mirrors the TS `compaction` branch.
 fn compaction_to_context_messages(c: &CompactionEntry) -> Vec<AgentMessage> {
     let mut out = Vec::with_capacity(c.retained_tail.len() + 1);
-    out.push(create_compaction_summary_message(
-        &c.summary,
-        c.tokens_before,
-        c.base.timestamp,
-    ));
+    out.push(crate::messages::compaction_summary_message_of(c));
     out.extend(c.retained_tail.iter().cloned());
     out
 }

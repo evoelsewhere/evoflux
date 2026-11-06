@@ -1,5 +1,5 @@
 import { open } from "@tauri-apps/plugin-dialog";
-import { PluginsIcon, SchedulerIcon } from "@/components/icons/tool-icons";
+import { PluginsIcon, SchedulerIcon, UsageIcon } from "@/components/icons/tool-icons";
 import { FolderPlusIcon, MoonIcon, SearchIcon, SettingsIcon, SquarePenIcon, SunIcon } from "lucide-react";
 import { useTheme } from "@/components/theme-provider";
 import { Button } from "@/components/ui/button";
@@ -72,6 +72,7 @@ export function AppSidebar() {
   const openSettings = useUiStore((s) => s.openSettings);
   const customizeOpen = useUiStore((s) => s.customizeOpen);
   const schedulerOpen = useUiStore((s) => s.schedulerOpen);
+  const usageOpen = useUiStore((s) => s.usageOpen);
   const { resolved, setTheme } = useTheme();
 
   const byUpdated = (a: SessionSummary, b: SessionSummary) => b.updatedAt - a.updatedAt;
@@ -122,6 +123,16 @@ export function AppSidebar() {
             >
               <SchedulerIcon />
               <span>Scheduler</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              onClick={() => useUiStore.getState().openUsage()}
+              isActive={usageOpen}
+              className="h-7 text-[13px]"
+            >
+              <UsageIcon />
+              <span>Usage</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
           <SidebarMenuItem>

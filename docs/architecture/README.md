@@ -84,9 +84,17 @@ CLI or TUI front end ([ADR 0001](decisions/0001-desktop-app-is-the-only-front-en
        │ stdin/stdout JSONL         │ (one child process per open chat)
    evo-engine --mode rpc       evo-engine --mode rpc
    --session-id <chat>         --session-id <chat>
-   --session-db evo.db         --session-db evo.db
+   --session-db                --session-db
+     transcripts/<chat>.db       transcripts/<chat>.db
    --sandbox-config …          --sandbox-config …
 ```
+
+- **Each chat's transcript is a file of its own**, written only by that
+  chat's engine, so engines never wait on one another's write lock
+  ([ADR 0007](decisions/0007-one-transcript-file-per-chat.md)). The shell
+  reads those files (search, fork) and removes them with their chat after
+  stopping its engine. `evo.db` is shared: the shell writes the app's data,
+  engines read it and write provider settings and the models.dev cache.
 
 - **One engine process per open chat** ([ADR 0003](decisions/0003-engine-runs-as-a-child-process-per-chat.md)).
   The shell starts it, relays the protocol and stops it when the chat closes.
@@ -137,7 +145,7 @@ CLI or TUI front end ([ADR 0001](decisions/0001-desktop-app-is-the-only-front-en
 | `evo-plugin-sdk` / `evo-extensions` | Stable `#[repr(C)]` plugin ABI / the host that loads `cdylib` plugins |
 | `evo-protocol` | Engine ↔ client wire contract (JSONL default, CBOR frames optional) |
 | `evo-mesh` | Session mesh wire types and the hub that routes mail between sessions |
-| `evo-store` | `evo.db`: schema, migrations, chats, logs, mail, settings |
+| `evo-store` | `evo.db`: schema, migrations, chats, chat search, logs, mail, settings, usage and cost history; the transcript files' location, identity and life cycle |
 | `evo-mcp` | MCP client and connection pool |
 | `evo-plugins` | Plugin bundles and marketplaces |
 | `evo-hooks` | Hook commands and web requests on agent events |
@@ -208,7 +216,8 @@ has a local router for its in-process nodes. Design:
 
 | Where | What | Owner |
 | --- | --- | --- |
-| `~/.evo/agent/evo.db` (SQLite, WAL) | chats, workspaces, app settings, run log, mail, provider settings, models.dev cache, session transcripts | `evo-store` (schema + migrations); shell and engines both open it |
+| `~/.evo/agent/evo.db` (SQLite, WAL) | chats, workspaces, chat search text, app settings, run log, mail, provider settings, models.dev cache, usage and cost history | `evo-store` (schema + migrations); shell and engines both open it |
+| `~/.evo/agent/transcripts/<chat id>.db` (SQLite, WAL) | one chat's transcript: evo-harness's `sessions` row and progress frames | written only by that chat's engine; the shell reads, forks and removes them (`evo_store::transcripts`, [ADR 0007](decisions/0007-one-transcript-file-per-chat.md)) |
 | `~/.evo/agent/auth.json` | credentials (owner-only on Unix) | engine |
 | `~/.evo/agent/settings.json`, `models.json`, `trust.json` | defaults, user model catalog, project trust | engine |
 | `~/.evo/agent/mcp.json`, `mcp-auth.json` | connectors and their OAuth tokens | shell |
@@ -222,7 +231,9 @@ Rules:
 - `EVO_CODING_AGENT_DIR` relocates `~/.evo/agent`; never hardcode the path.
 - Schema changes go through numbered migrations in
   `crates/evo-store/src/migrations/`; old databases must keep upgrading.
-- Secrets stay out of `evo.db` and out of logs.
+- One writer per transcript file: only the chat's engine writes it; nothing
+  else opens it for writing while that engine may run.
+- Secrets stay out of `evo.db`, the transcript files and logs.
 - Repository and project files are user-owned: app cleanup never deletes them.
 - Models are data from models.dev
   ([ADR 0002](decisions/0002-models-dev-is-the-model-database.md)); no model is
@@ -290,6 +301,7 @@ The index of decisions, their status and links is in
 | Browser screenshots and trusted input are Windows-only | platform gap | [apps/desktop/README.md](../../apps/desktop/README.md) "Known gaps" |
 | The desktop has no automated UI test runner | regressions found late | — |
 | Main JS bundle ~1.2 MB | startup time | [apps/desktop/README.md](../../apps/desktop/README.md) "Known gaps" |
+| A transcript's `state_json` is the whole reducer snapshot, rewritten on every write | slow writes in very long chats | [app database SDD](../features/app-database/sdd.md) "Planned tables" |
 
 ## 13. Glossary
 

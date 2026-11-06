@@ -325,21 +325,47 @@ export type TranscriptAction =
   /** Usage of background subagents whose reports this turn delivers. */
   | { type: "extra-usage"; usage: unknown };
 
+/**
+ * How a run ended. `agent_settled` says so (`outcome`, `aborted`, `error`);
+ * `agent_end`, which usually comes first, carries only the run's messages, so
+ * its last assistant message's `stopReason` tells: a run stopped while a tool
+ * ran ends with an `aborted` assistant message.
+ */
+export function runEnd(message: EngineMessage): { aborted: boolean; failed: boolean; error?: string } {
+  const messages: AgentMessage[] = Array.isArray(message.messages) ? message.messages : [];
+  const last = [...messages].reverse().find((m) => m?.role === "assistant") as (AgentMessage & Record<string, any>) | undefined;
+  const aborted = message.aborted === true || message.outcome === "aborted" || last?.stopReason === "aborted";
+  const error =
+    message.error ?? (last?.stopReason === "error" ? (last.errorMessage ?? "The model returned an error") : undefined);
+  const failed = message.outcome === "failed" || (!!error && !aborted);
+  return { aborted, failed, error: error == null ? undefined : String(error) };
+}
+
 function applyEngine(state: TranscriptState, message: EngineMessage, now: number): TranscriptState {
   switch (message.type) {
     case "agent_start":
       return { ...state, busy: true };
     case "agent_end":
     case "agent_settled": {
+      const { aborted, failed, error } = runEnd(message);
       const next = updateCurrent(state, (turn) => {
-        if (turn.status !== "running") return turn;
-        const aborted = message.aborted === true || message.outcome === "aborted";
-        const failed = message.outcome === "failed" || (message.error && !aborted);
+        if (turn.status !== "running") {
+          // `agent_end` closed the turn as done; the settlement knows better.
+          // Not a `compact` run's: it has no turn, and its outcome is not the last turn's.
+          if (message.type === "agent_settled" && message.compact !== true && turn.status === "done" && (aborted || failed)) {
+            return {
+              ...turn,
+              status: aborted ? "aborted" : "error",
+              error: failed ? (error ?? turn.error ?? "The run failed") : turn.error,
+            };
+          }
+          return turn;
+        }
         const settled = settleBlocks(turn, now);
         return {
           ...settled,
           status: aborted ? "aborted" : failed ? "error" : "done",
-          error: failed ? String(message.error ?? turn.error ?? "The run failed") : turn.error,
+          error: failed ? (error ?? turn.error ?? "The run failed") : turn.error,
           endedAt: now,
           meta: { ...turn.meta, durationMs: now - turn.startedAt },
           // A call still open when the run ends was interrupted.
@@ -605,9 +631,50 @@ export function userText(message: any): string {
  * Rebuild the turns of a saved chat from its messages (`get_messages`), in the
  * same shape the live stream produces, so a reopened chat looks the way it did.
  */
+/** Why a background agent with no report shows as stopped after a restart. */
+export const LOST_AGENT =
+  "Stopped: the engine running it exited (the app closed or crashed) before it finished. Start it again if its work is still needed.";
+
+/**
+ * A saved background agent's call keeps the snapshot from when it returned
+ * (`status: "running"`); how it ended is in its report, a later message.
+ * Apply each report to its call. With `engineStarted`, a call with no report
+ * after it belongs to an engine that is gone: it was lost (the engine also
+ * queues that report for the chat's next run).
+ */
+function settleBackgroundAgents(turns: Turn[], reports: Record<string, AgentReport>, engineStarted: boolean): Turn[] {
+  return turns.map((turn) => {
+    let changed = false;
+    const parts = turn.parts.map((part) => {
+      const child = part.kind === "tool" ? (part.details?.child as Record<string, any> | undefined) : undefined;
+      if (part.kind !== "tool" || !child?.background || child.status !== "running") return part;
+      const report = child.agentId ? reports[`id:${child.agentId}`] : undefined;
+      // A report written before this call (an earlier run of a continued agent) is not its report.
+      const own = report && report.at >= (part.endedAt ?? part.startedAt ?? 0) ? report : undefined;
+      if (!own && !engineStarted) return part;
+      changed = true;
+      const settled = own
+        ? { ...child, status: own.status, endedAt: own.at }
+        : { ...child, status: "error", endedAt: child.startedAt ?? part.endedAt, error: LOST_AGENT };
+      return { ...part, details: { ...part.details, child: settled } };
+    });
+    return changed ? { ...turn, parts } : turn;
+  });
+}
+
 export function transcriptFromMessages(
   messages: (AgentMessage & Record<string, any>)[],
-  { running = false }: { running?: boolean } = {},
+  {
+    running = false,
+    engineStarted = false,
+  }: {
+    running?: boolean;
+    /**
+     * The chat's engine was just started: no background agent of an earlier
+     * engine runs any more, so one that never reported was lost.
+     */
+    engineStarted?: boolean;
+  } = {},
 ): TranscriptState {
   const turns: Turn[] = [];
   let agentReports: Record<string, AgentReport> = {};
@@ -691,7 +758,7 @@ export function transcriptFromMessages(
       ),
     };
   }
-  return { turns, busy: running, agentReports };
+  return { turns: settleBackgroundAgents(turns, agentReports, engineStarted), busy: running, agentReports };
 }
 
 // ── Partial tool arguments ────────────────────────────────────────────────────

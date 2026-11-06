@@ -38,10 +38,19 @@ export function CommandPalette() {
       setFound([]);
       return;
     }
+    // Searches run off the window's thread and may finish out of order:
+    // only the answer to the latest query is shown.
+    let current = true;
     const timer = window.setTimeout(() => {
-      db.searchChats(text).then(setFound, () => setFound([]));
+      db.searchChats(text).then(
+        (chats) => current && setFound(chats),
+        () => current && setFound([]),
+      );
     }, 150);
-    return () => window.clearTimeout(timer);
+    return () => {
+      current = false;
+      window.clearTimeout(timer);
+    };
   }, [query]);
   React.useEffect(() => {
     if (!commandOpen) setQuery("");

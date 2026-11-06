@@ -67,7 +67,7 @@ From `agent-loop.ts:411-797` and `types.ts:386`:
 ### Queues / steering
 
 `Agent` owns two `PendingMessageQueue`s (`agent.ts:125`):
-- **steering** — injected mid-run after the current turn; default `one-at-a-time`.
+- **steering** — injected mid-run after the current turn; default `all` (every waiting message at the next step).
 - **follow-up** — injected after the agent would otherwise stop; default `one-at-a-time`.
 
 ### Harness (phase 2, what it adds)

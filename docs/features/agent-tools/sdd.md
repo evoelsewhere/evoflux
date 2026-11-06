@@ -29,9 +29,13 @@ this page lists what a full desktop agent offers and what evo has.
 - The tool description keeps it for real decisions: not for what the agent
   can find out itself, never "may I proceed?".
 - Desktop: `features/chat/questions-panel.tsx` takes the chat input's place
-  (like an approval): a card per question, radio or check options, "answer in
-  your own words", digits pick the first question's options, `Ctrl+Enter`
-  sends, "Skip — let the agent decide" dismisses. A chat in the background
+  (like an approval): one question per step ("2 of 4", a chip per question
+  with a check once answered, click to jump; Back / Next), radio or check
+  options, "answer in your own words". A single-choice pick moves to the next
+  question after a beat; digits pick the shown question's options; `Enter`
+  goes next (sends on the last step) while focus is in the panel;
+  `Ctrl+Enter` sends once all are answered; "Skip — let the agent decide"
+  dismisses. A chat in the background
   notifies, as approvals do. The transcript row reads "Asked you · question"
   with the answers.
 

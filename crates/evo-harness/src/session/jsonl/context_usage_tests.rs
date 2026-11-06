@@ -188,10 +188,12 @@ async fn context_usage_matches_canonical_all_fields_and_exact_projection_offset(
     f.push(message(assistant(600, StopReason::Aborted)), "main", false);
     f.push(user("before new anchor"), "main", false);
     let before = f.compare("main").await;
-    // Compaction tails retain Deferred verbatim; the canonical estimator accepts
-    // its usage, unlike an ordinary Deferred entry which projects no messages.
-    assert_eq!(before.usage_tokens, 70);
-    assert_eq!(before.last_usage_index, Some(2));
+    // A compaction's retained tail measured the context before it: its usage
+    // (even the Deferred one it keeps verbatim) is no anchor. Nothing after it
+    // reports a usable one either (Deferred, Error, Aborted), so it is all
+    // estimated.
+    assert_eq!(before.usage_tokens, 0);
+    assert_eq!(before.last_usage_index, None);
     f.push(message(assistant(1000, StopReason::Stop)), "main", false);
     f.push(message(assistant(0, StopReason::Stop)), "main", true);
     f.push(

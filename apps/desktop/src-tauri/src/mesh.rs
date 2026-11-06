@@ -137,7 +137,9 @@ impl MailStore for DbMailStore {
         let worktree_path = worktree.as_ref().map(|(path, _)| path.display().to_string());
         let chat = if spec.fork {
             db.with(|conn| {
-                chats::fork_chat(conn, parent, &id, &title)?;
+                // The parent's engine is running: its transcript is copied
+                // as far as it has been written.
+                chats::fork_chat(conn, &db.transcripts, parent, &id, &title)?;
                 chats::set_parent(conn, &id, Some(parent))?;
                 chats::update_chat(conn, &id, &ChatPatch { title: Some(title.clone()), ..Default::default() })?;
                 chats::set_worktree(conn, &id, worktree_path.as_deref())
@@ -228,6 +230,13 @@ async fn apply(app: &AppHandle, effects: Vec<Effect>) {
 #[tauri::command]
 pub fn mesh_pending(db: State<'_, Db>, chat: String) -> Result<usize, String> {
     db.with(|conn| mail::pending_mail(conn, &chat)).map(|mail| mail.len())
+}
+
+/// The chats with undelivered mail. At startup no engine runs, so nothing
+/// asks for them to be hosted; the main window starts their engines.
+#[tauri::command]
+pub fn mesh_pending_chats(db: State<'_, Db>) -> Result<Vec<String>, String> {
+    db.with(|conn| mail::chats_with_pending_mail(conn))
 }
 
 /// A window set up `chat`'s engine (its tools): send what waits for it.

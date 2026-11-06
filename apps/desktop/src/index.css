@@ -108,7 +108,7 @@
 
   --app-font-sans: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
   --app-font-mono: "Geist Mono Variable", ui-monospace, SFMono-Regular, "Roboto Mono", monospace;
-  --chat-width: 48rem;
+  --chat-width: 50rem;
 
   /* The interactive accent (DESIGN.md §2): links, focus, selection, active
      controls. Settings → Appearance swaps the light/dark pair. */
@@ -422,4 +422,22 @@
   92% {
     transform: scaleY(0.12);
   }
+}
+
+/* Chart series colours (Usage page): one hue per model, always in this order,
+   validated for colour-vision deficiency on the light and dark surfaces
+   (adjacent ΔE ≥ 8). Models past the fourth fold into a neutral "Other". */
+:root {
+  --viz-1: #2a78d6;
+  --viz-2: #eb6834;
+  --viz-3: #1baf7a;
+  --viz-4: #eda100;
+  --viz-other: #9a9a9a;
+}
+.dark {
+  --viz-1: #3987e5;
+  --viz-2: #d95926;
+  --viz-3: #199e70;
+  --viz-4: #c98500;
+  --viz-other: #6b6b6b;
 }

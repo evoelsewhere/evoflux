@@ -59,6 +59,77 @@ export interface TurnRecord {
   unread: boolean;
 }
 
+/** Which part of a chat made a model call (`crates/evo-store/src/usage.rs`). */
+export type UsageSource = "chat" | "subagent" | "plugin" | "side";
+
+/** Which recorded responses a usage query covers; every field narrows. */
+export interface UsageQuery {
+  fromMs?: number;
+  toMs?: number;
+  chatId?: string;
+  providerId?: string;
+  modelId?: string;
+  source?: UsageSource;
+  /** Time series bucket (default `day`). */
+  bucket?: UsageBucket;
+}
+
+export type UsageBucket = "hour" | "day" | "week";
+
+export interface UsageTotals {
+  requests: number;
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  reasoning: number;
+  costInput: number;
+  costOutput: number;
+  costCacheRead: number;
+  costCacheWrite: number;
+  costUsd: number;
+  /** Responses that failed or were stopped, and what they cost. */
+  errors: number;
+  costErrors: number;
+  /** Responses with a known duration: their count, summed ms and output tokens. */
+  timed: number;
+  timedMs: number;
+  timedOutput: number;
+}
+
+export interface UsageSummary {
+  totals: UsageTotals;
+  bucket: UsageBucket;
+  /**
+   * Buckets with usage, oldest first, one point per model: local
+   * `YYYY-MM-DD HH` (hour) or `YYYY-MM-DD` (day; the Monday of a week).
+   */
+  series: (UsageTotals & { bucket: string; providerId: string; modelId: string })[];
+  byModel: (UsageTotals & { providerId: string; modelId: string; lastMs: number })[];
+  byChat: (UsageTotals & { chatId: string | null; chatTitle: string | null; lastMs: number })[];
+  bySource: (UsageTotals & { source: UsageSource })[];
+  /** The oldest response in the whole history. */
+  firstMs: number | null;
+}
+
+export interface UsageEvent {
+  id: number;
+  atMs: number;
+  chatId: string | null;
+  chatTitle: string | null;
+  source: UsageSource;
+  providerId: string;
+  modelId: string;
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  reasoning: number;
+  costUsd: number;
+  stopReason: string | null;
+  durationMs: number | null;
+}
+
 export type LogLevel = "debug" | "info" | "warn" | "error";
 
 export interface LogEntry {
@@ -86,6 +157,10 @@ export interface DbInfo {
   sizeBytes: number;
   schemaVersion: number;
   logs: { count: number; oldestMs: number | null; newestMs: number | null; sources: string[] };
+  /** The folder of the chats' transcript files (one per chat), their total size and count. */
+  transcriptsDir: string;
+  transcriptsBytes: number;
+  transcriptsCount: number;
 }
 
 export const db = {
@@ -128,6 +203,11 @@ export const db = {
   queryLogs: (query: LogQuery) => invoke<LogEntry[]>("logs_query", { query }),
   clearLogs: () => invoke<number>("logs_clear"),
   exportLogs: (query: LogQuery) => invoke<string>("logs_export", { query }),
+
+  usageSummary: (query: UsageQuery) => invoke<UsageSummary>("usage_summary", { query }),
+  usageEvents: (query: UsageQuery, beforeId?: number, limit?: number) =>
+    invoke<UsageEvent[]>("usage_events", { query, beforeId: beforeId ?? null, limit: limit ?? null }),
+  clearUsage: () => invoke<number>("usage_clear"),
 };
 
 /**

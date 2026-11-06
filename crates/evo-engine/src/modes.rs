@@ -652,7 +652,14 @@ where
     });
     let _provider_task = provider_task.map(|task| RetainedRpcTask::new(task, pump_stop.clone()));
 
+    // Background agents started by an earlier engine of this session ran in
+    // that process and are gone: queue their missing reports for the next run.
+    let lost_agents = rpc_report_lost_background_agents(harness).await;
+
     let mut ready = rpc_protocol::ready(message_updates);
+    if !lost_agents.is_empty() {
+        ready["lostBackgroundAgents"] = serde_json::json!(lost_agents);
+    }
     ready["resourceState"] = serde_json::json!({
         "version": 1, "enabled": harness.has_exact_resources(), "command": "get_resource_state",
         "maxSnapshotBytes": crate::resource_selection::MAX_STATE_BYTES,
@@ -1048,6 +1055,9 @@ where
                             "aborted": aborted,
                             "error": error,
                             "summary": summary,
+                            // A `compact` command's run: it has no turn of its
+                            // own, so its outcome says nothing about the last one.
+                            "compact": compact,
                             "pendingResume": pending_resume,
                             // Present when this settlement also aborted a run:
                             // the queue the abort reclaimed, so nothing staged
@@ -1162,7 +1172,7 @@ where
             "append_entry" => rpc_append_entry(harness, &msg).await,
             "get_stats" => rpc_get_stats(&lane, harness).await,
             "get_queue" => rpc_get_queue(&lane, harness, &msg).await,
-            "queue_message" => rpc_queue_message(&lane, &msg).await,
+            "queue_message" => rpc_queue_message(&lane, harness, &msg).await,
             "cancel_queued" => rpc_cancel_queued(&lane, &msg).await,
             "clear_queue" => rpc_clear_queue(&lane).await,
             "navigate" => rpc_navigate(&lane, &msg).await,
@@ -2348,6 +2358,7 @@ async fn rpc_get_queue(
 
 async fn rpc_queue_message(
     lane: &Arc<dyn AgentLane>,
+    harness: &AgentHarness,
     msg: &serde_json::Value,
 ) -> Result<serde_json::Value, String> {
     // `contentBlocks` (text and images, as for `prompt`) or a plain `message`.
@@ -2387,6 +2398,10 @@ async fn rpc_queue_message(
         other => return Err(format!("unknown queue kind: {other}")),
     }
     .map_err(|error| error.to_string())?;
+    if queue == "steer" {
+        // Foreground subagents the run waits for let it go, so it reads this now.
+        crate::agent_tool::steered(&harness.session().storage().metadata().id);
+    }
     Ok(serde_json::json!({
         "accepted": true,
         "entryId": result.entry_id,
@@ -2675,6 +2690,27 @@ async fn rpc_get_messages(
         "leafId": leaf_id,
         "pendingResume": pending_resume,
     }))
+}
+
+/// See [`crate::agent_tool::report_lost_background_agents`]; the ids queued.
+async fn rpc_report_lost_background_agents(harness: &AgentHarness) -> Vec<String> {
+    use evo_harness::session::types::{BranchBounds, EntryOrder, EntryQuery};
+    let entries = match harness
+        .find_entries_on_branch(
+            &EntryQuery {
+                order: Some(EntryOrder::OldestFirst),
+                ..Default::default()
+            },
+            &BranchBounds::default(),
+        )
+        .await
+    {
+        Ok(entries) => entries,
+        Err(_) => return Vec::new(),
+    };
+    let Ok(items) = rpc_project_transcript(entries) else { return Vec::new() };
+    let messages: Vec<serde_json::Value> = items.into_iter().map(|(_, value)| value).collect();
+    crate::agent_tool::report_lost_background_agents(harness, &messages).await
 }
 
 fn rpc_project_transcript(

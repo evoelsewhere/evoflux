@@ -49,6 +49,19 @@ pub fn pending_mail(conn: &Connection, to_chat: &str) -> Result<Vec<StoredMail>,
     Ok(rows)
 }
 
+/// The chats that have undelivered mail (not archived), oldest mail first:
+/// at startup their engines must be started, or the mail would wait until
+/// someone opens the chat.
+pub fn chats_with_pending_mail(conn: &Connection) -> Result<Vec<String>, DbError> {
+    let mut statement = conn.prepare(
+        "SELECT m.to_chat FROM mail m JOIN chats c ON c.id = m.to_chat
+         WHERE m.delivered_at IS NULL AND c.archived_at IS NULL
+         GROUP BY m.to_chat ORDER BY MIN(m.created_at), m.to_chat",
+    )?;
+    let rows = statement.query_map([], |row| row.get(0))?.collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
 pub fn get_mail(conn: &Connection, id: &str) -> Result<Option<StoredMail>, DbError> {
     Ok(conn
         .query_row(&format!("SELECT {COLUMNS} FROM mail WHERE id = ?1"), [id], row)
@@ -85,6 +98,7 @@ mod tests {
         let ids: Vec<_> = pending_mail(&conn, "p").unwrap().into_iter().map(|m| m.id).collect();
         assert_eq!(ids, ["m1", "m2"]);
         assert!(pending_mail(&conn, "nobody").unwrap().is_empty());
+        assert_eq!(chats_with_pending_mail(&conn).unwrap(), ["p"]);
 
         mark_mail_delivered(&conn, "m1", 30).unwrap();
         mark_mail_delivered(&conn, "m1", 40).unwrap(); // the first answer counts
@@ -94,5 +108,31 @@ mod tests {
         // Deleting the receiving chat deletes its mail.
         delete_chat(&mut conn, "p").unwrap();
         assert!(get_mail(&conn, "m2").unwrap().is_none());
+        assert!(chats_with_pending_mail(&conn).unwrap().is_empty());
+    }
+
+    #[test]
+    fn chats_with_pending_mail_skip_delivered_and_archived() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = crate::open_at(&dir.path().join("evo.db")).unwrap();
+        for id in ["a", "b", "c"] {
+            create_chat(&conn, &NewChat { id: id.into(), title: id.into(), ..Default::default() }).unwrap();
+        }
+        let mail = |id: &str, to: &str, at: i64| StoredMail {
+            id: id.into(),
+            from_chat: "x".into(),
+            to_chat: to.into(),
+            body: "{}".into(),
+            created_at: at,
+            delivered_at: None,
+        };
+        insert_mail(&conn, &mail("1", "b", 10)).unwrap();
+        insert_mail(&conn, &mail("2", "a", 20)).unwrap();
+        insert_mail(&conn, &mail("3", "b", 30)).unwrap();
+        insert_mail(&conn, &mail("4", "c", 5)).unwrap();
+        mark_mail_delivered(&conn, "4", 6).unwrap();
+        assert_eq!(chats_with_pending_mail(&conn).unwrap(), ["b", "a"]);
+        crate::chats::update_chat(&conn, "b", &crate::chats::ChatPatch { archived: Some(true), ..Default::default() }).unwrap();
+        assert_eq!(chats_with_pending_mail(&conn).unwrap(), ["a"]);
     }
 }

@@ -86,6 +86,7 @@ impl Job {
                 message: evo_agent::AgentMessage::Assistant(message),
                 ..
             } => {
+                crate::usage_log::record(&message, crate::usage_log::Source::Plugin);
                 state.usage.add(&crate::mesh::usage_of(&message.usage));
                 let usage = state.usage;
                 drop(state);

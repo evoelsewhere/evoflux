@@ -754,7 +754,8 @@ async fn take_mail(harness: &evo_harness::agent_harness::AgentHarness, envelope:
     let lane = harness.lane("main");
     let running = harness.has_active_run();
     let (queued, result) = match (running, body.deliver) {
-        (true, Deliver::Queue | Deliver::Prompt) => ("follow_up", lane.follow_up(message).await),
+        // A prompt from another session steers a running run, as the hub does.
+        (true, Deliver::Queue) => ("follow_up", lane.follow_up(message).await),
         (true, _) => ("steer", lane.steer(message).await),
         (false, _) => ("next_turn", lane.next_run(message).await),
     };

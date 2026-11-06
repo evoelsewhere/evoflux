@@ -1,14 +1,12 @@
 import * as React from "react";
 import { XIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useNotificationStore, type AppNotification } from "@/stores/notification-store";
+import { MAX_TOASTS, useNotificationStore, type AppNotification } from "@/stores/notification-store";
 import { NotificationIcon } from "./notification-icon";
 import { openNotification } from "./open-target";
 
 /** How long a toast stays; errors and warnings stay longer. Hovering pauses it. */
 const DURATION: Record<AppNotification["level"], number> = { info: 5000, success: 5000, warning: 8000, error: 10000 };
-/** Toasts on screen at once; older ones leave the stack (they stay in the bell). */
-const MAX_VISIBLE = 3;
 
 function Toast({ notification }: { notification: AppNotification }) {
   const dismiss = useNotificationStore((s) => s.dismissToast);
@@ -27,7 +25,7 @@ function Toast({ notification }: { notification: AppNotification }) {
       onMouseLeave={() => setPaused(false)}
       onFocus={() => setPaused(true)}
       onBlur={() => setPaused(false)}
-      className="group/toast pointer-events-auto relative w-[min(22rem,calc(100vw-2rem))] rounded-xl bg-popover text-popover-foreground shadow-lg ring-1 ring-foreground/5 duration-200 animate-in fade-in slide-in-from-bottom-2 dark:ring-foreground/10"
+      className="group/toast pointer-events-auto relative w-[min(22rem,calc(100vw-2rem))] rounded-xl bg-popover text-popover-foreground shadow-lg ring-1 ring-foreground/5 duration-200 animate-in fade-in slide-in-from-top-2 dark:ring-foreground/10"
     >
       <button
         type="button"
@@ -57,20 +55,19 @@ function Toast({ notification }: { notification: AppNotification }) {
   );
 }
 
-/** In-app toasts, bottom right. Mount once at the app root. */
+/** In-app toasts, top center, newest on top. Mount once at the app root. */
 export function Toaster() {
   const toasts = useNotificationStore((s) => s.toasts);
   const notifications = useNotificationStore((s) => s.notifications);
   const shown = toasts
-    .slice(0, MAX_VISIBLE)
+    .slice(0, MAX_TOASTS)
     .map((id) => notifications.find((n) => n.id === id))
-    .filter((n): n is AppNotification => !!n)
-    .reverse();
+    .filter((n): n is AppNotification => !!n);
 
   return (
     <ol
       aria-label="Notifications"
-      className="pointer-events-none fixed right-4 bottom-4 z-[60] flex flex-col items-end gap-2"
+      className="pointer-events-none fixed top-3 left-1/2 z-[60] flex -translate-x-1/2 flex-col items-center gap-2"
     >
       {shown.map((n) => (
         <Toast key={n.id} notification={n} />

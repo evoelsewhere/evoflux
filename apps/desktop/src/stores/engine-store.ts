@@ -194,6 +194,10 @@ interface EngineStore extends Mirrored {
 }
 
 const MAX_LOG_LINES = 500;
+/** How long `compact` waits for the engine to report the compaction. */
+const COMPACT_TIMEOUT_MS = 10 * 60_000;
+/** Per chat, who waits for its `compact` run to settle (`agent_settled` with `compact: true`). */
+const compactWaiters = new Map<string, (message: EngineMessage | null) => void>();
 /** Engines kept alive for chats that are neither shown nor running. */
 const MAX_IDLE_ENGINES = 4;
 /** Commands that change providers for every engine, not just the one asked. */
@@ -421,7 +425,8 @@ export const useEngineStore = create<EngineStore>((set, get) => {
   };
 
   /** Restore the saved messages once a reopened chat's engine is ready. */
-  const restoreTranscript = async (chat: string) => {
+  /** `engineStarted`: the engine just sent `ready` (a new process: none of its background agents run). */
+  const restoreTranscript = async (chat: string, engineStarted = false) => {
     if (!client) return;
     try {
       const [data, state] = await Promise.all([
@@ -432,6 +437,7 @@ export const useEngineStore = create<EngineStore>((set, get) => {
       // another window handed the chat over): its last turn then goes on, live.
       const transcript = transcriptFromMessages((data?.messages ?? []) as (AgentMessage & Record<string, any>)[], {
         running: Boolean(state?.activeOperation),
+        engineStarted,
       });
       update(chat, (rt) => ({
         transcript,
@@ -794,6 +800,26 @@ ${sessions.length === 1 ? "A nested session" : "Nested sessions"} finished a tur
     );
 
   /**
+   * Restarts of exited engines for mail, per chat: at most MAIL_RESTARTS in
+   * MAIL_RESTART_WINDOW_MS, so an engine that dies on start is not restarted
+   * forever (each exit with mail waiting asks for a host again).
+   */
+  const MAIL_RESTARTS = 3;
+  const MAIL_RESTART_WINDOW_MS = 120_000;
+  const mailRestarts = new Map<string, number[]>();
+  const mayRestartForMail = (chat: string) => {
+    const now = Date.now();
+    const recent = (mailRestarts.get(chat) ?? []).filter((at) => now - at < MAIL_RESTART_WINDOW_MS);
+    if (recent.length >= MAIL_RESTARTS) {
+      log("warn", "engine", "the engine keeps exiting: its mail waits until the chat is opened", { chatId: chat });
+      mailRestarts.set(chat, recent);
+      return false;
+    }
+    mailRestarts.set(chat, [...recent, now]);
+    return true;
+  };
+
+  /**
    * The mesh hub needs `chat`'s engine: a session it just started, or a chat
    * with mail (a nested session's note, a parent's message). A window that
    * holds the chat tells the hub it is set up; otherwise the main window
@@ -804,6 +830,13 @@ ${sessions.length === 1 ? "A nested session" : "Nested sessions"} finished a tur
     const rt = runtime(chat);
     if (rt) {
       if (rt.status === "ready") await meshHosted(chat);
+      // Its engine exited or never started (a crash): start it again, or the
+      // mail waits until someone opens the chat while its sender is told a
+      // note will come. Its `ready` tells the hub (`onReadyNested`).
+      else if ((rt.status === "exited" || rt.status === "error") && mayRestartForMail(chat)) {
+        log("info", "engine", "restarting the engine to deliver mail", { chatId: chat });
+        await launch(chat, rt.cwd ?? (await chatFolder(chat)), true);
+      }
       return;
     }
     if (chatWindowId) return;
@@ -986,7 +1019,8 @@ ${sessions.length === 1 ? "A nested session" : "Nested sessions"} finished a tur
       else log("warn", "engine", "this engine does not speak the session mesh: subagents will not update live", { chatId: chat });
       const setup = (async () => {
         if (runtime(chat)?.restore) {
-          await restoreTranscript(chat);
+          // `ready` comes from a new process: an earlier engine's background agents are gone.
+          await restoreTranscript(chat, true);
           void loadDefault(chat);
           void get().refreshState(chat);
         } else {
@@ -1029,6 +1063,10 @@ ${sessions.length === 1 ? "A nested session" : "Nested sessions"} finished a tur
       return;
     }
     dispatch(chat, { type: "engine", message });
+    if (message.type === "agent_settled" && message.compact === true) {
+      compactWaiters.get(chat)?.(message);
+      compactWaiters.delete(chat);
+    }
     if (message.type === "agent_settled" || message.type === "agent_end") {
       recordFinishedTurn(chat);
       scheduleWake(chat);
@@ -1110,6 +1148,13 @@ ${sessions.length === 1 ? "A nested session" : "Nested sessions"} finished a tur
       void listen<{ chat: string; cwd: string | null; restore: boolean }>("mesh://host", ({ payload }) =>
         void onHost(payload.chat, payload.cwd, payload.restore),
       );
+      // Mail left undelivered when the app last closed (a nested session's
+      // note, a parent's message): nothing else asks for those engines now.
+      if (!chatWindowId) {
+        void invoke<string[]>("mesh_pending_chats")
+          .then((chats) => Promise.all(chats.map((chat) => onHost(chat, null, true))))
+          .catch((error) => log("warn", "engine", `mesh hub: ${String(error)}`));
+      }
       // The hub starts a turn of a chat this window may show (a nested
       // session's brief, its parent's message): show it like a typed prompt.
       void listen<{ chat: string; text: string }>("mesh://prompted", ({ payload }) => {
@@ -1497,8 +1542,46 @@ ${sessions.length === 1 ? "A nested session" : "Nested sessions"} finished a tur
     async compact() {
       const chat = get().activeId;
       if (!client || !chat) return;
-      await client.request(chat, "compact");
+      const before = runtime(chat)?.state?.context?.tokens;
+      // The engine accepts `compact` at once and summarises in its run slot,
+      // ending with `agent_settled` (`compact: true`). Wait for that, or the
+      // numbers read next are still the ones from before.
+      const settled = new Promise<EngineMessage | null>((resolve) => {
+        compactWaiters.get(chat)?.(null);
+        compactWaiters.set(chat, resolve);
+        setTimeout(() => {
+          if (compactWaiters.get(chat) === resolve) compactWaiters.delete(chat);
+          resolve(null);
+        }, COMPACT_TIMEOUT_MS);
+      });
+      try {
+        await client.request(chat, "compact");
+      } catch (error) {
+        compactWaiters.get(chat)?.(null);
+        compactWaiters.delete(chat);
+        notify({ source: "engine", level: "error", title: "Could not compact the conversation", body: String(error) });
+        return;
+      }
+      const result = await settled;
       await Promise.all([get().refreshState(chat), get().loadContextBreakdown()]);
+      const after = runtime(chat)?.state?.context?.tokens;
+      const tokens = (n: number | undefined) => (n == null ? "?" : `${Math.round(n / 100) / 10}k`);
+      switch (result?.outcome) {
+        case "compacted":
+          notify({ source: "engine", level: "success", title: "Conversation compacted", body: `Context ${tokens(before)} → ${tokens(after)} tokens.` });
+          break;
+        case "declined":
+          notify({ source: "engine", title: "Nothing to compact yet", body: "The conversation was just compacted, or is too short to summarise." });
+          break;
+        case "aborted":
+          notify({ source: "engine", title: "Compaction stopped" });
+          break;
+        case "failed":
+          notify({ source: "engine", level: "error", title: "Compaction failed", body: String(result.error ?? "unknown error") });
+          break;
+        default:
+          if (!result) log("warn", "engine", "compaction did not report its outcome", { chatId: chat });
+      }
     },
 
     async request<T>(type: string, payload?: Record<string, unknown>) {

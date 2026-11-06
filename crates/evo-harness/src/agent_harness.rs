@@ -4987,7 +4987,8 @@ impl AgentHarness {
                             if harness.persist_compaction_entry(&compaction_run_id, &result, CompactionReason::Threshold).await.is_err() { return None; }
                             cut.store(new_messages_len, Ordering::Release);
                             let mut messages = Vec::with_capacity(result.retained_tail.len() + 1);
-                            messages.push(create_compaction_summary_message(&result.summary, result.tokens_before, 0));
+                            let estimated_before = result.details.as_ref().and_then(|d| d.estimated_before);
+                            messages.push(crate::messages::with_compaction_facts(create_compaction_summary_message(&result.summary, result.tokens_before, 0), result.retained_tail.len(), estimated_before));
                             messages.extend(result.retained_tail);
                             Some(evo_agent::AgentLoopTurnUpdate { context: Some(AgentContext { system_prompt: context.system_prompt.clone(), messages, tools: context.tools.clone() }), model: None, thinking_level: None })
                         })

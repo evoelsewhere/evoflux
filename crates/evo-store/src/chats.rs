@@ -1,14 +1,18 @@
 //! Workspaces and the chats inside them, as the desktop sidebar shows them.
 //!
-//! A chat's `id` is its engine session id: the transcript is the evo-harness
-//! `sessions` row with the same id (written by the engine through
-//! `--session-db`), so deleting a chat deletes its transcript too. Times are
+//! A chat's `id` is its engine session id: its transcript is the file
+//! `transcripts/<id>.db` ([`crate::transcripts`]), written by the chat's engine
+//! through `--session-db`. Functions that copy or search transcripts take the
+//! transcripts folder; deleting a chat's file is the caller's job, after its
+//! engine has stopped (Windows refuses to delete a file in use). Times are
 //! Unix milliseconds, the unit the UI works in.
 
-use rusqlite::{params, Connection, OptionalExtension, Row};
+use std::path::Path;
+
+use rusqlite::{params, Connection, OptionalExtension, Row, TransactionBehavior};
 use serde::{Deserialize, Serialize};
 
-use crate::DbError;
+use crate::{transcripts, DbError};
 
 /// Unix milliseconds.
 pub fn now_ms() -> i64 {
@@ -211,16 +215,17 @@ pub fn set_workspace_collapsed(conn: &Connection, id: &str, collapsed: bool) -> 
     Ok(())
 }
 
-/// Remove a workspace from the sidebar together with its chats and their
-/// transcripts. Returns the removed chat ids, so running engines can stop.
+/// Remove a workspace from the sidebar together with its chats. Returns the
+/// removed chat ids: stop their engines, then remove their transcript files.
 pub fn remove_workspace(conn: &mut Connection, id: &str) -> Result<Vec<String>, DbError> {
-    let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
     let ids: Vec<String> = {
         let mut statement = tx.prepare("SELECT id FROM chats WHERE workspace_id = ?1")?;
         let rows = statement.query_map([id], |row| row.get(0))?;
         rows.collect::<Result<_, _>>()?
     };
     for chat in &ids {
+        // A transcript an older build left in this file, if it was not moved.
         tx.execute("DELETE FROM sessions WHERE id = ?1", [chat])?;
     }
     tx.execute("DELETE FROM chats WHERE workspace_id = ?1", [id])?;
@@ -341,28 +346,43 @@ pub fn record_turn(conn: &Connection, id: &str, turn: &TurnRecord) -> Result<Opt
 }
 
 /// A copy of chat `source` under `id`: the same folder, model and whole
-/// transcript (the `sessions` row, child of the source), titled `title`. The
-/// copy starts with no spend of its own. Fork an idle chat: a turn still being
-/// written is copied as far as it got.
-pub fn fork_chat(conn: &mut Connection, source: &str, id: &str, title: &str) -> Result<Option<Chat>, DbError> {
-    let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-    let now = now_ms();
-    let copied = tx.execute(
-        "INSERT INTO chats (id, workspace_id, title, title_source, preview, provider, model, turn_count, created_at, updated_at)
-         SELECT ?2, workspace_id, ?3, 'user', preview, provider, model, turn_count, ?4, ?4
-         FROM chats WHERE id = ?1",
-        params![source, id, title, now],
-    )?;
-    if copied == 0 {
+/// transcript (a new file in `transcripts_dir` whose session is a child of the
+/// source's), titled `title`. The copy starts with no spend of its own. The
+/// source may be running: its transcript is copied as far as it was written.
+/// `None` when `source` does not exist.
+pub fn fork_chat(
+    conn: &mut Connection,
+    transcripts_dir: &Path,
+    source: &str,
+    id: &str,
+    title: &str,
+) -> Result<Option<Chat>, DbError> {
+    if get_chat(conn, source)?.is_none() {
         return Ok(None);
     }
-    tx.execute(
-        "INSERT INTO sessions (id, created_at, parent_session_id, state_json)
-         SELECT ?2, ?3, id, state_json FROM sessions WHERE id = ?1",
-        params![source, id, now],
-    )?;
-    tx.commit()?;
-    get_chat(conn, id)
+    let now = now_ms();
+    // The file first: a chat row never points at a half-made copy.
+    let copied = transcripts::fork(transcripts_dir, source, id, now)?;
+    let inserted = (|| -> Result<usize, DbError> {
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let inserted = tx.execute(
+            "INSERT INTO chats (id, workspace_id, title, title_source, preview, provider, model, turn_count, created_at, updated_at)
+             SELECT ?2, workspace_id, ?3, 'user', preview, provider, model, turn_count, ?4, ?4
+             FROM chats WHERE id = ?1",
+            params![source, id, title, now],
+        )?;
+        tx.commit()?;
+        Ok(inserted)
+    })();
+    match inserted {
+        Ok(1) => get_chat(conn, id),
+        other => {
+            if copied {
+                let _ = transcripts::remove(&transcripts::path_in(transcripts_dir, id)?);
+            }
+            other.map(|_| None)
+        }
+    }
 }
 
 /// The worktree a chat works in, or (`None`) its workspace folder again.
@@ -395,18 +415,79 @@ pub fn move_chat(conn: &Connection, id: &str, workspace_id: Option<&str>) -> Res
     get_chat(conn, id)
 }
 
-/// Delete a chat and its transcript.
+/// Delete a chat (its search text goes with it). Its transcript file is the
+/// caller's to remove once the chat's engine has stopped.
 pub fn delete_chat(conn: &mut Connection, id: &str) -> Result<(), DbError> {
-    let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    // A transcript an older build left in this file, if it was not moved.
     tx.execute("DELETE FROM sessions WHERE id = ?1", [id])?;
     tx.execute("DELETE FROM chats WHERE id = ?1", [id])?;
     tx.commit()?;
     Ok(())
 }
 
+/// Bring the search text of every chat up to date with its transcript file:
+/// re-read the transcripts whose file changed since they were last read
+/// (their [`transcripts::stamp`]), drop the text of chats whose file is gone.
+/// Returns how many chats changed. Only changed files are read, so a search
+/// after a few turns reads a few files.
+pub fn refresh_search(conn: &mut Connection, transcripts_dir: &Path) -> Result<usize, DbError> {
+    let known: Vec<(String, Option<String>)> = {
+        let mut statement = conn.prepare(
+            "SELECT c.id, s.stamp FROM chats c LEFT JOIN chat_search s ON s.chat_id = c.id",
+        )?;
+        let rows = statement.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
+        rows.collect::<Result<_, _>>()?
+    };
+    let mut changed: Vec<(String, Option<(String, String)>)> = Vec::new();
+    for (id, recorded) in known {
+        let Ok(path) = transcripts::path_in(transcripts_dir, &id) else {
+            continue;
+        };
+        match transcripts::stamp(&path) {
+            None if recorded.is_some() => changed.push((id, None)),
+            None => {}
+            Some(stamp) if recorded.as_deref() != Some(stamp.as_str()) => {
+                // Stamp first, then read: a write in between leaves an older
+                // stamp, so the next refresh reads the file again.
+                let body = transcripts::read_state(&path, &id)
+                    .ok()
+                    .flatten()
+                    .map(|state| transcripts::searchable_text(&state))
+                    .unwrap_or_default();
+                changed.push((id, Some((stamp, body))));
+            }
+            Some(_) => {}
+        }
+    }
+    if changed.is_empty() {
+        return Ok(0);
+    }
+    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    for (id, text) in &changed {
+        match text {
+            Some((stamp, body)) => tx.execute(
+                "INSERT INTO chat_search (chat_id, stamp, body) VALUES (?1, ?2, ?3)
+                 ON CONFLICT (chat_id) DO UPDATE SET stamp = excluded.stamp, body = excluded.body",
+                params![id, stamp, body],
+            )?,
+            None => tx.execute("DELETE FROM chat_search WHERE chat_id = ?1", [id])?,
+        };
+    }
+    tx.commit()?;
+    Ok(changed.len())
+}
+
 /// Chats whose title, preview or transcript mentions `query` (case-insensitive),
-/// live and archived, most recent first.
-pub fn search_chats(conn: &Connection, query: &str, limit: u32) -> Result<Vec<Chat>, DbError> {
+/// live and archived, most recent first. Refreshes the search text of changed
+/// transcripts first ([`refresh_search`]).
+pub fn search_chats(
+    conn: &mut Connection,
+    transcripts_dir: &Path,
+    query: &str,
+    limit: u32,
+) -> Result<Vec<Chat>, DbError> {
+    refresh_search(conn, transcripts_dir)?;
     let escaped = query.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
     let pattern = format!("%{escaped}%");
     let columns = CHAT_COLUMNS
@@ -415,8 +496,8 @@ pub fn search_chats(conn: &Connection, query: &str, limit: u32) -> Result<Vec<Ch
         .collect::<Vec<_>>()
         .join(", ");
     let mut statement = conn.prepare(&format!(
-        "SELECT {columns} FROM chats c LEFT JOIN sessions s ON s.id = c.id
-         WHERE c.title LIKE ?1 ESCAPE '\\' OR c.preview LIKE ?1 ESCAPE '\\' OR s.state_json LIKE ?1 ESCAPE '\\'
+        "SELECT {columns} FROM chats c LEFT JOIN chat_search s ON s.chat_id = c.id
+         WHERE c.title LIKE ?1 ESCAPE '\\' OR c.preview LIKE ?1 ESCAPE '\\' OR s.body LIKE ?1 ESCAPE '\\'
          ORDER BY c.updated_at DESC LIMIT ?2"
     ))?;
     let rows = statement.query_map(params![pattern, limit], chat_row)?;
@@ -516,32 +597,93 @@ mod tests {
         let archived = list_chats(&conn, true).unwrap();
         assert!(!archived[0].pinned, "archiving unpins");
 
-        conn.execute(
-            "INSERT INTO sessions (id, created_at, state_json) VALUES ('c1', 0, '{\"text\":\"needle\"}')",
-            [],
-        )
-        .unwrap();
-        assert_eq!(search_chats(&conn, "NEEDLE", 10).unwrap().len(), 1);
-        assert_eq!(search_chats(&conn, "100%", 10).unwrap().len(), 0);
+        let files = _dir.path().join(transcripts::DIR_NAME);
+        let c1 = write_transcript(&files, "c1", r#"{"records":[{"text":"needle"}]}"#);
+        assert_eq!(search_chats(&mut conn, &files, "NEEDLE", 10).unwrap().len(), 1);
+        assert_eq!(search_chats(&mut conn, &files, "100%", 10).unwrap().len(), 0);
 
-        let fork = fork_chat(&mut conn, "c1", "c2", "Build (fork)").unwrap().unwrap();
+        let fork = fork_chat(&mut conn, &files, "c1", "c2", "Build (fork)").unwrap().unwrap();
         assert_eq!((fork.title.as_str(), fork.turn_count, fork.tokens), ("Build (fork)", 1, 0));
         assert_eq!(fork.workspace_id.as_deref(), Some(ws.id.as_str()));
-        let (parent, state): (Option<String>, String) = conn
+        let copy = transcripts::path_in(&files, "c2").unwrap();
+        let (parent, state): (Option<String>, String) = Connection::open(&copy)
+            .unwrap()
             .query_row("SELECT parent_session_id, state_json FROM sessions WHERE id = 'c2'", [], |r| {
                 Ok((r.get(0)?, r.get(1)?))
             })
             .unwrap();
         assert_eq!((parent.as_deref(), state.contains("needle")), (Some("c1"), true));
-        assert!(fork_chat(&mut conn, "missing", "c3", "x").unwrap().is_none());
+        assert!(fork_chat(&mut conn, &files, "missing", "c3", "x").unwrap().is_none());
+        assert!(!transcripts::path_in(&files, "c3").unwrap().exists());
+        // A fork onto an existing chat id fails and leaves no stray file.
+        create_chat(&conn, &NewChat { id: "taken".into(), title: "T".into(), ..Default::default() }).unwrap();
+        assert!(fork_chat(&mut conn, &files, "c1", "taken", "x").is_err());
+        assert!(!transcripts::path_in(&files, "taken").unwrap().exists());
+        delete_chat(&mut conn, "taken").unwrap();
+        // A chat with no transcript yet forks into a chat with none.
+        create_chat(&conn, &NewChat { id: "empty".into(), title: "E".into(), ..Default::default() }).unwrap();
+        assert!(fork_chat(&mut conn, &files, "empty", "empty2", "x").unwrap().is_some());
+        assert!(!transcripts::path_in(&files, "empty2").unwrap().exists());
+        delete_chat(&mut conn, "empty").unwrap();
+        delete_chat(&mut conn, "empty2").unwrap();
 
         let moved = move_chat(&conn, "c2", None).unwrap().unwrap();
         assert_eq!(moved.workspace_id, None);
         delete_chat(&mut conn, "c2").unwrap();
+        let indexed: i64 = conn.query_row("SELECT COUNT(*) FROM chat_search", [], |r| r.get(0)).unwrap();
+        assert_eq!(indexed, 1, "a deleted chat's search text goes with it");
 
         let removed = remove_workspace(&mut conn, &ws.id).unwrap();
         assert_eq!(removed, vec!["c1".to_string()]);
-        let left: i64 = conn.query_row("SELECT COUNT(*) FROM sessions", [], |r| r.get(0)).unwrap();
+        assert!(c1.exists(), "files are removed by the caller, after the engine stops");
+        let left: i64 = conn.query_row("SELECT COUNT(*) FROM chat_search", [], |r| r.get(0)).unwrap();
         assert_eq!(left, 0);
+    }
+
+    fn write_transcript(dir: &Path, id: &str, state: &str) -> std::path::PathBuf {
+        let path = transcripts::path_in(dir, id).unwrap();
+        transcripts::prepare(&path).unwrap();
+        let conn = Connection::open(&path).unwrap();
+        conn.execute_batch(transcripts::SESSION_SCHEMA).unwrap();
+        conn.execute(
+            "INSERT INTO sessions (id, created_at, parent_session_id, state_json) VALUES (?1, 0, NULL, ?2)
+             ON CONFLICT (id) DO UPDATE SET state_json = excluded.state_json",
+            params![id, state],
+        )
+        .unwrap();
+        path
+    }
+
+    #[test]
+    fn search_follows_transcript_changes() {
+        let (dir, mut conn) = db();
+        let files = dir.path().join(transcripts::DIR_NAME);
+        for id in ["a", "b"] {
+            create_chat(&conn, &NewChat { id: id.into(), title: format!("Chat {id}"), ..Default::default() }).unwrap();
+        }
+        // No transcripts yet: titles still match, nothing is indexed.
+        assert_eq!(search_chats(&mut conn, &files, "chat a", 10).unwrap().len(), 1);
+        assert_eq!(refresh_search(&mut conn, &files).unwrap(), 0);
+
+        write_transcript(&files, "a", r#"{"records":[{"text":"alpha"}]}"#);
+        write_transcript(&files, "b", r#"{"records":[{"text":"beta"}]}"#);
+        assert_eq!(refresh_search(&mut conn, &files).unwrap(), 2);
+        // Unchanged files are not read again.
+        assert_eq!(refresh_search(&mut conn, &files).unwrap(), 0);
+        let ids = |found: Vec<Chat>| found.into_iter().map(|chat| chat.id).collect::<Vec<_>>();
+        assert_eq!(ids(search_chats(&mut conn, &files, "ALPHA", 10).unwrap()), vec!["a"]);
+
+        // A new turn in `b` is found by the next search.
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        write_transcript(&files, "b", r#"{"records":[{"text":"beta"},{"text":"gamma ray"}]}"#);
+        assert_eq!(ids(search_chats(&mut conn, &files, "gamma", 10).unwrap()), vec!["b"]);
+        // Identifiers and type tags are not searchable text.
+        assert!(search_chats(&mut conn, &files, "records", 10).unwrap().is_empty());
+
+        // A transcript removed from disk drops out of the search.
+        transcripts::remove(&transcripts::path_in(&files, "a").unwrap()).unwrap();
+        assert!(search_chats(&mut conn, &files, "alpha", 10).unwrap().is_empty());
+        let indexed: i64 = conn.query_row("SELECT COUNT(*) FROM chat_search", [], |r| r.get(0)).unwrap();
+        assert_eq!(indexed, 1);
     }
 }

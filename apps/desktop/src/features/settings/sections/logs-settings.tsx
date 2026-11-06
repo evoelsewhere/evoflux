@@ -115,7 +115,7 @@ export function LogsSettings() {
       <SettingsHeader
         icon={ScrollTextIcon}
         title="Data & logs"
-        description="Chats, settings and the run log are kept in one database on this computer. The log records what the app and its engines did, for debugging."
+        description="Chats, settings and the run log are kept in a database on this computer, and each chat's conversation in a file of its own. The log records what the app and its engines did, for debugging."
       />
 
       <SettingsGroup title="Stored on this computer">
@@ -136,6 +136,21 @@ export function LogsSettings() {
             <span className="flex items-center gap-1.5 font-mono text-xs text-muted-foreground">
               <DatabaseIcon className="size-3.5" />
               {info ? formatBytes(info.sizeBytes) : "…"}
+            </span>
+          }
+        />
+        <SettingsRow
+          label="Transcripts"
+          description={
+            <>
+              {`${info?.transcriptsCount.toLocaleString() ?? "…"} files, one per chat, in `}
+              <span className="font-mono text-xs break-all">{info?.transcriptsDir ?? "…"}</span>
+            </>
+          }
+          control={
+            <span className="flex items-center gap-1.5 font-mono text-xs text-muted-foreground">
+              <DatabaseIcon className="size-3.5" />
+              {info ? formatBytes(info.transcriptsBytes) : "…"}
             </span>
           }
         />
