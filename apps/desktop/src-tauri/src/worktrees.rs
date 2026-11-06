@@ -108,6 +108,20 @@ pub async fn git_status(cwd: String) -> Result<Option<evo_worktrees::RepoStatus>
     blocking(move || evo_worktrees::repo_status(&PathBuf::from(cwd))).await
 }
 
+/// Paths git ignores in `cwd`'s repository (absolute, forward slashes, folders
+/// end with `/`), for dimming them in Files; `null` outside a repository.
+#[tauri::command]
+pub async fn git_ignored(cwd: String) -> Result<Option<Vec<String>>, String> {
+    blocking(move || evo_worktrees::ignored_paths(&PathBuf::from(cwd))).await
+}
+
+/// `path` as committed at `HEAD`, for the editor's changed-line markers;
+/// `null` when it is untracked, binary, large or outside the repository.
+#[tauri::command]
+pub async fn git_file_base(cwd: String, path: String) -> Result<Option<String>, String> {
+    blocking(move || evo_worktrees::file_at_head(&PathBuf::from(cwd), &PathBuf::from(path))).await
+}
+
 /// Throw the worktree and its branch away.
 #[tauri::command]
 pub async fn worktree_discard(db: State<'_, Db>, cwd: String, path: String) -> Result<(), String> {

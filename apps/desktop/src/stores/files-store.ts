@@ -1,10 +1,13 @@
 // Files tool: the open files (tabs), the explorer's expanded folders, and each
-// open file's load/save state. The editor text itself lives in CodeMirror
-// states kept beside the store (features/files/editor-states.ts).
+// open file's load/save state, and what git says about the tree's folder
+// (docs/features/files-git/sdd.md). The editor text itself lives in CodeMirror
+// states kept beside the store (features/files/code-editor.tsx).
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { isConflict, readFile, samePath, statFile, writeFile, type FileContent } from "@/features/files/fs";
+import { buildDecorations, type GitDecorations } from "@/features/files/git-state";
+import { git } from "@/lib/git";
 import { useUiStore } from "./ui-store";
 
 export interface OpenFile {
@@ -37,6 +40,10 @@ interface FilesStore {
   treeWidth: number;
   /** A line to scroll to and mark once `path` shows. */
   reveal: { path: string; line: number; nonce: number } | null;
+  /** Git marks for the tree's folder; `null` outside a repository or before the first read. */
+  git: GitDecorations | null;
+  /** Re-read `git status` for `root`; `full` also re-reads the ignored paths. */
+  refreshGit(root: string, full?: boolean): Promise<void>;
   /** Open `path` (at `line`, 1-based) in the Files tool and show it. */
   open(path: string, line?: number): Promise<void>;
   close(path: string): void;
@@ -70,6 +77,20 @@ const blank = (path: string): OpenFile => ({
   revision: 0,
 });
 
+/** Every this many status reads, the ignored list is read again too. */
+const IGNORED_EVERY = 5;
+/** One git read at a time; a request made meanwhile runs once after it. */
+const gitRun = {
+  busy: false,
+  again: null as { root: string; full: boolean } | null,
+  root: "",
+  ignored: null as string[] | null,
+  reads: 0,
+  /** What the last result looked like, so an unchanged repository does not re-render the tree. */
+  signature: "",
+  warned: "",
+};
+
 /** The tab already open for `path`, whatever its slashes or case. */
 const openKey = (tabs: string[], path: string) => tabs.find((tab) => samePath(tab, path));
 
@@ -88,6 +109,48 @@ export const useFilesStore = create<FilesStore>()(
         treeVisible: true,
         treeWidth: 280,
         reveal: null,
+        git: null,
+
+        async refreshGit(root, full = false) {
+          if (gitRun.busy) {
+            gitRun.again = { root, full: full || (gitRun.again?.root === root && gitRun.again.full) };
+            return;
+          }
+          gitRun.busy = true;
+          try {
+            const fresh = gitRun.root !== root;
+            const readIgnored = full || fresh || ++gitRun.reads % IGNORED_EVERY === 0;
+            const [status, ignored] = await Promise.all([
+              git.status(root),
+              readIgnored ? git.ignored(root) : Promise.resolve(gitRun.ignored),
+            ]);
+            gitRun.root = root;
+            gitRun.ignored = ignored;
+            const signature = JSON.stringify([
+              root,
+              status?.root,
+              status?.head,
+              status?.files.map((f) => `${f.status}:${f.path}`),
+              ignored,
+            ]);
+            if (signature !== gitRun.signature) {
+              gitRun.signature = signature;
+              set({ git: buildDecorations(status, ignored) });
+            }
+          } catch (error) {
+            // `git` missing or failing: no marks, one log line per folder.
+            if (gitRun.warned !== root) console.warn("Files: git status unavailable:", error);
+            gitRun.warned = root;
+            gitRun.root = root;
+            gitRun.signature = "";
+            if (get().git) set({ git: null });
+          } finally {
+            gitRun.busy = false;
+            const next = gitRun.again;
+            gitRun.again = null;
+            if (next) void get().refreshGit(next.root, next.full);
+          }
+        },
 
         async open(path, line) {
           const key = openKey(get().tabs, path) ?? path;

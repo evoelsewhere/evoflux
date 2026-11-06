@@ -166,6 +166,8 @@ pub fn run() {
             worktrees::worktree_apply,
             worktrees::worktree_discard,
             worktrees::git_status,
+            worktrees::git_ignored,
+            worktrees::git_file_base,
             system::system_set,
             apps::open_apps,
             apps::open_in_app,
