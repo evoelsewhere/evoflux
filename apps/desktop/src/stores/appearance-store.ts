@@ -77,10 +77,18 @@ export const CODE_FONTS: FontOption[] = [
 export type ChatWidth = "narrow" | "default" | "wide" | "full";
 export const CHAT_WIDTHS: { id: ChatWidth; label: string; value: string }[] = [
   { id: "narrow", label: "Narrow", value: "40rem" },
-  { id: "default", label: "Default", value: "48rem" },
+  { id: "default", label: "Default", value: "50rem" },
   { id: "wide", label: "Wide", value: "64rem" },
   { id: "full", label: "Full", value: "100%" },
 ];
+
+/** The chat column's width in px for a setting, inside `available` px. */
+export function chatColumnPx(width: ChatWidth, available: number): number {
+  const value = (CHAT_WIDTHS.find((w) => w.id === width) ?? CHAT_WIDTHS[1]).value;
+  if (!value.endsWith("rem")) return available;
+  const rootPx = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+  return Math.min(parseFloat(value) * rootPx, available);
+}
 
 export type MotionPreference = "system" | "reduced" | "full";
 

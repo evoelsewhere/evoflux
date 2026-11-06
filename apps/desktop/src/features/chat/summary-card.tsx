@@ -22,6 +22,7 @@ import { inTauri } from "@/lib/platform";
 import { cn } from "@/lib/utils";
 import { useElementWidth } from "@/hooks/use-element-width";
 import type { FileChange } from "@/lib/worktrees";
+import { chatColumnPx, useAppearanceStore } from "@/stores/appearance-store";
 import { useEngineStore } from "@/stores/engine-store";
 import { openFile } from "@/stores/files-store";
 import { useSessionStore } from "@/stores/session-store";
@@ -43,8 +44,8 @@ const EDIT_TOOLS = new Set(["edit", "write"]);
 /** The card's width and its gap to the edge, in px (`w-72`, `right-4`). */
 const CARD_WIDTH = 288;
 const CARD_GAP = 16;
-/** The thread's column (`--chat-width`, 48rem) and its side padding. */
-const CHAT_COLUMN = 768 + 48;
+/** The thread column's side padding (`px-6`). */
+const CHAT_PADDING = 48;
 
 /** The repository of `cwd`, re-read when a turn ends and on demand. */
 function useRepoStatus(cwd: string | undefined, enabled: boolean) {
@@ -656,7 +657,9 @@ function useDismiss(ref: React.RefObject<HTMLElement | null>, active: boolean, d
  */
 export function SummaryCard() {
   const [measure, width] = useElementWidth<HTMLDivElement>();
-  const fits = width === 0 || (width - CHAT_COLUMN) / 2 >= CARD_WIDTH + CARD_GAP;
+  const chatWidth = useAppearanceStore((s) => s.chatWidth);
+  const column = chatColumnPx(chatWidth, width) + CHAT_PADDING;
+  const fits = width === 0 || (width - column) / 2 >= CARD_WIDTH + CARD_GAP;
   const setFits = useUiStore((s) => s.setSummaryFits);
   const setPeek = useUiStore((s) => s.setSummaryPeek);
   const shown = useUiStore((s) => (fits ? s.summaryOpen : s.summaryPeek));

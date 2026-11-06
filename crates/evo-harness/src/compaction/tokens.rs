@@ -291,15 +291,65 @@ fn div_ceil(a: i64, b: i64) -> i64 {
     (a + b - 1) / b
 }
 
+/// The messages whose usage measured a context that is gone: those the
+/// newest compaction kept.
+///
+/// After a compaction the context is its summary followed by the messages it
+/// kept. An assistant message kept from before reports the usage of the
+/// request it answered, which carried the whole conversation before the
+/// compaction; only usage reported after them describes this context. The
+/// summary says how many it kept (`retainedMessages`); a summary from before
+/// that was recorded falls back to timestamps (kept messages are older).
+enum Stale {
+    None,
+    /// Indices `..end` (the summary and its retained messages).
+    Before(usize),
+    /// Messages written at or before this time.
+    Until(i64),
+}
+
+fn stale_usage(messages: &[AgentMessage]) -> Stale {
+    let found = messages
+        .iter()
+        .enumerate()
+        .rev()
+        .find_map(|(index, message)| match message {
+            AgentMessage::Custom(custom)
+                if custom.role == crate::messages::COMPACTION_SUMMARY_ROLE =>
+            {
+                Some((index, custom))
+            }
+            _ => None,
+        });
+    match found {
+        None => Stale::None,
+        Some((index, custom)) => match custom
+            .data
+            .get("retainedMessages")
+            .and_then(serde_json::Value::as_u64)
+        {
+            Some(retained) => Stale::Before(index + 1 + retained as usize),
+            None => Stale::Until(custom.timestamp),
+        },
+    }
+}
+
 /// Return the last valid assistant usage (stop_reason not aborted/error,
-/// `context_tokens > 0`) along with its index, or `None`. Mirrors
-/// `getLastAssistantUsageInfo`.
+/// `context_tokens > 0`, not measured before the newest compaction) along
+/// with its index, or `None`. Mirrors `getLastAssistantUsageInfo`.
 fn last_assistant_usage_info(messages: &[AgentMessage]) -> Option<(Usage, usize)> {
+    let stale = stale_usage(messages);
     for (i, msg) in messages.iter().enumerate().rev() {
         if let AgentMessage::Assistant(a) = msg {
+            let current = match stale {
+                Stale::None => true,
+                Stale::Before(end) => i >= end,
+                Stale::Until(at) => a.timestamp > at,
+            };
             if a.stop_reason != evo_ai::types::StopReason::Aborted
                 && a.stop_reason != evo_ai::types::StopReason::Error
                 && a.usage.context_tokens() > 0
+                && current
             {
                 return Some((a.usage.clone(), i));
             }
@@ -318,12 +368,40 @@ pub struct ContextUsageEstimate {
     pub last_usage_index: Option<usize>,
 }
 
+/// How much the provider's count exceeded the character estimate for the
+/// context the newest compaction in `messages` replaced (its `tokensBefore`
+/// over its `estimatedBefore`), within `1.0..=8.0`. The same content runs
+/// on in the compacted context, and the estimate leaves out what only a
+/// provider counts (system prompt, tools) and undercounts text that is not
+/// English. `1.0` without a compaction or its estimate.
+fn compaction_calibration(messages: &[AgentMessage]) -> f64 {
+    let data = messages
+        .iter()
+        .rev()
+        .find_map(crate::messages::compaction_summary_data);
+    match data {
+        Some(data) => match data.estimated_before {
+            Some(estimated) if estimated > 0 && data.tokens_before > 0 => {
+                (data.tokens_before as f64 / estimated as f64).clamp(1.0, 8.0)
+            }
+            _ => 1.0,
+        },
+        None => 1.0,
+    }
+}
+
 pub fn estimate_context_tokens(messages: &[AgentMessage]) -> ContextUsageEstimate {
     match last_assistant_usage_info(messages) {
         None => {
             let mut estimated = 0i64;
             for m in messages {
                 estimated += estimate_tokens(m);
+            }
+            // A compacted context nobody has measured yet: scale the estimate
+            // the way the compacted content was measured before.
+            let calibration = compaction_calibration(messages);
+            if calibration > 1.0 {
+                estimated = (estimated as f64 * calibration).ceil() as i64;
             }
             ContextUsageEstimate {
                 tokens: estimated,
@@ -475,5 +553,127 @@ mod tests {
         assert_eq!(est.trailing_tokens, 3);
         assert_eq!(est.tokens, 113);
         assert_eq!(est.last_usage_index, Some(1));
+    }
+
+    /// After a compaction, a kept assistant message's usage measured the whole
+    /// conversation before it: the context is estimated instead, until a
+    /// newer request reports usage.
+    #[test]
+    fn usage_from_before_a_compaction_is_not_the_compacted_context() {
+        let assistant = |input: i64, timestamp: i64| {
+            let mut a = evo_ai::types::AssistantMessage::empty(
+                evo_ai::types::Api::Faux,
+                "faux",
+                "faux",
+                timestamp,
+            );
+            a.usage = Usage {
+                input,
+                output: 0,
+                cache_read: 0,
+                cache_write: 0,
+                cache_write_1h: None,
+                reasoning: None,
+                total_tokens: input,
+                cost: evo_ai::types::UsageCost::default(),
+            };
+            a.stop_reason = evo_ai::types::StopReason::Stop;
+            AgentMessage::Assistant(Box::new(a))
+        };
+        let summary =
+            crate::messages::create_compaction_summary_message("earlier work", 90_000, 50);
+        // The summary, then a kept assistant message whose request saw 90k tokens.
+        let compacted = vec![summary.clone(), user("abcdefgh"), assistant(90_000, 40)];
+        let est = estimate_context_tokens(&compacted);
+        assert!(est.last_usage_index.is_none(), "the kept usage is stale");
+        assert!(
+            est.tokens < 1_000,
+            "estimated from the compacted messages: {}",
+            est.tokens
+        );
+        // A request after the compaction reports the context again.
+        let later = vec![
+            summary,
+            user("abcdefgh"),
+            assistant(90_000, 40),
+            user("abcd"),
+            assistant(12_000, 60),
+        ];
+        let est = estimate_context_tokens(&later);
+        assert_eq!((est.usage_tokens, est.last_usage_index), (12_000, Some(4)));
+
+        // The summary says how many messages it kept: that decides, even when
+        // every timestamp is the same.
+        let counted = crate::messages::with_compaction_facts(
+            crate::messages::create_compaction_summary_message("earlier work", 90_000, 1),
+            2,
+            None,
+        );
+        let same_time = vec![
+            counted,
+            user("abcdefgh"),
+            assistant(90_000, 1),
+            user("abcd"),
+            assistant(12_000, 1),
+        ];
+        let est = estimate_context_tokens(&same_time);
+        assert_eq!((est.usage_tokens, est.last_usage_index), (12_000, Some(4)));
+        assert!(estimate_context_tokens(&same_time[..3])
+            .last_usage_index
+            .is_none());
+    }
+
+    /// An unmeasured compacted context is scaled by how the provider counted
+    /// the context the compaction replaced, compared with the estimate.
+    #[test]
+    fn a_compacted_context_is_estimated_the_way_it_was_measured() {
+        let entry = crate::session::types::CompactionEntry {
+            base: crate::session::types::EntryBase {
+                entry_type: "compaction".into(),
+                id: "c".into(),
+                seq: 1,
+                parent_id: None,
+                timestamp: 50,
+            },
+            summary: "earlier work".into(),
+            retained_tail: vec![user(&"x".repeat(4_000))], // 1,000 estimated
+            tokens_before: 90_000,
+            details: Some(
+                serde_json::json!({ "readFiles": [], "modifiedFiles": [], "estimatedBefore": 30_000 }),
+            ),
+            usage: None,
+        };
+        let summary = crate::messages::compaction_summary_message_of(&entry);
+        assert_eq!(
+            crate::messages::compaction_summary_data(&summary)
+                .unwrap()
+                .estimated_before,
+            Some(30_000)
+        );
+        let mut messages = vec![summary];
+        messages.extend(entry.retained_tail.clone());
+        let plain: i64 = messages.iter().map(estimate_tokens).sum();
+        let est = estimate_context_tokens(&messages);
+        // 90,000 measured for 30,000 estimated: three times the estimate.
+        assert_eq!(est.tokens, plain * 3);
+        assert!(est.last_usage_index.is_none());
+
+        // Entries written before the estimate was stored are not scaled.
+        let old = crate::session::types::CompactionEntry {
+            details: None,
+            ..entry.clone()
+        };
+        let mut messages = vec![crate::messages::compaction_summary_message_of(&old)];
+        messages.extend(old.retained_tail.clone());
+        assert_eq!(estimate_context_tokens(&messages).tokens, plain);
+
+        // A wild ratio is bounded.
+        let wild = crate::session::types::CompactionEntry {
+            details: Some(serde_json::json!({ "estimatedBefore": 1 })),
+            ..entry
+        };
+        let mut messages = vec![crate::messages::compaction_summary_message_of(&wild)];
+        messages.extend(wild.retained_tail.clone());
+        assert_eq!(estimate_context_tokens(&messages).tokens, plain * 8);
     }
 }

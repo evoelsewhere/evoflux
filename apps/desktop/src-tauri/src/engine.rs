@@ -1,9 +1,11 @@
 //! Child-process bridge to `evo-engine`, one process per open chat.
 //!
 //! Every chat runs in its own engine (`evo-engine --mode rpc --session-db
-//! <evo.db> --session-id <chat>`), so chats run in parallel and a crash takes
-//! down one chat, not the window. The transcript is written by the engine into
-//! the app database; reopening a chat starts an engine on the same session id.
+//! <transcripts>/<chat>.db --session-id <chat>`), so chats run in parallel and
+//! a crash takes down one chat, not the window. The engine writes the chat's
+//! transcript into that file, which no other process writes (ADR 0007), so
+//! chats never wait on one another's write lock; reopening a chat starts an
+//! engine on the same file and session id.
 //!
 //! Each stdout line is parsed and emitted as `engine://message`, stderr lines
 //! as `engine://stderr` and the exit as `engine://exit`, all tagged with the
@@ -142,6 +144,24 @@ fn stderr_level(line: &str) -> &'static str {
     }
 }
 
+/// How a run ended, for an `agent_end` that carries no outcome: the run's
+/// last assistant message says (`stopReason` `aborted` when it was stopped,
+/// also while a tool ran; `error` when the model failed).
+fn run_end_outcome(message: &Value) -> &'static str {
+    if message.get("aborted") == Some(&Value::Bool(true)) {
+        return "aborted";
+    }
+    let last = message
+        .get("messages")
+        .and_then(Value::as_array)
+        .and_then(|messages| messages.iter().rev().find(|m| m.get("role").and_then(Value::as_str) == Some("assistant")));
+    match last.and_then(|m| m.get("stopReason")).and_then(Value::as_str) {
+        Some("aborted") => "aborted",
+        Some("error") => "failed",
+        _ => "completed",
+    }
+}
+
 /// The protocol events worth keeping in the run log.
 fn log_message(db: &Db, chat: &str, message: &Value) {
     let kind = message.get("type").and_then(Value::as_str).unwrap_or("");
@@ -158,10 +178,7 @@ fn log_message(db: &Db, chat: &str, message: &Value) {
         "ready" => NewLog::new("info", "engine", "ready"),
         "agent_start" => NewLog::new("debug", "engine", "run started"),
         "agent_end" => {
-            let outcome = message
-                .get("outcome")
-                .and_then(Value::as_str)
-                .unwrap_or(if message.get("aborted") == Some(&Value::Bool(true)) { "aborted" } else { "completed" });
+            let outcome = message.get("outcome").and_then(Value::as_str).unwrap_or_else(|| run_end_outcome(message));
             let level = if outcome == "failed" { "error" } else { "info" };
             let mut entry = NewLog::new(level, "engine", format!("run {outcome}"));
             if let Some(error) = message.get("error").filter(|e| !e.is_null()) {
@@ -241,12 +258,17 @@ pub async fn engine_start(
         db.log(NewLog::new("error", "shell", error.clone()).chat(Some(&chat)));
         return Err(error);
     }
+    // After the old process is gone: moving a transcript left in evo.db by
+    // an older build may set aside a file it had open.
+    let transcript = db.transcript_for_engine(&chat).inspect_err(|error| {
+        db.log(NewLog::new("error", "shell", error.clone()).chat(Some(&chat)));
+    })?;
 
     let mut command = Command::new(&binary);
     command
         .args(["--mode", "rpc", "--session-id", &chat])
         .arg("--session-db")
-        .arg(&db.path)
+        .arg(&transcript)
         // Process security for the chat's shell and file tools (Settings → Sandbox).
         .arg("--sandbox-config")
         .arg(sandbox_config(&db).to_string())
@@ -434,4 +456,25 @@ pub async fn engine_stop(
         db.log(NewLog::new("info", "shell", "engine stopped").chat(Some(&chat)));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_run_stopped_while_a_tool_ran_is_logged_as_aborted() {
+        let end = |stop: &str| {
+            json!({ "type": "agent_end", "messages": [
+                { "role": "assistant", "stopReason": "toolUse" },
+                { "role": "toolResult" },
+                { "role": "assistant", "stopReason": stop },
+            ]})
+        };
+        assert_eq!(run_end_outcome(&end("aborted")), "aborted");
+        assert_eq!(run_end_outcome(&end("error")), "failed");
+        assert_eq!(run_end_outcome(&end("stop")), "completed");
+        assert_eq!(run_end_outcome(&json!({ "type": "agent_end", "aborted": true })), "aborted");
+        assert_eq!(run_end_outcome(&json!({ "type": "agent_end" })), "completed");
+    }
 }

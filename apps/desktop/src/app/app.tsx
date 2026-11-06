@@ -19,6 +19,7 @@ import { MacMenu } from "@/features/shell/mac-menu";
 import { useAppBootstrap, useAppHotkeys } from "./use-app-bootstrap";
 import { CustomizePage } from "@/features/customize/customize-page";
 import { SchedulerPage } from "@/features/scheduler/scheduler-page";
+import { UsagePage } from "@/features/usage/usage-page";
 
 /** Below this width (right of the sidebar) the side panel overlays instead of splitting. */
 const SPLIT_MIN_WIDTH = 900;
@@ -184,6 +185,7 @@ export function App() {
   const settingsOpen = useUiStore((s) => s.settingsOpen);
   const customizeOpen = useUiStore((s) => s.customizeOpen);
   const schedulerOpen = useUiStore((s) => s.schedulerOpen);
+  const usageOpen = useUiStore((s) => s.usageOpen);
   const [insetRef, insetWidth] = useElementWidth<HTMLElement>();
   const split = insetWidth === 0 || insetWidth >= SPLIT_MIN_WIDTH;
   // A chat window shows its one chat: no sidebar.
@@ -205,6 +207,13 @@ export function App() {
             <WindowTitleBar />
             <div className="min-h-0 flex-1">
               <SchedulerPage />
+            </div>
+          </div>
+        ) : usageOpen && !solo ? (
+          <div className="flex h-full min-w-0 flex-col">
+            <WindowTitleBar />
+            <div className="min-h-0 flex-1">
+              <UsagePage />
             </div>
           </div>
         ) : customizeOpen && !solo ? (

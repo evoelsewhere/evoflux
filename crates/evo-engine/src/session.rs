@@ -320,9 +320,11 @@ pub enum SessionSelection {
     /// `--fork <path|id>`: fork the given session into a new one and start in
     /// the fork.
     Fork { source: String, dir: PathBuf },
-    /// `--session-db <file> [--session-id <id>]`: the session lives in the
-    /// SQLite app database (evo-harness's `SqliteSessionRepo` tables, created
-    /// by the `evo-store` migrations). Opened when `id` exists, else created
+    /// `--session-db <file> [--session-id <id>]`: the session lives in a
+    /// SQLite file through evo-harness's `SqliteSessionRepo` — the chat's own
+    /// transcript file when the desktop starts the engine
+    /// (`<agent dir>/transcripts/<chat id>.db`), or the app database `evo.db`
+    /// as older desktops passed it. Opened when `id` exists, else created
     /// with that id. `dir` is still the configured session directory for the
     /// features that write files next to sessions.
     Database { db: PathBuf, id: String, dir: PathBuf },
@@ -1177,7 +1179,10 @@ pub async fn build_prepared(
     // AgentEvents live as a run unfolds. The corresponding broadcast::Receiver
     // is returned alongside the harness; non-interactive modes simply drop it.
     let (broadcast, event_rx) = evo_agent::events::BroadcastEmitter::new(256);
-    let broadcast_emitter: Arc<dyn evo_agent::AgentEmitter> = Arc::new(broadcast);
+    // Every finished response of the chat's own agent goes to the usage
+    // history on its way out (a no-op unless the host started recording).
+    let broadcast_emitter: Arc<dyn evo_agent::AgentEmitter> =
+        Arc::new(crate::usage_log::UsageTap::new(Arc::new(broadcast)));
     // The broadcast half stays live for the whole session (the TUI's drain task
     // holds the receiver); reload re-wraps it in a fresh `TeeEmitter`, so keep
     // a clone for the `ReloadContext` before the tee match consumes the original.
@@ -3055,16 +3060,33 @@ async fn build_session(
     }
 }
 
-/// Open (or create) session `id` in the SQLite app database at `db`.
+/// Open (or create) session `id` in the SQLite file at `db`.
 ///
-/// `evo-store` opens the file first so its migrations (and the evo file
-/// identity) are in place before the harness repository touches it.
+/// The desktop gives each chat a transcript file of its own
+/// (`transcripts/<chat id>.db`, written only by this engine, ADR 0007).
+/// `evo-store` stamps a new file as a transcript before the harness repository
+/// creates its tables, and refuses any other SQLite file. The app database
+/// itself (`evo.db`, what older desktops passed) still works: its migrations
+/// run first, as they did then.
 async fn database_session(db: &Path, id: &str) -> Result<Session, BuildError> {
     use evo_harness::session::sqlite::SqliteSessionRepo;
     use evo_harness::session::types::{SessionCreateOptions, SessionMetadata, SessionRepo};
+    use evo_store::transcripts::{self, FileKind};
 
-    crate::app_db::open_at(db)
-        .map_err(|e| BuildError::SessionOpen(format!("{}: {e}", db.display())))?;
+    let open_error =
+        |e: evo_store::DbError| BuildError::SessionOpen(format!("{}: {e}", db.display()));
+    match transcripts::kind(db).map_err(open_error)? {
+        FileKind::AppDatabase => {
+            crate::app_db::open_at(db).map_err(open_error)?;
+        }
+        FileKind::New | FileKind::Transcript => transcripts::prepare(db).map_err(open_error)?,
+        FileKind::Other => {
+            return Err(BuildError::SessionOpen(format!(
+                "{} is not an evo transcript or database",
+                db.display()
+            )))
+        }
+    }
     let repo = SqliteSessionRepo::open(db)
         .map_err(|e| BuildError::SessionOpen(format!("{}: {e}", db.display())))?;
     let metadata = SessionMetadata {
@@ -4158,6 +4180,8 @@ mod native_roundtrip_tests;
 mod native_store_tests;
 #[cfg(test)]
 mod runtime_session_tests;
+#[cfg(test)]
+mod transcript_file_tests;
 
 #[cfg(test)]
 mod tests {

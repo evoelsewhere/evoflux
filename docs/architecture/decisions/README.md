@@ -14,6 +14,7 @@ consequences and the alternatives rejected. The
 | [0004](0004-bun-for-desktop-javascript.md) | bun is the only JavaScript package manager for the desktop | Accepted | 2026-11-06 |
 | [0005](0005-real-engine-and-live-reload.md) | The app always runs the real engine; configuration reloads live | Accepted | 2026-11-06 |
 | [0006](0006-documentation-follows-add-and-sdd.md) | Design documentation follows ADD, SDD and ADR | Accepted | 2026-11-06 |
+| [0007](0007-one-transcript-file-per-chat.md) | Each chat's transcript is a SQLite file of its own, written only by that chat's engine | Accepted | 2026-11-06 |
 
 ## Rules
 

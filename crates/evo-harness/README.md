@@ -28,7 +28,14 @@ evo-ai = "0.3"
   too.
 - **Compaction.** When the context grows past a threshold, older turns are
   summarised rather than dropped, under a split-turn invariant that keeps the
-  two-LLM-call structure valid.
+  two-LLM-call structure valid. Token counts are the provider's where it
+  reported them, else a character estimate. `keepRecentTokens` is in provider
+  tokens: the cut point scales it by how the provider counted this context
+  against the estimate (often 2–3× for code, tool output and text that is not
+  English). After a compaction, usage that its retained messages reported
+  measured the context before it and is ignored; the compacted context is
+  estimated, scaled the same way (`details.estimatedBefore` on the entry),
+  until the next request measures it.
 - **Deferred responses.** Providers with a long-poll API park an operation and
   resume it later without re-running the tool calls it already executed.
 - **Resources.** Skills, prompt templates and system-prompt assembly are loaded

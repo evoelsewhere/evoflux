@@ -252,6 +252,17 @@ Markdown with YAML frontmatter, same rules and loader shape as skills:
 - **Foreground**: the tool awaits the child and returns its final text as the
   tool result. Parallel calls in one assistant message run concurrently
   already (the loop executes tool batches in parallel).
+- **Steering releases a foreground wait** (as built, 2026-11-06): the parent
+  reads steering only between steps, so a message sent while it waits on
+  foreground agents used to wait for all of them. Now a `queue_message`
+  steer (the person, or another session's `message_session`) calls
+  `agent_tool::steered(session)`; every waiting foreground call returns at
+  once ("moved to the background, its report comes as a message"), the child
+  runs on with the session's lifetime instead of the parent run's, and
+  reports like a background agent (steered into a running parent, or queued
+  with a wake). A child that finishes in the same instant reports to its call
+  as before (an `ATTACHED → FINISHED | DETACHED` switch decides). Background
+  agents' own notes do not release anything.
 - **Progress**: the child's emitter turns child `AgentEvent`s into a compact,
   **cumulative** snapshot and calls the tool's `on_update` (throttled, ~4/s):
 
@@ -296,6 +307,19 @@ Markdown with YAML frontmatter, same rules and loader shape as skills:
   it with its own context. Evicted on session close or after N idle minutes.
 - **UI**: a "Background agents" chip above the composer listing running ones;
   the wake-up turn renders as an event chip, not a user bubble.
+- **An engine that exits loses its background agents** (they run in its
+  process: the app closed or crashed). When an engine opens a session in RPC
+  mode it finds the background calls in the branch with no
+  `<background-agent id=…>` report after them
+  (`agent_tool::unreported_background_agents`) and queues their report for
+  the next run, `status="error"`, saying the agent stopped with no report
+  (`report_lost_background_agents`; a report already queued is not queued
+  again; no wake: opening a chat does not start a run). `ready` lists them in
+  `lostBackgroundAgents`. A saved call keeps its snapshot from when it
+  returned (`status: "running"`), so the desktop applies each report to its
+  call when it rebuilds a transcript, and after an engine start (`ready`)
+  shows a call with no report as stopped (`transcript.ts`,
+  `settleBackgroundAgents`) instead of running forever.
 
 ### 3.4 Desktop rendering
 
@@ -342,7 +366,7 @@ engine change is needed for the mechanism.
 | Tool | Does |
 | --- | --- |
 | `start_session {title, prompt, context: fresh\|fork, workspace?, worktree?, model?}` | Creates the child chat (parent link, workspace = parent's unless given), starts its engine in the background, sends the prompt, returns `{sessionId, title, status}` |
-| `message_session {sessionId, message}` | Sends a follow-up to a child (queued if it is running) |
+| `message_session {sessionId, message}` | Sends a message to a child: a running child reads it at its next step (steering), an idle one starts a turn |
 | `list_sessions {}` | The parent's children: id, title, status, unread, last report excerpt |
 
 - **Approval.** By default `start_session` does not start anything: it returns

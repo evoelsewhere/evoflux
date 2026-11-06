@@ -173,7 +173,7 @@ pub fn session_tools() -> Value {
         },
         {
             "name": "message_session",
-            "description": "Send a follow-up to a session started from this chat (queued if it is running). Use this instead of starting a new session for the same task.",
+            "description": "Send a message to a session started from this chat: a running session reads it at its next step (steering), an idle one starts a turn with it. Use this instead of starting a new session for the same task.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -441,11 +441,11 @@ impl<S: MailStore> Hub<S> {
         let mut effects = Vec::new();
         let line = match mail.body.deliver {
             Deliver::Prompt => {
-                // A running engine queues it after the current turn; an idle
-                // one starts a turn (and is busy from now on).
+                // A running engine reads it at its next step (steering); an
+                // idle one starts a turn (and is busy from now on).
                 let busy = self.with_engine(&mail.to_chat, |e| std::mem::replace(&mut e.busy, true));
                 if busy {
-                    json!({ "type": "queue_message", "id": mail.id, "message": mail.body.text, "deliverAs": "followUp" })
+                    json!({ "type": "queue_message", "id": mail.id, "message": mail.body.text, "deliverAs": "steer" })
                 } else {
                     effects.push(Effect::Prompted { chat: mail.to_chat.clone(), text: mail.body.text.clone() });
                     json!({ "type": "prompt", "id": mail.id, "message": mail.body.text })
@@ -866,7 +866,7 @@ mod tests {
     }
 
     #[test]
-    fn message_session_prompts_an_idle_child_and_queues_for_a_busy_one() {
+    fn message_session_prompts_an_idle_child_and_steers_a_busy_one() {
         let hub = hub();
         hub.on_hosted("child");
         // Only the chat that started it may message it.
@@ -876,10 +876,10 @@ mod tests {
         let sent_now = sent(&effects);
         assert_eq!(sent_now[0].1["result"]["content"][0]["text"], "Sent to \"Fix \"the\" tests\". You will get a note when it finishes its turn.");
         assert_eq!((sent_now[1].0.as_str(), sent_now[1].1["type"].as_str()), ("child", Some("prompt")));
-        // While that turn runs, the next one is a follow-up.
+        // While that turn runs, the next one steers it (read at its next step).
         hub.on_line("child", &json!({"type":"agent_start"}));
         let next = sent(&hub.on_line("parent", &call("message_session", json!({"sessionId":"child","message":"also tests"}))));
-        assert_eq!((next[1].1["type"].as_str(), next[1].1["deliverAs"].as_str()), (Some("queue_message"), Some("followUp")));
+        assert_eq!((next[1].1["type"].as_str(), next[1].1["deliverAs"].as_str()), (Some("queue_message"), Some("steer")));
     }
 
     #[test]

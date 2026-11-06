@@ -114,6 +114,17 @@ export function SidePanelIcon({ open = false, ...props }: IconProps & { open?: b
   );
 }
 
+/** Usage: spend per day, as bars. */
+export function UsageIcon(props: IconProps) {
+  return (
+    <Base {...props}>
+      <rect x="3.5" y="12" width="4" height="8" rx="1.5" {...FILL} />
+      <rect x="10" y="7.5" width="4" height="12.5" rx="1.5" {...FILL} />
+      <rect x="16.5" y="4" width="4" height="16" rx="1.5" {...FILL} />
+    </Base>
+  );
+}
+
 export function SchedulerIcon(props: IconProps) {
   return (
     <Base {...props}>

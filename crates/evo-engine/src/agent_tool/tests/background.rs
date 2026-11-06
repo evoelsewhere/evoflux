@@ -204,3 +204,83 @@ async fn a_background_agent_can_be_cancelled() {
     until(|| settled_as("bg-cancel", crate::mesh::RunStatus::Cancelled)).await;
     assert!(crate::mesh::router().cancel(&address, true).unwrap().is_empty(), "nothing left to cancel");
 }
+
+/// A parent that starts a foreground agent whose child streams `report` slowly.
+fn steer_script(log: Arc<Mutex<Vec<Vec<String>>>>, description: &'static str, report: String) -> FauxScript {
+    let step = FauxStep::factory(move |ctx: &Context| {
+        let users = user_texts(ctx);
+        log.lock().unwrap().push(users.clone());
+        if users.first().is_some_and(|u| u.contains("You are a subagent")) {
+            return faux_assistant_message(report.clone(), StopReason::Stop);
+        }
+        if users.len() == 1 && !matches!(ctx.messages.last(), Some(Message::ToolResult(_))) {
+            return faux_assistant_message(
+                vec![FauxBlock::tool_call(
+                    "agent",
+                    json!({"description":description,"prompt":"Survey the crate."}),
+                )],
+                StopReason::ToolUse,
+            );
+        }
+        faux_assistant_message("ok", StopReason::Stop)
+    });
+    let script = FauxScript::new().with_tokens_per_second(60.0);
+    script.append_responses(vec![step; 20]);
+    script
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn steering_releases_a_waiting_foreground_agent_into_the_background() {
+    let dir = tempfile::tempdir().unwrap();
+    let log = Arc::new(Mutex::new(Vec::new()));
+    let events = Arc::new(Collector::default());
+    let parent = parent(dir.path(), steer_script(log.clone(), "fg-steer", "slow survey ".repeat(40)), events.clone()).await;
+    let session_id = parent.session().storage().metadata().id.clone();
+
+    let run = {
+        let parent = parent.clone();
+        tokio::spawn(async move { parent.lane("main").prompt_text("survey it", Vec::new()).await })
+    };
+    until(|| node_by("fg-steer").is_some_and(|n| n.state == crate::mesh::NodeState::Running)).await;
+
+    // The person steers while the parent waits on its agent.
+    let message = AgentMessage::from(evo_ai::types::UserMessage::new("STEER: check the docs too", now_ms() as i64));
+    parent.lane("main").steer(message).await.unwrap();
+    steered(&session_id);
+
+    // The call let go at once; the parent read the message in the same run.
+    tokio::time::timeout(Duration::from_secs(5), run).await.expect("the run ended").unwrap().unwrap();
+    let (result, is_error) = agent_end(&events);
+    assert!(!is_error, "{result:?}");
+    assert!(text_of(&result).starts_with("A new message arrived"), "{}", text_of(&result));
+    assert_eq!(result.details["child"]["background"], json!(true));
+    let read = log.lock().unwrap().iter().any(|users| {
+        !users.first().is_some_and(|u| u.contains("You are a subagent"))
+            && users.iter().any(|u| u.contains("STEER: check the docs too"))
+    });
+    assert!(read, "the parent never saw the steering message");
+
+    // The agent outlived the parent's run, finished, and asks to wake it with its report.
+    let session = crate::mesh::Address::session(&session_id);
+    until(|| {
+        settled_as("fg-steer", crate::mesh::RunStatus::Done)
+            && node_by("fg-steer").is_some_and(|n| crate::mesh::router().pending_wake(&session).contains(&n.id.to_string()))
+    })
+    .await;
+    assert_eq!(node_by("fg-steer").unwrap().meta["background"], json!(true));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn without_steering_a_foreground_agent_reports_to_its_call() {
+    let dir = tempfile::tempdir().unwrap();
+    let log = Arc::new(Mutex::new(Vec::new()));
+    let events = Arc::new(Collector::default());
+    let parent = parent(dir.path(), steer_script(log, "fg-no-steer", "quick survey".into()), events.clone()).await;
+    // Steering for another session does not touch it.
+    steered("some-other-session");
+    parent.lane("main").prompt_text("survey it", Vec::new()).await.unwrap();
+    let (result, is_error) = agent_end(&events);
+    assert!(!is_error, "{result:?}");
+    assert_eq!(text_of(&result), "quick survey");
+    assert_eq!(result.details["child"]["background"], json!(false));
+}

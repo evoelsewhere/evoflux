@@ -37,6 +37,11 @@ export interface AppNotification {
 
 /** Notifications kept in the bell; the oldest go first. */
 export const MAX_NOTIFICATIONS = 200;
+/** Toasts on screen at once; a new one pushes the oldest out (it stays in the bell). */
+export const MAX_TOASTS = 3;
+
+const sameToast = (a: AppNotification, b: AppNotification) =>
+  a.level === b.level && a.title === b.title && a.body === b.body;
 
 interface NotificationStore {
   notifications: AppNotification[];
@@ -69,12 +74,16 @@ export const useNotificationStore = create<NotificationStore>()(
         set((s) => {
           const replaced = notification.key ? s.notifications.find((n) => n.key === notification.key) : undefined;
           const rest = replaced ? s.notifications.filter((n) => n.id !== replaced.id) : s.notifications;
+          // A repeat of a toast already on screen replaces it rather than stacking.
+          const keep = (id: string) => {
+            if (id === replaced?.id) return false;
+            if (!toast) return true;
+            const shown = s.notifications.find((n) => n.id === id);
+            return !shown || !sameToast(shown, notification);
+          };
           return {
             notifications: [notification, ...rest].slice(0, MAX_NOTIFICATIONS),
-            toasts: [
-              ...(toast ? [notification.id] : []),
-              ...s.toasts.filter((id) => id !== replaced?.id),
-            ],
+            toasts: [...(toast ? [notification.id] : []), ...s.toasts.filter(keep)].slice(0, MAX_TOASTS),
           };
         }),
       markRead: (id) =>

@@ -85,6 +85,55 @@ pub struct BranchSummaryData {
 pub struct CompactionSummaryData {
     pub summary: String,
     pub tokens_before: i64,
+    /// The compaction's `details.estimatedBefore`: the character-based
+    /// estimate of the context it replaced, to calibrate estimates of the
+    /// compacted context ([`crate::compaction::estimate_context_tokens`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub estimated_before: Option<i64>,
+    /// How many messages the compaction kept: they follow this summary in the
+    /// context, and any usage they report measured the context before it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retained_messages: Option<usize>,
+}
+
+/// The summary message a compaction entry puts at the head of the context,
+/// followed by its retained tail.
+pub fn compaction_summary_message_of(
+    entry: &crate::session::types::CompactionEntry,
+) -> AgentMessage {
+    let estimated_before = entry
+        .details
+        .as_ref()
+        .and_then(|details| details.get("estimatedBefore"))
+        .and_then(serde_json::Value::as_i64);
+    with_compaction_facts(
+        create_compaction_summary_message(
+            &entry.summary,
+            entry.tokens_before,
+            entry.base.timestamp,
+        ),
+        entry.retained_tail.len(),
+        estimated_before,
+    )
+}
+
+/// Record on a compaction summary message how many retained messages follow
+/// it and, when known, the estimate of the context it replaced (see
+/// [`CompactionSummaryData`]); token estimates of the compacted context read them.
+pub fn with_compaction_facts(
+    mut message: AgentMessage,
+    retained: usize,
+    estimated_before: Option<i64>,
+) -> AgentMessage {
+    if let AgentMessage::Custom(custom) = &mut message {
+        if let Some(data) = custom.data.as_object_mut() {
+            data.insert("retainedMessages".into(), retained.into());
+            if let Some(estimated) = estimated_before {
+                data.insert("estimatedBefore".into(), estimated.into());
+            }
+        }
+    }
+    message
 }
 
 /// `CustomMessage<T>` payload. Mirrors `CustomMessage` (`{customType, content,
@@ -173,6 +222,8 @@ pub fn create_compaction_summary_message(
     let data = serde_json::to_value(CompactionSummaryData {
         summary: summary.into(),
         tokens_before,
+        estimated_before: None,
+        retained_messages: None,
     })
     .expect("CompactionSummaryData serializes");
     AgentMessage::Custom(CustomMessage {

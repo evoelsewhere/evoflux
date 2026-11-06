@@ -107,8 +107,8 @@ answered by it: the window ignores their `external_tool_request`s.
   once; nested sessions get no session tools.
 - **Prompt mail** waits until a window has *hosted* the receiving engine (set
   up its tools and called `mesh_hosted`), then goes out as an RPC `prompt`
-  (idle) or `queue_message` follow-up (busy; the hub tracks `agent_start` /
-  `agent_settled`). A refused prompt goes out when the run ends. Accepted =
+  (idle) or `queue_message` steer (busy: read at the session's next step, not
+  after its run; the hub tracks `agent_start` / `agent_settled`). A refused prompt goes out when the run ends. Accepted =
   delivered. The engine does not echo a run's first prompt, so the hub also
   emits `mesh://prompted` and the window showing the chat adds the turn.
 - **Hosting.** When the hub needs an engine that is not set up — a session it
@@ -117,6 +117,16 @@ answered by it: the window ignores their `external_tool_request`s.
   the chat answers `mesh_hosted`; otherwise the main window starts the engine
   in the background, and `onReadyNested` calls `mesh_hosted` once the tools
   are set up. Windows still start, hold and trim engines.
+- **Hosting an engine that died.** A window that holds a chat whose engine
+  exited or failed to start (a crash) starts it again when the hub asks for
+  a host, at most 3 times in 2 minutes per chat (an engine that dies on
+  start is not restarted forever; its mail then waits until the chat is
+  opened). Without this, `message_session` reported "sent" while the mail
+  waited for good.
+- **Mail left at startup.** No engine runs when the app starts, so nothing
+  asks for a host: the main window reads the chats with undelivered mail
+  (`mesh_pending_chats`, `evo_store::mail::chats_with_pending_mail`, archived
+  chats excluded) and hosts each one.
 - `list_sessions` reads the children from the database and their live state
   from the hub (`running`, `waiting` for an approval, `idle`).
 

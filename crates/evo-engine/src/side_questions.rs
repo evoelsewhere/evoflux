@@ -152,11 +152,24 @@ impl Job {
 struct Emitter(Arc<Job>);
 impl AgentEmitter for Emitter {
     fn emit(&self, event: AgentEvent) -> futures::future::BoxFuture<'static, ()> {
+        record_usage(&event);
         self.0.observe(event);
         Box::pin(async {})
     }
     fn try_emit(&self, event: AgentEvent) {
+        record_usage(&event);
         self.0.observe(event);
+    }
+}
+
+/// A side question's responses count toward its chat's usage history.
+fn record_usage(event: &AgentEvent) {
+    if let AgentEvent::MessageEnd {
+        message: evo_agent::AgentMessage::Assistant(message),
+        ..
+    } = event
+    {
+        crate::usage_log::record(message, crate::usage_log::Source::Side);
     }
 }
 impl Thread {

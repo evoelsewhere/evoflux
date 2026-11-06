@@ -140,7 +140,12 @@ fn ensure_row(tx: &rusqlite::Transaction<'_>, provider: &str) -> rusqlite::Resul
 
 fn transact(write: impl FnOnce(&rusqlite::Transaction<'_>) -> rusqlite::Result<()>) -> Result<(), String> {
     let mut db = db()?;
-    let tx = db.transaction().map_err(|error| error.to_string())?;
+    // IMMEDIATE: take evo.db's write lock up front, waiting out the busy
+    // timeout. A deferred transaction reads first and fails at once with
+    // "database is locked" when it upgrades after another process wrote.
+    let tx = db
+        .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+        .map_err(|error| error.to_string())?;
     write(&tx).map_err(|error| error.to_string())?;
     tx.commit().map_err(|error| error.to_string())
 }

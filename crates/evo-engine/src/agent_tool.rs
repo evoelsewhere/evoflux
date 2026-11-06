@@ -71,9 +71,123 @@ const MAX_ROWS: usize = 50;
 const MAX_TEXT: usize = 4096;
 /// Argument fields shown for a child's tool call (what the UI labels it by).
 const ARG_FIELDS: &[&str] = &["command", "path", "file_path", "pattern", "query", "url", "description"];
+/// A foreground run's tie to its tool call ([`drive`]).
+const ATTACHED: u8 = 0;
+/// The call returned on a steering message; the run goes on in the background.
+const DETACHED: u8 = 1;
+/// The run ended while the call still waited for it.
+const FINISHED: u8 = 2;
+
+/// Steering the person or another session sent, per session: a counter that
+/// waiting foreground agents watch ([`steered`]).
+static STEERED: LazyLock<Mutex<std::collections::HashMap<String, tokio::sync::watch::Sender<u64>>>> =
+    LazyLock::new(Default::default);
+
+/// A steering message for the session `session_id` was queued (RPC
+/// `queue_message`, `deliverAs: steer`): foreground agents its run waits for
+/// move to the background, so the run reads the message at its next step.
+pub fn steered(session_id: &str) {
+    if let Some(sender) = lock(&STEERED).get(session_id) {
+        sender.send_modify(|count| *count = count.wrapping_add(1));
+    }
+}
+
+/// Changes after now of [`steered`] for `session_id`.
+fn steering(session_id: &str) -> tokio::sync::watch::Receiver<u64> {
+    lock(&STEERED).entry(session_id.to_string()).or_insert_with(|| tokio::sync::watch::channel(0).0).subscribe()
+}
+
 /// Messages about background agents start with this, so hosts can show them
 /// as events rather than as something the user typed.
 pub const NOTE_TAG: &str = "<background-agent";
+
+/// The background agents a session's history started that never reported:
+/// `(agent id, description)`, oldest first. `messages` is the branch as the
+/// transcript projects it (JSON, oldest first); `queued` is the text of
+/// messages still waiting for the next run (a report there is on its way).
+///
+/// A background agent lives in the engine that started it. Read when an
+/// engine opens a session, these ran in an earlier engine process that is
+/// gone (the app closed or crashed), so their reports will never come.
+pub fn unreported_background_agents(messages: &[Value], queued: &str) -> Vec<(String, String)> {
+    let mut open: Vec<(String, String)> = Vec::new();
+    for message in messages {
+        match message["role"].as_str() {
+            // A call that returned at once, leaving the agent running (an
+            // `agent` call, or a `message_agent` that continued one).
+            Some("toolResult") => {
+                let child = &message["details"]["child"];
+                if child["background"] == json!(true) && child["status"] == json!("running") {
+                    if let Some(id) = child["agentId"].as_str().filter(|id| !id.is_empty()) {
+                        open.retain(|(open_id, _)| open_id != id);
+                        open.push((id.to_string(), child["description"].as_str().unwrap_or("").to_string()));
+                    }
+                }
+            }
+            Some("user") => {
+                let text = match &message["content"] {
+                    Value::String(text) => text.clone(),
+                    Value::Array(blocks) => blocks.iter().filter_map(|b| b["text"].as_str()).collect::<Vec<_>>().join("\n"),
+                    _ => String::new(),
+                };
+                if text.contains(NOTE_TAG) {
+                    open.retain(|(id, _)| !text.contains(&format!("{NOTE_TAG} id=\"{id}\"")));
+                }
+            }
+            _ => {}
+        }
+    }
+    open.retain(|(id, _)| !queued.contains(&format!("id=\\\"{id}\\\"")) && !queued.contains(&format!("id=\"{id}\"")));
+    open
+}
+
+/// The report a lost background agent never sent, written the way a real one
+/// is, so the model and the app read it like any other.
+pub fn lost_agent_note(id: &str, description: &str) -> String {
+    format!(
+        "{NOTE_TAG} id=\"{id}\" description=\"{}\" status=\"error\">\nThe subagent stopped: the engine running it exited \
+         (the app closed or crashed) before it finished, so it has no report. Start it again if its work is still needed.\n\
+         </background-agent>",
+        description.replace('"', "'")
+    )
+}
+
+/// Tell this session's next run about background agents an earlier engine
+/// left unfinished (see [`unreported_background_agents`]). Queued for the
+/// next run, like a report that arrives while the chat is idle, but without a
+/// wake: opening a chat does not start a run by itself. Returns their ids.
+pub async fn report_lost_background_agents(
+    harness: &AgentHarness,
+    messages: &[Value],
+) -> Vec<String> {
+    use evo_harness::session::types::RecordQuery;
+    // Reports already queued by an earlier start (durable queue records).
+    let queued = harness
+        .session()
+        .storage()
+        .find_records(&RecordQuery {
+            record_type: Some("queue_enqueued"),
+            pending_queue_only: true,
+            ..Default::default()
+        })
+        .await
+        .ok()
+        .and_then(|records| serde_json::to_string(&records).ok())
+        .unwrap_or_default();
+    let lost = unreported_background_agents(messages, &queued);
+    if lost.is_empty() {
+        return Vec::new();
+    }
+    let note = lost.iter().map(|(id, description)| lost_agent_note(id, description)).collect::<Vec<_>>().join("\n\n");
+    let message = AgentMessage::from(evo_ai::types::UserMessage::new(note, now_ms() as i64));
+    match harness.lane("main").next_run(message).await {
+        Ok(_) => lost.into_iter().map(|(id, _)| id).collect(),
+        Err(error) => {
+            eprintln!("[evo] could not queue the lost background agents' reports: {error}");
+            Vec::new()
+        }
+    }
+}
 
 /// The parent harness, bound once it exists (tools are built before it).
 pub type HarnessCell = Arc<OnceLock<WeakAgentHarness>>;
@@ -177,6 +291,7 @@ impl Progress {
             }
             AgentEvent::MessageEnd { message: AgentMessage::Assistant(message), .. } => {
                 self.usage.add(&message.usage);
+                crate::usage_log::record(message, crate::usage_log::Source::Subagent);
             }
             AgentEvent::ToolExecutionStart { tool_call_id, tool_name, args } => {
                 self.tool_uses += 1;
@@ -409,7 +524,13 @@ async fn run(job: Arc<Job>, brief: String, foreground: Option<CancellationToken>
         biased;
         _ = cancel.cancelled() => Err("cancelled".to_string()),
         _ = foreground_abort => Err("cancelled".to_string()),
-        _ = scope.cancelled() => Err(if background { "the session closed" } else { "the parent run ended" }.to_string()),
+        // Read now: a foreground run may have moved to the background since it started.
+        _ = scope.cancelled() => Err(if job.background.load(Ordering::Acquire) {
+            "the session closed"
+        } else {
+            "the parent run ended"
+        }
+        .to_string()),
         _ = tokio::time::sleep(TIMEOUT) => Err(format!("timed out after {} minutes", TIMEOUT.as_secs() / 60)),
         result = &mut prompt => result.map_err(|e| e.to_string()),
     };
@@ -612,7 +733,50 @@ async fn drive(
     let _waits = mesh::router().add_wait(&Address::session(&job.session_id), &job.address);
     let before = lock(&job.progress).usage.clone();
     on_update(partial(lock(&job.progress).snapshot()));
-    let outcome = run(job.clone(), brief, Some(signal.clone()), scope).await;
+    let session = job
+        .parent
+        .upgrade()
+        .map(|parent| parent.session_scope_token())
+        .ok_or_else(|| AgentError::Tool("the session is gone".into()))?;
+    let mut steered = steering(&job.session_id);
+
+    // The run goes in its own task, so a steering message can release this
+    // call while the agent keeps working (then on the session's scope).
+    let state = Arc::new(std::sync::atomic::AtomicU8::new(ATTACHED));
+    let stop = CancellationToken::new();
+    let life = CancellationToken::new();
+    tokio::spawn(lifetime(state.clone(), stop.clone(), life.clone(), signal.clone(), scope, session));
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+    {
+        let (job, state, life) = (job.clone(), state.clone(), life.clone());
+        tokio::spawn(async move {
+            let outcome = run(job.clone(), brief, Some(stop), life.clone()).await;
+            if state.compare_exchange(ATTACHED, FINISHED, Ordering::AcqRel, Ordering::Acquire).is_ok() {
+                let _ = sender.send(outcome);
+            } else {
+                // Released: it reports like a background agent.
+                let cancelled = lock(&job.cancel).is_cancelled();
+                let snapshot = settle(&job, &outcome, cancelled).await;
+                tell_parent(&job, &outcome, &snapshot).await;
+            }
+            life.cancel();
+        });
+    }
+    tokio::pin!(receiver);
+    let mut watching = true;
+    let outcome = loop {
+        tokio::select! {
+            outcome = &mut receiver => break outcome.unwrap_or_else(|_| Outcome::Failed("its task ended".into())),
+            changed = steered.changed(), if watching => {
+                if changed.is_err() {
+                    watching = false;
+                } else if state.compare_exchange(ATTACHED, DETACHED, Ordering::AcqRel, Ordering::Acquire).is_ok() {
+                    return Ok(released(&job));
+                }
+                // Otherwise it finished meanwhile: its outcome is on the way.
+            }
+        }
+    };
     let cancelled = signal.is_cancelled() || lock(&job.cancel).is_cancelled();
     let snapshot = settle(&job, &outcome, cancelled).await;
     *lock(&job.update) = None;
@@ -623,6 +787,66 @@ async fn drive(
         Outcome::Report(_) => Ok(result(report_text(&outcome, &snapshot), snapshot, Some(usage))),
         Outcome::Failed(reason) => Err(AgentError::Tool(format!("subagent {} stopped: {reason}", job.id))),
     }
+}
+
+/// How long a foreground run may go on. While its call waits (`ATTACHED`), the
+/// call's signal stops it (`stop`: cancelled) and the end of the call or the
+/// parent's run ends it (`life`); once released (`DETACHED`) only the
+/// session's end does. Returns when the run is over (`life` cancelled).
+async fn lifetime(
+    state: Arc<std::sync::atomic::AtomicU8>,
+    stop: CancellationToken,
+    life: CancellationToken,
+    signal: CancellationToken,
+    scope: CancellationToken,
+    session: CancellationToken,
+) {
+    tokio::select! {
+        biased;
+        _ = life.cancelled() => return,
+        _ = session.cancelled() => {
+            life.cancel();
+            return;
+        }
+        _ = signal.cancelled() => {}
+        _ = scope.cancelled() => {}
+    }
+    if state.load(Ordering::Acquire) != DETACHED {
+        if signal.is_cancelled() {
+            stop.cancel();
+        } else {
+            life.cancel();
+        }
+        return;
+    }
+    tokio::select! {
+        _ = life.cancelled() => {}
+        _ = session.cancelled() => life.cancel(),
+    }
+}
+
+/// A foreground agent's call let go on a steering message: the agent goes on
+/// in the background, and the parent reads the message now.
+fn released(job: &Job) -> AgentToolResult {
+    job.background.store(true, Ordering::Release);
+    *lock(&job.update) = None;
+    let snapshot = {
+        let mut progress = lock(&job.progress);
+        progress.background = true;
+        progress.snapshot()
+    };
+    mesh::router().set_meta(&job.address, json!({ "background": true }));
+    result(
+        format!(
+            "A new message arrived while agent {} ({}) was working, so it moved to the background and keeps \
+             working. Its report will be delivered to you as a message when it finishes; do not wait for it \
+             or poll it. Read the new message now.",
+            job.id,
+            snapshot["description"].as_str().unwrap_or("")
+        ),
+        snapshot,
+        None,
+    )
 }
 
 /// Put a mail message in front of the agent at `address` (mesh_tools.rs):

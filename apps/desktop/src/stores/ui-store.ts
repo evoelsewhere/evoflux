@@ -45,6 +45,9 @@ interface UiStore {
   /** The Scheduler page (sidebar → Scheduler) shows instead of the chat. */
   schedulerOpen: boolean;
   openScheduler(): void;
+  /** The Usage page (sidebar → Usage) shows instead of the chat. */
+  usageOpen: boolean;
+  openUsage(): void;
   customizeSection: CustomizeSection;
   openCustomize(section?: CustomizeSection): void;
   closeCustomize(): void;
@@ -112,7 +115,11 @@ export const useUiStore = create<UiStore>()(
       settingsOpen: false,
       customizeOpen: false,
       schedulerOpen: false,
-      openScheduler: () => set({ schedulerOpen: true, customizeOpen: false, settingsOpen: false, commandOpen: false }),
+      openScheduler: () =>
+        set({ schedulerOpen: true, usageOpen: false, customizeOpen: false, settingsOpen: false, commandOpen: false }),
+      usageOpen: false,
+      openUsage: () =>
+        set({ usageOpen: true, schedulerOpen: false, customizeOpen: false, settingsOpen: false, commandOpen: false }),
       customizeSection: "skills",
       chatConnectorsOff: {},
       setChatConnectorOff: (chat, key, off) =>
@@ -173,12 +180,13 @@ export const useUiStore = create<UiStore>()(
         set((s) => ({
           customizeOpen: true,
           schedulerOpen: false,
+          usageOpen: false,
           customizeSection: section ?? s.customizeSection,
           settingsOpen: false,
           commandOpen: false,
         })),
-      // Leaves either full page (Customize or Scheduler) for the chat.
-      closeCustomize: () => set({ customizeOpen: false, schedulerOpen: false }),
+      // Leaves any full page (Customize, Scheduler or Usage) for the chat.
+      closeCustomize: () => set({ customizeOpen: false, schedulerOpen: false, usageOpen: false }),
       setApproval: (approval) => set({ approval }),
       setPinnedModels: (keys) => set({ pinnedModels: keys.slice(0, PINNED_MODELS_MAX) }),
     }),

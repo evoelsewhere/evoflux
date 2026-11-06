@@ -15,6 +15,7 @@ workflow: [docs/README.md](../README.md). Template:
 | [Notifications](notifications/sdd.md) — toasts, bell, OS notifications | Implemented | desktop UI, shell | legacy |
 | [Session mesh protocol](session-mesh-protocol/sdd.md) | Implemented (phases 1–4); phase 5 proposed | `evo-mesh`, `evo-protocol`, engine, shell | legacy |
 | [Subagents and nested sessions](subagents-and-nested-sessions/sdd.md) | Implemented (phases 1–4) | engine, `evo-worktrees`, desktop | legacy |
+| [Usage and cost history](usage-and-cost/sdd.md) — every response's tokens and models.dev cost, Usage page | Implemented | `evo-store`, engine, desktop | template |
 | [Web search and web fetch](web-search-and-fetch/sdd.md) | Implemented (layers 1–2); layer 3 proposed | `evo-web`, engine | legacy |
 
 **Format:** `template` = follows [templates/sdd.md](../templates/sdd.md);

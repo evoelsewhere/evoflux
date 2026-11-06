@@ -248,3 +248,55 @@ mod background;
 mod mesh;
 
 mod peers;
+
+/// The JSON transcript of a background agent's call: it returned at once,
+/// leaving the agent running.
+fn started(id: &str, description: &str) -> Value {
+    json!({ "role": "toolResult", "toolName": "agent", "details": { "child": {
+        "agentId": id, "description": description, "background": true, "status": "running" } } })
+}
+
+fn note(text: String) -> Value {
+    json!({ "role": "user", "content": [{ "type": "text", "text": text }] })
+}
+
+#[test]
+fn background_agents_without_a_report_are_found() {
+    let reported = note(format!("{NOTE_TAG} id=\"a\" description=\"A\" status=\"done\">\nok\n</background-agent>"));
+    let foreground = json!({ "role": "toolResult", "toolName": "agent", "details": { "child": {
+        "agentId": "f", "background": false, "status": "done" } } });
+    let messages = vec![
+        started("a", "A"),
+        started("b", "B \"quoted\""),
+        foreground,
+        reported.clone(),
+        json!({ "role": "user", "content": "plain prompt" }),
+    ];
+    assert_eq!(unreported_background_agents(&messages, ""), vec![("b".to_string(), "B \"quoted\"".to_string())]);
+    // A finished agent continued in the background (`message_agent`) is open again.
+    let mut continued = messages.clone();
+    continued.push(started("a", "A"));
+    assert_eq!(unreported_background_agents(&continued, "").len(), 2);
+    // A report already queued for the next run is on its way.
+    let queued = serde_json::to_string(&json!({ "text": lost_agent_note("b", "B") })).unwrap();
+    assert!(unreported_background_agents(&messages, &queued).is_empty());
+    // The note reads like a real report, quotes made safe for its attribute.
+    let text = lost_agent_note("b", "B \"quoted\"");
+    assert!(text.starts_with(&format!("{NOTE_TAG} id=\"b\" description=\"B 'quoted'\" status=\"error\">")));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn lost_background_agents_are_reported_once_to_the_next_run() {
+    let dir = tempfile::tempdir().unwrap();
+    let events = Arc::new(Collector::default());
+    let parent = parent(dir.path(), FauxScript::new().with_text("Noted."), events).await;
+    let messages = vec![started("gone-1", "Long task")];
+    assert_eq!(report_lost_background_agents(&parent, &messages).await, vec!["gone-1".to_string()]);
+    // The queued report is durable: a second start does not queue it again.
+    assert!(report_lost_background_agents(&parent, &messages).await.is_empty());
+    // The next run reads it before the prompt.
+    parent.lane("main").prompt_text("hello", Vec::new()).await.unwrap();
+    let history = serde_json::to_string(&parent.session().storage().find_entries(&Default::default()).await.unwrap()).unwrap();
+    assert!(history.contains("id=\\\"gone-1\\\""), "the lost agent's report is in the history");
+    assert!(history.contains("status=\\\"error\\\""));
+}

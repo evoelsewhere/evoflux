@@ -474,7 +474,8 @@ pub enum Deliver {
     /// wake guard).
     Wake,
     /// A prompt from another session (`message_session`, a started session's
-    /// brief): it starts the receiver's next turn, or follows its current one.
+    /// brief): it starts the receiver's next turn, or, while it runs, is read
+    /// at its next step (steering).
     /// The hub delivers it as an RPC `prompt` / `queue_message`, not as a
     /// `mail` envelope.
     Prompt,

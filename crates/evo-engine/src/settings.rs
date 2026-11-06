@@ -355,11 +355,12 @@ impl Settings {
             .unwrap_or(false)
     }
 
-    /// Default steering-queue drain mode (upstream default: one-at-a-time).
+    /// Steering-queue drain mode. Default `all`: every message sent while the
+    /// agent works reaches it at its next step, not one per step.
     pub fn steering_mode(&self) -> evo_agent::QueueMode {
         self.steering_mode
             .map(Into::into)
-            .unwrap_or(evo_agent::QueueMode::OneAtATime)
+            .unwrap_or(evo_agent::QueueMode::All)
     }
 
     /// Default follow-up-queue drain mode (upstream default: one-at-a-time).
@@ -1034,8 +1035,8 @@ mod scoped_tests {
             default_compaction.keep_recent_tokens
         );
 
-        // upstream's documented defaults for the queue modes.
-        assert_eq!(empty.steering_mode(), evo_agent::QueueMode::OneAtATime);
+        // Steering delivers every waiting message at once; follow-ups one by one.
+        assert_eq!(empty.steering_mode(), evo_agent::QueueMode::All);
         assert_eq!(empty.follow_up_mode(), evo_agent::QueueMode::OneAtATime);
 
         // A partial object keeps the defaults it does not name.

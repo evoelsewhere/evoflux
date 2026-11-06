@@ -43,6 +43,22 @@ export interface ModelDescriptor {
   reasoning: boolean;
   contextWindow: number;
   maxTokens: number;
+  /** USD per million tokens, from models.dev (absent from older engines). */
+  cost?: ModelCost;
+  /** Whether models.dev (or the user) gave a price, including a free one. */
+  costConfigured?: boolean;
+}
+
+export interface ModelCostRates {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+}
+
+export interface ModelCost extends ModelCostRates {
+  /** Higher rates once a request's input passes `inputTokensAbove`. */
+  tiers?: (ModelCostRates & { inputTokensAbove: number })[];
 }
 
 export interface EngineState {
