@@ -22,6 +22,8 @@ evo-worktrees = { workspace = true }
 evo-hooks = { workspace = true }
 evo-web = { workspace = true }
 evo-lsp = { workspace = true }
+evo-office = { workspace = true }
+include_dir = "0.7"
 evo-plugins = { workspace = true }
 evo-harness = { workspace = true }
 evo-plugin-sdk = { workspace = true, features = ["binary"] }

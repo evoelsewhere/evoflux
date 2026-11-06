@@ -36,6 +36,7 @@ pub mod hooks;
 pub mod instructions;
 pub mod interaction;
 pub mod lsp_tool;
+pub mod office;
 pub mod memory;
 pub mod usage_log;
 pub mod web_tools;

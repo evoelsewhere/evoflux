@@ -279,6 +279,9 @@ pub fn skill_dirs(cwd: &Path) -> Vec<PathBuf> {
         dirs.push(g);
     }
     dirs.extend(crate::customize::global_skill_dirs());
+    // The skills shipped inside evo come last: a skill of the same name the
+    // person wrote wins (first-wins dedupe).
+    dirs.extend(crate::office::bundled_skill_dirs());
     dirs
 }
 
@@ -297,6 +300,7 @@ pub fn project_skill_dirs(cwd: &Path) -> Vec<PathBuf> {
 pub fn global_skill_dirs() -> Vec<PathBuf> {
     let mut dirs = global_resource_dirs("skills", ResourceKind::Skills);
     dirs.extend(crate::customize::global_skill_dirs());
+    dirs.extend(crate::office::bundled_skill_dirs());
     dirs
 }
 
