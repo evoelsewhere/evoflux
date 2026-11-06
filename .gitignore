@@ -1,0 +1,13 @@
+/target
+**/*.rs.bk
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Local runtime state
+.evo/.resource-lease
+.evo/
+**/.evo/
+.agents/

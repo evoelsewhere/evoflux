@@ -1,0 +1,37 @@
+[package]
+name = "evo-agent"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+version = "0.1.0"
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/evo-agent"
+description = "Agent runtime + loop, Rust port of evo-agent-core core layer"
+readme = "README.md"
+keywords = ["agent", "llm", "ai", "claude", "sdk"]
+categories = ["api-bindings", "asynchronous", "artificial-intelligence"]
+
+[dependencies]
+evo-telemetry = { workspace = true }
+evo-ai = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+async-trait = { workspace = true }
+futures = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+schemars = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+# Windows UAC installer detection demands elevation for executables whose
+# name contains "update", so the test binary gets a neutral name.
+[[test]]
+name = "late_result_suppression"
+path = "tests/late_update_suppression.rs"

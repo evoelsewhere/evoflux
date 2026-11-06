@@ -1,0 +1,16 @@
+[package]
+name = "evo-mesh"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "The session mesh: wire types shared by engines and clients, and the hub that routes mail between sessions"
+publish = false
+
+# Kept free of engine crates: the desktop shell embeds the hub.
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }

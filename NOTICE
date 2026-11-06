@@ -1,0 +1,20 @@
+evo
+===
+
+The `evo-*` crates are derived from MIT-licensed upstream projects. The
+license text in `LICENSE` carries every upstream copyright notice, as required
+by the MIT License's retention clause.
+
+Upstream projects
+-----------------
+
+    pi — https://github.com/earendil-works/pi
+    Copyright (c) 2025 Mario Zechner
+    Licensed under the MIT License.
+
+Third-party dependencies
+------------------------
+
+Runtime dependencies and their licenses are listed by `cargo metadata` and on
+each crate's crates.io page. Vendored or copied source, where it exists, keeps
+its original attribution in the file header.

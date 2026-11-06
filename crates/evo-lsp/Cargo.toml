@@ -1,0 +1,24 @@
+[package]
+name = "evo-lsp"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+version = "0.1.0"
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Language servers for evo: a catalog with installers, project detection, and an LSP client"
+
+[dependencies]
+flate2 = "1"
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tar = "0.4"
+tokio = { workspace = true }
+url = "2"
+zip = { version = "2.4", default-features = false, features = ["deflate"] }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
