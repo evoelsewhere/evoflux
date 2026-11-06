@@ -1,0 +1,634 @@
+name: Build desktop packages
+
+# Packages the evo desktop app (apps/desktop) for every platform: the Tauri
+# shell plus the evo-engine sidecar it runs one process per chat
+# (apps/desktop/src-tauri/src/engine.rs). Tag pushes (`v*`) publish a GitHub
+# release; manual runs only upload the build artifacts.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: Desktop platform to build
+        required: true
+        default: "all"
+        type: choice
+        options:
+          - "all"
+          - "macos-intel"
+          - "macos-apple-silicon"
+          - "windows-x64"
+          - "linux-x64"
+      signing:
+        description: Sign and notarize when credentials are available
+        required: true
+        default: "auto"
+        type: choice
+        options:
+          - "auto"
+          - "required"
+          - "off"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-packages-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && inputs.platform || 'all' }}
+  cancel-in-progress: false
+
+env:
+  BUN_VERSION: latest
+  CARGO_TERM_COLOR: always
+  DESKTOP_DIR: apps/desktop
+  TAURI_DIR: apps/desktop/src-tauri
+  BUNDLE_DIR: apps/desktop/src-tauri/target/release/bundle
+  SIGNING_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.signing || 'auto' }}
+
+jobs:
+  prepare:
+    name: Select build platforms
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.value }}
+    steps:
+      - name: Create build matrix
+        id: matrix
+        shell: bash
+        env:
+          SELECTED_PLATFORM: ${{ github.event_name == 'workflow_dispatch' && inputs.platform || 'all' }}
+        run: |
+          mac_intel='{"name":"DMG · Intel","os":"macos-15-intel","artifact":"evo-macos-intel","architecture":"x86_64","dmg_architecture":"x64"}'
+          mac_arm='{"name":"DMG · Apple Silicon","os":"macos-15","artifact":"evo-macos-apple-silicon","architecture":"arm64","dmg_architecture":"aarch64"}'
+          windows='{"name":"NSIS · Windows x64","os":"windows-2022","artifact":"evo-windows-x64","architecture":"x86_64"}'
+          linux='{"name":"DEB · Linux x64","os":"ubuntu-22.04","artifact":"evo-linux-x64","architecture":"x86_64","deb_architecture":"amd64"}'
+          case "$SELECTED_PLATFORM" in
+            all) entries="$mac_intel,$mac_arm,$windows,$linux" ;;
+            macos-intel) entries="$mac_intel" ;;
+            macos-apple-silicon) entries="$mac_arm" ;;
+            windows-x64) entries="$windows" ;;
+            linux-x64) entries="$linux" ;;
+            *)
+              echo "Unsupported platform: $SELECTED_PLATFORM" >&2
+              exit 1
+              ;;
+          esac
+          echo "value={\"include\":[$entries]}" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: ${{ matrix.name }}
+    needs: prepare
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v5
+
+      - name: Resolve macOS signing mode
+        if: runner.os == 'macOS'
+        id: mac_signing
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
+        run: |
+          missing=()
+          for name in \
+            APPLE_CERTIFICATE \
+            APPLE_CERTIFICATE_PASSWORD \
+            APPLE_SIGNING_IDENTITY \
+            APPLE_API_ISSUER \
+            APPLE_API_KEY \
+            APPLE_API_KEY_BASE64
+          do
+            if [[ -z "${!name:-}" ]]; then
+              missing+=("$name")
+            fi
+          done
+
+          enabled=false
+          if [[ "$SIGNING_MODE" == "required" && ${#missing[@]} -gt 0 ]]; then
+            echo "Signing is required, but these macOS secrets are missing: ${missing[*]}" >&2
+            exit 1
+          elif [[ "$SIGNING_MODE" != "off" && ${#missing[@]} -eq 0 ]]; then
+            enabled=true
+          fi
+
+          echo "enabled=$enabled" >> "$GITHUB_OUTPUT"
+          if [[ "$enabled" == "true" ]]; then
+            key_path="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY}.p8"
+            printf '%s' "$APPLE_API_KEY_BASE64" | openssl base64 -d -A -out "$key_path"
+            chmod 600 "$key_path"
+            echo "APPLE_API_KEY_PATH=$key_path" >> "$GITHUB_ENV"
+            echo "Developer ID signing and Apple notarization are enabled."
+          else
+            echo "Building with an ad-hoc macOS signature."
+          fi
+
+      - name: Resolve Windows signing mode
+        if: runner.os == 'Windows'
+        id: windows_signing
+        shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          $missing = @()
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE)) {
+            $missing += "WINDOWS_CERTIFICATE"
+          }
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE_PASSWORD)) {
+            $missing += "WINDOWS_CERTIFICATE_PASSWORD"
+          }
+
+          $enabled = $false
+          if ($env:SIGNING_MODE -eq "required" -and $missing.Count -gt 0) {
+            throw "Signing is required, but these Windows secrets are missing: $($missing -join ', ')"
+          } elseif ($env:SIGNING_MODE -ne "off" -and $missing.Count -eq 0) {
+            $enabled = $true
+          }
+
+          "enabled=$($enabled.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+          if ($enabled) {
+            Write-Host "Authenticode signing is enabled."
+          } else {
+            Write-Host "Building an unsigned NSIS installer."
+          }
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      # rust-toolchain.toml pins the toolchain; rustup installs it on first use.
+      - name: Set up Rust
+        shell: bash
+        run: |
+          rustup show active-toolchain || rustup toolchain install
+          rustc -vV
+
+      - name: Install Linux desktop build dependencies
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            curl \
+            dbus-x11 \
+            file \
+            libayatana-appindicator3-dev \
+            libgtk-3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            libxdo-dev \
+            patchelf \
+            wget \
+            xauth \
+            xdg-utils \
+            xvfb
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+            ${{ env.TAURI_DIR }}/target
+          key: desktop-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', 'apps/desktop/src-tauri/Cargo.lock', 'rust-toolchain.toml') }}
+          restore-keys: |
+            desktop-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Install frontend dependencies
+        working-directory: ${{ env.DESKTOP_DIR }}
+        run: bun install --frozen-lockfile
+
+      # Builds `evo-engine --release` and stages it as
+      # src-tauri/binaries/evo-engine-<host-triple>, which `bundle.externalBin`
+      # ships next to the app executable.
+      - name: Build evo-engine sidecar
+        working-directory: ${{ env.DESKTOP_DIR }}
+        run: bun run engine:sidecar:release
+
+      - name: Import Windows signing certificate
+        if: runner.os == 'Windows' && steps.windows_signing.outputs.enabled == 'true'
+        shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          $pfxPath = Join-Path $env:RUNNER_TEMP "evo-signing.pfx"
+          try {
+            $base64 = $env:WINDOWS_CERTIFICATE -replace '\s', ''
+            [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($base64))
+            $password = ConvertTo-SecureString `
+              -String $env:WINDOWS_CERTIFICATE_PASSWORD `
+              -AsPlainText `
+              -Force
+            $imported = Import-PfxCertificate `
+              -FilePath $pfxPath `
+              -CertStoreLocation Cert:\CurrentUser\My `
+              -Password $password `
+              -Exportable
+            $certificate = $imported |
+              Where-Object HasPrivateKey |
+              Select-Object -First 1
+            if (-not $certificate) {
+              throw "The PFX did not contain a certificate with a private key."
+            }
+            "WINDOWS_CERT_THUMBPRINT=$($certificate.Thumbprint)" >> $env:GITHUB_ENV
+          } finally {
+            Remove-Item $pfxPath -Force -ErrorAction SilentlyContinue
+          }
+
+      - name: Remove stale bundle outputs
+        shell: bash
+        run: rm -rf "$BUNDLE_DIR"
+
+      - name: Write platform bundle override
+        shell: bash
+        env:
+          MAC_SIGNING_ENABLED: ${{ steps.mac_signing.outputs.enabled }}
+          WINDOWS_SIGNING_ENABLED: ${{ steps.windows_signing.outputs.enabled }}
+        run: |
+          bundle='{}'
+          if [[ "$RUNNER_OS" == "macOS" && "$MAC_SIGNING_ENABLED" != "true" ]]; then
+            bundle='{"macOS":{"signingIdentity":"-"}}'
+          elif [[ "$RUNNER_OS" == "Windows" && "$WINDOWS_SIGNING_ENABLED" == "true" ]]; then
+            bundle="{\"windows\":{\"certificateThumbprint\":\"$WINDOWS_CERT_THUMBPRINT\",\"digestAlgorithm\":\"sha256\",\"timestampUrl\":\"http://timestamp.digicert.com\"}}"
+          fi
+          path="$RUNNER_TEMP/evo-bundle-override.json"
+          printf '{"bundle":%s}\n' "$bundle" > "$path"
+          cat "$path"
+          echo "TAURI_BUNDLE_CONFIG=$path" >> "$GITHUB_ENV"
+
+      # `tauri build` runs `beforeBuildCommand` (`bun run build`: typecheck +
+      # vite) before compiling the shell.
+      - name: Build signed macOS app
+        if: runner.os == 'macOS' && steps.mac_signing.outputs.enabled == 'true'
+        working-directory: ${{ env.DESKTOP_DIR }}
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+        run: bun run tauri build --bundles app --verbose --config "$TAURI_BUNDLE_CONFIG"
+
+      - name: Build ad-hoc macOS app
+        if: runner.os == 'macOS' && steps.mac_signing.outputs.enabled != 'true'
+        working-directory: ${{ env.DESKTOP_DIR }}
+        run: bun run tauri build --bundles app --verbose --config "$TAURI_BUNDLE_CONFIG"
+
+      - name: Create DMG without mounting a volume
+        if: runner.os == 'macOS'
+        id: create_dmg
+        shell: bash
+        run: |
+          set -euo pipefail
+          config="$TAURI_DIR/tauri.conf.json"
+          product_name="$(jq -r .productName "$config")"
+          version="$(jq -r .version "$config")"
+          source_dir="$BUNDLE_DIR/macos"
+          dmg_dir="$BUNDLE_DIR/dmg"
+          dmg_path="$dmg_dir/${product_name}_${version}_${{ matrix.dmg_architecture }}.dmg"
+
+          app_path="$(find "$source_dir" -maxdepth 1 -name '*.app' -print -quit)"
+          if [[ -z "$app_path" ]]; then
+            echo "Tauri completed without producing an app bundle." >&2
+            exit 1
+          fi
+
+          ln -s /Applications "$source_dir/Applications"
+          mkdir -p "$dmg_dir"
+          hdiutil create \
+            -volname "$product_name" \
+            -srcfolder "$source_dir" \
+            -ov \
+            -format UDZO \
+            "$dmg_path"
+          echo "path=$dmg_path" >> "$GITHUB_OUTPUT"
+
+      - name: Sign and notarize DMG
+        if: runner.os == 'macOS' && steps.mac_signing.outputs.enabled == 'true'
+        shell: bash
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+        run: |
+          codesign \
+            --force \
+            --sign "$APPLE_SIGNING_IDENTITY" \
+            --timestamp \
+            "${{ steps.create_dmg.outputs.path }}"
+          xcrun notarytool submit "${{ steps.create_dmg.outputs.path }}" \
+            --key "$APPLE_API_KEY_PATH" \
+            --key-id "$APPLE_API_KEY" \
+            --issuer "$APPLE_API_ISSUER" \
+            --wait
+          xcrun stapler staple "${{ steps.create_dmg.outputs.path }}"
+
+      - name: Build Windows NSIS installer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        working-directory: ${{ env.DESKTOP_DIR }}
+        run: bun run tauri build --bundles nsis --verbose --config $env:TAURI_BUNDLE_CONFIG
+
+      - name: Build Linux DEB package
+        if: runner.os == 'Linux'
+        shell: bash
+        working-directory: ${{ env.DESKTOP_DIR }}
+        run: bun run tauri build --bundles deb --verbose --config "$TAURI_BUNDLE_CONFIG"
+
+      - name: Verify Linux DEB contents
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          packages=("$BUNDLE_DIR"/deb/*.deb)
+          if [[ ${#packages[@]} -ne 1 ]]; then
+            echo "Expected exactly one DEB package, found ${#packages[@]}." >&2
+            exit 1
+          fi
+
+          package="${packages[0]}"
+          dpkg-deb --info "$package"
+          [[ "$(dpkg-deb -f "$package" Architecture)" == "${{ matrix.deb_architecture }}" ]]
+
+          package_root="$RUNNER_TEMP/evo-deb-root"
+          rm -rf "$package_root"
+          mkdir -p "$package_root"
+          dpkg-deb --extract "$package" "$package_root"
+          ls -la "$package_root/usr/bin"
+          [[ -x "$package_root/usr/bin/evo-engine" ]] || {
+            echo "DEB is missing the evo-engine sidecar." >&2
+            exit 1
+          }
+
+      - name: Smoke-test Linux DEB launch
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          package="$(find "$BUNDLE_DIR/deb" -name '*.deb' -print -quit)"
+          package_name="$(dpkg-deb -f "$package" Package)"
+          sudo apt-get install -y "$PWD/$package"
+
+          executable="$(dpkg -L "$package_name" | grep '^/usr/bin/' | grep -v '/evo-engine$' | head -n1)"
+          if [[ -z "$executable" || ! -x "$executable" ]]; then
+            echo "Installed desktop executable was not found." >&2
+            dpkg -L "$package_name" >&2
+            exit 1
+          fi
+          /usr/bin/evo-engine --version
+
+          smoke_root="$RUNNER_TEMP/evo-linux-first-launch"
+          export HOME="$smoke_root/home"
+          export WEBKIT_DISABLE_COMPOSITING_MODE=1
+          mkdir -p "$HOME"
+          log="$smoke_root/desktop.log"
+          setsid dbus-run-session -- xvfb-run -a "$executable" >"$log" 2>&1 &
+          app_pid=$!
+          sleep 20
+          if ! kill -0 "$app_pid" 2>/dev/null; then
+            echo "evo exited during its first launch." >&2
+            cat "$log" >&2 || true
+            exit 1
+          fi
+          kill -TERM -- "-$app_pid" 2>/dev/null || true
+          echo "First Linux launch stayed up for 20 seconds."
+
+      - name: Smoke-test Windows install and launch
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $tauriConfig = Get-Content "$env:TAURI_DIR/tauri.conf.json" -Raw | ConvertFrom-Json
+          $installers = @(Get-ChildItem "$env:BUNDLE_DIR/nsis/*-setup.exe" -File)
+          if ($installers.Count -ne 1) {
+            throw "Expected exactly one NSIS installer, found $($installers.Count)."
+          }
+          $installer = Start-Process -FilePath $installers[0].FullName -ArgumentList "/S" -PassThru -Wait
+          if ($installer.ExitCode -ne 0) {
+            throw "Silent NSIS installation failed with exit code $($installer.ExitCode)."
+          }
+
+          $uninstallKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\$($tauriConfig.productName)"
+          $installLocation = (Get-ItemPropertyValue -Path $uninstallKey -Name InstallLocation -ErrorAction Stop).Trim('"')
+          Get-ChildItem $installLocation | Format-Table Name, Length
+          $engine = Join-Path $installLocation "evo-engine.exe"
+          if (-not (Test-Path $engine)) {
+            throw "The evo-engine sidecar was not installed at '$engine'."
+          }
+          $executable = Get-ChildItem $installLocation -Filter *.exe |
+            Where-Object { $_.Name -ne "evo-engine.exe" -and $_.Name -notlike "uninstall*" } |
+            Select-Object -First 1
+          if (-not $executable) {
+            throw "Installed desktop executable was not found in '$installLocation'."
+          }
+
+          $process = Start-Process -FilePath $executable.FullName -PassThru
+          try {
+            Start-Sleep -Seconds 20
+            $process.Refresh()
+            if ($process.HasExited) {
+              throw "evo exited during its first launch (exit code $($process.ExitCode))."
+            }
+            Write-Host "First Windows launch stayed up for 20 seconds."
+          } finally {
+            if (-not $process.HasExited) {
+              Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+              $process.WaitForExit(10000) | Out-Null
+            }
+          }
+
+      - name: Verify DMG architecture and signature
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          app_path="$(find "$BUNDLE_DIR/macos" -maxdepth 1 -name '*.app' -print -quit)"
+          dmg_path="$(find "$BUNDLE_DIR/dmg" -maxdepth 1 -name '*.dmg' -print -quit)"
+          if [[ -z "$app_path" || -z "$dmg_path" ]]; then
+            echo "Tauri completed without producing both an app and a DMG." >&2
+            exit 1
+          fi
+
+          executable="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app_path/Contents/Info.plist")"
+          for binary in "$app_path/Contents/MacOS/$executable" "$app_path/Contents/MacOS/evo-engine"; do
+            file "$binary" | tee "$RUNNER_TEMP/evo-architecture.txt"
+            grep -q "${{ matrix.architecture }}" "$RUNNER_TEMP/evo-architecture.txt"
+          done
+          codesign --verify --deep --strict --verbose=2 "$app_path"
+          # macOS runners can briefly report a freshly-created DMG as
+          # unavailable while diskimages-helper finishes flushing it.
+          verified=false
+          for attempt in 1 2 3 4 5; do
+            echo "Verifying DMG (attempt ${attempt}/5)..."
+            if hdiutil verify "$dmg_path"; then
+              verified=true
+              break
+            fi
+            if (( attempt < 5 )); then
+              sleep 5
+            fi
+          done
+          if [[ "$verified" != "true" ]]; then
+            echo "DMG verification failed after 5 attempts." >&2
+            exit 1
+          fi
+
+          if [[ "${{ steps.mac_signing.outputs.enabled }}" == "true" ]]; then
+            codesign --verify --verbose=2 "$dmg_path"
+            xcrun stapler validate "$dmg_path"
+          fi
+
+      - name: Verify NSIS installer signature
+        if: runner.os == 'Windows' && steps.windows_signing.outputs.enabled == 'true'
+        shell: pwsh
+        run: |
+          foreach ($file in @(Get-ChildItem "$env:BUNDLE_DIR/nsis/*-setup.exe")) {
+            $signature = Get-AuthenticodeSignature $file.FullName
+            if ($signature.Status -ne "Valid") {
+              throw "Invalid Authenticode signature on '$($file.Name)': $($signature.Status)"
+            }
+          }
+
+      - name: Generate checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$RUNNER_OS" in
+            macOS) dir="$BUNDLE_DIR/dmg"; pattern='*.dmg'; sum='shasum -a 256' ;;
+            Windows) dir="$BUNDLE_DIR/nsis"; pattern='*-setup.exe'; sum='sha256sum' ;;
+            Linux) dir="$BUNDLE_DIR/deb"; pattern='*.deb'; sum='sha256sum' ;;
+          esac
+          cd "$dir"
+          $sum $pattern > "$RUNNER_TEMP/${{ matrix.artifact }}-SHA256SUMS.txt"
+          cat "$RUNNER_TEMP/${{ matrix.artifact }}-SHA256SUMS.txt"
+
+      - name: Upload DMG
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: |
+            ${{ env.BUNDLE_DIR }}/dmg/*.dmg
+            ${{ runner.temp }}/${{ matrix.artifact }}-SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload NSIS installer
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: |
+            ${{ env.BUNDLE_DIR }}/nsis/*-setup.exe
+            ${{ runner.temp }}/${{ matrix.artifact }}-SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload Linux DEB package
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: |
+            ${{ env.BUNDLE_DIR }}/deb/*.deb
+            ${{ runner.temp }}/${{ matrix.artifact }}-SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: Publish GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v5
+
+      - name: Download desktop artifacts
+        uses: actions/download-artifact@v5
+        with:
+          path: release-assets
+
+      - name: Validate release version
+        id: version
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import tomllib
+          from pathlib import Path
+
+          root = Path.cwd()
+          desktop = root / "apps/desktop"
+          versions = {
+              "apps/desktop/package.json": json.loads((desktop / "package.json").read_text())["version"],
+              "apps/desktop/src-tauri/Cargo.toml": tomllib.loads((desktop / "src-tauri/Cargo.toml").read_text())["package"]["version"],
+              "apps/desktop/src-tauri/tauri.conf.json": json.loads((desktop / "src-tauri/tauri.conf.json").read_text())["version"],
+          }
+          unique = set(versions.values())
+          if len(unique) != 1:
+              raise SystemExit(f"release versions are out of sync: {versions}")
+          version = unique.pop()
+          tag = os.environ["GITHUB_REF_NAME"]
+          if tag != f"v{version}":
+              raise SystemExit(f"tag {tag!r} does not match version {version!r}")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"value={version}\n")
+          PY
+
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            is_draft="$(gh release view "$TAG" --json isDraft --jq .isDraft)"
+            if [[ "$is_draft" != "true" ]]; then
+              echo "Release $TAG is already published; refusing to replace immutable assets." >&2
+              exit 1
+            fi
+            gh release edit "$TAG" --title "evo v$VERSION"
+          else
+            gh release create "$TAG" \
+              --draft \
+              --generate-notes \
+              --title "evo v$VERSION"
+          fi
+
+      - name: Upload assets and publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -d '' assets < <(find release-assets -type f -print0 | sort -z)
+          if [[ ${#assets[@]} -eq 0 ]]; then
+            echo "No release assets were downloaded." >&2
+            exit 1
+          fi
+          gh release upload "$TAG" "${assets[@]}" --clobber
+          gh release edit "$TAG" --draft=false --latest

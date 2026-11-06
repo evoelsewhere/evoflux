@@ -1,0 +1,16 @@
+[package]
+name = "evo-worktrees"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+version = "0.1.0"
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Managed Git worktrees for evo's delegated agents and nested sessions"
+
+[dependencies]
+serde = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

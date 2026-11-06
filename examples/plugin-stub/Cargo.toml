@@ -1,0 +1,21 @@
+[package]
+name = "plugin-stub"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+description = "Example evo cdylib plugin: an echo tool plus one of each registration kind"
+
+[lib]
+# `cdylib` is the artifact the host loads (`plugin_stub.dll` / `libplugin_stub.so`
+# / `libplugin_stub.dylib`).
+crate-type = ["cdylib"]
+
+[dependencies]
+# The ABI SDK's default `json` feature is all this plugin needs. The optional
+# `provider` feature (evo-ai + tokio + reqwest) is deliberately not enabled: the
+# stub's providers are hand-written against the raw ABI, and the CLI's resource
+# fixtures build this crate from scratch under a short time budget.
+evo-plugin-sdk = { workspace = true }
+serde_json = { workspace = true }

@@ -1,0 +1,70 @@
+[package]
+name = "evo-desktop"
+version = "4.0.0"
+edition = "2021"
+rust-version = "1.89"
+license = "MIT"
+description = "evo desktop app shell: runs evo-engine as a child process and bridges its JSONL protocol to the web UI"
+publish = false
+
+# Standalone workspace: kept out of the engine workspace so engine builds and
+# CI do not need the platform webview libraries Tauri links against.
+[workspace]
+
+[lib]
+name = "evo_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# `macos-private-api` enables the transparent window that macOS vibrancy needs.
+# `unstable`: child webviews, for the in-app browser (src/browser.rs).
+tauri = { version = "2", features = ["macos-private-api", "devtools", "tray-icon", "unstable"] }
+tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2"
+tauri-plugin-notification = "2"
+# Settings → General: run on startup, and one running copy of the app.
+tauri-plugin-autostart = "2"
+tauri-plugin-single-instance = "2"
+window-vibrancy = "0.8"
+serde = { version = "1", features = ["derive"] }
+# The app database (schema, migrations, chats, logs), shared with the engine.
+evo-store = { path = "../../../crates/evo-store" }
+# Managed Git worktrees: review, apply, discard, worktree sessions.
+evo-worktrees = { path = "../../../crates/evo-worktrees" }
+# The session mesh hub: mail between chats' engines (src/mesh.rs).
+evo-mesh = { path = "../../../crates/evo-mesh" }
+evo-mcp = { path = "../../../crates/evo-mcp" }
+evo-plugins = { path = "../../../crates/evo-plugins" }
+serde_json = "1"
+tokio = { version = "1", features = ["process", "io-util", "sync", "macros", "rt", "time"] }
+# "Open in" menu: app icons as PNG data URLs.
+base64 = "0.23"
+# Side panel terminal: a pseudo-terminal per tab (ConPTY on Windows).
+portable-pty = "0.9"
+# Files tool: workspace search that honours .gitignore.
+ignore = "0.4"
+
+[target.'cfg(any(target_os = "windows", target_os = "macos"))'.dependencies]
+png = "0.18"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+# App icons from the shell image factory (src/apps.rs).
+windows = { version = "0.58", features = ["Win32_UI_Shell", "Win32_System_Com", "Win32_Graphics_Imaging", "Win32_Graphics_Gdi", "Win32_System_Power"] }
+# In-app browser: the WebView2 DevTools Protocol (screenshots, real input). Same versions as wry's.
+webview2-com = "0.39"
+windows-core = "0.62"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# App icons from NSWorkspace.
+file_icon_provider = "0.4"
+
+# Keep debug builds small: full DWARF for every dependency made target/ grow to
+# 150+ GB. Line tables still give file:line in backtraces and panics.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
