@@ -4,7 +4,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "evo",
+        "title": "evo-harness",
         "width": 1280,
         "height": 820,
         "minWidth": 760,
