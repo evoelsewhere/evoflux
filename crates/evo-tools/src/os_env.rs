@@ -107,11 +107,27 @@ pub fn is_host_private_env(name: &str) -> bool {
     HOST_PRIVATE_ENV.contains(&name) || evo_plugin_sdk::SUBAGENT_PARENT_ENV.contains(&name)
 }
 
+/// Extra environment a host supplies for shell commands, evaluated at every
+/// command so something installed while a chat is open is visible to it.
+#[derive(Debug, Clone, Default)]
+pub struct ShellEnv {
+    /// Variables to set (they win over the inherited environment).
+    pub vars: Vec<(String, String)>,
+    /// Folders appended to the inherited `PATH` (never put in front of it, so a
+    /// tool the user already has is not shadowed). Ignored when the host
+    /// environment is not inherited.
+    pub path_append: Vec<PathBuf>,
+}
+
+/// Supplies a [`ShellEnv`] per command.
+pub type ShellEnvProvider = Arc<dyn Fn() -> ShellEnv + Send + Sync>;
+
 /// Real-OS `ExecutionEnv`. Clone shares the tracked-pid set + registry.
 pub struct OsExecutionEnv {
     cwd: PathBuf,
     shell_path: Option<PathBuf>,
     shell_env: Option<HashMap<String, String>>,
+    shell_env_provider: Option<ShellEnvProvider>,
     active_pids: Arc<Mutex<HashSet<u32>>>,
     registry: Arc<MutationQueueRegistry>,
 }
@@ -122,6 +138,7 @@ impl OsExecutionEnv {
             cwd: std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/")),
             shell_path: None,
             shell_env: None,
+            shell_env_provider: None,
             active_pids: Arc::new(Mutex::new(HashSet::new())),
             registry: Arc::new(MutationQueueRegistry::new()),
         }
@@ -132,6 +149,7 @@ impl OsExecutionEnv {
             cwd,
             shell_path: None,
             shell_env: None,
+            shell_env_provider: None,
             active_pids: Arc::new(Mutex::new(HashSet::new())),
             registry: Arc::new(MutationQueueRegistry::new()),
         }
@@ -144,6 +162,12 @@ impl OsExecutionEnv {
 
     pub fn with_shell_env(mut self, env: HashMap<String, String>) -> Self {
         self.shell_env = Some(env);
+        self
+    }
+
+    /// Ask `provider` for extra environment each time a shell command starts.
+    pub fn with_shell_env_provider(mut self, provider: ShellEnvProvider) -> Self {
+        self.shell_env_provider = Some(provider);
         self
     }
 
@@ -237,6 +261,52 @@ impl OsExecutionEnv {
 impl Default for OsExecutionEnv {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// `current` PATH with `extra` appended, skipping folders already on it.
+fn path_with(current: Option<std::ffi::OsString>, extra: &[PathBuf]) -> Option<std::ffi::OsString> {
+    let mut entries: Vec<PathBuf> = current.as_deref().map(|p| std::env::split_paths(p).collect()).unwrap_or_default();
+    let same = |a: &Path, b: &Path| {
+        if cfg!(windows) {
+            a.to_string_lossy().eq_ignore_ascii_case(&b.to_string_lossy())
+        } else {
+            a == b
+        }
+    };
+    for dir in extra {
+        if !entries.iter().any(|e| same(e, dir)) {
+            entries.push(dir.clone());
+        }
+    }
+    std::env::join_paths(entries).ok()
+}
+
+fn apply_shell_env(cmd: &mut tokio::process::Command, extra: ShellEnv, inherited: bool) {
+    for (k, v) in &extra.vars {
+        cmd.env(k, v);
+    }
+    if inherited && !extra.path_append.is_empty() {
+        if let Some(path) = path_with(std::env::var_os("PATH"), &extra.path_append) {
+            cmd.env("PATH", path);
+        }
+    }
+}
+
+#[cfg(test)]
+mod shell_env_provider_tests {
+    use super::*;
+
+    #[test]
+    fn path_is_appended_not_prepended_and_never_duplicated() {
+        let (a, b) = (PathBuf::from(if cfg!(windows) { r"C:" } else { "/a" }), PathBuf::from(if cfg!(windows) { r"C:" } else { "/b" }));
+        let current = std::env::join_paths([&a]).unwrap();
+        let joined = path_with(Some(current.clone()), &[b.clone()]).unwrap();
+        let parts: Vec<PathBuf> = std::env::split_paths(&joined).collect();
+        assert_eq!(parts, vec![a.clone(), b.clone()]);
+        let again = path_with(Some(joined), &[b.clone()]).unwrap();
+        assert_eq!(std::env::split_paths(&again).count(), 2);
+        assert_eq!(std::env::split_paths(&path_with(None, &[b.clone()]).unwrap()).collect::<Vec<_>>(), vec![b]);
     }
 }
 
@@ -966,6 +1036,9 @@ impl Shell for OsExecutionEnv {
             for (k, v) in base {
                 cmd.env(k, v);
             }
+        }
+        if let Some(provider) = &self.shell_env_provider {
+            apply_shell_env(&mut cmd, provider(), options.inherit_env);
         }
         if let Some(extra) = &options.env {
             for (k, v) in extra {
