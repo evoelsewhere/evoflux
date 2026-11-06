@@ -10,7 +10,9 @@
 | ADRs | none |
 
 Status: layers 1 and 2 are built (2026-11-06) — `web_fetch`, and `web_search`
-through DuckDuckGo's HTML page; layer 3 (the provider's own search) is not.
+through a keyless chain (DuckDuckGo's HTML page, then Exa's hosted MCP
+server, then Wikipedia); keyed backends (Brave, Tavily, …) and layer 3 (the
+provider's own search) are not.
 
 ## Built
 
@@ -23,26 +25,52 @@ through DuckDuckGo's HTML page; layer 3 (the provider's own search) is not.
   / XML as they are; PDFs and other binaries refused with a pointer to the
   browser), `extract` (the article, main region or body, without navigation,
   scripts, forms, images; links absolute; empty links dropped), `search`
-  (POST `https://html.duckduckgo.com/html/`; `site:` / `-site:` for domain
-  limits plus a filter on the results; `df` for recency; ads skipped;
-  redirect links decoded; at least 1.5 s between searches; a block page
-  (202 / 403 / 429 / the "unusual traffic" check) pauses searches for 90 s
-  and says so; 10-minute cache). `cargo run -p evo-web --example try --
-  search <query>` / `-- fetch <url>` tries them.
+  (a chain of keyless backends tried in order, as evo v3 did; the first
+  with results after the domain filter answers, a failed or paused one is
+  skipped, and the error lists every backend's failure only when all fail;
+  10-minute cache keyed on the normalised query, limits and result count;
+  snippets cut at 3,000 characters):
+  - `search::duckduckgo`: POST `https://html.duckduckgo.com/html/` with
+    evo's own user agent (no browser impersonation); `site:` / `-site:` for
+    domain limits; `df` for recency; ads skipped; redirect links decoded; at
+    least 1.5 s between requests; a block page (202 / 403 / 429 / the
+    "unusual traffic" check) pauses this backend for 90 s, and searches
+    queued behind it skip it without sending a request. DuckDuckGo often
+    answers the first request with 202.
+  - `search::exa`: Exa's hosted MCP server (`https://mcp.exa.ai/mcp`, tool
+    `web_search_exa`, no key; one stateless `tools/call`; the reply is JSON
+    or server-sent events). Its tool takes `query`, `numResults` and a
+    required `objective`; domain limits and the period go into the objective
+    in words, and the results are still filtered. Entries are parsed from
+    `Title: / URL: / Published: / Highlights:` text; the date leads the
+    snippet. HTTP 429 or a "rate limit" answer pauses it for 60 s. Exa does
+    not publish the free limit.
+  - `search::wikipedia`: English Wikipedia's search API (`list=search`),
+    skipped when the query has a period or domain limits other than
+    Wikipedia.
+  - Not carried over from v3: its `ddgs` library (which impersonates a
+    browser to pass bot checks), the `brave` and `mojeek` HTML backends, and
+    the redaction of secrets in the query before it leaves the machine.
+  `cargo run -p evo-web --example try -- search <query>` runs the chain;
+  `-- exa <query>` / `-- wikipedia <query>` one backend; `-- fetch <url>`.
 - Engine (`crates/evo-engine/src/web_tools.rs`): tools `web_search {query,
   max_results?, allowed_domains?, blocked_domains?, recency?}` and
   `web_fetch {url, offset?}` (40,000 characters per call, the page wrapped in
   `<web_page url title>` and described as data, never instructions).
   `webTools: false` in settings leaves both out. They run without approval,
-  like `read`.
+  like `read`. `web_search`'s details carry `source` (the backend that
+  answered).
 - Desktop: "Searched the web · query" with the results as links (they open
   in the browser), "Read · host/path" with the page text.
 - Checked with a real model: it searched, read the official page, and
   answered with the source URL.
 - DuckDuckGo has no official web-search API; this reads the page meant for
   browsers without JavaScript, with an honest user agent and low volume. It
-  can stop working if the page changes or DuckDuckGo limits it; the tool then
-  says so, and the browser tools remain.
+  can stop working if the page changes or DuckDuckGo limits it. Exa's
+  keyless server has an unpublished limit and Wikipedia finds articles only;
+  when every backend fails the tool says so, and the browser tools remain.
+  A keyed backend (layer 2 below) is still the durable fix.
+- Queries go to DuckDuckGo, Exa and Wikipedia as typed (third parties).
 - A network that filters traffic (a company proxy) can answer with its own
   block page; `web_fetch` returns it as an HTTP error.
 
