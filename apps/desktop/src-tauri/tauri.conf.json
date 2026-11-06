@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "evo",
+  "productName": "evo-harness",
   "version": "4.0.0",
   "identifier": "com.evoelsewhere.evo",
   "build": {
@@ -14,7 +14,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "evo",
+        "title": "evo-harness",
         "width": 1280,
         "height": 820,
         "minWidth": 760,
@@ -43,7 +43,15 @@
       "icons/icon.ico"
     ],
     "category": "DeveloperTool",
-    "shortDescription": "evo coding agent",
+    "shortDescription": "evo-harness coding agent",
+    "windows": {
+      "nsis": {
+        "installerIcon": "icons/icon.ico",
+        "uninstallerIcon": "icons/icon.ico",
+        "headerImage": "icons/installer/header.bmp",
+        "sidebarImage": "icons/installer/sidebar.bmp"
+      }
+    },
     "macOS": {
       "minimumSystemVersion": "11.0"
     }
