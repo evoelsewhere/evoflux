@@ -804,6 +804,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "evo-office"
+version = "0.1.0"
+dependencies = [
+ "flate2",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tar",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "url",
+]
+
+[[package]]
 name = "evo-plugin-sdk"
 version = "0.1.0"
 dependencies = [

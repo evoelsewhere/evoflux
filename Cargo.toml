@@ -33,6 +33,7 @@ evo-mesh = { path = "crates/evo-mesh", version = "0.1.0" }
 evo-hooks = { path = "crates/evo-hooks", version = "0.1.0" }
 evo-web = { path = "crates/evo-web", version = "0.1.0" }
 evo-lsp = { path = "crates/evo-lsp", version = "0.1.0" }
+evo-office = { path = "crates/evo-office", version = "0.1.0" }
 evo-plugins = { path = "crates/evo-plugins", version = "0.1.0" }
 
 # Third-party crates
