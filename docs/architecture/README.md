@@ -131,7 +131,7 @@ CLI or TUI front end ([ADR 0001](decisions/0001-desktop-app-is-the-only-front-en
               │                                │
  llm        evo-ai ◄───────────────────────────┘
               │
- leaf       evo-telemetry   evo-store  evo-hooks  evo-lsp  evo-web  evo-mcp  evo-plugins
+ leaf       evo-telemetry   evo-store  evo-hooks  evo-lsp  evo-web  evo-mcp  evo-plugins  evo-office
 ```
 
 | Crate | Responsibility |
@@ -151,6 +151,7 @@ CLI or TUI front end ([ADR 0001](decisions/0001-desktop-app-is-the-only-front-en
 | `evo-hooks` | Hook commands and web requests on agent events |
 | `evo-lsp` | Language-server catalog, installers, LSP client |
 | `evo-web` | Guarded page fetching as Markdown, web search |
+| `evo-office` | Optional pinned LibreOffice runtime: verified install and headless Office to PDF conversion |
 | `evo-worktrees` | Managed Git worktrees for subagents and nested sessions |
 | `evo-telemetry` | Span/event contracts with a no-op default |
 | `evo-engine` | Composes everything into the headless application and its RPC server |
