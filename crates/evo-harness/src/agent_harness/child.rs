@@ -10,9 +10,29 @@ pub struct ChildHarness {
     pub execution_scope: Arc<evo_agent::tool_execution_scope::ToolExecutionScope>,
 }
 
+/// Most model turns one child run may take.
+pub const MAX_CHILD_TURNS: u32 = 100;
+
+/// A check on every tool call of a child, by tool name and arguments: `Err`
+/// refuses the call with that reason. It runs before the call reaches the
+/// approval hooks, and again right before execution (hooks may rewrite the
+/// arguments), so a host can narrow what a child may do with a tool it has.
+pub type ChildToolGuard =
+    Arc<dyn Fn(&str, &serde_json::Value) -> Result<(), String> + Send + Sync>;
+
 struct ChildTool {
     tool: Arc<dyn evo_agent::AgentTool>,
     scope: Arc<evo_agent::tool_execution_scope::ToolExecutionScope>,
+    guard: Option<ChildToolGuard>,
+}
+
+impl ChildTool {
+    fn check(&self, args: &serde_json::Value) -> Result<(), evo_agent::AgentError> {
+        match &self.guard {
+            Some(guard) => guard(&self.tool.schema().name, args).map_err(evo_agent::AgentError::Tool),
+            None => Ok(()),
+        }
+    }
 }
 #[async_trait::async_trait]
 impl evo_agent::AgentTool for ChildTool {
@@ -29,7 +49,9 @@ impl evo_agent::AgentTool for ChildTool {
         &self,
         args: serde_json::Value,
     ) -> Result<serde_json::Value, evo_agent::AgentError> {
-        self.tool.prepare_arguments(args)
+        let args = self.tool.prepare_arguments(args)?;
+        self.check(&args)?;
+        Ok(args)
     }
     async fn execute(
         &self,
@@ -38,6 +60,7 @@ impl evo_agent::AgentTool for ChildTool {
         signal: CancellationToken,
         update: Arc<dyn Fn(evo_agent::ToolResultPartial) + Send + Sync>,
     ) -> Result<evo_agent::AgentToolResult, evo_agent::AgentError> {
+        self.check(&params)?;
         self.scope.run(async {
             // Agent tool batches may detach their Tokio task when the run is
             // dropped. Track that task as well as any foreign driver it starts.
@@ -94,11 +117,28 @@ impl AgentHarness {
         requested_tools: Option<Vec<String>>,
         replacements: Vec<HarnessTool>,
     ) -> HarnessResult<ChildHarness> {
+        self.create_child_guarded(session, emitter, max_turns, requested_tools, replacements, None)
+            .await
+    }
+
+    /// [`create_child_with_tools`](Self::create_child_with_tools), with every
+    /// tool call of the child checked by `guard` first.
+    pub async fn create_child_guarded(
+        &self,
+        session: Session,
+        emitter: Arc<dyn AgentEmitter>,
+        max_turns: u32,
+        requested_tools: Option<Vec<String>>,
+        replacements: Vec<HarnessTool>,
+        guard: Option<ChildToolGuard>,
+    ) -> HarnessResult<ChildHarness> {
         if self.is_child || evo_agent::tool_execution_scope::is_child_execution() {
             return Err(HarnessError::io("recursive child agents are not allowed"));
         }
-        if !(1..=32).contains(&max_turns) {
-            return Err(HarnessError::io("child maxTurns must be between 1 and 32"));
+        if !(1..=MAX_CHILD_TURNS).contains(&max_turns) {
+            return Err(HarnessError::io(format!(
+                "child maxTurns must be between 1 and {MAX_CHILD_TURNS}"
+            )));
         }
         if session.storage().metadata().id == self.session.storage().metadata().id {
             return Err(HarnessError::io(
@@ -145,6 +185,7 @@ impl AgentHarness {
             tool.tool = Arc::new(ChildTool {
                 tool: tool.tool.clone(),
                 scope: execution_scope.clone(),
+                guard: guard.clone(),
             });
         }
         let active_tool_names = tools

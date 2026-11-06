@@ -26,6 +26,7 @@ pub mod auth_guidance;
 pub mod builtin_commands;
 pub mod agent_tool;
 pub mod agents;
+pub mod read_only;
 pub mod child_agents;
 pub mod worktrees;
 pub mod config;

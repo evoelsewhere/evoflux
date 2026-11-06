@@ -874,7 +874,7 @@ fn record_write_failure(queue: &Mutex<Vec<HarnessWriteFailure>>, what: &str, mes
 pub const MAX_WRITE_FAILURES: usize = 16;
 
 mod child;
-pub use child::ChildHarness;
+pub use child::{ChildHarness, ChildToolGuard, MAX_CHILD_TURNS};
 mod queue_writes;
 pub(crate) use queue_writes::QueueReservation;
 mod run_results;
