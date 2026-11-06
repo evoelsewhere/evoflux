@@ -152,6 +152,52 @@ async fn explore_agents_cannot_write() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn read_only_agents_cannot_write_through_the_shell_or_their_tools() {
+    let dir = tempfile::tempdir().unwrap();
+    // A read-only type that keeps every tool, `write` included.
+    let agents = dir.path().join(".evo/agents");
+    std::fs::create_dir_all(&agents).unwrap();
+    std::fs::write(agents.join("auditor.md"), "---\ndescription: Audits.\naccess: read-only\n---\nAudit.\n").unwrap();
+    let script = FauxScript::new()
+        .with_tool_call("agent", json!({"description":"Shell","prompt":"Create a.txt","agentType":"explore"}))
+        .with_tool_call("bash", json!({"command":"echo x > a.txt"}))
+        .with_text("Refused.")
+        .with_tool_call("agent", json!({"description":"Tools","prompt":"Create b.txt","agentType":"auditor"}))
+        .with_tool_call("write", json!({"path":"b.txt","content":"x"}))
+        .with_text("Refused too.")
+        .with_text("ok");
+    let events = Arc::new(Collector::default());
+    let parent = parent(dir.path(), script, events.clone()).await;
+    parent.lane("main").prompt_text("go", Vec::new()).await.unwrap();
+    assert!(!dir.path().join("a.txt").exists() && !dir.path().join("b.txt").exists());
+    let ends: Vec<AgentToolResult> = events
+        .0
+        .lock()
+        .unwrap()
+        .iter()
+        .filter_map(|event| match event {
+            AgentEvent::ToolExecutionEnd { tool_name, result, .. } if tool_name == "agent" => Some(result.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(ends.len(), 2);
+    for end in ends {
+        let row = &end.details["child"]["tools"][0];
+        assert_eq!(row["phase"], "error", "{end:?}");
+    }
+}
+
+#[test]
+fn long_reports_are_cut_with_a_way_to_the_rest() {
+    let short = "all good".to_string();
+    assert_eq!(capped(short.clone(), "a1"), short);
+    let long = "é".repeat(MAX_REPORT);
+    let cut = capped(long, "a1");
+    assert!(cut.len() < MAX_REPORT + 200);
+    assert!(cut.contains("Ask agent a1 with message_agent"), "{}", &cut[cut.len() - 120..]);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn unknown_types_and_models_are_refused() {
     let dir = tempfile::tempdir().unwrap();
     let script = FauxScript::new()

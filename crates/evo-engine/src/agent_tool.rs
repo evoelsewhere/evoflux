@@ -58,8 +58,9 @@ use crate::mesh::{self, Address, MeshUsage, NodeKind, NodeState, Origin, RunStat
 pub const MAX_RUNNING: usize = 4;
 /// Agents kept (running or able to continue) per engine.
 pub const MAX_KEPT: usize = 16;
-/// Model turns a subagent may take per run.
-const MAX_TURNS: u32 = 32;
+/// Bytes of a report the requester gets; the rest stays with the agent,
+/// which `message_agent` can ask for.
+const MAX_REPORT: usize = 16 * 1024;
 /// A subagent run that takes longer is stopped.
 const TIMEOUT: Duration = Duration::from_secs(30 * 60);
 /// Progress updates at most this often (the final one always goes out).
@@ -422,13 +423,30 @@ async fn run(job: Arc<Job>, brief: String, foreground: Option<CancellationToken>
             let outcome = crate::extensions_actions::run_outcome_json(result.outcome);
             let text = outcome.get("text").and_then(Value::as_str).unwrap_or("").trim().to_string();
             if outcome.get("status").and_then(Value::as_str) == Some("completed") {
-                Outcome::Report(if text.is_empty() { "(the subagent returned no text)".into() } else { text })
+                Outcome::Report(if text.is_empty() { "(the subagent returned no text)".into() } else { capped(text, &job.id) })
             } else {
                 Outcome::Failed(format!("its run {}", outcome["status"].as_str().unwrap_or("failed")))
             }
         }
         Err(reason) => Outcome::Failed(reason),
     }
+}
+
+/// A report cut to [`MAX_REPORT`] bytes, saying how to get the rest.
+fn capped(mut text: String, id: &str) -> String {
+    if text.len() <= MAX_REPORT {
+        return text;
+    }
+    let total = text.len();
+    let mut cut = MAX_REPORT;
+    while !text.is_char_boundary(cut) {
+        cut -= 1;
+    }
+    text.truncate(cut);
+    text.push_str(&format!(
+        "\n\n[Report cut at {cut} of {total} bytes. Ask agent {id} with message_agent for the rest or a shorter summary.]"
+    ));
+    text
 }
 
 /// Record how a run ended and settle the worktree. Returns the final snapshot.
@@ -866,7 +884,14 @@ impl AgentTool for SubagentTool {
                 .into_iter()
                 .map(evo_harness::types::HarnessTool::new),
         );
-        let child = match parent.create_child_with_tools(session, emitter, MAX_TURNS, requested, replacements).await {
+        // A read-only type is held to it by a guard on every tool call.
+        let guard = agent
+            .read_only
+            .then(|| Arc::new(crate::read_only::guard) as evo_harness::agent_harness::ChildToolGuard);
+        let child = match parent
+            .create_child_guarded(session, emitter, agent.max_turns(), requested, replacements, guard)
+            .await
+        {
             Ok(child) => child,
             Err(error) => {
                 if let Some(created) = worktree {
@@ -883,6 +908,15 @@ impl AgentTool for SubagentTool {
             }
         } else if let Ok(model) = lane.get_model().await {
             lock(&progress).model = model.id;
+        }
+        // The type's thinking level, as close as its model allows.
+        if let (Some(level), Ok(model)) = (agent.thinking, lane.get_model().await) {
+            if model.reasoning {
+                if let Err(error) = lane.set_thinking_level(model.clamp_thinking_level(level)).await {
+                    let _ = child.harness.close().await;
+                    return Err(AgentError::Tool(format!("could not set the subagent's thinking level: {error}")));
+                }
+            }
         }
         // A background child outlives this run; a foreground one ends with it.
         let scope = if input.background { parent.session_scope_token() } else { child.scope.clone() };

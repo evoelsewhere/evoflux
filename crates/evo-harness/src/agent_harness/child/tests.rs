@@ -205,6 +205,73 @@ async fn approval_hook_is_inherited_and_blocks_mutating_child_tools() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn guard_refuses_before_approval_and_after_rewritten_arguments() {
+    let script = FauxScript::new();
+    script.set_responses(vec![
+        FauxStep::tool_call(
+            "write",
+            serde_json::json!({"path":"refused.txt","content":"x"}),
+        ),
+        FauxStep::tool_call(
+            "write",
+            serde_json::json!({"path":"allowed.txt","content":"x"}),
+        ),
+        FauxStep::text("done"),
+    ]);
+    let (parent, _, env) = parent(script).await;
+    let approvals = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let counter = approvals.clone();
+    // The approval hook rewrites the second call to a path the guard refuses.
+    parent.inner.lock().unwrap().before_tool_call = Some(Arc::new(move |ctx, _| {
+        counter.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+        let mut args = ctx.args.clone();
+        args["path"] = serde_json::json!("refused-too.txt");
+        Box::pin(async move {
+            Some(BeforeToolCallResult {
+                block: false,
+                reason: None,
+                terminate: false,
+                args: Some(args),
+            })
+        })
+    }));
+    let guard: ChildToolGuard = Arc::new(|name, args| {
+        let path = args["path"].as_str().unwrap_or("");
+        if name == "write" && path.starts_with("refused") {
+            Err(format!("{path} is off limits"))
+        } else {
+            Ok(())
+        }
+    });
+    let child = parent
+        .create_child_guarded(
+            session("child"),
+            emitter(),
+            3,
+            None,
+            Vec::new(),
+            Some(guard),
+        )
+        .await
+        .unwrap();
+    child.harness.prompt_text("write", vec![]).await.unwrap();
+    // The first call never reached the approval hook; the second did, and its
+    // rewritten arguments were refused at execution.
+    assert_eq!(approvals.load(std::sync::atomic::Ordering::Acquire), 1);
+    use evo_tools::FileSystem;
+    for path in ["refused.txt", "allowed.txt", "refused-too.txt"] {
+        assert!(
+            env.read_text_file(path, None).await.is_err(),
+            "{path} was written"
+        );
+    }
+    assert!(parent
+        .create_child(session("too-long"), emitter(), MAX_CHILD_TURNS + 1, None)
+        .await
+        .is_err());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn close_and_session_switch_cancel_old_scopes_but_new_session_can_delegate() {
     let (parent, _, _) = parent(FauxScript::new()).await;
     let first = parent

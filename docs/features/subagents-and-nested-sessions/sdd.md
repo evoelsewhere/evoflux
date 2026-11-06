@@ -197,10 +197,34 @@ Markdown with YAML frontmatter, same rules and loader shape as skills:
 - Frontmatter: `name` (lowercase, hyphens), `description` (required; the
   parent reads it to choose), `tools` (allow-list, optional = parent's tools),
   `model` (`inherit` or a model id, resolved like `set_model`), `thinking`
-  (optional), `isolation` (`worktree` default for this type, optional).
-- Body: appended to the child's system prompt.
-- Built-in types: `general` (all parent tools), `explore` (read-only: `read`
-  and a read-only shell brief), `plan` (no edits; returns a plan).
+  (`inherit` or a level, clamped to what the model supports; ignored for a
+  model without reasoning), `maxTurns` (1–100, default 32), `access`
+  (`read-only` or `full`, default `full`), `isolation` (`worktree` default for
+  this type, optional).
+- Body: put in front of the task in the child's first message.
+- **`access: read-only` is enforced** (`crates/evo-engine/src/read_only.rs`):
+  every tool call of the child goes through a `ChildToolGuard` (evo-harness)
+  before it reaches an approval prompt, and again right before it runs (hooks
+  may rewrite arguments). It passes reading tools and the mesh tools, refuses
+  `write`/`edit` and any tool it does not know (connector tools included), and
+  splits `bash`/`powershell` commands into simple commands that must each be on
+  a read-only allow-list (`rg`, `git log/show/diff/status/blame`,
+  `Get-ChildItem`, …) without their writing options (`find -delete`,
+  `rg --pre`, `git -c`, `--output`, …). Redirection to a file, here-documents,
+  command substitution in double quotes, PowerShell method calls, static .NET
+  calls, property assignment and `&` are refused. Unknown commands are
+  refused; the refusal tells the model to retry with a plainer command.
+- Built-in types, each with a prompt that sets how to work and a fixed report
+  format (the parent sees only the report):
+
+  | Type | Tools | Access | Thinking | Turns | Report |
+  |---|---|---|---|---|---|
+  | `general` | parent's | full | inherit | 80 | Done / Changes / Checks / Not done |
+  | `explore` | `read`, `bash`, `powershell` | read-only | low | 40 | Answer / Evidence (`path:line`) / Not found |
+  | `plan` | `read`, `bash`, `powershell` | read-only | high | 40 | Goal / Approach / Changes / Steps / Risks / Verification / Open questions |
+
+- A report longer than 16 KiB is cut; the cut says to ask the agent for the
+  rest with `message_agent`.
 - Loader beside `load_skills`; make `frontmatter::parse_frontmatter` public.
   The tool's description lists the available types with their descriptions.
 
