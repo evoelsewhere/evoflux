@@ -2,11 +2,9 @@
 //! `resolveCacheRetention` — the cache-control blob builder the request mapper
 //! attaches to system / tool / message blocks.
 //!
-//! TS `resolveCacheRetention` defaults to `"short"` and reads `EVO_CACHE_RETENTION`
-//! for backward compat. The Rust port dims env access to the caller's
-//! `SimpleStreamOptions.cache_retention` (which the agent already resolved) and
-//! documents the env-var hook as a TODO; the default remains `Short` so behaviour
-//! matches when the caller leaves it unset.
+//! The retention comes from the caller's `SimpleStreamOptions.cache_retention`
+//! (no env-var lookup in the provider layer). `CacheRetention` defaults to
+//! `Long` (1h), so an unset preference gets the 1h tier on models that support it.
 
 use crate::model::{AnthropicMessagesCompat, Model, StreamingProtocolCompat};
 use crate::provider::CacheRetention;
@@ -88,11 +86,9 @@ impl CacheControlOption {
 }
 
 /// Resolve the retention preference to use for this call. Mirrors the TS
-/// `resolveCacheRetention`: the caller-supplied `cache_retention` wins; when
-/// unset it collapses to the `Short` default. The `EVO_CACHE_RETENTION` env-var
-/// fallback the TS uses is intentionally NOT modeled here (no ambient env in the
-/// provider layer); callers that want it should resolve and forward
-/// `CacheRetention::Long` via `SimpleStreamOptions`. The default stays `Short`.
+/// `resolveCacheRetention`: the caller-supplied `cache_retention` wins. No
+/// env-var fallback is modeled here (no ambient env in the provider layer);
+/// callers that want 5m retention forward `CacheRetention::Short`.
 pub fn resolve_cache_retention(cache_retention: CacheRetention) -> CacheRetention {
     cache_retention
 }

@@ -21,11 +21,16 @@ pub const DEFAULT_STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(300);
 /// Cache-retention hint passed to a provider. Mirrors TS `CacheRetention`.
 /// `Long` requests 1h ephemeral cache control on Anthropic (subject to compat);
 /// `Short` requests the default ephemeral; `None` disables cache control.
+///
+/// The default is `Long`: in an interactive app the gap between turns (reading
+/// the answer, reviewing a diff) often exceeds 5 minutes, so a 5m cache expires
+/// and the whole conversation is re-written. A 1h write costs more than a 5m
+/// write but is repaid by the first read that would otherwise have missed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum CacheRetention {
     None,
-    #[default]
     Short,
+    #[default]
     Long,
 }
 
