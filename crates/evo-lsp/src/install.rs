@@ -218,6 +218,51 @@ fn find_binary(dir: &Path, name: &str, depth: usize) -> Option<PathBuf> {
     None
 }
 
+const DOWNLOAD_ATTEMPTS: u32 = 3;
+
+/// A network error in words, without the request URL: GitHub's asset links
+/// are long signed URLs that bury the cause. Includes the underlying cause
+/// (a timeout, a reset connection), which reqwest's own message leaves out.
+fn net_error(e: reqwest::Error) -> String {
+    let e = e.without_url();
+    if let Some(status) = e.status() {
+        return format!("the server answered {status}");
+    }
+    let mut text = if e.is_timeout() {
+        "the connection stalled".to_string()
+    } else if e.is_connect() {
+        "could not connect".to_string()
+    } else if e.is_body() || e.is_decode() {
+        "the connection broke off mid-download".to_string()
+    } else {
+        e.to_string()
+    };
+    // The innermost cause says what actually happened.
+    let mut cause = String::new();
+    let mut source = std::error::Error::source(&e);
+    while let Some(err) = source {
+        let message = err.to_string();
+        if !message.is_empty() {
+            cause = message;
+        }
+        source = err.source();
+    }
+    if !cause.is_empty() {
+        text.push_str(&format!(" ({cause})"));
+    }
+    text
+}
+
+/// One attempt at fetching `url` whole.
+async fn download(client: &reqwest::Client, url: &str) -> Result<Vec<u8>, String> {
+    let mut response = client.get(url).send().await.and_then(|r| r.error_for_status()).map_err(net_error)?;
+    let mut bytes = Vec::with_capacity(response.content_length().unwrap_or(0).min(256 << 20) as usize);
+    while let Some(chunk) = response.chunk().await.map_err(net_error)? {
+        bytes.extend_from_slice(&chunk);
+    }
+    Ok(bytes)
+}
+
 async fn github_release(
     server: &Server,
     repo: &str,
@@ -232,9 +277,11 @@ async fn github_release(
         .ok_or_else(|| format!("no {} build for {os} {arch}", server.name))?;
     let client = reqwest::Client::builder()
         .user_agent(concat!("evo/", env!("CARGO_PKG_VERSION")))
-        .timeout(Duration::from_secs(600))
+        .connect_timeout(Duration::from_secs(30))
+        // A stall, not a slow connection, fails the download.
+        .read_timeout(Duration::from_secs(60))
         .build()
-        .map_err(|e| e.to_string())?;
+        .map_err(net_error)?;
     log(format!("Looking up the latest release of {repo}"));
     let release: serde_json::Value = client
         .get(format!("https://api.github.com/repos/{repo}/releases/latest"))
@@ -242,10 +289,10 @@ async fn github_release(
         .send()
         .await
         .and_then(|r| r.error_for_status())
-        .map_err(|e| format!("GitHub could not be reached: {e}"))?
+        .map_err(|e| format!("GitHub could not be reached: {}", net_error(e)))?
         .json()
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| format!("GitHub sent an unreadable answer: {}", net_error(e)))?;
     let tag = release.get("tag_name").and_then(|v| v.as_str()).unwrap_or("latest").to_string();
     let found = release
         .get("assets")
@@ -263,15 +310,19 @@ async fn github_release(
         .and_then(|u| u.as_str())
         .ok_or("the asset has no download URL")?;
     log(format!("Downloading {name} ({tag})"));
-    let bytes = client
-        .get(url)
-        .send()
-        .await
-        .and_then(|r| r.error_for_status())
-        .map_err(|e| format!("download failed: {e}"))?
-        .bytes()
-        .await
-        .map_err(|e| e.to_string())?;
+    let mut attempt = 1;
+    let bytes = loop {
+        match download(&client, url).await {
+            Ok(bytes) => break bytes,
+            Err(e) if attempt < DOWNLOAD_ATTEMPTS => {
+                attempt += 1;
+                log(format!("{e} — retrying ({attempt} of {DOWNLOAD_ATTEMPTS})"));
+                tokio::time::sleep(Duration::from_secs(2)).await;
+            }
+            Err(e) => return Err(format!("Downloading {name} failed: {e}")),
+        }
+    };
+    log(format!("Downloaded {:.1} MB", bytes.len() as f64 / 1_048_576.0));
     let _ = std::fs::remove_dir_all(dir);
     std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     let target = dir.to_path_buf();
