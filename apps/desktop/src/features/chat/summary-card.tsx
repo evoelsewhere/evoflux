@@ -162,9 +162,33 @@ function settle(agent: SubagentEntry, reports: Record<string, AgentReport>): Sub
 const turnTokens = (meta: Turn["meta"]) =>
   (meta.inputTokens ?? 0) + (meta.outputTokens ?? 0) + (meta.cacheRead ?? 0) + (meta.cacheWrite ?? 0);
 
+/**
+ * A selector for the chat's turns that keeps returning the same array while
+ * only text and reasoning stream: the summary reads tool calls, usage and
+ * status, so a streamed reply no longer recomputes and redraws it every frame.
+ */
+function summaryTurnsSelector() {
+  let last: { turns: Turn[]; signature: unknown[] } | undefined;
+  return (s: ReturnType<typeof useEngineStore.getState>): Turn[] => {
+    const turns = s.transcript.turns;
+    if (last?.turns === turns) return turns;
+    const signature: unknown[] = [];
+    for (const turn of turns) {
+      signature.push(turn.id, turn.status, turn.prompt, turn.meta, turn.endedAt);
+      for (const part of turn.parts) if (part.kind === "tool") signature.push(part);
+    }
+    if (last && last.signature.length === signature.length && last.signature.every((value, i) => value === signature[i])) {
+      return last.turns;
+    }
+    last = { turns, signature };
+    return turns;
+  };
+}
+
 /** Everything the summary shows about the chat itself, from its transcript. */
 function useChatSummary(): ChatSummary {
-  const turns = useEngineStore((s) => s.transcript.turns);
+  const selectTurns = React.useMemo(summaryTurnsSelector, []);
+  const turns = useEngineStore(selectTurns);
   const received = useEngineStore((s) => s.transcript.agentReports);
   return React.useMemo(() => {
     let todos: Todo[] | null = null;

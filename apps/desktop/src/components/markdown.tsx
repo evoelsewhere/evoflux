@@ -12,6 +12,7 @@ import {
   CodeBlockTitle,
 } from "@/components/ui/code-block";
 import { useHighlightedCode } from "@/hooks/use-highlighted-code";
+import { useSmoothText } from "@/hooks/use-smooth-text";
 import { cn } from "@/lib/utils";
 
 // shadcn/ui · Code Block › Markdown: render the reply with Streamdown and
@@ -104,7 +105,9 @@ export const Markdown = React.memo(function Markdown({
         : components,
     [onLocalLink],
   );
-  const text = onLocalLink ? markLocalLinks(children) : children;
+  // Streamed text is revealed at a steady pace rather than in network bursts.
+  const smooth = useSmoothText(children, streaming);
+  const text = onLocalLink ? markLocalLinks(smooth.text) : smooth.text;
   return (
     <div
       data-selectable
@@ -117,7 +120,7 @@ export const Markdown = React.memo(function Markdown({
         className,
       )}
     >
-      <Streamdown controls={false} components={localComponents} isAnimating={streaming}>
+      <Streamdown controls={false} components={localComponents} isAnimating={streaming || smooth.revealing}>
         {text}
       </Streamdown>
     </div>
