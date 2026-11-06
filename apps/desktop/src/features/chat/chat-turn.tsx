@@ -158,8 +158,24 @@ function ProcessRows({ parts, running }: { parts: Process; running: boolean }) {
   );
 }
 
+type ProcessGroupProps = { parts: Process; running: boolean; live: boolean };
+
+/**
+ * `segments` rebuilds every group's array on each delta, but a part object only
+ * changes when that part does: compare them one by one, so streaming text does
+ * not re-render the tool rows above it.
+ */
+function sameGroup(a: ProcessGroupProps, b: ProcessGroupProps): boolean {
+  return (
+    a.running === b.running &&
+    a.live === b.live &&
+    a.parts.length === b.parts.length &&
+    a.parts.every((part, index) => part === b.parts[index])
+  );
+}
+
 /** A process group: its rows, under a title once there is more than one. */
-function ProcessGroup({ parts, running, live: turnLive }: { parts: Process; running: boolean; live: boolean }) {
+const ProcessGroup = React.memo(function ProcessGroup({ parts, running, live: turnLive }: ProcessGroupProps) {
   const [open, setOpen] = React.useState<boolean>();
   // A background agent keeps its group live after the turn ended.
   const background = parts.some((part) => part.kind === "tool" && part.details?.child?.status === "running");
@@ -177,7 +193,7 @@ function ProcessGroup({ parts, running, live: turnLive }: { parts: Process; runn
       </TraceCollapsibleContent>
     </TraceCollapsible>
   );
-}
+}, sameGroup);
 
 /** "Working for 12s", ticking while the turn runs. */
 function RunningStatus({ startedAt }: { startedAt: number }) {

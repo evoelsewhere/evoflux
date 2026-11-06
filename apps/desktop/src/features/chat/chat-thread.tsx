@@ -1,3 +1,4 @@
+import * as React from "react";
 import {
   MessageScroller,
   MessageScrollerButton,
@@ -11,6 +12,24 @@ import { useSessionStore } from "@/stores/session-store";
 import { ChatSkeleton } from "./chat-skeleton";
 import { AssistantMessage, UserMessage } from "./chat-turn";
 import { ChatEmpty } from "./chat-empty";
+import type { Turn } from "./transcript";
+
+/**
+ * One turn of the thread. A delta replaces only the running turn's object, so
+ * every earlier turn skips rendering while a reply streams.
+ */
+const ThreadTurn = React.memo(function ThreadTurn({ turn }: { turn: Turn }) {
+  return (
+    <div className="flex flex-col gap-6">
+      <MessageScrollerItem messageId={`${turn.id}-prompt`} scrollAnchor>
+        <UserMessage turn={turn} />
+      </MessageScrollerItem>
+      <MessageScrollerItem messageId={`${turn.id}-reply`}>
+        <AssistantMessage turn={turn} />
+      </MessageScrollerItem>
+    </div>
+  );
+});
 
 /** The thread (shadcn/ui AI Elements · Chat): the person's turn anchors the scroll. */
 export function ChatThread() {
@@ -53,14 +72,7 @@ export function ChatThread() {
       <MessageScrollerViewport>
         <MessageScrollerContent aria-busy={busy} className="mx-auto w-full max-w-(--chat-width) gap-8 px-6 py-6">
           {turns.map((turn) => (
-            <div key={turn.id} className="flex flex-col gap-6">
-              <MessageScrollerItem messageId={`${turn.id}-prompt`} scrollAnchor>
-                <UserMessage turn={turn} />
-              </MessageScrollerItem>
-              <MessageScrollerItem messageId={`${turn.id}-reply`}>
-                <AssistantMessage turn={turn} />
-              </MessageScrollerItem>
-            </div>
+            <ThreadTurn key={turn.id} turn={turn} />
           ))}
         </MessageScrollerContent>
       </MessageScrollerViewport>
