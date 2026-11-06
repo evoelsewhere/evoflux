@@ -798,7 +798,7 @@ pub async fn build_prepared(
     action_host.set_catalog(catalog.clone());
 
     // ---- Execution env + tools ----
-    let env = Arc::new(OsExecutionEnv::with_cwd(cwd.to_path_buf()));
+    let env = Arc::new(OsExecutionEnv::with_cwd(cwd.to_path_buf()).with_shell_env_provider(crate::office::shell_env_provider()));
     let env_dyn: Arc<dyn evo_tools::ExecutionEnv> = env.clone();
     let mut_env: Arc<dyn evo_tools::MutatingEnv> = env.clone();
     let _registry = Arc::new(MutationQueueRegistry::new());
@@ -2840,7 +2840,7 @@ pub fn bash_options() -> evo_tools::tools::bash::BashToolOptions {
 /// session's folder, for a delegated child in its own worktree. Same options
 /// as the parent's (`build_tools`); the harness swaps them in by name.
 pub fn builtin_tools_in(cwd: &Path) -> Vec<HarnessTool> {
-    let env = Arc::new(OsExecutionEnv::with_cwd(cwd.to_path_buf()));
+    let env = Arc::new(OsExecutionEnv::with_cwd(cwd.to_path_buf()).with_shell_env_provider(crate::office::shell_env_provider()));
     let env_dyn: Arc<dyn evo_tools::ExecutionEnv> = env.clone();
     let mut_env: Arc<dyn evo_tools::MutatingEnv> = env;
     let ctx = ExecutionToolContext::new(env_dyn, Some(mut_env));

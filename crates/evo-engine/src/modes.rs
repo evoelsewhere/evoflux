@@ -1224,6 +1224,18 @@ where
                     Err(error) => Err(error),
                 }
             }
+            // Settings → Office: the LibreOffice runtime (`office.rs`).
+            "office_status" | "office_install" | "office_cancel_install" | "office_dismiss_error" | "office_uninstall" => {
+                crate::office::manage(kind.as_str())
+            }
+            "office_convert" => {
+                let path = msg.get("path").and_then(serde_json::Value::as_str).unwrap_or("");
+                if path.is_empty() {
+                    Err("`path` is required".to_string())
+                } else {
+                    crate::office::convert(path).await
+                }
+            }
             // The Memory panel. Changes re-read this chat's resources so its
             // prompt has the new index; the app reloads the other idle chats.
             "list_memories" => crate::memory::describe(&rpc_cwd(&rpc_providers)),
