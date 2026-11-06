@@ -44,20 +44,29 @@ impl SqliteSessionStorage {
         }
     }
 
-    fn persist_cas(&self, previous: &str) -> SessionResult<bool> {
+    fn conn(&self) -> SessionResult<std::sync::MutexGuard<'_, Connection>> {
+        self.db
+            .lock()
+            .map_err(|_| SessionError::storage("SQLite connection poisoned"))
+    }
+
+    /// Write the reduced state if the row still holds `previous`.
+    fn persist_cas(&self, previous: &str) -> SessionResult<Cas> {
         let metadata = self.inner.metadata();
         let state = serde_json::to_string(&self.inner.snapshot_state())
             .map_err(|e| SessionError::storage(format!("serialize SQLite session: {e}")))?;
-        let changed = self
-            .db
-            .lock()
-            .map_err(|_| SessionError::storage("SQLite connection poisoned"))?
-            .execute(
-                "UPDATE sessions SET state_json = ?1 WHERE id = ?2 AND state_json = ?3",
-                params![state, metadata.id, previous],
-            )
-            .map_err(|e| SessionError::storage(format!("persist SQLite session: {e}")))?;
-        Ok(changed == 1)
+        let result = self.conn()?.execute(
+            "UPDATE sessions SET state_json = ?1 WHERE id = ?2 AND state_json = ?3",
+            params![state, metadata.id, previous],
+        );
+        match result {
+            Ok(1) => Ok(Cas::Written),
+            Ok(_) => Ok(Cas::Conflict),
+            Err(error) if busy::is_busy(&error) => Ok(Cas::Busy(error)),
+            Err(error) => Err(SessionError::storage(format!(
+                "persist SQLite session: {error}"
+            ))),
+        }
     }
 
     async fn write_retry<T, F, Fut>(&self, op: F) -> SessionResult<T>
@@ -68,27 +77,47 @@ impl SqliteSessionStorage {
         // Refresh, reduce, and CAS the exact snapshot that was refreshed. A
         // concurrent connection either wins the CAS or causes this operation
         // to replay against the newer state; its successful return is durable.
+        // A busy database (other engines holding the write lock) replays the
+        // same way after a pause instead of failing the caller.
         let _gate = self.gate.lock().await;
-        for _ in 0..16 {
-            let previous = self.refresh_unlocked()?;
-            match op(self.inner.clone()).await {
-                Ok(value) => match self.persist_cas(&previous) {
-                    Ok(true) => return Ok(value),
-                    Ok(false) => continue,
-                    Err(error) => {
-                        self.restore_snapshot(&previous)?;
-                        return Err(error);
+        let mut conflicts = 0;
+        let mut backoff = busy::Backoff::new();
+        loop {
+            let previous = self.refresh_unlocked().await?;
+            let value = match op(self.inner.clone()).await {
+                Ok(value) => value,
+                Err(error) => {
+                    self.restore_snapshot(&previous)?;
+                    return Err(error);
+                }
+            };
+            match self.persist_cas(&previous) {
+                Ok(Cas::Written) => return Ok(value),
+                Ok(Cas::Conflict) => {
+                    conflicts += 1;
+                    if conflicts >= 16 {
+                        return Err(SessionError::storage(
+                            "SQLite write conflicted too many times",
+                        ));
                     }
-                },
+                }
+                Ok(Cas::Busy(error)) => {
+                    self.restore_snapshot(&previous)?;
+                    match backoff.next_pause() {
+                        Some(pause) => tokio::time::sleep(pause).await,
+                        None => {
+                            return Err(SessionError::storage(format!(
+                                "persist SQLite session: {error}"
+                            )))
+                        }
+                    }
+                }
                 Err(error) => {
                     self.restore_snapshot(&previous)?;
                     return Err(error);
                 }
             }
         }
-        Err(SessionError::storage(
-            "SQLite write conflicted too many times",
-        ))
     }
 
     fn restore_snapshot(&self, state_json: &str) -> SessionResult<()> {
@@ -98,18 +127,16 @@ impl SqliteSessionStorage {
         Ok(())
     }
 
-    fn refresh_unlocked(&self) -> SessionResult<String> {
+    async fn refresh_unlocked(&self) -> SessionResult<String> {
         let id = self.inner.metadata().id;
-        let state_json: String = self
-            .db
-            .lock()
-            .map_err(|_| SessionError::storage("SQLite connection poisoned"))?
-            .query_row(
+        let state_json: String = busy::run(&self.db, "refresh SQLite session", |conn| {
+            conn.query_row(
                 "SELECT state_json FROM sessions WHERE id = ?1",
                 params![id],
                 |row| row.get(0),
             )
-            .map_err(|e| SessionError::storage(format!("refresh SQLite session: {e}")))?;
+        })
+        .await?;
         let state = serde_json::from_str(&state_json)
             .map_err(|e| SessionError::storage(format!("decode SQLite session: {e}")))?;
         self.inner.replace_state(state);
@@ -118,9 +145,18 @@ impl SqliteSessionStorage {
 
     async fn refresh_read(&self) -> SessionResult<tokio::sync::OwnedMutexGuard<()>> {
         let gate = self.gate.clone().lock_owned().await;
-        self.refresh_unlocked()?;
+        self.refresh_unlocked().await?;
         Ok(gate)
     }
+}
+
+/// How a compare-and-swap write of the session state ended.
+enum Cas {
+    Written,
+    /// Another connection changed the row since it was read.
+    Conflict,
+    /// Another connection held the write lock past the busy timeout.
+    Busy(rusqlite::Error),
 }
 
 /// Switch to WAL unless the database already uses it. Changing the journal
@@ -150,6 +186,7 @@ fn enable_wal(conn: &Connection) -> SessionResult<()> {
     }
 }
 
+mod busy;
 mod progress;
 
 #[async_trait]
@@ -399,21 +436,29 @@ impl SqliteSessionRepo {
         }
         let conn = Connection::open(&path)
             .map_err(|e| SessionError::storage(format!("open SQLite database: {e}")))?;
-        conn.busy_timeout(std::time::Duration::from_secs(5))
+        conn.busy_timeout(busy::BUSY_TIMEOUT)
             .map_err(|e| SessionError::storage(format!("configure SQLite busy timeout: {e}")))?;
         // Reject native experimental artifacts BEFORE WAL/schema initialization.
         // Compiled unconditionally: feature-off legacy writers must reject too.
-        let application_id: i64 = conn
-            .query_row("PRAGMA application_id", [], |row| row.get(0))
-            .map_err(|e| SessionError::storage(format!("read SQLite format identity: {e}")))?;
+        let application_id: i64 =
+            busy::retry_blocking(|| conn.query_row("PRAGMA application_id", [], |row| row.get(0)))
+                .map_err(|e| SessionError::storage(format!("read SQLite format identity: {e}")))?;
         if matches!(application_id, 0x5250494e | 0x5250494f | 0x52504951) {
             return Err(SessionError::storage(
                 "experimental native artifact cannot be opened by the legacy SQLite writer",
             ));
         }
         enable_wal(&conn)?;
-        conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS sessions (
+        // WAL + NORMAL: commits stop fsyncing while they hold the database's
+        // single write lock (FULL fsyncs every commit, which serialized every
+        // engine sharing evo.db behind the disk). A process crash loses
+        // nothing; a power cut can lose the last commits but never corrupts
+        // the file. evo-store opens the same file with the same setting.
+        conn.pragma_update(None, "synchronous", "NORMAL")
+            .map_err(|e| SessionError::storage(format!("configure SQLite synchronous: {e}")))?;
+        busy::retry_blocking(|| {
+            conn.execute_batch(
+                "CREATE TABLE IF NOT EXISTS sessions (
                  id TEXT PRIMARY KEY,
                  created_at INTEGER NOT NULL,
                  parent_session_id TEXT,
@@ -431,7 +476,8 @@ impl SqliteSessionRepo {
              );
              CREATE INDEX IF NOT EXISTS progress_run ON progress_frames(session_id,run_id,sequence);
              PRAGMA foreign_keys = ON;",
-        )
+            )
+        })
         .map_err(|e| SessionError::storage(format!("initialize SQLite database: {e}")))?;
         Ok(Self {
             path,
@@ -446,54 +492,58 @@ impl SqliteSessionRepo {
         &self.path
     }
 
-    fn insert(&self, metadata: &SessionMetadata, state: &SessionState) -> SessionResult<()> {
+    async fn insert(&self, metadata: &SessionMetadata, state: &SessionState) -> SessionResult<()> {
         let state = serde_json::to_string(state)
             .map_err(|e| SessionError::storage(format!("serialize SQLite state: {e}")))?;
-        self.db
-            .lock()
-            .map_err(|_| SessionError::storage("SQLite connection poisoned"))?
-            .execute(
+        let inserted = busy::run(&self.db, "insert SQLite session", |conn| {
+            match conn.execute(
                 "INSERT INTO sessions (id, created_at, parent_session_id, state_json) VALUES (?1, ?2, ?3, ?4)",
                 params![metadata.id, metadata.created_at, metadata.parent_session_id, state],
-            )
-            .map_err(|e| match e {
-                rusqlite::Error::SqliteFailure(err, _)
+            ) {
+                Ok(_) => Ok(true),
+                Err(rusqlite::Error::SqliteFailure(err, _))
                     if err.code == rusqlite::ErrorCode::ConstraintViolation =>
                 {
-                    SessionError::already_exists(format!("Session already exists: {}", metadata.id))
+                    Ok(false)
                 }
-                other => SessionError::storage(format!("insert SQLite session: {other}")),
-            })?;
+                Err(other) => Err(other),
+            }
+        })
+        .await?;
+        if !inserted {
+            return Err(SessionError::already_exists(format!(
+                "Session already exists: {}",
+                metadata.id
+            )));
+        }
         Ok(())
     }
 
-    fn load_row(&self, id: &str) -> SessionResult<Option<(SessionMetadata, SessionState)>> {
-        let db = self
-            .db
-            .lock()
-            .map_err(|_| SessionError::storage("SQLite connection poisoned"))?;
-        db.query_row(
-            "SELECT id, created_at, parent_session_id, state_json FROM sessions WHERE id = ?1",
-            params![id],
-            |row| {
-                let metadata = SessionMetadata {
-                    id: row.get(0)?,
-                    created_at: row.get(1)?,
-                    parent_session_id: row.get(2)?,
-                };
-                let state_json: String = row.get(3)?;
-                let state = serde_json::from_str(&state_json).map_err(|e| {
-                    rusqlite::Error::FromSqlConversionFailure(
-                        3,
-                        rusqlite::types::Type::Text,
-                        Box::new(e),
-                    )
-                })?;
-                Ok((metadata, state))
-            },
-        )
-        .optional()
-        .map_err(|e| SessionError::storage(format!("read SQLite session: {e}")))
+    async fn load_row(&self, id: &str) -> SessionResult<Option<(SessionMetadata, SessionState)>> {
+        busy::run(&self.db, "read SQLite session", |conn| {
+            conn.query_row(
+                "SELECT id, created_at, parent_session_id, state_json FROM sessions WHERE id = ?1",
+                params![id],
+                |row| {
+                    let metadata = SessionMetadata {
+                        id: row.get(0)?,
+                        created_at: row.get(1)?,
+                        parent_session_id: row.get(2)?,
+                    };
+                    let state_json: String = row.get(3)?;
+                    let state = serde_json::from_str(&state_json).map_err(|e| {
+                        rusqlite::Error::FromSqlConversionFailure(
+                            3,
+                            rusqlite::types::Type::Text,
+                            Box::new(e),
+                        )
+                    })?;
+                    Ok((metadata, state))
+                },
+            )
+            .optional()
+        })
+        .await
     }
 }
 
@@ -508,7 +558,7 @@ impl SessionRepo for SqliteSessionRepo {
             parent_session_id: options.parent_session_id.clone(),
         };
         let state = SessionState::new();
-        self.insert(&metadata, &state)?;
+        self.insert(&metadata, &state).await?;
         Ok(SqliteSessionStorage::new(
             self.db.clone(),
             metadata,
@@ -520,7 +570,7 @@ impl SessionRepo for SqliteSessionRepo {
     }
 
     async fn open(&self, metadata: &SessionMetadata) -> SessionResult<Self::Storage> {
-        let (metadata, state) = self.load_row(&metadata.id)?.ok_or_else(|| {
+        let (metadata, state) = self.load_row(&metadata.id).await?.ok_or_else(|| {
             SessionError::not_found(format!("Session not found: {}", metadata.id))
         })?;
         Ok(SqliteSessionStorage::new(
@@ -557,11 +607,10 @@ impl SessionRepo for SqliteSessionRepo {
     }
 
     async fn delete(&self, metadata: &SessionMetadata) -> SessionResult<()> {
-        self.db
-            .lock()
-            .map_err(|_| SessionError::storage("SQLite connection poisoned"))?
-            .execute("DELETE FROM sessions WHERE id = ?1", params![metadata.id])
-            .map_err(|e| SessionError::storage(format!("delete SQLite session: {e}")))?;
+        busy::run(&self.db, "delete SQLite session", |conn| {
+            conn.execute("DELETE FROM sessions WHERE id = ?1", params![metadata.id])
+        })
+        .await?;
         Ok(())
     }
 
@@ -585,7 +634,7 @@ impl SessionRepo for SqliteSessionRepo {
             self.ids.clone(),
         )?;
         let state = forked.snapshot_state();
-        self.insert(&metadata, &state)?;
+        self.insert(&metadata, &state).await?;
         Ok(SqliteSessionStorage::new(
             self.db.clone(),
             metadata,
@@ -861,6 +910,104 @@ mod tests {
             2,
             "both appends returned success, but one whole-state snapshot overwrote the other"
         );
+    }
+
+    /// Another process (a second chat's engine) holds the database's write
+    /// lock for `hold`, well past the busy timeout. Returns once it has the
+    /// lock; the lock is released when `hold` has passed.
+    fn hold_write_lock(path: &Path, hold: std::time::Duration) -> std::thread::JoinHandle<()> {
+        let path = path.to_path_buf();
+        let (locked, wait) = std::sync::mpsc::channel();
+        let holder = std::thread::spawn(move || {
+            let other = Connection::open(&path).unwrap();
+            other.execute_batch("BEGIN IMMEDIATE").unwrap();
+            locked.send(()).unwrap();
+            std::thread::sleep(hold);
+            other.execute_batch("COMMIT").unwrap();
+        });
+        wait.recv().unwrap();
+        holder
+    }
+
+    fn message(id: &str) -> ProvisionedEntry {
+        ProvisionedEntry {
+            id: id.into(),
+            kind: ProvisionedKind::Message {
+                message: AgentMessage::from(evo_ai::types::UserMessage::new(id, 1)),
+                terminate: None,
+            },
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn writes_wait_out_another_engine_holding_the_write_lock() {
+        let (repo, _dir) = repo();
+        let hold = busy::BUSY_TIMEOUT * 6;
+        let session = repo
+            .create(&SessionCreateOptions {
+                id: Some("busy".into()),
+                parent_session_id: None,
+                metadata: None,
+            })
+            .await
+            .unwrap();
+        session.append_entry(message("m1"), "main").await.unwrap();
+
+        // An entry (whole-state compare-and-swap) while the lock is held.
+        let holder = hold_write_lock(repo.path(), hold);
+        let started = std::time::Instant::now();
+        session.append_entry(message("m2"), "main").await.unwrap();
+        assert!(
+            started.elapsed() >= busy::BUSY_TIMEOUT,
+            "the write did not wait for the lock"
+        );
+        holder.join().unwrap();
+
+        // Streamed progress (an IMMEDIATE transaction) while the lock is held.
+        let holder = hold_write_lock(repo.path(), hold);
+        let stamped = session
+            .append_progress(vec![crate::session::types::AssistantFrameRecord {
+                base: crate::session::types::RecordBase {
+                    id: "frame-1".into(),
+                    seq: 0,
+                    lane: "main".into(),
+                    timestamp: 0,
+                },
+                run_id: "run-1".into(),
+                stream_index: 0,
+                op: crate::session::types::AssistantFrameOp::Append,
+                frame: Some(serde_json::json!({ "text": "partial" })),
+            }])
+            .await
+            .unwrap();
+        holder.join().unwrap();
+        assert_eq!(stamped.len(), 1);
+        assert_eq!(session.read_progress("run-1").await.unwrap().len(), 1);
+
+        // Opening a session while the lock is held.
+        let holder = hold_write_lock(repo.path(), hold);
+        let created = repo
+            .create(&SessionCreateOptions {
+                id: Some("busy-2".into()),
+                parent_session_id: None,
+                metadata: None,
+            })
+            .await;
+        holder.join().unwrap();
+        assert!(created.is_ok(), "{:?}", created.err());
+
+        let reopened = repo.open(&session.metadata()).await.unwrap();
+        let ids: Vec<_> = reopened
+            .find_entries(&EntryQuery {
+                order: Some(EntryOrder::OldestFirst),
+                ..Default::default()
+            })
+            .await
+            .unwrap()
+            .iter()
+            .map(|entry| entry.id().to_string())
+            .collect();
+        assert_eq!(ids, ["m1", "m2"]);
     }
 
     #[tokio::test]

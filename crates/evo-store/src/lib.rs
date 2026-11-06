@@ -195,6 +195,34 @@ fn checksum(sql: &str) -> String {
     digest.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
+/// Whether the database is evo's and has exactly `migrations` applied, with
+/// matching checksums — read only, no write lock. Anything else (a new file,
+/// a pending, newer or changed migration, an error) is `false` and left to
+/// [`migrate`]'s locked path, which reports it.
+fn up_to_date(connection: &Connection, migrations: &[Migration]) -> bool {
+    let check = || -> rusqlite::Result<bool> {
+        let app_id: i64 = connection.query_row("PRAGMA application_id", [], |row| row.get(0))?;
+        if app_id != APPLICATION_ID {
+            return Ok(false);
+        }
+        let mut statement = connection
+            .prepare("SELECT version, checksum FROM schema_migrations ORDER BY version")?;
+        let applied = statement
+            .query_map([], |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(applied.len() == migrations.len()
+            && applied
+                .iter()
+                .zip(migrations)
+                .all(|((version, sum), migration)| {
+                    *version == migration.version && *sum == checksum(migration.sql)
+                }))
+    };
+    check().unwrap_or(false)
+}
+
 /// Apply every pending migration in `migrations`.
 pub(crate) fn migrate(
     connection: &mut Connection,
@@ -206,6 +234,13 @@ pub(crate) fn migrate(
         .enumerate()
         .all(|(index, migration)| migration.version == index as i64 + 1));
     let known = migrations.last().map_or(0, |migration| migration.version);
+
+    // Every engine opens this file several times while it runs. When it is
+    // already ours and fully migrated, a read settles that without taking
+    // the write lock, which every other engine may be waiting for.
+    if up_to_date(connection, migrations) {
+        return Ok(());
+    }
 
     // The write lock serializes concurrent first opens across processes.
     let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -288,6 +323,68 @@ mod tests {
         connection
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap()
+    }
+
+    #[test]
+    fn reopening_a_migrated_database_takes_no_write_lock() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("evo.db");
+        drop(open_at(&path).unwrap());
+        // Another engine holds the write lock while this one opens the file.
+        let (locked, wait) = std::sync::mpsc::channel();
+        let holder_path = path.clone();
+        let holder = std::thread::spawn(move || {
+            let other = Connection::open(&holder_path).unwrap();
+            other.execute_batch("BEGIN IMMEDIATE").unwrap();
+            locked.send(()).unwrap();
+            std::thread::sleep(Duration::from_secs(2));
+            other.execute_batch("COMMIT").unwrap();
+        });
+        wait.recv().unwrap();
+        let started = std::time::Instant::now();
+        let connection = open_at(&path).unwrap();
+        let waited = started.elapsed();
+        holder.join().unwrap();
+        assert!(
+            waited < Duration::from_secs(1),
+            "open waited {waited:?} for the write lock"
+        );
+        assert_eq!(version(&connection), MIGRATIONS.len() as i64);
+    }
+
+    #[test]
+    fn anything_but_a_current_database_takes_the_locked_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let fresh = Connection::open(dir.path().join("fresh.db")).unwrap();
+        assert!(
+            !up_to_date(&fresh, MIGRATIONS),
+            "a new file needs migrating"
+        );
+
+        let path = dir.path().join("evo.db");
+        let mut connection = open_at(&path).unwrap();
+        assert!(up_to_date(&connection, MIGRATIONS));
+        let older_build = &MIGRATIONS[..MIGRATIONS.len() - 1];
+        assert!(
+            !up_to_date(&connection, older_build),
+            "a newer database is reported as too new"
+        );
+        assert!(matches!(
+            migrate(&mut connection, &path, older_build),
+            Err(DbError::TooNew { .. })
+        ));
+
+        connection
+            .execute(
+                "UPDATE schema_migrations SET checksum = 'changed' WHERE version = 1",
+                [],
+            )
+            .unwrap();
+        assert!(!up_to_date(&connection, MIGRATIONS));
+        assert!(matches!(
+            migrate(&mut connection, &path, MIGRATIONS),
+            Err(DbError::Tampered { version: 1, .. })
+        ));
     }
 
     #[test]
