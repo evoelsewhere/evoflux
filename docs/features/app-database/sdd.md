@@ -30,8 +30,16 @@ host-owned application state.
 - `PRAGMA application_id = 0x65766F31` ("evo1") marks the file as evo's;
   opening a foreign SQLite file is refused.
 - WAL journal, `busy_timeout = 5s`, `foreign_keys = ON`, `synchronous = NORMAL`.
+  The engines' transcript connection (`SqliteSessionRepo`) uses the same
+  journal, timeout and `synchronous`: with `FULL`, every streamed frame
+  fsynced while holding the file's single write lock, which serialized all
+  engines behind the disk.
 - Connections are short-lived (open, transact, drop). Every write is one
   transaction.
+- Many engines write at once (each open chat and nested session is one), so a
+  transcript write that still finds the database busy after the timeout is
+  rerun from the start after a growing, jittered pause, for up to 60 s
+  (`evo-harness/src/session/sqlite/busy.rs`), instead of failing the turn.
 
 ## Who opens it
 
@@ -56,7 +64,10 @@ whichever starts first brings the file up to date.
   in `MIGRATIONS`. Versions are contiguous from 1.
 - Opening the database applies pending migrations, each in its own
   `BEGIN IMMEDIATE` transaction, so two engines starting together apply each
-  migration once.
+  migration once. When the file is already evo's and every migration is
+  applied with a matching checksum, a read settles that and the open takes
+  no write lock; anything else goes through the locked path, which reports
+  foreign, newer or changed schemas.
 - `schema_migrations(version, name, checksum, applied_at)` records each one
   with the SHA-256 of its SQL; `PRAGMA user_version` mirrors the newest.
 - **Append only.** An applied migration whose SQL changed is an error
