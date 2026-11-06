@@ -11,6 +11,7 @@ import {
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { DateTimeField, MinuteField, TimeField } from "./time-fields";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { StatusDot } from "@/components/status-dot";
@@ -82,13 +83,6 @@ function scheduleOf(kind: Schedule["kind"], from: Schedule): Schedule {
   }
 }
 
-/** `datetime-local` value for `at`. */
-const localInput = (at: number) => {
-  const d = new Date(at);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-};
-
 const input = "h-8 rounded-md border border-border bg-background px-2 text-[13px] outline-none focus-visible:border-brand";
 
 function ScheduleEditor({ value, onChange }: { value: Schedule; onChange(next: Schedule): void }) {
@@ -113,36 +107,18 @@ function ScheduleEditor({ value, onChange }: { value: Schedule; onChange(next: S
       </div>
       <div className="flex flex-wrap items-center gap-2 text-[13px]">
         {value.kind === "once" && (
-          <input
-            type="datetime-local"
-            aria-label="When"
-            value={localInput(value.at)}
-            onChange={(e) => onChange({ ...value, at: new Date(e.target.value).getTime() })}
-            className={input}
-          />
+          <DateTimeField value={value.at} onChange={(at) => onChange({ ...value, at })} />
         )}
         {value.kind === "hourly" && (
           <label className="flex items-center gap-2">
             At minute
-            <input
-              type="number"
-              min={0}
-              max={59}
-              value={value.minute}
-              onChange={(e) => onChange({ ...value, minute: Math.min(59, Math.max(0, Number(e.target.value) || 0)) })}
-              className={cn(input, "w-20")}
-            />
+            <MinuteField value={value.minute} onChange={(minute) => onChange({ ...value, minute })} />
           </label>
         )}
         {(value.kind === "daily" || value.kind === "weekdays" || value.kind === "weekly") && (
           <label className="flex items-center gap-2">
             At
-            <input
-              type="time"
-              value={value.time}
-              onChange={(e) => onChange({ ...value, time: e.target.value || "09:00" })}
-              className={input}
-            />
+            <TimeField value={value.time} onChange={(time) => onChange({ ...value, time })} />
           </label>
         )}
         {value.kind === "weekly" && (

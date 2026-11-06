@@ -1,4 +1,6 @@
 import * as React from "react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { ColorPicker } from "../color-picker";
 import { Radio } from "@base-ui/react/radio";
 import { RadioGroup } from "@base-ui/react/radio-group";
 import {
@@ -128,7 +130,7 @@ function AccentPicker() {
   const setAccent = useAppearanceStore((s) => s.setAccent);
   const setCustomAccent = useAppearanceStore((s) => s.setCustomAccent);
   const { resolved } = useTheme();
-  const colorInput = React.useRef<HTMLInputElement>(null);
+  const [pickerOpen, setPickerOpen] = React.useState(false);
   const current = accent === CUSTOM_ACCENT ? "Custom" : (ACCENTS.find((a) => a.id === accent)?.label ?? "Blue");
 
   const swatch = cn(
@@ -148,7 +150,7 @@ function AccentPicker() {
       <RadioGroup
         value={accent}
         onValueChange={(value) => {
-          if (value === CUSTOM_ACCENT) colorInput.current?.click();
+          if (value === CUSTOM_ACCENT) setPickerOpen(true);
           setAccent(value as string);
         }}
         aria-labelledby="accent-label"
@@ -178,6 +180,7 @@ function AccentPicker() {
           value={CUSTOM_ACCENT}
           aria-label="Custom colour"
           title="Custom colour"
+          onClick={() => setPickerOpen(true)}
           className={swatch}
           style={
             {
@@ -191,15 +194,12 @@ function AccentPicker() {
         >
           <PipetteIcon className="size-3.5 text-white drop-shadow-[0_1px_1px_rgb(0_0_0/0.5)]" strokeWidth={2.5} />
         </Radio.Root>
-        <input
-          ref={colorInput}
-          type="color"
-          tabIndex={-1}
-          aria-hidden
-          value={customAccent}
-          onChange={(event) => setCustomAccent(event.target.value)}
-          className="pointer-events-none size-0 opacity-0"
-        />
+        <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
+          <PopoverTrigger aria-hidden tabIndex={-1} className="pointer-events-none -ml-2.5 size-0 opacity-0" />
+          <PopoverContent align="start" className="w-auto p-3">
+            <ColorPicker value={customAccent} onChange={setCustomAccent} />
+          </PopoverContent>
+        </Popover>
       </RadioGroup>
       <AccentSample />
     </SettingsRow>
