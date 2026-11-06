@@ -2,6 +2,7 @@ import * as React from "react";
 import { CircleAlertIcon, CircleCheckIcon, LightbulbIcon, RefreshCwIcon, Trash2Icon, XIcon } from "lucide-react";
 import { UsageIcon } from "@/components/icons/tool-icons";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
 import type { ModelDescriptor } from "@/engine/protocol";
 import type { UsageEvent, UsageSource, UsageSummary } from "@/lib/db";
@@ -485,18 +486,22 @@ function PriceCheck({ rows, models }: { rows: ModelEfficiency[]; models: ModelDe
       note="the same tokens at other models' models.dev prices — price only, not quality"
       action={
         candidates.length > 1 && (
-          <select
+          <Select
             value={row.key}
-            onChange={(e) => setPicked(e.target.value)}
-            className="h-7 rounded-md bg-muted px-2 text-xs outline-none dark:bg-accent"
-            aria-label="Model to compare"
+            items={candidates.map((r) => ({ value: r.key, label: r.name }))}
+            onValueChange={(v) => setPicked(v)}
           >
-            {candidates.map((r) => (
-              <option key={r.key} value={r.key}>
-                {r.name}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger size="sm" aria-label="Model to compare" className="text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent alignItemWithTrigger={false} align="end">
+              {candidates.map((r) => (
+                <SelectItem key={r.key} value={r.key}>
+                  {r.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         )
       }
     >

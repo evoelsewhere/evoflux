@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { StatusDot } from "@/components/status-dot";
@@ -197,23 +198,30 @@ function FolderPicker({ value, onChange }: { value: string | null; onChange(next
     if (typeof picked === "string") onChange(picked);
   };
   const known = value === null || workspaces.some((w) => w.path === value);
+  const items = [
+    { value: "", label: "This computer (home folder)" },
+    ...workspaces.map((w) => ({ value: w.path, label: `${baseName(w.path)} — ${w.path}` })),
+    ...(!known && value ? [{ value, label: value }] : []),
+    { value: "__choose", label: "Choose a folder…" },
+  ];
   return (
     <div className="flex items-center gap-2">
-      <select
-        aria-label="Folder"
+      <Select
         value={value ?? ""}
-        onChange={(e) => (e.target.value === "__choose" ? void choose() : onChange(e.target.value || null))}
-        className={cn(input, "min-w-0 max-w-full flex-1 pr-6")}
+        items={items}
+        onValueChange={(v) => (v === "__choose" ? void choose() : onChange(v || null))}
       >
-        <option value="">This computer (home folder)</option>
-        {workspaces.map((w) => (
-          <option key={w.id} value={w.path}>
-            {baseName(w.path)} — {w.path}
-          </option>
-        ))}
-        {!known && value && <option value={value}>{value}</option>}
-        <option value="__choose">Choose a folder…</option>
-      </select>
+        <SelectTrigger aria-label="Folder" className="min-w-0 max-w-full flex-1">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent alignItemWithTrigger={false} align="start">
+          {items.map((i) => (
+            <SelectItem key={i.value} value={i.value}>
+              {i.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
     </div>
   );
 }
