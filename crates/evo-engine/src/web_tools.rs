@@ -1,7 +1,8 @@
 //! The built-in `web_search` and `web_fetch` tools (`evo-web`).
 //!
-//! `web_search` reads DuckDuckGo's HTML results page (no key; paced, and it
-//! says so when DuckDuckGo limits it). `web_fetch` reads a public page as
+//! `web_search` needs no key: it tries DuckDuckGo's HTML results page, then
+//! Exa's hosted search, then Wikipedia, and says so when all of them fail.
+//! `web_fetch` reads a public page as
 //! Markdown, long pages in windows of [`WINDOW`] characters. Both reach only
 //! public addresses. `webTools: false` in settings leaves them out.
 
@@ -50,7 +51,7 @@ pub fn create_web_search_tool() -> Arc<dyn AgentTool> {
     Arc::new(WebSearchTool {
         schema: Tool {
             name: "web_search".into(),
-            description: "Search the web (DuckDuckGo). Returns titles, URLs and snippets; read a result \
+            description: "Search the web. Returns titles, URLs and snippets; read a result \
                  with web_fetch before relying on it, and cite the URLs you use. Use it for current \
                  information, documentation, errors and anything not in the project. For pages that \
                  need JavaScript or a login, use the browser tools instead."
@@ -100,7 +101,8 @@ impl AgentTool for WebSearchTool {
             blocked_domains: strings(&params, "blocked_domains"),
             recency: params.get("recency").and_then(Value::as_str).map(str::to_string),
         };
-        let results = cancellable(&signal, evo_web::search(&query)).await?.map_err(AgentError::Tool)?;
+        let found = cancellable(&signal, evo_web::search(&query)).await?.map_err(AgentError::Tool)?;
+        let results = found.results;
         let text = if results.is_empty() {
             format!("No results for \"{}\". Try other words, or fewer domain limits.", query.query)
         } else {
@@ -116,7 +118,7 @@ impl AgentTool for WebSearchTool {
         };
         Ok(AgentToolResult {
             content: vec![TextContentOrImage::text(text)],
-            details: json!({ "query": query.query, "results": results }),
+            details: json!({ "query": query.query, "source": found.source, "results": results }),
             ..Default::default()
         })
     }
