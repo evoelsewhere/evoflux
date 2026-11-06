@@ -1,5 +1,14 @@
 # Memory and the Scheduler
 
+| | |
+| --- | --- |
+| Status | Implemented |
+| Area | engine, desktop UI |
+| Format | Legacy — predates [the SDD template](../../templates/sdd.md); move to it on the next substantial edit |
+| Updated | 2026-11-06 |
+| ADD sections | [7. Data view](../../architecture/README.md#7-data-view) |
+| ADRs | none |
+
 Status: built. Paths are relative to the repository root.
 
 ## Memory

@@ -1,4 +1,4 @@
-//! This engine's side of the session mesh (`docs/design/session-mesh-protocol.md`).
+//! This engine's side of the session mesh (`docs/features/session-mesh-protocol/sdd.md`).
 //!
 //! The [`LocalRouter`] is the one registry of the conversations this engine
 //! hosts: its session, the subagents of the `agent` tool

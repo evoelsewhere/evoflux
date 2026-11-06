@@ -1,4 +1,4 @@
-//! The hub: sessions talking to sessions (`docs/design/session-mesh-protocol.md`).
+//! The hub: sessions talking to sessions (`docs/features/session-mesh-protocol/sdd.md`).
 //!
 //! Each session runs in its own engine; whoever relays those engines' stdout
 //! (the desktop shell) feeds every line to [`Hub::on_line`] and carries out the

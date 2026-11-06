@@ -1,5 +1,14 @@
 # Subagents and nested sessions
 
+| | |
+| --- | --- |
+| Status | Implemented (phases 1–4) |
+| Area | engine, crate `evo-worktrees`, desktop |
+| Format | Legacy — predates [the SDD template](../../templates/sdd.md); move to it on the next substantial edit |
+| Updated | 2026-11-06 |
+| ADD sections | [6.2 Sessions talking to sessions](../../architecture/README.md#62-sessions-talking-to-sessions) |
+| ADRs | [0003](../../architecture/decisions/0003-engine-runs-as-a-child-process-per-chat.md) |
+
 Status: all four phases are built: `crates/evo-engine/src/agents.rs`
 (agent types), `crates/evo-engine/src/agent_tool.rs` (the `agent` tool, tests
 in `agent_tool/tests.rs`), and the desktop's `components/ai-elements/agent-run.tsx`.
@@ -24,13 +33,13 @@ apply cleanly.
 (Since session mesh phase 3, notes go through the shell's mesh hub and reach
 the parent in any window, or after its engine starts, and the hub — not
 `engine-store.ts` — defines and answers `start_session`, `message_session`
-and `list_sessions`; see `session-mesh-protocol.md`. The limit below is
+and `list_sessions`; see [session mesh](../session-mesh-protocol/sdd.md). The limit below is
 history.) Phase 3 limits: notes reach a parent held by this window (or started here to
 receive them); a parent open in a separate chat window does not get them
 yet. The desktop logic is covered by typecheck and a preview with sample
 data, not by automated tests (the desktop has no test runner). Paths are relative to the repository root.
 
-Since then the session mesh (`session-mesh-protocol.md`, phase 2) replaced the
+Since then the session mesh ([session mesh](../session-mesh-protocol/sdd.md), phase 2) replaced the
 background-agent RPC commands and the polling described here with push
 events and wake requests on the session node. Phase 2 originally differed from the design in one way: the engine has no event for "a
 background agent finished", so the desktop polls `get_background_agents` (once

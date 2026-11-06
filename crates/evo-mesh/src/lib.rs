@@ -1,4 +1,4 @@
-//! `evo-mesh` — the session mesh (`docs/design/session-mesh-protocol.md`).
+//! `evo-mesh` — the session mesh (`docs/features/session-mesh-protocol/sdd.md`).
 //!
 //! - [`wire`] — the envelope, node addresses, events, commands and mail that
 //!   engines and their clients exchange (re-exported as `evo_protocol::mesh`).

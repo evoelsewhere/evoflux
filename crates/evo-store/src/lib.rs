@@ -4,7 +4,7 @@
 //! settings, the models.dev cache, workspaces and chats, chat transcripts (the
 //! evo-harness SQLite session tables), shared app settings and the run log.
 //! Both the engine and the desktop shell open it through this crate, so there
-//! is one schema and one migration history (`docs/design/app-database.md`).
+//! is one schema and one migration history (`docs/features/app-database/sdd.md`).
 //!
 //! # Migrations
 //!

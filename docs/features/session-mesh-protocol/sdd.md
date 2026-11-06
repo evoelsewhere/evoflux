@@ -1,7 +1,16 @@
 # Session mesh protocol
 
+| | |
+| --- | --- |
+| Status | Implemented (phases 1–4); phase 5 proposed |
+| Area | crates `evo-mesh` `evo-protocol`, engine, desktop shell |
+| Format | Legacy — predates [the SDD template](../../templates/sdd.md); move to it on the next substantial edit |
+| Updated | 2026-11-06 |
+| ADD sections | [6.2 Sessions talking to sessions](../../architecture/README.md#62-sessions-talking-to-sessions) |
+| ADRs | [0003](../../architecture/decisions/0003-engine-runs-as-a-child-process-per-chat.md) |
+
 Status: phases 1–4 built (see "as built" below; phase 4 within one engine); phase 5 proposed.
-Builds on `subagents-and-nested-sessions.md` (the features exist; this
+Builds on [subagents and nested sessions](../subagents-and-nested-sessions/sdd.md) (the features exist; this
 document replaces the ad-hoc plumbing under them with one protocol). Paths
 are relative to the repository root.
 

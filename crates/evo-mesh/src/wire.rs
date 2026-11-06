@@ -1,4 +1,4 @@
-//! Session mesh wire types, version 1 (`docs/design/session-mesh-protocol.md`).
+//! Session mesh wire types, version 1 (`docs/features/session-mesh-protocol/sdd.md`).
 //!
 //! One envelope for everything said between conversations — sessions, nested
 //! sessions, subagents, side questions — and their clients. On the existing
