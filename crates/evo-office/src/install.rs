@@ -244,8 +244,9 @@ impl Runtime {
     /// in worker threads that cannot be interrupted safely, so a cancel that
     /// arrives then is refused.
     pub fn cancel_install(&self) -> Result<(), Error> {
-        let job = lock(&self.inner.job);
+        // Lock order is task, then job (as in `start_install`).
         let task = lock(&self.inner.task);
+        let job = lock(&self.inner.job);
         let Some(task) = task.as_ref().filter(|t| !t.handle.is_finished()) else {
             return Ok(());
         };
@@ -492,7 +493,7 @@ fn check_member<R: Read>(
         || parts
             .iter()
             .any(|p| p.is_empty() || *p == "." || *p == "..")
-        || parts[0].contains(':')
+        || parts.iter().any(|p| p.contains(':'))
     {
         return Err(bad(format!(
             "Runtime archive entry escapes {RUNTIME_ROOT}/: {name}"
