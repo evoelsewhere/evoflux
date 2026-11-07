@@ -516,16 +516,28 @@ fn sqlite_progress_appends_from_two_connections_at_once() {
         .map(|id| {
             let path = path.clone();
             std::thread::spawn(move || {
-                let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+                let runtime = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .unwrap();
                 runtime.block_on(async move {
                     let repo = SqliteSessionRepo::open(&path).unwrap();
                     let storage = repo
-                        .create(&SessionCreateOptions { id: Some(id.into()), parent_session_id: None, metadata: None })
+                        .create(&SessionCreateOptions {
+                            id: Some(id.into()),
+                            parent_session_id: None,
+                            metadata: None,
+                        })
                         .await
                         .unwrap();
                     for index in 0..300 {
                         storage
-                            .append_progress(vec![frame(&format!("{id}-{index}"), "main", "run", 0)])
+                            .append_progress(vec![frame(
+                                &format!("{id}-{index}"),
+                                "main",
+                                "run",
+                                0,
+                            )])
                             .await
                             .unwrap_or_else(|error| panic!("{id} append {index}: {error}"));
                     }

@@ -45,13 +45,23 @@ pub fn query_text(q: &Query) -> String {
 
 /// A result link points at DuckDuckGo's redirect (`/l/?uddg=<target>`): the target.
 fn target_of(href: &str) -> Option<String> {
-    let absolute = if href.starts_with("//") { format!("https:{href}") } else { href.to_string() };
+    let absolute = if href.starts_with("//") {
+        format!("https:{href}")
+    } else {
+        href.to_string()
+    };
     let url = Url::parse(&absolute).ok()?;
-    if url.host_str().is_some_and(|h| h.ends_with("duckduckgo.com")) {
+    if url
+        .host_str()
+        .is_some_and(|h| h.ends_with("duckduckgo.com"))
+    {
         if url.path().starts_with("/y.js") {
             return None; // An ad.
         }
-        return url.query_pairs().find(|(k, _)| k == "uddg").map(|(_, v)| v.into_owned());
+        return url
+            .query_pairs()
+            .find(|(k, _)| k == "uddg")
+            .map(|(_, v)| v.into_owned());
     }
     Some(absolute)
 }
@@ -68,15 +78,23 @@ pub fn parse_results(html: &str) -> Vec<SearchResult> {
         if classes.contains("result--ad") {
             continue;
         }
-        let Some(a) = block.select(&link).next() else { continue };
-        let Some(url) = a.value().attr("href").and_then(target_of) else { continue };
+        let Some(a) = block.select(&link).next() else {
+            continue;
+        };
+        let Some(url) = a.value().attr("href").and_then(target_of) else {
+            continue;
+        };
         if out.iter().any(|r| r.url == url) {
             continue;
         }
         out.push(SearchResult {
             title: squash(a.text()),
             url,
-            snippet: block.select(&snippet).next().map(|s| clip(&squash(s.text()))).unwrap_or_default(),
+            snippet: block
+                .select(&snippet)
+                .next()
+                .map(|s| clip(&squash(s.text())))
+                .unwrap_or_default(),
         });
     }
     out
@@ -113,7 +131,9 @@ pub async fn search(q: &Query) -> Result<Vec<SearchResult>, String> {
     // Built in a block: the serializer is not `Send` and must not live across an await.
     let form = {
         let mut body = url::form_urlencoded::Serializer::new(String::new());
-        body.append_pair("q", &query_text(q)).append_pair("b", "").append_pair("kl", "wt-wt");
+        body.append_pair("q", &query_text(q))
+            .append_pair("b", "")
+            .append_pair("kl", "wt-wt");
         if !recency.is_empty() {
             body.append_pair("df", recency);
         }
@@ -186,7 +206,10 @@ mod tests {
             blocked_domains: vec!["www.pinterest.com".into()],
             ..Default::default()
         };
-        assert_eq!(query_text(&q), "ownership site:doc.rust-lang.org -site:pinterest.com");
+        assert_eq!(
+            query_text(&q),
+            "ownership site:doc.rust-lang.org -site:pinterest.com"
+        );
     }
 
     #[test]

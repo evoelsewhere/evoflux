@@ -5,7 +5,7 @@
 | Status | Proposed · Accepted · Rejected · Superseded by [NNNN](NNNN-<slug>.md) · Deprecated |
 | Date | YYYY-MM-DD |
 | ADD sections | [<section>](../README.md#<anchor>) |
-| Related | SDDs or ADRs, or none |
+| Related | feature specs or ADRs, or none |
 
 ## Context
 

@@ -17,8 +17,7 @@ pub const MAX_CHILD_TURNS: u32 = 100;
 /// refuses the call with that reason. It runs before the call reaches the
 /// approval hooks, and again right before execution (hooks may rewrite the
 /// arguments), so a host can narrow what a child may do with a tool it has.
-pub type ChildToolGuard =
-    Arc<dyn Fn(&str, &serde_json::Value) -> Result<(), String> + Send + Sync>;
+pub type ChildToolGuard = Arc<dyn Fn(&str, &serde_json::Value) -> Result<(), String> + Send + Sync>;
 
 struct ChildTool {
     tool: Arc<dyn evo_agent::AgentTool>,
@@ -29,7 +28,9 @@ struct ChildTool {
 impl ChildTool {
     fn check(&self, args: &serde_json::Value) -> Result<(), evo_agent::AgentError> {
         match &self.guard {
-            Some(guard) => guard(&self.tool.schema().name, args).map_err(evo_agent::AgentError::Tool),
+            Some(guard) => {
+                guard(&self.tool.schema().name, args).map_err(evo_agent::AgentError::Tool)
+            }
             None => Ok(()),
         }
     }
@@ -117,8 +118,15 @@ impl AgentHarness {
         requested_tools: Option<Vec<String>>,
         replacements: Vec<HarnessTool>,
     ) -> HarnessResult<ChildHarness> {
-        self.create_child_guarded(session, emitter, max_turns, requested_tools, replacements, None)
-            .await
+        self.create_child_guarded(
+            session,
+            emitter,
+            max_turns,
+            requested_tools,
+            replacements,
+            None,
+        )
+        .await
     }
 
     /// [`create_child_with_tools`](Self::create_child_with_tools), with every
@@ -152,13 +160,17 @@ impl AgentHarness {
             .filter(|tool| {
                 let name = &tool.tool.schema().name;
                 // Delegation tools (plugin `delegate_task`, built-in `agent`) never reach a child.
-                !matches!(name.as_str(), "delegate_task" | "agent" | "message_agent") && snap.active_tool_names.contains(name)
+                !matches!(name.as_str(), "delegate_task" | "agent" | "message_agent")
+                    && snap.active_tool_names.contains(name)
             })
             .cloned()
             .collect();
         for replacement in replacements {
             let name = replacement.tool.schema().name.clone();
-            if let Some(tool) = tools.iter_mut().find(|tool| tool.tool.schema().name == name) {
+            if let Some(tool) = tools
+                .iter_mut()
+                .find(|tool| tool.tool.schema().name == name)
+            {
                 *tool = replacement;
             }
         }

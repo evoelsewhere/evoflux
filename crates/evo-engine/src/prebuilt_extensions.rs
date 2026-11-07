@@ -1167,6 +1167,16 @@ fn validate_native_target(bytes: &[u8], target: &str, library: bool) -> Result<(
     Ok(())
 }
 
+/// Whether `latest` is a strictly newer semver release than `current`
+/// (a leading `v` is ignored; unparsable versions are never newer).
+fn is_newer(current: &str, latest: &str) -> bool {
+    let parse = |value: &str| semver::Version::parse(value.trim().trim_start_matches('v')).ok();
+    match (parse(current), parse(latest)) {
+        (Some(current), Some(latest)) => latest.cmp_precedence(&current).is_gt(),
+        _ => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2452,15 +2462,5 @@ mod tests {
         let response = client.get(url).send().await.unwrap();
         assert!(body_limited(response, 8).await.is_err());
         server.join().unwrap();
-    }
-}
-
-/// Whether `latest` is a strictly newer semver release than `current`
-/// (a leading `v` is ignored; unparsable versions are never newer).
-fn is_newer(current: &str, latest: &str) -> bool {
-    let parse = |value: &str| semver::Version::parse(value.trim().trim_start_matches('v')).ok();
-    match (parse(current), parse(latest)) {
-        (Some(current), Some(latest)) => latest.cmp_precedence(&current).is_gt(),
-        _ => false,
     }
 }

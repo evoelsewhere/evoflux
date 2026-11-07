@@ -36,7 +36,16 @@ async fn main() {
                 "refs" => "references",
                 _ => "hover",
             };
-            evo_lsp::ops::at(&pool, &cwd, op, &a[3], a[4].parse().unwrap_or(1), a.get(5).map(String::as_str), None).await
+            evo_lsp::ops::at(
+                &pool,
+                &cwd,
+                op,
+                &a[3],
+                a[4].parse().unwrap_or(1),
+                a.get(5).map(String::as_str),
+                None,
+            )
+            .await
         }
         other => Err(format!("unknown command {other}")),
     };

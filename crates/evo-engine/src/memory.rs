@@ -148,16 +148,24 @@ fn read(path: &Path) -> Option<Memory> {
         name: text("name").unwrap_or_else(|| stem.clone()),
         description: text("description").unwrap_or_else(|| one_line(&body, 120)),
         kind: text("type")
-            .or_else(|| front.pointer("/metadata/type").and_then(Value::as_str).map(str::to_string))
+            .or_else(|| {
+                front
+                    .pointer("/metadata/type")
+                    .and_then(Value::as_str)
+                    .map(str::to_string)
+            })
             .unwrap_or_else(|| "project".into()),
         content: body.trim().to_string(),
-        updated: front.get("updated").and_then(Value::as_u64).unwrap_or_else(|| {
-            std::fs::metadata(path)
-                .and_then(|m| m.modified())
-                .ok()
-                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                .map_or(0, |d| d.as_millis() as u64)
-        }),
+        updated: front
+            .get("updated")
+            .and_then(Value::as_u64)
+            .unwrap_or_else(|| {
+                std::fs::metadata(path)
+                    .and_then(|m| m.modified())
+                    .ok()
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map_or(0, |d| d.as_millis() as u64)
+            }),
         path: path.to_path_buf(),
     })
 }
@@ -189,7 +197,10 @@ fn write_index(dir: &Path) -> Result<(), String> {
     }
     let mut text = String::new();
     for m in &memories {
-        text.push_str(&format!("- [{}]({}.md) — {}\n", m.name, m.name, m.description));
+        text.push_str(&format!(
+            "- [{}]({}.md) — {}\n",
+            m.name, m.name, m.description
+        ));
     }
     std::fs::write(index, text).map_err(|e| e.to_string())
 }
@@ -212,10 +223,16 @@ pub fn save_in(
         return Err("a memory needs content".into());
     }
     if content.chars().count() > MAX_CONTENT {
-        return Err(format!("keep a memory under {MAX_CONTENT} characters; split it"));
+        return Err(format!(
+            "keep a memory under {MAX_CONTENT} characters; split it"
+        ));
     }
     let description = one_line(
-        if description.trim().is_empty() { content } else { description },
+        if description.trim().is_empty() {
+            content
+        } else {
+            description
+        },
         MAX_DESCRIPTION,
     );
     std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
@@ -240,7 +257,9 @@ pub fn delete_in(dir: &Path, name: &str) -> Result<(), String> {
     let name = clean_name(name)?;
     match std::fs::remove_file(dir.join(format!("{name}.md"))) {
         Ok(()) => write_index(dir),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Err(format!("no memory named `{name}`")),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            Err(format!("no memory named `{name}`"))
+        }
         Err(e) => Err(e.to_string()),
     }
 }
@@ -340,7 +359,14 @@ pub fn save(
     content: &str,
     previous: Option<&str>,
 ) -> Result<Value, String> {
-    let m = save_in(&dir(scope, cwd)?, name, description, kind, content, previous)?;
+    let m = save_in(
+        &dir(scope, cwd)?,
+        name,
+        description,
+        kind,
+        content,
+        previous,
+    )?;
     Ok(entry(&m, scope))
 }
 
@@ -393,7 +419,11 @@ impl MemoryTool {
         }
         let action = arg(params, "action");
         let scope_text = arg(params, "scope");
-        let scope = if scope_text.is_empty() { Scope::Project } else { Scope::parse(scope_text)? };
+        let scope = if scope_text.is_empty() {
+            Scope::Project
+        } else {
+            Scope::parse(scope_text)?
+        };
         let folder = dir(scope, &self.cwd)?;
         match action {
             "save" => {
@@ -418,10 +448,21 @@ impl MemoryTool {
             }
             "read" => {
                 let m = find_in(&folder, arg(params, "name")).ok_or_else(|| {
-                    format!("no {} memory named `{}`", scope.label(), arg(params, "name"))
+                    format!(
+                        "no {} memory named `{}`",
+                        scope.label(),
+                        arg(params, "name")
+                    )
                 })?;
                 Ok((
-                    format!("{} ({}, {}): {}\n\n{}", m.name, m.kind, scope.label(), m.description, m.content),
+                    format!(
+                        "{} ({}, {}): {}\n\n{}",
+                        m.name,
+                        m.kind,
+                        scope.label(),
+                        m.description,
+                        m.content
+                    ),
                     json!({ "memory": entry(&m, scope), "action": "read" }),
                 ))
             }
@@ -441,7 +482,11 @@ impl MemoryTool {
             "delete" => {
                 delete_in(&folder, arg(params, "name"))?;
                 Ok((
-                    format!("Deleted {} memory `{}`.", scope.label(), arg(params, "name")),
+                    format!(
+                        "Deleted {} memory `{}`.",
+                        scope.label(),
+                        arg(params, "name")
+                    ),
                     json!({ "action": "deleted", "memory": { "name": arg(params, "name"), "scope": scope.label() } }),
                 ))
             }
@@ -495,16 +540,43 @@ mod tests {
     fn save_list_rename_and_delete_keep_the_index() {
         let dir = tempfile::tempdir().unwrap();
         let d = dir.path();
-        save_in(d, "prefers-tabs", "Uses tabs", "user", "Tabs, width 4.", None).unwrap();
-        save_in(d, "release-freeze", "", "project", "Freeze from 2026-12-01.\nWhy: launch.", None).unwrap();
+        save_in(
+            d,
+            "prefers-tabs",
+            "Uses tabs",
+            "user",
+            "Tabs, width 4.",
+            None,
+        )
+        .unwrap();
+        save_in(
+            d,
+            "release-freeze",
+            "",
+            "project",
+            "Freeze from 2026-12-01.\nWhy: launch.",
+            None,
+        )
+        .unwrap();
         let all = list_dir(d);
         assert_eq!(all.len(), 2);
         let index = std::fs::read_to_string(d.join("MEMORY.md")).unwrap();
-        assert!(index.contains("[prefers-tabs](prefers-tabs.md) — Uses tabs"), "{index}");
+        assert!(
+            index.contains("[prefers-tabs](prefers-tabs.md) — Uses tabs"),
+            "{index}"
+        );
         // An empty description falls back to the content's first words.
         assert!(index.contains("Freeze from 2026-12-01."), "{index}");
         // Saving under a new name with `previous` renames.
-        save_in(d, "indent-style", "Indent", "user", "Tabs.", Some("prefers-tabs")).unwrap();
+        save_in(
+            d,
+            "indent-style",
+            "Indent",
+            "user",
+            "Tabs.",
+            Some("prefers-tabs"),
+        )
+        .unwrap();
         assert!(!d.join("prefers-tabs.md").exists());
         assert!(find_in(d, "indent-style").is_some());
         assert!(save_in(d, "x", "", "secret", "y", None).is_err());

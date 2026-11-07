@@ -5,7 +5,7 @@
 // `usage_summary` / `usage_events` commands. Prices come from models.dev:
 // each response's cost was computed from its model's price when it ran, and
 // the page compares it with today's prices from the engine's model list.
-// Design: docs/features/usage-and-cost/sdd.md.
+// Design: docs/features/usage-and-cost/spec.md.
 
 import { create } from "zustand";
 import { db, type UsageBucket, type UsageEvent, type UsageQuery, type UsageSummary } from "@/lib/db";

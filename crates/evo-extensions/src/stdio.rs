@@ -59,7 +59,7 @@ impl StdioLifecycle {
                 json!({"owner": state.owner.as_ref().map(|(_, name)| name), "exitCode": state.exit_code}),
             ),
             Some("finish") => {
-                if !state.owner.as_ref().is_some_and(|(owner, _)| *owner == id) {
+                if state.owner.as_ref().is_none_or(|(owner, _)| *owner != id) {
                     return Err("only the stdio owner may finish its lifecycle".to_owned());
                 }
                 let code = args

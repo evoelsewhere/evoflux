@@ -552,8 +552,12 @@ pub fn update_settings_value(
         std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     }
     let text = serde_json::to_string_pretty(&value).map_err(|e| e.to_string())?;
-    std::fs::write(&path, text + "
-").map_err(|e| format!("cannot write {}: {e}", path.display()))
+    std::fs::write(
+        &path,
+        text + "
+",
+    )
+    .map_err(|e| format!("cannot write {}: {e}", path.display()))
 }
 
 pub fn save_settings(settings: &Settings) -> Result<(), String> {

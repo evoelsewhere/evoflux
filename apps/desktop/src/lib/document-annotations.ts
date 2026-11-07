@@ -1,6 +1,6 @@
 // Document annotations: parts of a document the person selected in the Files
 // viewer, each with an instruction, sent to the agent as one message
-// (docs/features/office-v3-parity/sdd.md, FR-10; port of v3
+// (docs/features/office-v3-parity/spec.md, FR-10; port of v3
 // web/src/lib/document-annotations.ts).
 //
 // The wire format is plain message text, so a message queues, replays and is

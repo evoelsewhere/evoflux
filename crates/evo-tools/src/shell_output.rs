@@ -135,7 +135,10 @@ impl CaptureState {
         let max_bytes = inline_limit();
         let tail_truncation = truncate_tail(
             &self.tail_output,
-            TruncationOptions { max_lines: None, max_bytes: Some(max_bytes) },
+            TruncationOptions {
+                max_lines: None,
+                max_bytes: Some(max_bytes),
+            },
         );
         let total_lines = self.completed_lines + if self.has_open_line { 1 } else { 0 };
         let truncated = total_lines > DEFAULT_MAX_LINES || self.total_bytes > max_bytes;
@@ -209,7 +212,7 @@ fn skip_escape_sequence(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) {
             chars.next();
             // CSI: parameter/intermediate bytes, terminated by a final byte in
             // the 0x40..=0x7E range.
-            while let Some(c) = chars.next() {
+            for c in chars.by_ref() {
                 if (0x40..=0x7e).contains(&(c as u32)) {
                     break;
                 }
@@ -437,21 +440,21 @@ mod tests {
     #[test]
     fn sanitize_strips_controls_keeps_tab_lf() {
         let s = "a\x01b\tc\nd\x0be";
-        let out = sanitize_and_strip_cr(&s);
+        let out = sanitize_and_strip_cr(s);
         assert_eq!(out, "ab\tc\nde");
     }
 
     #[test]
     fn sanitize_strips_cr() {
         let s = "a\r\nb\rc";
-        let out = sanitize_and_strip_cr(&s);
+        let out = sanitize_and_strip_cr(s);
         assert_eq!(out, "a\nbc");
     }
 
     #[test]
     fn sanitize_strips_interlinear_annotation() {
         let s = "a\u{fff9}b\u{fffb}c";
-        let out = sanitize_and_strip_cr(&s);
+        let out = sanitize_and_strip_cr(s);
         assert_eq!(out, "abc");
     }
 

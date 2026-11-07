@@ -417,13 +417,17 @@ async fn slash_name_expands_known_skills_only() {
     h.prompt_text("/manual a b", vec![]).await.unwrap();
     let expected = "<skill name=\"manual\" location=\"skills/manual/SKILL.md\">\nReferences are relative to skills/manual.\n\nFresh body\n</skill>\n\na b";
     assert_eq!(
-        provider_users(requests.lock().unwrap().last().unwrap()).last().unwrap(),
+        provider_users(requests.lock().unwrap().last().unwrap())
+            .last()
+            .unwrap(),
         expected
     );
     for input in ["/unknown keep", "/usr/bin/env ls", "/ manual"] {
         h.prompt_text(input, vec![]).await.unwrap();
         assert_eq!(
-            provider_users(requests.lock().unwrap().last().unwrap()).last().unwrap(),
+            provider_users(requests.lock().unwrap().last().unwrap())
+                .last()
+                .unwrap(),
             input
         );
     }
@@ -434,7 +438,8 @@ fn skill_arguments_are_substituted() {
     use evo_harness::skills::{parse_slash_command, substitute_skill_arguments};
     let mut command = skill();
     command.file_path = "/home/u/.evo/commands/fix.md".into();
-    command.content = "Fix $ARGUMENTS; first=$0 second=$ARGUMENTS[1] cost=\\$5 dir=${SKILL_DIR}".into();
+    command.content =
+        "Fix $ARGUMENTS; first=$0 second=$ARGUMENTS[1] cost=\\$5 dir=${SKILL_DIR}".into();
     let (body, used) = substitute_skill_arguments(&command, "issue-12 \"two words\"");
     assert!(used);
     assert_eq!(
@@ -446,6 +451,9 @@ fn skill_arguments_are_substituted() {
     folder.content = "echo $1".into();
     let (body, used) = substitute_skill_arguments(&folder, "x");
     assert_eq!((body.as_str(), used), ("echo $1", false));
-    assert_eq!(parse_slash_command("/a:b-c  rest here"), Some(("a:b-c", "rest here")));
+    assert_eq!(
+        parse_slash_command("/a:b-c  rest here"),
+        Some(("a:b-c", "rest here"))
+    );
     assert_eq!(parse_slash_command("/usr/bin"), None);
 }

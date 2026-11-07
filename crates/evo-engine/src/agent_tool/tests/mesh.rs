@@ -5,7 +5,10 @@ use crate::mesh::{self, Address, Level, MeshEvent, NodeState, RunStatus};
 use tokio::sync::broadcast::error::TryRecvError;
 
 /// Every mesh event about nodes under `prefix`, in order.
-fn events_under(feed: &mut tokio::sync::broadcast::Receiver<(Level, mesh::Envelope)>, prefix: &str) -> Vec<MeshEvent> {
+fn events_under(
+    feed: &mut tokio::sync::broadcast::Receiver<(Level, mesh::Envelope)>,
+    prefix: &str,
+) -> Vec<MeshEvent> {
     let mut out = Vec::new();
     loop {
         match feed.try_recv() {
@@ -37,7 +40,11 @@ async fn a_subagent_is_a_mesh_node_with_live_summary_events() {
         .with_text("The subagent says 42.");
     let collector = Arc::new(Collector::default());
     let parent = parent(dir.path(), script, collector.clone()).await;
-    parent.lane("main").prompt_text("What is the answer?", Vec::new()).await.unwrap();
+    parent
+        .lane("main")
+        .prompt_text("What is the answer?", Vec::new())
+        .await
+        .unwrap();
 
     let session = Address::session(&parent.session().storage().metadata().id);
     let events = events_under(&mut feed, &format!("{session}/a_"));
@@ -48,40 +55,77 @@ async fn a_subagent_is_a_mesh_node_with_live_summary_events() {
         .unwrap()
         .iter()
         .find_map(|event| match event {
-            AgentEvent::ToolExecutionStart { tool_name, tool_call_id, .. } if tool_name == "agent" => {
-                Some(tool_call_id.clone())
-            }
+            AgentEvent::ToolExecutionStart {
+                tool_name,
+                tool_call_id,
+                ..
+            } if tool_name == "agent" => Some(tool_call_id.clone()),
             _ => None,
         })
         .unwrap();
 
     // It appears running, under its parent session, tied to the tool call.
-    let MeshEvent::NodeState { node, prev: None } = &events[0] else { panic!("{events:?}") };
+    let MeshEvent::NodeState { node, prev: None } = &events[0] else {
+        panic!("{events:?}")
+    };
     assert_eq!(node.state, NodeState::Running);
     assert_eq!(node.parent.as_ref(), Some(&session));
     assert_eq!(node.title, "Find the answer");
     assert_eq!(node.meta["agentType"], "explore");
     assert_eq!(node.meta["callId"], call_id.as_str());
-    assert_eq!(node.id.as_str(), format!("{session}/a_{}", result.details["child"]["agentId"].as_str().unwrap()));
+    assert_eq!(
+        node.id.as_str(),
+        format!(
+            "{session}/a_{}",
+            result.details["child"]["agentId"].as_str().unwrap()
+        )
+    );
     let address = node.id.clone();
 
     // Its tool call shows up live, running then done.
     let phases: Vec<(String, String)> = events
         .iter()
         .filter_map(|event| match event {
-            MeshEvent::NodeActivity { tool: Some(row), .. } => Some((row.name.clone(), row.phase.clone())),
+            MeshEvent::NodeActivity {
+                tool: Some(row), ..
+            } => Some((row.name.clone(), row.phase.clone())),
             _ => None,
         })
         .collect();
-    assert_eq!(phases, [("read".to_string(), "running".to_string()), ("read".into(), "done".into())]);
-    assert!(events.iter().any(|e| matches!(e, MeshEvent::NodeUsage { node, .. } if *node == address)));
+    assert_eq!(
+        phases,
+        [
+            ("read".to_string(), "running".to_string()),
+            ("read".into(), "done".into())
+        ]
+    );
+    assert!(events
+        .iter()
+        .any(|e| matches!(e, MeshEvent::NodeUsage { node, .. } if *node == address)));
 
     // It ends with its report, then settles; the report precedes the state.
-    let report = events.iter().position(|e| matches!(e, MeshEvent::NodeReport { .. })).expect("a report");
-    let MeshEvent::NodeReport { status, text, .. } = &events[report] else { unreachable!() };
-    assert_eq!((*status, text.as_str()), (RunStatus::Done, "The answer in notes.md is 42."));
-    let MeshEvent::NodeState { node, prev } = events.last().unwrap() else { panic!("{events:?}") };
-    assert_eq!((node.state, node.status, *prev), (NodeState::Settled, Some(RunStatus::Done), Some(NodeState::Running)));
+    let report = events
+        .iter()
+        .position(|e| matches!(e, MeshEvent::NodeReport { .. }))
+        .expect("a report");
+    let MeshEvent::NodeReport { status, text, .. } = &events[report] else {
+        unreachable!()
+    };
+    assert_eq!(
+        (*status, text.as_str()),
+        (RunStatus::Done, "The answer in notes.md is 42.")
+    );
+    let MeshEvent::NodeState { node, prev } = events.last().unwrap() else {
+        panic!("{events:?}")
+    };
+    assert_eq!(
+        (node.state, node.status, *prev),
+        (
+            NodeState::Settled,
+            Some(RunStatus::Done),
+            Some(NodeState::Running)
+        )
+    );
     assert!(report < events.len() - 1);
 
     // The router still knows it (it can be continued) and lists it under the session.

@@ -318,20 +318,12 @@ pub struct ModelCostTier {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(Default)]
 pub struct ModelCost {
     #[serde(flatten)]
     pub rates: ModelCostRates,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tiers: Vec<ModelCostTier>,
-}
-
-impl Default for ModelCost {
-    fn default() -> Self {
-        Self {
-            rates: ModelCostRates::default(),
-            tiers: Vec::new(),
-        }
-    }
 }
 
 /// Per-request token usage + cost. Mirrors TS `Usage`.

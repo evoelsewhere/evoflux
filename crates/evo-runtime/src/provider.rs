@@ -19,9 +19,9 @@ use evo_ai::{
 mod binding;
 mod factories;
 mod unconfigured;
-pub use unconfigured::{is_unconfigured, UNCONFIGURED_MESSAGE, UNCONFIGURED_PROVIDER_ID};
 use binding::{ExecutionBinding, RequestAuth};
 pub use factories::RuntimeFactories;
+pub use unconfigured::{is_unconfigured, UNCONFIGURED_MESSAGE, UNCONFIGURED_PROVIDER_ID};
 
 #[cfg(test)]
 use crate::config::Credential;
@@ -479,7 +479,9 @@ pub(crate) fn resolve_with_factories(
                 // included), not only the built-ins and models.json gateways.
                 .filter(|provider| {
                     provider_is_known(provider, &models_cfg)
-                        || catalog.iter().any(|m| m.provider.eq_ignore_ascii_case(provider))
+                        || catalog
+                            .iter()
+                            .any(|m| m.provider.eq_ignore_ascii_case(provider))
                 });
             let saved = settings.default_model.as_deref().and_then(|id| {
                 if settings.default_provider.is_some() && saved_provider.is_none() {
@@ -899,7 +901,11 @@ fn build_catalog(
     // A declaration replaces the built-in models of its provider: the
     // catalog's declarations read models.dev, which supersedes them.
     let mut catalog = builtin_catalog();
-    catalog.retain(|model| !manifests.iter().any(|manifest| manifest.id == model.provider));
+    catalog.retain(|model| {
+        !manifests
+            .iter()
+            .any(|manifest| manifest.id == model.provider)
+    });
     for manifest in manifests {
         let config = cfg.providers.get(&manifest.id);
         for mut model in manifest.models.clone() {
@@ -908,7 +914,12 @@ fn build_catalog(
             // (OpenCode serves Claude over Anthropic Messages at a different
             // path); those keep the endpoint their declaration computed.
             if let Some(base) = config
-                .filter(|config| config.api.as_deref().map_or(true, |api| api == model.api.as_str()))
+                .filter(|config| {
+                    config
+                        .api
+                        .as_deref()
+                        .is_none_or(|api| api == model.api.as_str())
+                })
                 .and_then(|config| config.base_url.as_ref())
             {
                 model.base_url = base.clone();
@@ -1000,7 +1011,10 @@ fn resolve_anthropic_credentials_with(
     // A declaration whose default protocol is not Anthropic may still route
     // some models over it under the same credential.
     for manifest in manifests {
-        if manifest.models.iter().any(|model| model.api == evo_ai::Api::AnthropicMessages)
+        if manifest
+            .models
+            .iter()
+            .any(|model| model.api == evo_ai::Api::AnthropicMessages)
             && !provider_ids.contains(&manifest.id)
         {
             provider_ids.push(manifest.id.clone());
@@ -1099,7 +1113,8 @@ fn resolve_openai_credentials_with(
                 .iter()
                 .any(|model| model.api != evo_ai::Api::AnthropicMessages)
         });
-        if provider_cfg.is_some_and(config::provider_is_anthropic_compatible) && !serves_openai_wire {
+        if provider_cfg.is_some_and(config::provider_is_anthropic_compatible) && !serves_openai_wire
+        {
             if matches!(
                 resolved.source,
                 crate::credentials::CredentialSource::Anonymous
@@ -1193,7 +1208,7 @@ fn split_model_pattern(
         model.id.eq_ignore_ascii_case(&model_id)
             && provider
                 .as_deref()
-                .map_or(true, |requested| provider_matches(model, requested, cfg))
+                .is_none_or(|requested| provider_matches(model, requested, cfg))
     });
     let thinking = if has_full_exact_match {
         None
@@ -1228,7 +1243,7 @@ fn find_model(
         .iter()
         .find(|model| {
             model.id.eq_ignore_ascii_case(pattern)
-                && provider.map_or(true, |requested| provider_matches(model, requested, cfg))
+                && provider.is_none_or(|requested| provider_matches(model, requested, cfg))
         })
         .cloned()
 }
@@ -1249,7 +1264,7 @@ fn find_cli_model(
         .iter()
         .filter(|model| {
             model.id.eq_ignore_ascii_case(pattern)
-                && provider.map_or(true, |requested| provider_matches(model, requested, cfg))
+                && provider.is_none_or(|requested| provider_matches(model, requested, cfg))
         })
         .collect();
 

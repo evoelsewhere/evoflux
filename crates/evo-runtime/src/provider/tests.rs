@@ -1619,7 +1619,7 @@ fn anthropic_model_prefix_disambiguates_providers_with_the_same_model_id() {
         .request_model(&alpha.model)
         .headers
         .as_ref()
-        .map_or(true, |headers| {
+        .is_none_or(|headers| {
             headers
                 .keys()
                 .all(|name| !name.eq_ignore_ascii_case("x-api-key"))
@@ -1818,7 +1818,7 @@ fn models_json_bare_apikey_satisfies_auth_without_env() {
         .request_model(&r.model)
         .headers
         .as_ref()
-        .map_or(true, |headers| {
+        .is_none_or(|headers| {
             headers.keys().all(|name| {
                 !name.eq_ignore_ascii_case("x-api-key")
                     && !name.eq_ignore_ascii_case("authorization")
@@ -1963,7 +1963,7 @@ fn auth_header_provider_and_bare_apikey_provider_each_fold_their_own() {
         .request_model(&r2.model)
         .headers
         .as_ref()
-        .map_or(true, |headers| {
+        .is_none_or(|headers| {
             headers.keys().all(|name| {
                 !name.eq_ignore_ascii_case("x-api-key")
                     && !name.eq_ignore_ascii_case("authorization")

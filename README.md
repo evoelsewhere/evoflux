@@ -103,7 +103,7 @@ under [`docs/`](docs/):
 
 - [Documentation index](docs/README.md)
 - [Architecture (ADD) and decisions (ADRs)](docs/architecture/README.md)
-- [Feature catalogue (SDDs)](docs/features/README.md)
+- [Feature catalogue: specs, plans and tasks (Spec-Driven Development)](docs/features/README.md)
 - [Desktop UI map and source layout](apps/desktop/README.md)
 - [Visual design language](DESIGN.md)
 - [Contributor and agent guide](AGENTS.md)
@@ -128,7 +128,7 @@ crates/         Rust workspace: engine, protocol, agent loop, tools, providers
 apps/desktop/   Tauri 2 shell (src-tauri/) and React 19 UI (src/)
 examples/       minimal native plugin used by extension tests
 scripts/        Office runtime build, README screenshots
-docs/           architecture (ADD, ADRs) and feature designs (SDDs)
+docs/           architecture (ADD, ADRs) and feature spec / plan / tasks
 ```
 
 The crates are released together and depend only on the layers below them:

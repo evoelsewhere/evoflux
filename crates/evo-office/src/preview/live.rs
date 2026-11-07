@@ -93,13 +93,11 @@ fn parse_plan(text: &str) -> Option<DeckPlan> {
         .get("state")
         .and_then(|s| s.as_str())
         .unwrap_or("building");
-    let session = data
-        .get("session")
-        .and_then(|s| match s {
-            serde_json::Value::String(s) if !s.is_empty() => Some(s.chars().take(64).collect()),
-            serde_json::Value::Number(n) => Some(n.to_string()),
-            _ => None,
-        });
+    let session = data.get("session").and_then(|s| match s {
+        serde_json::Value::String(s) if !s.is_empty() => Some(s.chars().take(64).collect()),
+        serde_json::Value::Number(n) => Some(n.to_string()),
+        _ => None,
+    });
     let added = match data.get("added") {
         None | Some(serde_json::Value::Null) => None,
         Some(v) => Some(as_int(v)?.max(0) as u32),
@@ -135,13 +133,21 @@ mod tests {
 
     #[test]
     fn reads_current_and_v3_plans() {
-        let plan = read_plan(&package_with("evo.deck", r#"{"v":1,"total":3,"state":"building","session":"chat-1"}"#)).unwrap();
+        let plan = read_plan(&package_with(
+            "evo.deck",
+            r#"{"v":1,"total":3,"state":"building","session":"chat-1"}"#,
+        ))
+        .unwrap();
         assert_eq!(plan.total, 3);
         assert!(!plan.done);
         assert!(plan.live_for(Some("chat-1")));
         assert!(!plan.live_for(Some("chat-2")));
         assert!(!plan.live_for(None));
-        let v3 = read_plan(&package_with("evoflux.deck", r#"{"v":1,"total":2,"added":0,"state":"done"}"#)).unwrap();
+        let v3 = read_plan(&package_with(
+            "evoflux.deck",
+            r#"{"v":1,"total":2,"added":0,"state":"done"}"#,
+        ))
+        .unwrap();
         assert!(v3.done && v3.added == Some(0));
         assert!(!v3.live_for(Some("x")));
     }

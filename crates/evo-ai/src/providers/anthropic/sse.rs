@@ -293,10 +293,8 @@ impl SseEventStream {
             while cursor < buffer.len() {
                 // A CR already terminated the previous line, even when it was
                 // the last byte received. Swallow only its optional LF partner.
-                if std::mem::take(&mut self.skip_lf) {
-                    if buffer[cursor..].starts_with('\n') {
-                        cursor += 1;
-                    }
+                if std::mem::take(&mut self.skip_lf) && buffer[cursor..].starts_with('\n') {
+                    cursor += 1;
                 }
                 let slice = &buffer[cursor..];
                 let Some((line, rest)) = consume_line(slice) else {

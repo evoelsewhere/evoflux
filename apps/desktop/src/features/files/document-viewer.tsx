@@ -16,12 +16,12 @@ import { OfficeViewer } from "./office/office-viewer";
 import { readBytes } from "./fs";
 
 // Word, PowerPoint and Excel files open in the native Office viewer
-// (office/office-viewer.tsx, docs/features/office-v3-parity/sdd.md): the
+// (office/office-viewer.tsx, docs/features/office-v3-parity/spec.md): the
 // engine renders them to HTML, or to exact pages with the LibreOffice runtime.
 // Legacy and OpenDocument files are shown as pages: the engine
 // converts them to a PDF with the LibreOffice runtime (RPC `office_convert`,
 // cached), and pdf.js draws the PDF. Plain PDFs skip the conversion.
-// docs/features/office/sdd.md.
+// docs/features/office/spec.md.
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
 

@@ -1,5 +1,5 @@
 // Office files a chat's engine saw change on disk (event `office_file_changed`,
-// crates/evo-engine/src/fs_watch.rs; docs/features/office-v3-parity/sdd.md).
+// crates/evo-engine/src/fs_watch.rs; docs/features/office-v3-parity/spec.md).
 // engine-store routes the event here; the Files tool listens (open previews
 // re-render, a document the agent creates opens by itself). No React, no
 // imports, so any store can use it without an import cycle.

@@ -1,4 +1,4 @@
-//! The session mesh hub (`crates/evo-mesh`, `docs/features/session-mesh-protocol/sdd.md`).
+//! The session mesh hub (`crates/evo-mesh`, `docs/features/session-mesh-protocol/spec.md`).
 //!
 //! Every engine's stdout passes through [`on_line`]. The hub answers the
 //! session tools (`start_session`, `message_session`, `list_sessions`), turns

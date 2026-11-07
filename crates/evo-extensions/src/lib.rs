@@ -575,10 +575,8 @@ extern "C" fn trampoline_register_command(
             .action_bridge
             .as_ref()
             .map_or(std::ptr::null_mut(), |bridge| bridge.user_data());
-        match api.with_registry(|reg| reg.register_command(name, description, handler, user_data)) {
-            Some(_) => true,
-            None => false,
-        }
+        api.with_registry(|reg| reg.register_command(name, description, handler, user_data))
+            .is_some()
     });
     if ok == Some(true) {
         0
@@ -600,12 +598,8 @@ extern "C" fn trampoline_register_shortcut(key: StbStringRef, description: StbSt
     // (dispatched by the TUI) and decides what to do. The host only needs to
     // know the key is claimed so it can route it away from the editor.
     let ok = with_current_api(|api| {
-        match api
-            .with_registry(|reg| reg.register_shortcut(api.name().to_string(), key, description))
-        {
-            Some(_) => true,
-            None => false,
-        }
+        api.with_registry(|reg| reg.register_shortcut(api.name().to_string(), key, description))
+            .is_some()
     });
     if ok == Some(true) {
         0
@@ -626,10 +620,8 @@ extern "C" fn trampoline_register_flag(name: StbStringRef, description: StbStrin
         return 2;
     }
     let ok = with_current_api(|api| {
-        match api.with_registry(|reg| reg.register_flag(name, description)) {
-            Some(_) => true,
-            None => false,
-        }
+        api.with_registry(|reg| reg.register_flag(name, description))
+            .is_some()
     });
     if ok == Some(true) {
         0
@@ -647,12 +639,10 @@ extern "C" fn trampoline_register_event_handler(
         return -1;
     }
     let ok = with_current_api(|api| {
-        match api.with_registry(|reg| {
+        api.with_registry(|reg| {
             reg.register_event_handler(api.name().to_string(), tag, handler, user_data)
-        }) {
-            Some(_) => true,
-            None => false,
-        }
+        })
+        .is_some()
     });
     if ok == Some(true) {
         0
@@ -730,12 +720,10 @@ extern "C" fn trampoline_register_provider(
         plugin_free_string,
         user_data,
     };
-    let ok = with_current_api(
-        |api| match api.with_registry(|reg| reg.register_provider(record)) {
-            Some(_) => true,
-            None => false,
-        },
-    );
+    let ok = with_current_api(|api| {
+        api.with_registry(|reg| reg.register_provider(record))
+            .is_some()
+    });
     if ok == Some(true) {
         0
     } else {
@@ -897,12 +885,10 @@ fn register_renderer_common(
         plugin_free_string,
         user_data,
     };
-    let ok = with_current_api(
-        |api| match api.with_registry(|reg| reg.register_renderer(record)) {
-            Some(_) => true,
-            None => false,
-        },
-    );
+    let ok = with_current_api(|api| {
+        api.with_registry(|reg| reg.register_renderer(record))
+            .is_some()
+    });
     if ok == Some(true) {
         0
     } else {
@@ -978,12 +964,10 @@ extern "C" fn trampoline_register_resources_discover(
         return -1;
     }
     let ok = with_current_api(|api| {
-        match api.with_registry(|reg| {
+        api.with_registry(|reg| {
             reg.register_resources_discover(handler, plugin_free_string, user_data)
-        }) {
-            Some(_) => true,
-            None => false,
-        }
+        })
+        .is_some()
     });
     if ok == Some(true) {
         0
@@ -1006,12 +990,10 @@ extern "C" fn trampoline_register_before_agent_start(
         return -1;
     }
     let ok = with_current_api(|api| {
-        match api.with_registry(|reg| {
+        api.with_registry(|reg| {
             reg.register_before_agent_start(handler, plugin_free_string, user_data)
-        }) {
-            Some(_) => true,
-            None => false,
-        }
+        })
+        .is_some()
     });
     if ok == Some(true) {
         0

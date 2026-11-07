@@ -33,7 +33,11 @@ pub fn objective(q: &Query) -> String {
     if !blocked.is_empty() {
         text.push_str(&format!(" Exclude pages from {}.", blocked.join(", ")));
     }
-    if let Some(period) = q.recency.as_deref().filter(|p| ["day", "week", "month", "year"].contains(p)) {
+    if let Some(period) = q
+        .recency
+        .as_deref()
+        .filter(|p| ["day", "week", "month", "year"].contains(p))
+    {
         text.push_str(&format!(" Only pages published in the past {period}."));
     }
     text
@@ -55,14 +59,22 @@ fn message(body: &str) -> Option<Value> {
 /// The tool's text, or what went wrong.
 fn tool_text(msg: &Value) -> Result<String, String> {
     if let Some(error) = msg.get("error") {
-        let text = error.get("message").and_then(Value::as_str).unwrap_or("unknown error");
+        let text = error
+            .get("message")
+            .and_then(Value::as_str)
+            .unwrap_or("unknown error");
         return Err(format!("answered with an error: {text}"));
     }
     let result = msg.get("result").ok_or("answered without a result")?;
     let text: String = result
         .get("content")
         .and_then(Value::as_array)
-        .map(|c| c.iter().filter_map(|b| b.get("text").and_then(Value::as_str)).collect::<Vec<_>>().join("\n"))
+        .map(|c| {
+            c.iter()
+                .filter_map(|b| b.get("text").and_then(Value::as_str))
+                .collect::<Vec<_>>()
+                .join("\n")
+        })
         .unwrap_or_default();
     if result.get("isError").and_then(Value::as_bool) == Some(true) {
         return Err(format!("answered with an error: {}", clip(text.trim())));
@@ -75,7 +87,10 @@ fn tool_text(msg: &Value) -> Result<String, String> {
 pub fn parse_results(text: &str) -> Vec<SearchResult> {
     let lines: Vec<&str> = text.lines().collect();
     let starts: Vec<usize> = (0..lines.len())
-        .filter(|&i| lines[i].starts_with("Title:") && lines.get(i + 1).is_some_and(|n| n.starts_with("URL:")))
+        .filter(|&i| {
+            lines[i].starts_with("Title:")
+                && lines.get(i + 1).is_some_and(|n| n.starts_with("URL:"))
+        })
         .collect();
     let mut out: Vec<SearchResult> = Vec::new();
     for (n, &start) in starts.iter().enumerate() {
@@ -88,17 +103,26 @@ pub fn parse_results(text: &str) -> Vec<SearchResult> {
                 .map(|v| v.trim().to_string())
                 .filter(|v| !v.is_empty() && v != "N/A")
         };
-        let Some(url) = field("URL:").filter(|u| Url::parse(u).is_ok_and(|p| matches!(p.scheme(), "http" | "https")))
+        let Some(url) = field("URL:")
+            .filter(|u| Url::parse(u).is_ok_and(|p| matches!(p.scheme(), "http" | "https")))
         else {
             continue;
         };
         if out.iter().any(|r| r.url == url) {
             continue;
         }
-        let body: Vec<&str> = match entry.iter().position(|l| l.starts_with("Highlights:") || l.starts_with("Text:")) {
+        let body: Vec<&str> = match entry
+            .iter()
+            .position(|l| l.starts_with("Highlights:") || l.starts_with("Text:"))
+        {
             Some(at) => {
-                let first = entry[at].split_once(':').map(|(_, rest)| rest).unwrap_or("");
-                std::iter::once(first).chain(entry[at + 1..].iter().copied()).collect()
+                let first = entry[at]
+                    .split_once(':')
+                    .map(|(_, rest)| rest)
+                    .unwrap_or("");
+                std::iter::once(first)
+                    .chain(entry[at + 1..].iter().copied())
+                    .collect()
             }
             None => Vec::new(),
         };
@@ -143,7 +167,10 @@ pub async fn search(q: &Query, want: usize) -> Result<Vec<SearchResult>, String>
     let status = response.status().as_u16();
     if status == 429 {
         PAUSE.start(COOLDOWN);
-        return Err(format!("its free limit was reached (HTTP 429); paused for {}s", COOLDOWN.as_secs()));
+        return Err(format!(
+            "its free limit was reached (HTTP 429); paused for {}s",
+            COOLDOWN.as_secs()
+        ));
     }
     let content_type = response
         .headers()
@@ -160,7 +187,10 @@ pub async fn search(q: &Query, want: usize) -> Result<Vec<SearchResult>, String>
     let text = tool_text(&msg)?;
     if text.to_ascii_lowercase().contains("rate limit") && !text.contains("\nURL:") {
         PAUSE.start(COOLDOWN);
-        return Err(format!("its free limit was reached; paused for {}s", COOLDOWN.as_secs()));
+        return Err(format!(
+            "its free limit was reached; paused for {}s",
+            COOLDOWN.as_secs()
+        ));
     }
     Ok(parse_results(&text))
 }
@@ -196,10 +226,21 @@ Title: not an entry, no URL line after it
     fn entries_are_parsed() {
         let results = parse_results(TEXT);
         assert_eq!(results.len(), 2);
-        assert_eq!(results[0].title, "USD gold price in the last year - Live charts");
-        assert_eq!(results[0].url, "https://www.goldavenue.com/en/gold-price/usd/1-year");
-        assert_eq!(results[0].snippet, "In this chart, you can see the historical gold price.");
-        assert!(results[1].snippet.starts_with("Published 2026-11-03. Gold is barreling"));
+        assert_eq!(
+            results[0].title,
+            "USD gold price in the last year - Live charts"
+        );
+        assert_eq!(
+            results[0].url,
+            "https://www.goldavenue.com/en/gold-price/usd/1-year"
+        );
+        assert_eq!(
+            results[0].snippet,
+            "In this chart, you can see the historical gold price."
+        );
+        assert!(results[1]
+            .snippet
+            .starts_with("Published 2026-11-03. Gold is barreling"));
         assert!(results[1].snippet.ends_with("| +0.49% | +6.29% |"));
     }
 
@@ -209,8 +250,11 @@ Title: not an entry, no URL line after it
         let text = tool_text(&message(event).unwrap()).unwrap();
         assert_eq!(parse_results(&text)[0].url, "https://a.example/");
         let plain = "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32602,\"message\":\"bad arguments\"}}";
-        assert!(tool_text(&message(plain).unwrap()).unwrap_err().contains("bad arguments"));
-        let failed = json!({"result": {"isError": true, "content": [{"type": "text", "text": "boom"}]}});
+        assert!(tool_text(&message(plain).unwrap())
+            .unwrap_err()
+            .contains("bad arguments"));
+        let failed =
+            json!({"result": {"isError": true, "content": [{"type": "text", "text": "boom"}]}});
         assert!(tool_text(&failed).unwrap_err().contains("boom"));
     }
 

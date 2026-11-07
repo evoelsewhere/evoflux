@@ -523,7 +523,7 @@ impl Provider for FauxProvider {
                     faux_now(),
                 ),
                 Some(s) => {
-                    let m = {
+                    {
                         // resolve_step borrows `self`, but `self` isn't owned
                         // here — inline the resolution to avoid the borrow.
                         let mut m = match s {
@@ -534,8 +534,7 @@ impl Provider for FauxProvider {
                         m.provider = id.clone();
                         m.model = model.id.clone();
                         m
-                    };
-                    m
+                    }
                 }
             };
             message = with_usage_estimate(message, &ctx, &opts);

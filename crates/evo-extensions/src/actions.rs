@@ -890,10 +890,10 @@ impl ActionBridge {
         id: &str,
     ) -> Result<(evo_agent::AgentToolResult, bool), String> {
         if !self.is_active()
-            || !self
+            || self
                 .invocation
                 .as_ref()
-                .is_some_and(|(_, _, signal)| !signal.is_cancelled())
+                .is_none_or(|(_, _, signal)| signal.is_cancelled())
         {
             return Err("result reference requires a live invocation bridge".into());
         }
@@ -908,10 +908,10 @@ impl ActionBridge {
         parts: Vec<evo_agent::tool_program::ToolProgramContentPart>,
     ) -> Result<Vec<evo_agent::TextContentOrImage>, String> {
         if !self.is_active()
-            || !self
+            || self
                 .invocation
                 .as_ref()
-                .is_some_and(|(_, _, signal)| !signal.is_cancelled())
+                .is_none_or(|(_, _, signal)| signal.is_cancelled())
         {
             return Err("content parts require a live invocation bridge".into());
         }

@@ -367,10 +367,7 @@ fn update_at(
         .packages
         .iter()
         .filter(|package| !resource_owned.contains(&package.name))
-        .filter(|package| {
-            name.as_deref()
-                .map_or(true, |wanted| wanted == package.name)
-        })
+        .filter(|package| name.as_deref().is_none_or(|wanted| wanted == package.name))
         .cloned()
         .collect::<Vec<_>>();
 
@@ -383,9 +380,7 @@ fn update_at(
             .into_iter()
             .filter(|package| {
                 package.supports_registry_update()
-                    && name
-                        .as_deref()
-                        .map_or(true, |wanted| wanted == package.name)
+                    && name.as_deref().is_none_or(|wanted| wanted == package.name)
             })
             .collect::<Vec<_>>(),
         Err(error) => {

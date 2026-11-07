@@ -688,23 +688,28 @@ impl RuntimeActionHost for HarnessActionHost {
             // Managed worktrees of this project, in either location.
             Some("worktrees") => {
                 let cwd = self.cwd.clone();
-                let list = tokio::task::spawn_blocking(move || crate::worktrees::manager()?.list(&cwd))
-                    .await
-                    .map_err(|e| e.to_string())??;
+                let list =
+                    tokio::task::spawn_blocking(move || crate::worktrees::manager()?.list(&cwd))
+                        .await
+                        .map_err(|e| e.to_string())??;
                 return Ok(serde_json::json!({ "worktrees": list }));
             }
             Some("removeWorktree") => {
                 let path = std::path::PathBuf::from(arg_str(&args, "path")?);
                 let cwd = self.cwd.clone();
-                tokio::task::spawn_blocking(move || crate::worktrees::manager()?.remove(&cwd, &path))
-                    .await
-                    .map_err(|e| e.to_string())??;
+                tokio::task::spawn_blocking(move || {
+                    crate::worktrees::manager()?.remove(&cwd, &path)
+                })
+                .await
+                .map_err(|e| e.to_string())??;
                 return Ok(serde_json::json!({ "removed": true }));
             }
             _ => {}
         }
         if args.get("op").and_then(serde_json::Value::as_str) == Some("start") {
-            self.children.handle(&self.harness()?, owner, &self.cwd, args).await
+            self.children
+                .handle(&self.harness()?, owner, &self.cwd, args)
+                .await
         } else {
             // Reclamation must remain possible after the parent was dropped.
             self.children.handle_existing(owner, args)

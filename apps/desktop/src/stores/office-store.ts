@@ -1,6 +1,6 @@
 // The optional LibreOffice runtime that renders Office documents as exact
 // pages: what the engine reports and the actions on it
-// (docs/features/office/sdd.md, docs/features/office-v3-parity/sdd.md). The
+// (docs/features/office/spec.md, docs/features/office-v3-parity/spec.md). The
 // engine owns the install; this store asks it (RPC `office_*`, see
 // crates/evo-engine/src/office.rs) and follows an install while it runs. It
 // also holds the Files setting "Open generated documents automatically".

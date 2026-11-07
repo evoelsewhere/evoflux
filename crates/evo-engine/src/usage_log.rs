@@ -17,7 +17,7 @@
 //!   (`child_agents.rs`, `plugin`) and side questions (`side_questions.rs`,
 //!   `side`), which call [`record`] from their own observers.
 //!
-//! Design: `docs/features/usage-and-cost/sdd.md`.
+//! Design: `docs/features/usage-and-cost/spec.md`.
 
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex, OnceLock};

@@ -1169,11 +1169,7 @@ mod tests {
         0
     }
 
-    fn handler_of<'a>(
-        snap: &'a RegistrySnapshot,
-        tag: EventTag,
-        i: usize,
-    ) -> &'a RegisteredHandler {
+    fn handler_of(snap: &RegistrySnapshot, tag: EventTag, i: usize) -> &RegisteredHandler {
         &snap.handlers_for(tag)[i]
     }
 

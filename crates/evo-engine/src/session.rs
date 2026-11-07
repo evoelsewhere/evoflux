@@ -328,7 +328,11 @@ pub enum SessionSelection {
     /// as older desktops passed it. Opened when `id` exists, else created
     /// with that id. `dir` is still the configured session directory for the
     /// features that write files next to sessions.
-    Database { db: PathBuf, id: String, dir: PathBuf },
+    Database {
+        db: PathBuf,
+        id: String,
+        dir: PathBuf,
+    },
 }
 
 /// Decide the session selection from parsed args + the resolved cwd.
@@ -373,10 +377,9 @@ pub(crate) fn select_session_in_dir(args: &Args, dir: PathBuf) -> SessionSelecti
     if let Some(db) = &args.session_db {
         return SessionSelection::Database {
             db: db.clone(),
-            id: args
-                .session_id
-                .clone()
-                .unwrap_or_else(|| evo_harness::session::types::IdGenerator::next(&DefaultIdGenerator::new())),
+            id: args.session_id.clone().unwrap_or_else(|| {
+                evo_harness::session::types::IdGenerator::next(&DefaultIdGenerator::new())
+            }),
             dir,
         };
     }
@@ -799,7 +802,10 @@ pub async fn build_prepared(
     action_host.set_catalog(catalog.clone());
 
     // ---- Execution env + tools ----
-    let env = Arc::new(OsExecutionEnv::with_cwd(cwd.to_path_buf()).with_shell_env_provider(crate::office::shell_env_provider()));
+    let env = Arc::new(
+        OsExecutionEnv::with_cwd(cwd.to_path_buf())
+            .with_shell_env_provider(crate::office::shell_env_provider()),
+    );
     let env_dyn: Arc<dyn evo_tools::ExecutionEnv> = env.clone();
     let mut_env: Arc<dyn evo_tools::MutatingEnv> = env.clone();
     let _registry = Arc::new(MutationQueueRegistry::new());
@@ -1245,9 +1251,11 @@ pub async fn build_prepared(
             )
         });
     // `PreToolUse` hooks run in front of it (block, ask, allow, rewrite).
-    let before_tool_call = crate::hooks::before_tool_call(before_tool_call, ui_dialog_mailbox.clone());
+    let before_tool_call =
+        crate::hooks::before_tool_call(before_tool_call, ui_dialog_mailbox.clone());
     // Before anything else: ask before a shell command stops this app or engine.
-    let before_tool_call = crate::self_kill::before_tool_call(before_tool_call, ui_dialog_mailbox.clone());
+    let before_tool_call =
+        crate::self_kill::before_tool_call(before_tool_call, ui_dialog_mailbox.clone());
     // `ask_user` puts its questions through the same dialog channel.
     crate::interaction::set_mailbox(ui_dialog_mailbox.clone());
 
@@ -2571,7 +2579,7 @@ pub async fn reload_providers(
                 fresh.model = None;
                 fresh.api_key = None;
                 fresh.base_url = None;
-                resolve(&fresh).or_else(|error| unconfigured_on_missing(error))?
+                resolve(&fresh).or_else(unconfigured_on_missing)?
             }
             Err(error) => unconfigured_on_missing(error)?,
         };
@@ -2604,8 +2612,9 @@ pub async fn reload_providers(
         .write()
         .unwrap_or_else(|error| error.into_inner()) = catalog;
 
-    let model_changed = current.as_ref().map_or(true, |model| {
-        model.provider != resolved.model.provider || !model.id.eq_ignore_ascii_case(&resolved.model.id)
+    let model_changed = current.as_ref().is_none_or(|model| {
+        model.provider != resolved.model.provider
+            || !model.id.eq_ignore_ascii_case(&resolved.model.id)
     });
     // Refresh the descriptor even when unchanged: its endpoint may have moved.
     lane.set_model(resolved.model.clone())
@@ -2623,9 +2632,7 @@ pub async fn reload_providers(
     })
 }
 
-fn unconfigured_on_missing(
-    error: crate::provider::ResolveError,
-) -> Result<ResolvedModel, String> {
+fn unconfigured_on_missing(error: crate::provider::ResolveError) -> Result<ResolvedModel, String> {
     match error {
         crate::provider::ResolveError::NoApiKey { .. }
         | crate::provider::ResolveError::NoMatch { .. } => Ok(ResolvedModel::unconfigured(None)),
@@ -2843,10 +2850,15 @@ pub fn bash_options() -> evo_tools::tools::bash::BashToolOptions {
 /// session's folder, for a delegated child in its own worktree. Same options
 /// as the parent's (`build_tools`); the harness swaps them in by name.
 pub fn builtin_tools_in(cwd: &Path) -> Vec<HarnessTool> {
-    let env = Arc::new(OsExecutionEnv::with_cwd(cwd.to_path_buf()).with_shell_env_provider(crate::office::shell_env_provider()));
+    let env = Arc::new(
+        OsExecutionEnv::with_cwd(cwd.to_path_buf())
+            .with_shell_env_provider(crate::office::shell_env_provider()),
+    );
     let env_dyn: Arc<dyn evo_tools::ExecutionEnv> = env.clone();
     let mut_env: Arc<dyn evo_tools::MutatingEnv> = env;
     let ctx = ExecutionToolContext::new(env_dyn, Some(mut_env));
+    // Only Windows adds a tool after this.
+    #[cfg_attr(not(target_os = "windows"), allow(unused_mut))]
     let mut tools = vec![
         HarnessTool::new(create_read_tool(
             &ctx,
@@ -2914,7 +2926,9 @@ fn build_tools(
         ),
         (
             "message_agent",
-            HarnessTool::new(crate::agent_tool::create_message_agent_tool(harness.clone())),
+            HarnessTool::new(crate::agent_tool::create_message_agent_tool(
+                harness.clone(),
+            )),
         ),
     ];
     // Talking between the session and its agents (session mesh, mesh_tools.rs).
@@ -2932,35 +2946,58 @@ fn build_tools(
         ),
         (
             "memory",
-            HarnessTool::new(crate::memory::create_memory_tool(ctx.env().cwd().to_path_buf())),
+            HarnessTool::new(crate::memory::create_memory_tool(
+                ctx.env().cwd().to_path_buf(),
+            )),
         ),
     ]);
     // Working with the person (`interaction.rs`).
-    all.push(("ask_user", HarnessTool::new(crate::interaction::create_ask_user_tool())));
-    all.push(("update_todos", HarnessTool::new(crate::interaction::create_update_todos_tool())));
+    all.push((
+        "ask_user",
+        HarnessTool::new(crate::interaction::create_ask_user_tool()),
+    ));
+    all.push((
+        "update_todos",
+        HarnessTool::new(crate::interaction::create_update_todos_tool()),
+    ));
     // Inline HTML widgets in the chat (`visualize_tool.rs`); both only read.
-    all.push(("visualize_read_me", HarnessTool::new(crate::visualize_tool::create_read_me_tool()).with_replay(ToolReplay::Safe)));
-    all.push(("show_widget", HarnessTool::new(crate::visualize_tool::create_show_widget_tool()).with_replay(ToolReplay::Safe)));
+    all.push((
+        "visualize_read_me",
+        HarnessTool::new(crate::visualize_tool::create_read_me_tool())
+            .with_replay(ToolReplay::Safe),
+    ));
+    all.push((
+        "show_widget",
+        HarnessTool::new(crate::visualize_tool::create_show_widget_tool())
+            .with_replay(ToolReplay::Safe),
+    ));
     // Layout check of a rendered document (`document_preview_tool.rs`); only reads.
     all.push((
         "document_preview",
-        HarnessTool::new(crate::document_preview_tool::create_document_preview_tool(ctx.env().cwd().to_path_buf()))
-            .with_replay(ToolReplay::Safe),
+        HarnessTool::new(crate::document_preview_tool::create_document_preview_tool(
+            ctx.env().cwd().to_path_buf(),
+        ))
+        .with_replay(ToolReplay::Safe),
     ));
     // Code intelligence from language servers (`lsp_tool.rs`).
     all.push((
         "lsp",
-        HarnessTool::new(crate::lsp_tool::create_lsp_tool(ctx.env().cwd().to_path_buf())).with_replay(ToolReplay::Safe),
+        HarnessTool::new(crate::lsp_tool::create_lsp_tool(
+            ctx.env().cwd().to_path_buf(),
+        ))
+        .with_replay(ToolReplay::Safe),
     ));
     // Web search and fetch (`web_tools.rs`), unless switched off in settings.
     if crate::web_tools::enabled() {
         all.push((
             "web_search",
-            HarnessTool::new(crate::web_tools::create_web_search_tool()).with_replay(ToolReplay::Safe),
+            HarnessTool::new(crate::web_tools::create_web_search_tool())
+                .with_replay(ToolReplay::Safe),
         ));
         all.push((
             "web_fetch",
-            HarnessTool::new(crate::web_tools::create_web_fetch_tool()).with_replay(ToolReplay::Safe),
+            HarnessTool::new(crate::web_tools::create_web_fetch_tool())
+                .with_replay(ToolReplay::Safe),
         ));
     }
 
@@ -3951,10 +3988,7 @@ pub async fn import_session_file(source: &Path, cwd: &str, dir: &Path) -> Result
         .map_err(|e| e.to_string())?;
     let path = destination.jsonl_metadata().path.clone();
     drop(destination);
-    if let Err(error) = claim_session_lock(&path) {
-        // Another process owns this destination; leave its file intact.
-        return Err(error);
-    }
+    claim_session_lock(&path)?;
     let destination_progress = format!("{path}.progress.jsonl");
     let publish = (|| -> std::io::Result<()> {
         if has_progress {

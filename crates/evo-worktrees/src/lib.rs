@@ -80,9 +80,13 @@ fn git(dir: &Path, args: &[&str]) -> Result<String, String> {
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         command.creation_flags(CREATE_NO_WINDOW);
     }
-    let output = command.output().map_err(|e| format!("could not run git: {e}"))?;
+    let output = command
+        .output()
+        .map_err(|e| format!("could not run git: {e}"))?;
     if output.status.success() {
-        Ok(String::from_utf8_lossy(&output.stdout).trim_end().to_string())
+        Ok(String::from_utf8_lossy(&output.stdout)
+            .trim_end()
+            .to_string())
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr);
         Err(format!("git {} failed: {}", args.join(" "), stderr.trim()))
@@ -108,7 +112,9 @@ fn is_under(path: &Path, dir: &Path) -> bool {
 
 /// FNV-1a: a stable name for a repository's folder in the data directory.
 fn fnv(text: &str) -> u32 {
-    text.bytes().fold(0x811c_9dc5u32, |hash, byte| (hash ^ byte as u32).wrapping_mul(0x0100_0193))
+    text.bytes().fold(0x811c_9dc5u32, |hash, byte| {
+        (hash ^ byte as u32).wrapping_mul(0x0100_0193)
+    })
 }
 
 /// Unique per process and moment: time, process id and a counter.
@@ -119,7 +125,11 @@ fn new_name() -> String {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis())
         .unwrap_or(0);
-    let salt = fnv(&format!("{}-{}", std::process::id(), NEXT.fetch_add(1, Ordering::Relaxed))) & 0xffff;
+    let salt = fnv(&format!(
+        "{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    )) & 0xffff;
     format!("{millis:x}{salt:04x}")
 }
 
@@ -133,9 +143,13 @@ impl Worktrees {
     /// its worktrees, so a worktree is never nested in another.
     fn main_root(cwd: &Path) -> Result<PathBuf, String> {
         let top = PathBuf::from(
-            git(cwd, &["rev-parse", "--show-toplevel"]).map_err(|_| "this folder is not in a Git repository".to_string())?,
+            git(cwd, &["rev-parse", "--show-toplevel"])
+                .map_err(|_| "this folder is not in a Git repository".to_string())?,
         );
-        let common = PathBuf::from(git(cwd, &["rev-parse", "--path-format=absolute", "--git-common-dir"])?);
+        let common = PathBuf::from(git(
+            cwd,
+            &["rev-parse", "--path-format=absolute", "--git-common-dir"],
+        )?);
         // `<main>/.git` for ordinary repositories; a bare common dir has no main folder.
         match (common.file_name().and_then(|n| n.to_str()), common.parent()) {
             (Some(".git"), Some(main)) => Ok(main.to_path_buf()),
@@ -144,8 +158,12 @@ impl Worktrees {
     }
 
     fn user_data_dir(&self, main: &Path) -> PathBuf {
-        let name = main.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| "repo".into());
-        self.data_root.join(format!("{name}-{:08x}", fnv(&key(main))))
+        let name = main
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| "repo".into());
+        self.data_root
+            .join(format!("{name}-{:08x}", fnv(&key(main))))
     }
 
     fn dir(&self, main: &Path, location: WorktreeLocation) -> PathBuf {
@@ -158,16 +176,27 @@ impl Worktrees {
     /// Keep `<repo>/.evo/worktrees` out of `git status` without touching
     /// `.gitignore`.
     fn exclude(main: &Path) -> Result<(), String> {
-        let common = PathBuf::from(git(main, &["rev-parse", "--path-format=absolute", "--git-common-dir"])?);
+        let common = PathBuf::from(git(
+            main,
+            &["rev-parse", "--path-format=absolute", "--git-common-dir"],
+        )?);
         let file = common.join("info").join("exclude");
         let current = std::fs::read_to_string(&file).unwrap_or_default();
         if current.lines().any(|line| line.trim() == EXCLUDE_LINE) {
             return Ok(());
         }
-        std::fs::create_dir_all(file.parent().expect("exclude has a folder")).map_err(|e| e.to_string())?;
-        let separator = if current.is_empty() || current.ends_with('\n') { "" } else { "\n" };
-        std::fs::write(&file, format!("{current}{separator}# evo managed worktrees\n{EXCLUDE_LINE}\n"))
-            .map_err(|e| format!("could not update {}: {e}", file.display()))
+        std::fs::create_dir_all(file.parent().expect("exclude has a folder"))
+            .map_err(|e| e.to_string())?;
+        let separator = if current.is_empty() || current.ends_with('\n') {
+            ""
+        } else {
+            "\n"
+        };
+        std::fs::write(
+            &file,
+            format!("{current}{separator}# evo managed worktrees\n{EXCLUDE_LINE}\n"),
+        )
+        .map_err(|e| format!("could not update {}: {e}", file.display()))
     }
 
     /// A new worktree of `cwd`'s repository, on a new branch at `HEAD`.
@@ -175,18 +204,34 @@ impl Worktrees {
         let main = Self::main_root(cwd)?;
         // Where `cwd` sits in its working tree (`src/`), to start the child there too.
         let prefix = git(cwd, &["rev-parse", "--show-prefix"])?;
-        let base = git(cwd, &["rev-parse", "HEAD"]).map_err(|_| "the repository has no commits yet".to_string())?;
+        let base = git(cwd, &["rev-parse", "HEAD"])
+            .map_err(|_| "the repository has no commits yet".to_string())?;
         if location == WorktreeLocation::Repository {
             Self::exclude(&main)?;
         }
         let name = new_name();
         let dir = self.dir(&main, location);
-        std::fs::create_dir_all(&dir).map_err(|e| format!("could not create {}: {e}", dir.display()))?;
+        std::fs::create_dir_all(&dir)
+            .map_err(|e| format!("could not create {}: {e}", dir.display()))?;
         let path = dir.join(&name);
         let branch = format!("{BRANCH_PREFIX}{name}");
-        git(&main, &["worktree", "add", "-b", &branch, &path.to_string_lossy(), &base])?;
+        git(
+            &main,
+            &[
+                "worktree",
+                "add",
+                "-b",
+                &branch,
+                &path.to_string_lossy(),
+                &base,
+            ],
+        )?;
         let child_cwd = path.join(prefix.trim_end_matches('/'));
-        let cwd = if child_cwd.is_dir() { child_cwd } else { path.clone() };
+        let cwd = if child_cwd.is_dir() {
+            child_cwd
+        } else {
+            path.clone()
+        };
         Ok(Created {
             worktree: Worktree {
                 path,
@@ -201,9 +246,13 @@ impl Worktrees {
 
     /// Whether `path` has uncommitted changes or commits beyond `base`.
     pub fn changed(path: &Path, base: Option<&str>) -> bool {
-        let dirty = git(path, &["status", "--porcelain"]).map(|out| !out.trim().is_empty()).unwrap_or(true);
+        let dirty = git(path, &["status", "--porcelain"])
+            .map(|out| !out.trim().is_empty())
+            .unwrap_or(true);
         let moved = match base {
-            Some(base) => git(path, &["rev-parse", "HEAD"]).map(|head| head != base).unwrap_or(true),
+            Some(base) => git(path, &["rev-parse", "HEAD"])
+                .map(|head| head != base)
+                .unwrap_or(true),
             None => false,
         };
         dirty || moved
@@ -213,8 +262,14 @@ impl Worktrees {
     pub fn list(&self, cwd: &Path) -> Result<Vec<Worktree>, String> {
         let main = Self::main_root(cwd)?;
         let places = [
-            (self.dir(&main, WorktreeLocation::Repository), WorktreeLocation::Repository),
-            (self.dir(&main, WorktreeLocation::UserData), WorktreeLocation::UserData),
+            (
+                self.dir(&main, WorktreeLocation::Repository),
+                WorktreeLocation::Repository,
+            ),
+            (
+                self.dir(&main, WorktreeLocation::UserData),
+                WorktreeLocation::UserData,
+            ),
         ];
         let porcelain = git(&main, &["worktree", "list", "--porcelain"])?;
         let mut found = Vec::new();
@@ -250,7 +305,12 @@ impl Worktrees {
         self.list(cwd)?
             .into_iter()
             .find(|w| key(&w.path) == key(path))
-            .ok_or_else(|| format!("{} is not a managed worktree of this repository", path.display()))
+            .ok_or_else(|| {
+                format!(
+                    "{} is not a managed worktree of this repository",
+                    path.display()
+                )
+            })
     }
 
     /// Everything the worktree at `path` changed since it was cut from the
@@ -263,10 +323,26 @@ impl Worktrees {
         // Stage everything in the worktree's own index so new files count; the
         // repository's index is untouched.
         git(path, &["add", "-A"])?;
-        let patch = git_raw(path, &["diff", "--cached", "--binary", "--no-color", "--no-ext-diff", &base])?;
+        let patch = git_raw(
+            path,
+            &[
+                "diff",
+                "--cached",
+                "--binary",
+                "--no-color",
+                "--no-ext-diff",
+                &base,
+            ],
+        )?;
         let mut files = Vec::new();
-        let numstat = git(path, &["diff", "--cached", "--numstat", "--no-renames", &base])?;
-        let statuses = git(path, &["diff", "--cached", "--name-status", "--no-renames", &base])?;
+        let numstat = git(
+            path,
+            &["diff", "--cached", "--numstat", "--no-renames", &base],
+        )?;
+        let statuses = git(
+            path,
+            &["diff", "--cached", "--name-status", "--no-renames", &base],
+        )?;
         for (line, status) in numstat.lines().zip(statuses.lines()) {
             let mut parts = line.splitn(3, '\t');
             let added = parts.next().and_then(|n| n.parse().ok());
@@ -277,7 +353,12 @@ impl Worktrees {
                 Some('D') => "deleted",
                 _ => "modified",
             };
-            files.push(FileChange { path: file, status, added, removed });
+            files.push(FileChange {
+                path: file,
+                status,
+                added,
+                removed,
+            });
         }
         Ok(Changes {
             added: files.iter().filter_map(|f| f.added).sum(),
@@ -296,10 +377,15 @@ impl Worktrees {
         let changes = self.changes(cwd, path)?;
         if !changes.patch.trim().is_empty() {
             let file = std::env::temp_dir().join(format!("evo-worktree-{}.patch", new_name()));
-            std::fs::write(&file, &changes.patch).map_err(|e| format!("could not write the patch: {e}"))?;
+            std::fs::write(&file, &changes.patch)
+                .map_err(|e| format!("could not write the patch: {e}"))?;
             let file_arg = file.to_string_lossy().to_string();
-            let checked = git(&main, &["apply", "--check", "--whitespace=nowarn", &file_arg]);
-            let applied = checked.and_then(|_| git(&main, &["apply", "--whitespace=nowarn", &file_arg]));
+            let checked = git(
+                &main,
+                &["apply", "--check", "--whitespace=nowarn", &file_arg],
+            );
+            let applied =
+                checked.and_then(|_| git(&main, &["apply", "--whitespace=nowarn", &file_arg]));
             let _ = std::fs::remove_file(&file);
             applied.map_err(|e| {
                 format!("the changes do not apply cleanly to your working folder (it changed in the same places): {e}")
@@ -313,7 +399,15 @@ impl Worktrees {
     pub fn remove(&self, cwd: &Path, path: &Path) -> Result<(), String> {
         let main = Self::main_root(cwd)?;
         let worktree = self.managed(cwd, path)?;
-        git(&main, &["worktree", "remove", "--force", &worktree.path.to_string_lossy()])?;
+        git(
+            &main,
+            &[
+                "worktree",
+                "remove",
+                "--force",
+                &worktree.path.to_string_lossy(),
+            ],
+        )?;
         if worktree.branch.starts_with(BRANCH_PREFIX) {
             git(&main, &["branch", "-D", &worktree.branch])?;
         }
@@ -359,7 +453,11 @@ fn count_lines(path: &Path) -> Option<usize> {
         return None;
     }
     let newlines = bytes.iter().filter(|&&b| b == b'\n').count();
-    Some(if bytes.last().is_some_and(|&b| b != b'\n') { newlines + 1 } else { newlines })
+    Some(if bytes.last().is_some_and(|&b| b != b'\n') {
+        newlines + 1
+    } else {
+        newlines
+    })
 }
 
 /// The status of the repository `dir` is in; `None` outside a repository.
@@ -370,7 +468,14 @@ pub fn repo_status(dir: &Path) -> Result<Option<RepoStatus>, String> {
     let root = PathBuf::from(root);
     let status = git(
         &root,
-        &["-c", "core.quotePath=false", "status", "--porcelain=v2", "--branch", "--untracked-files=all"],
+        &[
+            "-c",
+            "core.quotePath=false",
+            "status",
+            "--porcelain=v2",
+            "--branch",
+            "--untracked-files=all",
+        ],
     )?;
 
     let (mut branch, mut head, mut upstream, mut ahead, mut behind) = (None, None, None, 0, 0);
@@ -389,7 +494,9 @@ pub fn repo_status(dir: &Path) -> Result<Option<RepoStatus>, String> {
         if let Some(header) = line.strip_prefix("# ") {
             let (key, value) = header.split_once(' ').unwrap_or((header, ""));
             match key {
-                "branch.oid" if value != "(initial)" => head = Some(value.chars().take(7).collect()),
+                "branch.oid" if value != "(initial)" => {
+                    head = Some(value.chars().take(7).collect())
+                }
                 "branch.head" if value != "(detached)" => branch = Some(value.to_string()),
                 "branch.upstream" => upstream = Some(value.to_string()),
                 "branch.ab" => {
@@ -406,7 +513,10 @@ pub fn repo_status(dir: &Path) -> Result<Option<RepoStatus>, String> {
             continue;
         }
         let mut fields = line.splitn(2, ' ');
-        let (tag, rest) = (fields.next().unwrap_or_default(), fields.next().unwrap_or_default());
+        let (tag, rest) = (
+            fields.next().unwrap_or_default(),
+            fields.next().unwrap_or_default(),
+        );
         // Ordinary (1), renamed (2) and unmerged (u) entries end with the path.
         let skip = match tag {
             "1" => 7,
@@ -427,8 +537,18 @@ pub fn repo_status(dir: &Path) -> Result<Option<RepoStatus>, String> {
 
     // Line counts of tracked changes against HEAD, without touching the index.
     let base = if head.is_some() { "HEAD" } else { EMPTY_TREE };
-    let numstat =
-        git(&root, &["-c", "core.quotePath=false", "diff", base, "--numstat", "--no-renames"]).unwrap_or_default();
+    let numstat = git(
+        &root,
+        &[
+            "-c",
+            "core.quotePath=false",
+            "diff",
+            base,
+            "--numstat",
+            "--no-renames",
+        ],
+    )
+    .unwrap_or_default();
     let mut counts = std::collections::HashMap::new();
     for line in numstat.lines() {
         let mut parts = line.splitn(3, '\t');
@@ -452,7 +572,12 @@ pub fn repo_status(dir: &Path) -> Result<Option<RepoStatus>, String> {
                 }
                 None => (None, None),
             };
-            FileChange { path, status, added, removed }
+            FileChange {
+                path,
+                status,
+                added,
+                removed,
+            }
         })
         .collect();
 
@@ -507,10 +632,24 @@ pub fn ignored_paths(dir: &Path) -> Result<Option<Vec<String>>, String> {
     let root = root.replace('\\', "/");
     let list = git_raw(
         Path::new(&root),
-        &["-c", "core.quotePath=false", "ls-files", "--others", "--ignored", "--exclude-standard", "--directory", "-z"],
+        &[
+            "-c",
+            "core.quotePath=false",
+            "ls-files",
+            "--others",
+            "--ignored",
+            "--exclude-standard",
+            "--directory",
+            "-z",
+        ],
     )?;
     let top = root.trim_end_matches('/');
-    Ok(Some(list.split('\0').filter(|p| !p.is_empty()).map(|p| format!("{top}/{p}")).collect()))
+    Ok(Some(
+        list.split('\0')
+            .filter(|p| !p.is_empty())
+            .map(|p| format!("{top}/{p}"))
+            .collect(),
+    ))
 }
 
 /// The text of `path` at `HEAD`. `None` when the file is untracked, binary,
@@ -521,18 +660,39 @@ pub fn file_at_head(dir: &Path, path: &Path) -> Result<Option<String>, String> {
     };
     let root = root.replace('\\', "/");
     let root = root.trim_end_matches('/');
-    let absolute = if path.is_absolute() { path.to_path_buf() } else { dir.join(path) };
+    let absolute = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        dir.join(path)
+    };
     let absolute = absolute.to_string_lossy().replace('\\', "/");
-    let fold = |s: &str| if cfg!(any(windows, target_os = "macos")) { s.to_lowercase() } else { s.to_string() };
+    let fold = |s: &str| {
+        if cfg!(any(windows, target_os = "macos")) {
+            s.to_lowercase()
+        } else {
+            s.to_string()
+        }
+    };
     let prefix = format!("{}/", fold(root));
-    if !fold(&absolute).starts_with(&prefix) || absolute.len() <= prefix.len() || !absolute.is_char_boundary(prefix.len()) {
+    if !fold(&absolute).starts_with(&prefix)
+        || absolute.len() <= prefix.len()
+        || !absolute.is_char_boundary(prefix.len())
+    {
         return Ok(None);
     }
     let relative = &absolute[prefix.len()..];
     if relative.split('/').any(|part| part == "..") {
         return Ok(None);
     }
-    let Ok(text) = git_raw(Path::new(root), &["-c", "core.fsmonitor=false", "show", &format!("HEAD:{relative}")]) else {
+    let Ok(text) = git_raw(
+        Path::new(root),
+        &[
+            "-c",
+            "core.fsmonitor=false",
+            "show",
+            &format!("HEAD:{relative}"),
+        ],
+    ) else {
         return Ok(None);
     };
     if text.len() > HEAD_TEXT_MAX || text.contains('\0') {
@@ -551,11 +711,17 @@ fn git_raw(dir: &Path, args: &[&str]) -> Result<String, String> {
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         command.creation_flags(CREATE_NO_WINDOW);
     }
-    let output = command.output().map_err(|e| format!("could not run git: {e}"))?;
+    let output = command
+        .output()
+        .map_err(|e| format!("could not run git: {e}"))?;
     if output.status.success() {
         Ok(String::from_utf8_lossy(&output.stdout).to_string())
     } else {
-        Err(format!("git {} failed: {}", args.join(" "), String::from_utf8_lossy(&output.stderr).trim()))
+        Err(format!(
+            "git {} failed: {}",
+            args.join(" "),
+            String::from_utf8_lossy(&output.stderr).trim()
+        ))
     }
 }
 
@@ -594,7 +760,11 @@ mod tests {
     #[test]
     fn repo_status_counts_tracked_and_new_files() {
         let Some((dir, root)) = repo() else { return };
-        assert_eq!(repo_status(dir.path()).unwrap(), None, "outside a repository");
+        assert_eq!(
+            repo_status(dir.path()).unwrap(),
+            None,
+            "outside a repository"
+        );
 
         let clean = repo_status(&root.join("src")).unwrap().unwrap();
         assert!(clean.files.is_empty());
@@ -605,7 +775,10 @@ mod tests {
         let status = repo_status(&root).unwrap().unwrap();
         let file = |p: &str| status.files.iter().find(|f| f.path == p).unwrap().clone();
         assert_eq!(file("src/main.rs").status, "modified");
-        assert_eq!((file("src/main.rs").added, file("src/main.rs").removed), (Some(3), Some(1)));
+        assert_eq!(
+            (file("src/main.rs").added, file("src/main.rs").removed),
+            (Some(3), Some(1))
+        );
         assert_eq!(file("src/new file.rs").status, "added");
         assert_eq!(file("src/new file.rs").added, Some(3));
         assert_eq!((status.added, status.removed), (6, 1));
@@ -614,23 +787,47 @@ mod tests {
     #[test]
     fn head_text_and_ignored_paths() {
         let Some((dir, root)) = repo() else { return };
-        assert_eq!(file_at_head(dir.path(), &dir.path().join("x")).unwrap(), None, "outside a repository");
+        assert_eq!(
+            file_at_head(dir.path(), &dir.path().join("x")).unwrap(),
+            None,
+            "outside a repository"
+        );
 
         std::fs::write(root.join("src/main.rs"), "changed\n").unwrap();
         let head = file_at_head(&root, &root.join("src/main.rs")).unwrap();
         assert_eq!(head.as_deref(), Some("fn main() {}\n"));
-        assert_eq!(file_at_head(&root.join("src"), Path::new("main.rs")).unwrap().as_deref(), Some("fn main() {}\n"));
+        assert_eq!(
+            file_at_head(&root.join("src"), Path::new("main.rs"))
+                .unwrap()
+                .as_deref(),
+            Some("fn main() {}\n")
+        );
         std::fs::write(root.join("src/new.rs"), "x").unwrap();
-        assert_eq!(file_at_head(&root, &root.join("src/new.rs")).unwrap(), None, "untracked");
-        assert_eq!(file_at_head(&root, &dir.path().join("elsewhere.txt")).unwrap(), None, "outside the root");
-        assert_eq!(file_at_head(&root, &root.join("src/../src/main.rs")).unwrap(), None, "parent segments");
+        assert_eq!(
+            file_at_head(&root, &root.join("src/new.rs")).unwrap(),
+            None,
+            "untracked"
+        );
+        assert_eq!(
+            file_at_head(&root, &dir.path().join("elsewhere.txt")).unwrap(),
+            None,
+            "outside the root"
+        );
+        assert_eq!(
+            file_at_head(&root, &root.join("src/../src/main.rs")).unwrap(),
+            None,
+            "parent segments"
+        );
 
         std::fs::write(root.join(".gitignore"), "target/\n*.log\n").unwrap();
         std::fs::create_dir_all(root.join("target")).unwrap();
         std::fs::write(root.join("target/a"), "1").unwrap();
         std::fs::write(root.join("a.log"), "1").unwrap();
         let ignored = ignored_paths(&root).unwrap().unwrap();
-        assert!(ignored.iter().any(|p| p.ends_with("/target/")), "{ignored:?}");
+        assert!(
+            ignored.iter().any(|p| p.ends_with("/target/")),
+            "{ignored:?}"
+        );
         assert!(ignored.iter().any(|p| p.ends_with("/a.log")), "{ignored:?}");
         assert_eq!(ignored_paths(dir.path()).unwrap(), None);
     }
@@ -639,8 +836,13 @@ mod tests {
     fn inside_the_repository_and_excluded_from_git() {
         let Some((dir, root)) = repo() else { return };
         let worktrees = Worktrees::with_data_root(dir.path().join("data"));
-        let created = worktrees.create(&root.join("src"), WorktreeLocation::Repository).unwrap();
-        assert!(is_under(&created.worktree.path, &root.join(".evo/worktrees")));
+        let created = worktrees
+            .create(&root.join("src"), WorktreeLocation::Repository)
+            .unwrap();
+        assert!(is_under(
+            &created.worktree.path,
+            &root.join(".evo/worktrees")
+        ));
         assert!(created.worktree.branch.starts_with(BRANCH_PREFIX));
         // The child works in the same subfolder as the parent.
         assert!(created.cwd.ends_with("src") && created.cwd.join("main.rs").is_file());
@@ -650,7 +852,9 @@ mod tests {
         assert!(exclude.contains(EXCLUDE_LINE));
         assert_eq!(git(&root, &["status", "--porcelain"]).unwrap(), "");
         // A second worktree adds no second exclude line.
-        worktrees.create(&root, WorktreeLocation::Repository).unwrap();
+        worktrees
+            .create(&root, WorktreeLocation::Repository)
+            .unwrap();
         let exclude = std::fs::read_to_string(root.join(".git/info/exclude")).unwrap();
         assert_eq!(exclude.matches(EXCLUDE_LINE).count(), 1);
     }
@@ -659,7 +863,9 @@ mod tests {
     fn both_locations_are_listed_and_removable() {
         let Some((dir, root)) = repo() else { return };
         let worktrees = Worktrees::with_data_root(dir.path().join("data"));
-        let inside = worktrees.create(&root, WorktreeLocation::Repository).unwrap();
+        let inside = worktrees
+            .create(&root, WorktreeLocation::Repository)
+            .unwrap();
         let outside = worktrees.create(&root, WorktreeLocation::UserData).unwrap();
         assert!(is_under(&outside.worktree.path, &dir.path().join("data")));
 
@@ -669,9 +875,20 @@ mod tests {
 
         // A change in one shows up, from the worktree and from the list.
         std::fs::write(outside.worktree.path.join("new.txt"), "x").unwrap();
-        assert!(Worktrees::changed(&outside.worktree.path, Some(&outside.base)));
-        assert!(!Worktrees::changed(&inside.worktree.path, Some(&inside.base)));
-        let changed: Vec<_> = worktrees.list(&root).unwrap().into_iter().filter(|w| w.changed).collect();
+        assert!(Worktrees::changed(
+            &outside.worktree.path,
+            Some(&outside.base)
+        ));
+        assert!(!Worktrees::changed(
+            &inside.worktree.path,
+            Some(&inside.base)
+        ));
+        let changed: Vec<_> = worktrees
+            .list(&root)
+            .unwrap()
+            .into_iter()
+            .filter(|w| w.changed)
+            .collect();
         assert_eq!(changed.len(), 1);
         assert_eq!(key(&changed[0].path), key(&outside.worktree.path));
 
@@ -690,7 +907,18 @@ mod tests {
         let Some((dir, root)) = repo() else { return };
         let worktrees = Worktrees::with_data_root(dir.path().join("data"));
         let elsewhere = dir.path().join("mine");
-        git(&root, &["worktree", "add", "-q", "-b", "mine", &elsewhere.to_string_lossy()]).unwrap();
+        git(
+            &root,
+            &[
+                "worktree",
+                "add",
+                "-q",
+                "-b",
+                "mine",
+                &elsewhere.to_string_lossy(),
+            ],
+        )
+        .unwrap();
         assert!(worktrees.list(&root).unwrap().is_empty());
         assert!(worktrees.remove(&root, &elsewhere).is_err());
         assert!(elsewhere.exists());
@@ -711,9 +939,20 @@ mod tests {
 
         let changes = worktrees.changes(&root, wt).unwrap();
         assert_eq!(changes.base, created.base);
-        let mut paths: Vec<_> = changes.files.iter().map(|f| (f.path.as_str(), f.status)).collect();
+        let mut paths: Vec<_> = changes
+            .files
+            .iter()
+            .map(|f| (f.path.as_str(), f.status))
+            .collect();
         paths.sort();
-        assert_eq!(paths, [("NOTES.md", "added"), ("docs/a.md", "added"), ("src/main.rs", "modified")]);
+        assert_eq!(
+            paths,
+            [
+                ("NOTES.md", "added"),
+                ("docs/a.md", "added"),
+                ("src/main.rs", "modified")
+            ]
+        );
         assert_eq!((changes.added, changes.removed), (4, 1));
         assert!(changes.patch.contains("+fn main() { println!(\"hi\"); }"));
         // The repository is untouched until applied.
@@ -721,12 +960,21 @@ mod tests {
 
         worktrees.apply(&root, wt).unwrap();
         // Line endings follow the repository's own settings (core.autocrlf).
-        let read = |p: &str| std::fs::read_to_string(root.join(p)).unwrap().replace("\r\n", "\n");
+        let read = |p: &str| {
+            std::fs::read_to_string(root.join(p))
+                .unwrap()
+                .replace("\r\n", "\n")
+        };
         assert_eq!(read("NOTES.md"), "new\nfile\n");
-        assert!(std::fs::read_to_string(root.join("src/main.rs")).unwrap().contains("hi"));
+        assert!(std::fs::read_to_string(root.join("src/main.rs"))
+            .unwrap()
+            .contains("hi"));
         // Uncommitted, unstaged, history unchanged; the worktree and branch are gone.
         let status = git(&root, &["status", "--porcelain"]).unwrap();
-        assert!(status.contains(" M src/main.rs") && status.contains("?? NOTES.md"), "{status}");
+        assert!(
+            status.contains(" M src/main.rs") && status.contains("?? NOTES.md"),
+            "{status}"
+        );
         assert_eq!(git(&root, &["rev-parse", "HEAD"]).unwrap(), created.base);
         assert!(!wt.exists());
         assert!(worktrees.list(&root).unwrap().is_empty());
@@ -736,17 +984,28 @@ mod tests {
     fn a_conflicting_apply_changes_nothing() {
         let Some((dir, root)) = repo() else { return };
         let worktrees = Worktrees::with_data_root(dir.path().join("data"));
-        let created = worktrees.create(&root, WorktreeLocation::Repository).unwrap();
-        std::fs::write(created.worktree.path.join("src/main.rs"), "fn main() { worktree(); }\n").unwrap();
+        let created = worktrees
+            .create(&root, WorktreeLocation::Repository)
+            .unwrap();
+        std::fs::write(
+            created.worktree.path.join("src/main.rs"),
+            "fn main() { worktree(); }\n",
+        )
+        .unwrap();
         // The working folder changed the same line meanwhile.
         std::fs::write(root.join("src/main.rs"), "fn main() { mine(); }\n").unwrap();
         let error = worktrees.apply(&root, &created.worktree.path).unwrap_err();
         assert!(error.contains("do not apply cleanly"), "{error}");
         assert_eq!(
-            std::fs::read_to_string(root.join("src/main.rs")).unwrap().replace("\r\n", "\n"),
+            std::fs::read_to_string(root.join("src/main.rs"))
+                .unwrap()
+                .replace("\r\n", "\n"),
             "fn main() { mine(); }\n"
         );
-        assert!(created.worktree.path.exists(), "the worktree is kept to try again");
+        assert!(
+            created.worktree.path.exists(),
+            "the worktree is kept to try again"
+        );
     }
 
     #[test]
@@ -756,7 +1015,9 @@ mod tests {
         if git(dir.path(), &["--version"]).is_err() {
             return;
         }
-        let error = worktrees.create(dir.path(), WorktreeLocation::Repository).unwrap_err();
+        let error = worktrees
+            .create(dir.path(), WorktreeLocation::Repository)
+            .unwrap_err();
         assert!(error.contains("not in a Git repository"), "{error}");
     }
 }

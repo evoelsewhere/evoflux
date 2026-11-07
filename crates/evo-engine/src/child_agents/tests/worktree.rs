@@ -40,10 +40,17 @@ fn repo() -> Option<(tempfile::TempDir, PathBuf)> {
 async fn parent_in(cwd: &Path, script: FauxScript) -> AgentHarness {
     let provider = FauxProvider::new(script);
     let tools = crate::session::builtin_tools_in(cwd);
-    let active_tool_names = tools.iter().map(|tool| tool.tool.schema().name.clone()).collect();
+    let active_tool_names = tools
+        .iter()
+        .map(|tool| tool.tool.schema().name.clone())
+        .collect();
     let session = Session::new(
         Arc::new(InMemorySessionStorage::new(
-            SessionMetadata { id: "parent".into(), created_at: 0, parent_session_id: None },
+            SessionMetadata {
+                id: "parent".into(),
+                created_at: 0,
+                parent_session_id: None,
+            },
             Arc::new(SystemClock),
             Arc::new(DefaultIdGenerator::new()),
         )),
@@ -84,24 +91,45 @@ async fn a_child_writes_in_its_own_worktree_which_is_kept() {
     let _agent = crate::config::test_support::AgentDirEnv::new();
     let Some((_dir, root)) = repo() else { return };
     let script = FauxScript::new()
-        .with_tool_call("write", json!({"path":"from-child.txt","content":"made by the child\n"}))
+        .with_tool_call(
+            "write",
+            json!({"path":"from-child.txt","content":"made by the child\n"}),
+        )
         .with_text("wrote the file");
     let parent = parent_in(&root, script).await;
     let manager = ChildAgents::default();
     let started = manager
-        .handle(&parent, 7, &root, json!({"op":"start","task":"write a file","isolation":"worktree"}))
+        .handle(
+            &parent,
+            7,
+            &root,
+            json!({"op":"start","task":"write a file","isolation":"worktree"}),
+        )
         .await
         .unwrap();
     let path = PathBuf::from(started["worktree"]["path"].as_str().unwrap());
-    assert!(path.starts_with(_agent.path()), "worktrees go to the user data directory: {started}");
-    assert!(started["worktree"]["branch"].as_str().unwrap().starts_with(crate::worktrees::BRANCH_PREFIX));
+    assert!(
+        path.starts_with(_agent.path()),
+        "worktrees go to the user data directory: {started}"
+    );
+    assert!(started["worktree"]["branch"]
+        .as_str()
+        .unwrap()
+        .starts_with(crate::worktrees::BRANCH_PREFIX));
 
     let done = finish(&manager, &parent, started["childId"].as_str().unwrap()).await;
     assert_eq!(done["status"], "done", "{done}");
     let worktree = &done["result"]["worktree"];
-    assert_eq!((worktree["changed"].as_bool(), worktree["kept"].as_bool()), (Some(true), Some(true)), "{done}");
+    assert_eq!(
+        (worktree["changed"].as_bool(), worktree["kept"].as_bool()),
+        (Some(true), Some(true)),
+        "{done}"
+    );
     // The file is in the worktree, not in the parent's checkout.
-    assert_eq!(std::fs::read_to_string(path.join("from-child.txt")).unwrap(), "made by the child\n");
+    assert_eq!(
+        std::fs::read_to_string(path.join("from-child.txt")).unwrap(),
+        "made by the child\n"
+    );
     assert!(!root.join("from-child.txt").exists());
     // Listed until removed.
     let worktrees = crate::worktrees::manager().unwrap();
@@ -118,7 +146,12 @@ async fn an_unchanged_worktree_is_removed_when_the_child_finishes() {
     let parent = parent_in(&root, FauxScript::new().with_text("nothing to change")).await;
     let manager = ChildAgents::default();
     let started = manager
-        .handle(&parent, 7, &root, json!({"op":"start","task":"look around","isolation":"worktree"}))
+        .handle(
+            &parent,
+            7,
+            &root,
+            json!({"op":"start","task":"look around","isolation":"worktree"}),
+        )
         .await
         .unwrap();
     let path = PathBuf::from(started["worktree"]["path"].as_str().unwrap());
@@ -126,7 +159,11 @@ async fn an_unchanged_worktree_is_removed_when_the_child_finishes() {
     let done = finish(&manager, &parent, started["childId"].as_str().unwrap()).await;
     assert_eq!(done["result"]["worktree"]["kept"], json!(false), "{done}");
     assert!(!path.exists());
-    assert!(crate::worktrees::manager().unwrap().list(&root).unwrap().is_empty());
+    assert!(crate::worktrees::manager()
+        .unwrap()
+        .list(&root)
+        .unwrap()
+        .is_empty());
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -135,13 +172,26 @@ async fn worktree_isolation_needs_a_repository_and_a_known_mode() {
     let parent = parent_in(dir.path(), FauxScript::new().with_text("x")).await;
     let manager = ChildAgents::default();
     let error = manager
-        .handle(&parent, 7, dir.path(), json!({"op":"start","task":"t","isolation":"worktree"}))
+        .handle(
+            &parent,
+            7,
+            dir.path(),
+            json!({"op":"start","task":"t","isolation":"worktree"}),
+        )
         .await
         .unwrap_err();
     assert!(error.contains("could not create a worktree"), "{error}");
-    assert!(manager.jobs.lock().unwrap().is_empty(), "a refused start leaves no job");
+    assert!(
+        manager.jobs.lock().unwrap().is_empty(),
+        "a refused start leaves no job"
+    );
     let error = manager
-        .handle(&parent, 7, dir.path(), json!({"op":"start","task":"t","isolation":"container"}))
+        .handle(
+            &parent,
+            7,
+            dir.path(),
+            json!({"op":"start","task":"t","isolation":"container"}),
+        )
         .await
         .unwrap_err();
     assert!(error.contains("unknown isolation"), "{error}");

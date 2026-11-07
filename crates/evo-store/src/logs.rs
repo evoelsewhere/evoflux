@@ -153,7 +153,11 @@ pub fn query(conn: &Connection, query: &LogQuery) -> Result<Vec<LogEntry>, DbErr
         let allowed = &LEVELS[rank(normalize_level(level))..];
         clauses.push(format!(
             "level IN ({})",
-            allowed.iter().map(|l| format!("'{l}'")).collect::<Vec<_>>().join(", ")
+            allowed
+                .iter()
+                .map(|l| format!("'{l}'"))
+                .collect::<Vec<_>>()
+                .join(", ")
         ));
     }
     if let Some(source) = query.source.as_ref().filter(|s| !s.is_empty()) {
@@ -165,7 +169,10 @@ pub fn query(conn: &Connection, query: &LogQuery) -> Result<Vec<LogEntry>, DbErr
         values.push(chat.clone().into());
     }
     if let Some(search) = query.search.as_ref().filter(|s| !s.is_empty()) {
-        let escaped = search.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
+        let escaped = search
+            .replace('\\', "\\\\")
+            .replace('%', "\\%")
+            .replace('_', "\\_");
         clauses.push("(message LIKE ? ESCAPE '\\' OR data_json LIKE ? ESCAPE '\\')".into());
         values.push(format!("%{escaped}%").into());
         values.push(format!("%{escaped}%").into());
@@ -225,7 +232,13 @@ pub fn stats(conn: &Connection) -> Result<LogStats, DbError> {
 
 /// One line per entry, oldest first: `2026-11-05T10:00:00.000Z ERROR engine [chat] message {data}`.
 pub fn export_text(conn: &Connection, filter: &LogQuery) -> Result<String, DbError> {
-    let mut all = query(conn, &LogQuery { limit: Some(5000), ..filter.clone() })?;
+    let mut all = query(
+        conn,
+        &LogQuery {
+            limit: Some(5000),
+            ..filter.clone()
+        },
+    )?;
     all.reverse();
     let mut out = String::new();
     for entry in all {
@@ -286,23 +299,74 @@ mod tests {
                 NewLog::new("debug", "engine", "spawned").chat(Some("c1")),
                 NewLog::new("WARNING", "engine", "slow 100% load").chat(Some("c1")),
                 NewLog::new("error", "ui", "boom").data(serde_json::json!({"stack": "x"})),
-                NewLog { at_ms: Some(0), ..NewLog::new("info", "shell", "ancient") },
+                NewLog {
+                    at_ms: Some(0),
+                    ..NewLog::new("info", "shell", "ancient")
+                },
             ],
         )
         .unwrap();
 
-        let warn_up = query(&conn, &LogQuery { min_level: Some("warn".into()), ..Default::default() }).unwrap();
-        assert_eq!(warn_up.iter().map(|e| e.message.as_str()).collect::<Vec<_>>(), ["boom", "slow 100% load"]);
+        let warn_up = query(
+            &conn,
+            &LogQuery {
+                min_level: Some("warn".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            warn_up
+                .iter()
+                .map(|e| e.message.as_str())
+                .collect::<Vec<_>>(),
+            ["boom", "slow 100% load"]
+        );
         assert_eq!(warn_up[1].level, "warn");
-        assert_eq!(query(&conn, &LogQuery { chat_id: Some("c1".into()), ..Default::default() }).unwrap().len(), 2);
-        assert_eq!(query(&conn, &LogQuery { search: Some("100%".into()), ..Default::default() }).unwrap().len(), 1);
-        assert_eq!(query(&conn, &LogQuery { search: Some("stack".into()), ..Default::default() }).unwrap().len(), 1);
+        assert_eq!(
+            query(
+                &conn,
+                &LogQuery {
+                    chat_id: Some("c1".into()),
+                    ..Default::default()
+                }
+            )
+            .unwrap()
+            .len(),
+            2
+        );
+        assert_eq!(
+            query(
+                &conn,
+                &LogQuery {
+                    search: Some("100%".into()),
+                    ..Default::default()
+                }
+            )
+            .unwrap()
+            .len(),
+            1
+        );
+        assert_eq!(
+            query(
+                &conn,
+                &LogQuery {
+                    search: Some("stack".into()),
+                    ..Default::default()
+                }
+            )
+            .unwrap()
+            .len(),
+            1
+        );
 
         assert_eq!(prune(&conn, DEFAULT_MAX_AGE_MS, 2).unwrap(), 2);
         let left = query(&conn, &LogQuery::default()).unwrap();
         assert_eq!(left.len(), 2);
         assert_eq!(stats(&conn).unwrap().count, 2);
-        assert!(export_text(&conn, &LogQuery::default()).unwrap().contains("ERROR ui boom {\"stack\":\"x\"}"));
+        assert!(export_text(&conn, &LogQuery::default())
+            .unwrap()
+            .contains("ERROR ui boom {\"stack\":\"x\"}"));
     }
 
     #[test]

@@ -748,7 +748,11 @@ pub(crate) mod test_support {
             let previous = std::env::var_os(super::CONFIG_DIR_ENV);
             let dir = tempfile::tempdir().unwrap();
             std::env::set_var(super::CONFIG_DIR_ENV, dir.path());
-            Self { _guard: guard, dir, previous }
+            Self {
+                _guard: guard,
+                dir,
+                previous,
+            }
         }
 
         pub(crate) fn path(&self) -> &std::path::Path {

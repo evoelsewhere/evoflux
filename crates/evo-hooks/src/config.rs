@@ -108,10 +108,16 @@ impl Hooks {
     }
 
     /// Add `{Event: [groups]}` (from a settings file or a plugin) as `source`.
-    pub fn add_events(&mut self, events: &serde_json::Map<String, Value>, source: &str, file: &str) {
+    pub fn add_events(
+        &mut self,
+        events: &serde_json::Map<String, Value>,
+        source: &str,
+        file: &str,
+    ) {
         for (event, groups) in events {
             let Ok(groups) = serde_json::from_value::<Vec<Group>>(groups.clone()) else {
-                self.problems.push(format!("{file}: hooks.{event} must be a list"));
+                self.problems
+                    .push(format!("{file}: hooks.{event} must be a list"));
                 continue;
             };
             for group in groups {
@@ -126,7 +132,9 @@ impl Hooks {
                         }),
                         Err(error) => {
                             let kind = raw.get("type").and_then(Value::as_str).unwrap_or("?");
-                            self.problems.push(format!("{file}: a `{kind}` hook in {event} was skipped: {error}"));
+                            self.problems.push(format!(
+                                "{file}: a `{kind}` hook in {event} was skipped: {error}"
+                            ));
                         }
                     }
                 }

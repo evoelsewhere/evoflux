@@ -1,4 +1,4 @@
-// The document a `show_widget` widget runs in (docs/features/office-v3-parity/sdd.md,
+// The document a `show_widget` widget runs in (docs/features/office-v3-parity/spec.md,
 // FR-13; port of v3 web/src/components/WidgetRenderer.tsx `wrapHtml` and
 // web/src/lib/widgetTheme.ts). No React.
 //

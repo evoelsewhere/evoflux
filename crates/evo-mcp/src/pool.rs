@@ -433,7 +433,9 @@ impl Pool {
 
     pub async fn remove(&self, name: &str) -> Result<(), String> {
         if self.plugin_of_key(name).is_some() {
-            return Err("this connector comes with a plugin: turn the plugin off or remove it".into());
+            return Err(
+                "this connector comes with a plugin: turn the plugin off or remove it".into(),
+            );
         }
         if let Some((label, root)) = self.project_key(name) {
             return self.set_project_approval_at(&root, &label, false).await;
@@ -516,7 +518,10 @@ impl Pool {
     ) -> Result<(), String> {
         if let Some((plugin, server)) = self.plugin_of_key(name) {
             self.save(|file| {
-                let all = file.extra.entry("pluginServers").or_insert_with(|| json!({}));
+                let all = file
+                    .extra
+                    .entry("pluginServers")
+                    .or_insert_with(|| json!({}));
                 if !all.is_object() {
                     *all = json!({});
                 }
@@ -764,20 +769,35 @@ impl Pool {
     pub async fn set_plugin_servers(&self, servers: Vec<(String, String, ServerConfig)>) {
         let saved: Map<String, Value> = ConfigFile::load(&self.shared.path)
             .ok()
-            .and_then(|f| f.extra.get("pluginServers").and_then(Value::as_object).cloned())
+            .and_then(|f| {
+                f.extra
+                    .get("pluginServers")
+                    .and_then(Value::as_object)
+                    .cloned()
+            })
             .unwrap_or_default();
         let wanted: Vec<(String, String, String, ServerConfig)> = servers
             .into_iter()
             .map(|(plugin, server, mut config)| {
                 config.disabled = false;
-                if let Some(perms) = saved.get(&plugin).and_then(|p| p.get(&server)).and_then(|s| s.get("toolPermissions")).and_then(Value::as_object) {
+                if let Some(perms) = saved
+                    .get(&plugin)
+                    .and_then(|p| p.get(&server))
+                    .and_then(|s| s.get("toolPermissions"))
+                    .and_then(Value::as_object)
+                {
                     for (tool, p) in perms {
                         if let Ok(p) = serde_json::from_value::<Permission>(p.clone()) {
                             config.tool_permissions.insert(tool.clone(), p);
                         }
                     }
                 }
-                (format!("plugin:{plugin}:{server}"), format!("plugin_{plugin}_{server}"), plugin, config)
+                (
+                    format!("plugin:{plugin}:{server}"),
+                    format!("plugin_{plugin}_{server}"),
+                    plugin,
+                    config,
+                )
             })
             .collect();
         let (connect, close) = {
@@ -795,7 +815,7 @@ impl Pool {
             }
             let mut connect = Vec::new();
             for (key, label, plugin, config) in wanted {
-                let changed = entries.get(&key).map_or(true, |e| e.config != config);
+                let changed = entries.get(&key).is_none_or(|e| e.config != config);
                 if changed {
                     let mut entry = Entry::new(label, config, None);
                     entry.plugin = Some(plugin);
@@ -857,10 +877,7 @@ impl Pool {
             if !entry.is_object() {
                 *entry = json!({});
             }
-            if entry
-                .get("toolPermissions")
-                .map_or(true, |p| !p.is_object())
-            {
+            if entry.get("toolPermissions").is_none_or(|p| !p.is_object()) {
                 entry["toolPermissions"] = json!({});
             }
             change(entry);

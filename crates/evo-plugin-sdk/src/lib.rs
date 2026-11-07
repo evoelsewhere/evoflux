@@ -2011,7 +2011,7 @@ pub unsafe fn register_entrypoint(
     // truncated mandatory prefix or a partial function pointer.
     if host_size < required_size
         || (host_size < known_size
-            && (host_size - required_size) % core::mem::size_of::<*const ()>() != 0)
+            && !(host_size - required_size).is_multiple_of(core::mem::size_of::<*const ()>()))
     {
         return 3;
     }
@@ -2075,7 +2075,7 @@ mod tests {
     // A test allocator + free fn so we can verify the own/free contract
     // without a real plugin's free_string.
     std::thread_local! {
-        static FREED: std::cell::Cell<usize> = std::cell::Cell::new(0);
+        static FREED: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
     }
 
     unsafe extern "C" fn test_free(s: StbString) {

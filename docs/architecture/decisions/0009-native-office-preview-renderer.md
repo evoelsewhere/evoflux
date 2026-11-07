@@ -5,7 +5,7 @@
 | Status | Accepted |
 | Date | 2026-11-07 |
 | ADD sections | [Crates](../README.md) |
-| Related | Partly supersedes [0008](0008-optional-libreoffice-runtime.md) (its "the HTML fallback is not carried over"); [Office v3 parity SDD](../../features/office-v3-parity/sdd.md) |
+| Related | Partly supersedes [0008](0008-optional-libreoffice-runtime.md) (its "the HTML fallback is not carried over"); [Office v3 parity spec](../../features/office-v3-parity/spec.md) |
 
 ## Context
 

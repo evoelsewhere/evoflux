@@ -1,5 +1,5 @@
 // Widgets: the document a `show_widget` widget runs in
-// (docs/features/office-v3-parity/sdd.md, FR-13). Run with `bun test` in apps/desktop.
+// (docs/features/office-v3-parity/spec.md, FR-13). Run with `bun test` in apps/desktop.
 
 import { describe, expect, test } from "bun:test";
 import {

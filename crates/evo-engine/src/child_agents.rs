@@ -141,7 +141,12 @@ impl ChildAgents {
             .retain(|_, job| {
                 if job.owner == owner {
                     job.fail("owning plugin unloaded");
-                    crate::mesh::router().transition(&job.address, crate::mesh::NodeState::Closed, None, None);
+                    crate::mesh::router().transition(
+                        &job.address,
+                        crate::mesh::NodeState::Closed,
+                        None,
+                        None,
+                    );
                     false
                 } else {
                     true
@@ -223,7 +228,12 @@ impl ChildAgents {
                         .lock()
                         .unwrap_or_else(|e| e.into_inner())
                         .remove(id);
-                    crate::mesh::router().transition(&job.address, crate::mesh::NodeState::Closed, None, None);
+                    crate::mesh::router().transition(
+                        &job.address,
+                        crate::mesh::NodeState::Closed,
+                        None,
+                        None,
+                    );
                 }
                 Ok(
                     json!({"childId":id,"status":if op == "dispose" {"disposed"} else {"cancelled"}}),
@@ -263,7 +273,9 @@ impl ChildAgents {
             None | Some("none") => false,
             Some("worktree") => true,
             Some(other) => {
-                return Err(format!("unknown isolation `{other}`: use \"worktree\" or leave it out"))
+                return Err(format!(
+                    "unknown isolation `{other}`: use \"worktree\" or leave it out"
+                ))
             }
         };
         let turns = bounded_number(args, "maxTurns", 8, 1, 32)? as u32;
@@ -330,7 +342,10 @@ impl ChildAgents {
             match create_worktree(cwd).await {
                 Ok(created) => Some(created),
                 Err(error) => {
-                    self.jobs.lock().unwrap_or_else(|e| e.into_inner()).remove(&id);
+                    self.jobs
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .remove(&id);
                     return Err(format!("could not create a worktree: {error}"));
                 }
             }
@@ -354,7 +369,13 @@ impl ChildAgents {
             None,
         );
         let child = match parent
-            .create_child_with_tools(session, Arc::new(Emitter(job.clone())), turns, tools, replacements)
+            .create_child_with_tools(
+                session,
+                Arc::new(Emitter(job.clone())),
+                turns,
+                tools,
+                replacements,
+            )
             .await
         {
             Ok(child) => child,
@@ -377,7 +398,9 @@ impl ChildAgents {
             ),
             None => String::new(),
         };
-        let started_worktree = worktree.as_ref().map(|created| worktree_json(created, None));
+        let started_worktree = worktree
+            .as_ref()
+            .map(|created| worktree_json(created, None));
         let weak = Arc::downgrade(&job);
         crate::mesh::router().spawn(
             job.address.clone(),
@@ -457,9 +480,11 @@ pub(crate) fn worktree_json(created: &crate::worktrees::Created, changed: Option
 /// After the child: remove an unchanged worktree, keep a changed one.
 pub(crate) async fn finish_worktree(created: crate::worktrees::Created, repo: PathBuf) -> Value {
     tokio::task::spawn_blocking(move || {
-        let changed = crate::worktrees::Worktrees::changed(&created.worktree.path, Some(&created.base));
+        let changed =
+            crate::worktrees::Worktrees::changed(&created.worktree.path, Some(&created.base));
         if !changed {
-            let removed = crate::worktrees::manager().and_then(|w| w.remove(&repo, &created.worktree.path));
+            let removed =
+                crate::worktrees::manager().and_then(|w| w.remove(&repo, &created.worktree.path));
             if let Err(error) = removed {
                 tracing::warn!("could not remove an unused child worktree: {error}");
                 let mut value = worktree_json(&created, Some(false));
@@ -579,15 +604,29 @@ fn announce(job: &Job) {
         match (&state.result, &state.error) {
             (Some(result), _) => (
                 RunStatus::Done,
-                result.get("text").and_then(Value::as_str).unwrap_or_default().to_string(),
+                result
+                    .get("text")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_string(),
                 None,
                 state.usage,
                 result.get("worktree").cloned(),
             ),
             (None, error) => {
                 let reason = error.clone().unwrap_or_else(|| "child stopped".into());
-                let status = if reason.contains("cancel") { RunStatus::Cancelled } else { RunStatus::Failed };
-                (status, format!("The child stopped: {reason}."), Some(reason), state.usage, None)
+                let status = if reason.contains("cancel") {
+                    RunStatus::Cancelled
+                } else {
+                    RunStatus::Failed
+                };
+                (
+                    status,
+                    format!("The child stopped: {reason}."),
+                    Some(reason),
+                    state.usage,
+                    None,
+                )
             }
         }
     };

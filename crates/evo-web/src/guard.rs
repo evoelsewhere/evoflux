@@ -38,10 +38,20 @@ fn public_v6(ip: Ipv6Addr) -> bool {
     let s = ip.segments();
     // NAT64 64:ff9b::/96 and 6to4 2002::/16 carry an IPv4 address.
     if s[0] == 0x64 && s[1] == 0xff9b && s[2..6] == [0, 0, 0, 0] {
-        return public_v4(Ipv4Addr::new((s[6] >> 8) as u8, s[6] as u8, (s[7] >> 8) as u8, s[7] as u8));
+        return public_v4(Ipv4Addr::new(
+            (s[6] >> 8) as u8,
+            s[6] as u8,
+            (s[7] >> 8) as u8,
+            s[7] as u8,
+        ));
     }
     if s[0] == 0x2002 {
-        return public_v4(Ipv4Addr::new((s[1] >> 8) as u8, s[1] as u8, (s[2] >> 8) as u8, s[2] as u8));
+        return public_v4(Ipv4Addr::new(
+            (s[1] >> 8) as u8,
+            s[1] as u8,
+            (s[2] >> 8) as u8,
+            s[2] as u8,
+        ));
     }
     !(ip.is_unspecified()
         || ip.is_loopback()
@@ -67,7 +77,10 @@ pub fn is_public(ip: IpAddr) -> bool {
 /// A URL a fetch may start from or be redirected to.
 pub fn check_url(url: &Url) -> Result<(), String> {
     if !matches!(url.scheme(), "http" | "https") {
-        return Err(format!("only http and https URLs can be fetched, not {}:", url.scheme()));
+        return Err(format!(
+            "only http and https URLs can be fetched, not {}:",
+            url.scheme()
+        ));
     }
     if !url.username().is_empty() || url.password().is_some() {
         return Err("URLs with a user name or password are not fetched".into());
@@ -76,7 +89,9 @@ pub fn check_url(url: &Url) -> Result<(), String> {
         None => Err("the URL has no host".into()),
         Some(Host::Ipv4(ip)) if !public_v4(ip) => Err(format!("{ip} is not a public address")),
         Some(Host::Ipv6(ip)) if !public_v6(ip) => Err(format!("{ip} is not a public address")),
-        Some(Host::Domain(d)) if d.eq_ignore_ascii_case("localhost") || d.ends_with(".localhost") => {
+        Some(Host::Domain(d))
+            if d.eq_ignore_ascii_case("localhost") || d.ends_with(".localhost") =>
+        {
             Err("localhost is not fetched".into())
         }
         _ => Ok(()),
@@ -92,7 +107,9 @@ impl Resolve for PublicResolver {
         let fut: Pin<Box<dyn Future<Output = _> + Send>> = Box::pin(async move {
             let lookup = host.clone();
             let addrs: Vec<SocketAddr> = tokio::task::spawn_blocking(move || {
-                (lookup.as_str(), 0u16).to_socket_addrs().map(|a| a.collect::<Vec<_>>())
+                (lookup.as_str(), 0u16)
+                    .to_socket_addrs()
+                    .map(|a| a.collect::<Vec<_>>())
             })
             .await
             .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?
@@ -118,14 +135,35 @@ mod tests {
     #[test]
     fn private_and_special_addresses_are_refused() {
         for blocked in [
-            "127.0.0.1", "10.1.2.3", "172.16.0.1", "192.168.1.1", "169.254.169.254", "100.64.0.1",
-            "0.0.0.0", "224.0.0.1", "255.255.255.255", "198.18.0.1", "::1", "::", "fc00::1", "fd12::1",
-            "fe80::1", "::ffff:127.0.0.1", "::ffff:10.0.0.1", "64:ff9b::7f00:1", "2002:7f00:1::",
+            "127.0.0.1",
+            "10.1.2.3",
+            "172.16.0.1",
+            "192.168.1.1",
+            "169.254.169.254",
+            "100.64.0.1",
+            "0.0.0.0",
+            "224.0.0.1",
+            "255.255.255.255",
+            "198.18.0.1",
+            "::1",
+            "::",
+            "fc00::1",
+            "fd12::1",
+            "fe80::1",
+            "::ffff:127.0.0.1",
+            "::ffff:10.0.0.1",
+            "64:ff9b::7f00:1",
+            "2002:7f00:1::",
             "2001:db8::1",
         ] {
             assert!(!is_public(ip(blocked)), "{blocked} should be refused");
         }
-        for allowed in ["1.1.1.1", "93.184.216.34", "2606:4700:4700::1111", "::ffff:8.8.8.8"] {
+        for allowed in [
+            "1.1.1.1",
+            "93.184.216.34",
+            "2606:4700:4700::1111",
+            "::ffff:8.8.8.8",
+        ] {
             assert!(is_public(ip(allowed)), "{allowed} should be allowed");
         }
     }

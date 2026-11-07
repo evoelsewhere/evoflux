@@ -120,7 +120,11 @@ impl SandboxPolicy {
         } else {
             Some((set.build().map_err(|e| e.to_string())?, valid))
         };
-        Ok(Self { config, denied, invalid })
+        Ok(Self {
+            config,
+            denied,
+            invalid,
+        })
     }
 
     pub fn config(&self) -> &SandboxConfig {
@@ -142,7 +146,11 @@ impl SandboxPolicy {
     /// The timeout to use: the requested one, capped. With a cap and no
     /// request, the cap.
     pub fn clamp_timeout(&self, requested: Option<f64>) -> Option<f64> {
-        match self.config.max_timeout_secs.filter(|max| max.is_finite() && *max > 0.0) {
+        match self
+            .config
+            .max_timeout_secs
+            .filter(|max| max.is_finite() && *max > 0.0)
+        {
             None => requested,
             Some(max) => Some(requested.map_or(max, |secs| secs.min(max))),
         }
@@ -168,7 +176,11 @@ impl SandboxPolicy {
             let n = root.len();
             let same_root = absolute.len() > n
                 && absolute.is_char_boundary(n)
-                && if cfg!(windows) { absolute[..n].eq_ignore_ascii_case(root) } else { &absolute[..n] == root };
+                && if cfg!(windows) {
+                    absolute[..n].eq_ignore_ascii_case(root)
+                } else {
+                    &absolute[..n] == root
+                };
             if same_root && absolute[n..].starts_with('/') {
                 candidates.push(absolute[n + 1..].to_string());
             }
@@ -194,11 +206,42 @@ impl SandboxPolicy {
 /// Variables a shell keeps when the host environment is not inherited.
 pub fn is_minimal_env(name: &str) -> bool {
     const NAMES: &[&str] = &[
-        "PATH", "PATHEXT", "HOME", "USERPROFILE", "HOMEDRIVE", "HOMEPATH", "USER", "USERNAME", "LOGNAME",
-        "SHELL", "LANG", "LANGUAGE", "TZ", "TERM", "COLORTERM", "TERM_PROGRAM", "NO_COLOR", "TMP", "TEMP",
-        "TMPDIR", "SYSTEMROOT", "SYSTEMDRIVE", "WINDIR", "COMSPEC", "PROGRAMFILES", "PROGRAMFILES(X86)",
-        "PROGRAMW6432", "PROGRAMDATA", "COMMONPROGRAMFILES", "COMMONPROGRAMFILES(X86)", "COMMONPROGRAMW6432",
-        "APPDATA", "LOCALAPPDATA", "NUMBER_OF_PROCESSORS", "PROCESSOR_ARCHITECTURE", "OS",
+        "PATH",
+        "PATHEXT",
+        "HOME",
+        "USERPROFILE",
+        "HOMEDRIVE",
+        "HOMEPATH",
+        "USER",
+        "USERNAME",
+        "LOGNAME",
+        "SHELL",
+        "LANG",
+        "LANGUAGE",
+        "TZ",
+        "TERM",
+        "COLORTERM",
+        "TERM_PROGRAM",
+        "NO_COLOR",
+        "TMP",
+        "TEMP",
+        "TMPDIR",
+        "SYSTEMROOT",
+        "SYSTEMDRIVE",
+        "WINDIR",
+        "COMSPEC",
+        "PROGRAMFILES",
+        "PROGRAMFILES(X86)",
+        "PROGRAMW6432",
+        "PROGRAMDATA",
+        "COMMONPROGRAMFILES",
+        "COMMONPROGRAMFILES(X86)",
+        "COMMONPROGRAMW6432",
+        "APPDATA",
+        "LOCALAPPDATA",
+        "NUMBER_OF_PROCESSORS",
+        "PROCESSOR_ARCHITECTURE",
+        "OS",
     ];
     let upper = name.to_ascii_uppercase();
     upper.starts_with("LC_") || NAMES.contains(&upper.as_str())
@@ -220,7 +263,10 @@ mod tests {
     fn env_files_are_denied_anywhere() {
         let policy = with(&["**/.env", "**/.env.*"]);
         assert_eq!(policy.denied_by("/home/a/app/.env", None), Some("**/.env"));
-        assert_eq!(policy.denied_by(r"C:\code\app\.env.local", None), Some("**/.env.*"));
+        assert_eq!(
+            policy.denied_by(r"C:\code\app\.env.local", None),
+            Some("**/.env.*")
+        );
         assert_eq!(policy.denied_by("/home/a/app/src/env.rs", None), None);
         assert_eq!(policy.denied_by("/home/a/app/.envrc", None), None);
     }
@@ -229,14 +275,26 @@ mod tests {
     fn patterns_match_relative_to_the_workspace() {
         let policy = with(&["secrets/**"]);
         let cwd = Path::new("/work/app");
-        assert_eq!(policy.denied_by("/work/app/secrets/key.pem", Some(cwd)), Some("secrets/**"));
-        assert_eq!(policy.denied_by("/work/other/secrets/key.pem", Some(cwd)), None);
-        assert!(policy.check_path("/work/app/secrets/key.pem", Some(cwd)).is_err());
+        assert_eq!(
+            policy.denied_by("/work/app/secrets/key.pem", Some(cwd)),
+            Some("secrets/**")
+        );
+        assert_eq!(
+            policy.denied_by("/work/other/secrets/key.pem", Some(cwd)),
+            None
+        );
+        assert!(policy
+            .check_path("/work/app/secrets/key.pem", Some(cwd))
+            .is_err());
     }
 
     #[test]
     fn timeouts_are_capped() {
-        let policy = SandboxPolicy::new(SandboxConfig { max_timeout_secs: Some(600.0), ..Default::default() }).unwrap();
+        let policy = SandboxPolicy::new(SandboxConfig {
+            max_timeout_secs: Some(600.0),
+            ..Default::default()
+        })
+        .unwrap();
         assert_eq!(policy.clamp_timeout(Some(3600.0)), Some(600.0));
         assert_eq!(policy.clamp_timeout(Some(30.0)), Some(30.0));
         assert_eq!(policy.clamp_timeout(None), Some(600.0));
@@ -245,7 +303,11 @@ mod tests {
 
     #[test]
     fn output_limit_and_minimal_env() {
-        let policy = SandboxPolicy::new(SandboxConfig { max_output_kib: Some(128), ..Default::default() }).unwrap();
+        let policy = SandboxPolicy::new(SandboxConfig {
+            max_output_kib: Some(128),
+            ..Default::default()
+        })
+        .unwrap();
         assert_eq!(policy.max_output_bytes(), 128 * 1024);
         assert_eq!(policy_default().max_output_bytes(), DEFAULT_MAX_BYTES);
         assert!(is_minimal_env("Path") && is_minimal_env("LC_ALL") && is_minimal_env("SystemRoot"));

@@ -403,7 +403,10 @@ fn host_leases_do_not_create_project_state() {
     let cwd = fs::canonicalize(project.path()).unwrap();
 
     let leases = host_leases(&cwd).unwrap();
-    assert!(!cwd.join(".evo").exists(), "a host must not create the project's .evo");
+    assert!(
+        !cwd.join(".evo").exists(),
+        "a host must not create the project's .evo"
+    );
     assert_eq!(leases.len(), 1, "only the global scope is leased");
     drop(leases);
 

@@ -795,8 +795,12 @@ where
                         serde_json::to_value(response).into_iter().collect()
                     }
                     Ok(envelope) => {
-                        let (response, replay) = crate::mesh::router().handle(&envelope, &mesh_subscriber);
-                        std::iter::once(response).chain(replay).filter_map(|e| serde_json::to_value(e).ok()).collect()
+                        let (response, replay) =
+                            crate::mesh::router().handle(&envelope, &mesh_subscriber);
+                        std::iter::once(response)
+                            .chain(replay)
+                            .filter_map(|e| serde_json::to_value(e).ok())
+                            .collect()
                     }
                     Err(error) => vec![rpc_protocol::response(
                         Some(id),
@@ -851,11 +855,20 @@ where
             // since an exact conversion can take seconds.
             "office_preview" | "document_versions_get" | "document_versions_act" => {
                 command_tasks.retain(|task| !task.is_finished());
-                let (out, chat, request, kind) = (stdout.clone(), office_chat.clone(), msg.clone(), kind.clone());
+                let (out, chat, request, kind) = (
+                    stdout.clone(),
+                    office_chat.clone(),
+                    msg.clone(),
+                    kind.clone(),
+                );
                 command_tasks.push(RetainedRpcTask::new(
                     tokio::spawn(async move {
                         let result = crate::office::rpc(&kind, &request, &chat).await;
-                        write_line(&out, &rpc_protocol::response(Some(id), &kind, result.map(Some))).await;
+                        write_line(
+                            &out,
+                            &rpc_protocol::response(Some(id), &kind, result.map(Some)),
+                        )
+                        .await;
                     }),
                     writer_failed.clone(),
                 ));
@@ -1221,8 +1234,15 @@ where
             "list_customizations" => rpc_list_customizations(harness, &rpc_providers).await,
             // Switch a skill on or off (or limit it), then reload resources.
             "set_skill_override" => {
-                let name = msg.get("name").and_then(serde_json::Value::as_str).unwrap_or("").trim();
-                let state = msg.get("state").and_then(serde_json::Value::as_str).unwrap_or("on");
+                let name = msg
+                    .get("name")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("")
+                    .trim();
+                let state = msg
+                    .get("state")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("on");
                 if name.is_empty() {
                     Err("`name` is required".to_string())
                 } else {
@@ -1233,15 +1253,25 @@ where
                 }
             }
             // Customize → Code intelligence.
-            "list_language_servers" => Ok(crate::lsp_tool::describe(&rpc_cwd(&rpc_providers)).await),
-            "install_language_server" | "uninstall_language_server" | "set_language_server_enabled" => {
-                let id = msg.get("server").and_then(serde_json::Value::as_str).unwrap_or("").to_string();
+            "list_language_servers" => {
+                Ok(crate::lsp_tool::describe(&rpc_cwd(&rpc_providers)).await)
+            }
+            "install_language_server"
+            | "uninstall_language_server"
+            | "set_language_server_enabled" => {
+                let id = msg
+                    .get("server")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("")
+                    .to_string();
                 let done = match kind.as_str() {
                     "install_language_server" => crate::lsp_tool::start_install(&id),
                     "uninstall_language_server" => crate::lsp_tool::uninstall(&id).await,
                     _ => crate::lsp_tool::set_enabled(
                         &id,
-                        msg.get("enabled").and_then(serde_json::Value::as_bool).unwrap_or(true),
+                        msg.get("enabled")
+                            .and_then(serde_json::Value::as_bool)
+                            .unwrap_or(true),
                     ),
                 };
                 match done {
@@ -1250,11 +1280,16 @@ where
                 }
             }
             // Settings → Office: the LibreOffice runtime (`office.rs`).
-            "office_status" | "office_install" | "office_cancel_install" | "office_dismiss_error" | "office_uninstall" => {
-                crate::office::manage(kind.as_str())
-            }
+            "office_status"
+            | "office_install"
+            | "office_cancel_install"
+            | "office_dismiss_error"
+            | "office_uninstall" => crate::office::manage(kind.as_str()),
             "office_convert" => {
-                let path = msg.get("path").and_then(serde_json::Value::as_str).unwrap_or("");
+                let path = msg
+                    .get("path")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("");
                 if path.is_empty() {
                     Err("`path` is required".to_string())
                 } else {
@@ -1266,25 +1301,34 @@ where
             "list_memories" => crate::memory::describe(&rpc_cwd(&rpc_providers)),
             "save_memory" | "delete_memory" | "set_memory_enabled" => {
                 let cwd = rpc_cwd(&rpc_providers);
-                let text = |key: &str| msg.get(key).and_then(serde_json::Value::as_str).unwrap_or("").to_string();
+                let text = |key: &str| {
+                    msg.get(key)
+                        .and_then(serde_json::Value::as_str)
+                        .unwrap_or("")
+                        .to_string()
+                };
                 let done = match kind.as_str() {
-                    "save_memory" => crate::memory::Scope::parse(&text("scope")).and_then(|scope| {
-                        let previous = text("previous");
-                        crate::memory::save(
-                            &cwd,
-                            scope,
-                            &text("name"),
-                            &text("description"),
-                            &text("kind"),
-                            &text("content"),
-                            (!previous.is_empty()).then_some(previous.as_str()),
-                        )
-                        .map(|_| ())
-                    }),
+                    "save_memory" => {
+                        crate::memory::Scope::parse(&text("scope")).and_then(|scope| {
+                            let previous = text("previous");
+                            crate::memory::save(
+                                &cwd,
+                                scope,
+                                &text("name"),
+                                &text("description"),
+                                &text("kind"),
+                                &text("content"),
+                                (!previous.is_empty()).then_some(previous.as_str()),
+                            )
+                            .map(|_| ())
+                        })
+                    }
                     "delete_memory" => crate::memory::Scope::parse(&text("scope"))
                         .and_then(|scope| crate::memory::delete(&cwd, scope, &text("name"))),
                     _ => crate::memory::set_enabled(
-                        msg.get("enabled").and_then(serde_json::Value::as_bool).unwrap_or(true),
+                        msg.get("enabled")
+                            .and_then(serde_json::Value::as_bool)
+                            .unwrap_or(true),
                     ),
                 };
                 match done {
@@ -1302,8 +1346,14 @@ where
             }
             "save_instructions" => {
                 let cwd = rpc_cwd(&rpc_providers);
-                let scope = msg.get("scope").and_then(serde_json::Value::as_str).unwrap_or("");
-                let content = msg.get("content").and_then(serde_json::Value::as_str).unwrap_or("");
+                let scope = msg
+                    .get("scope")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("");
+                let content = msg
+                    .get("content")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("");
                 match crate::instructions::save(&cwd, scope, content) {
                     Ok(()) => {
                         // Re-read so this chat's next turn has them.
@@ -1316,7 +1366,9 @@ where
             // Customize → Skills settings; reloads so the listing follows.
             "set_skill_settings" => {
                 let budget = msg.get("listingBudget").and_then(serde_json::Value::as_u64);
-                let shell_off = msg.get("shellDisabled").and_then(serde_json::Value::as_bool);
+                let shell_off = msg
+                    .get("shellDisabled")
+                    .and_then(serde_json::Value::as_bool);
                 match crate::customize::set_skill_settings(budget, shell_off) {
                     Ok(()) => Ok(rpc_reload_resources(harness, &rpc_providers).await),
                     Err(error) => Err(error),
@@ -1335,15 +1387,18 @@ where
                 Ok(crate::hooks::describe())
             }
             "set_hooks_disabled" => {
-                let disabled = msg.get("disabled").and_then(serde_json::Value::as_bool).unwrap_or(false);
+                let disabled = msg
+                    .get("disabled")
+                    .and_then(serde_json::Value::as_bool)
+                    .unwrap_or(false);
                 crate::hooks::set_disabled(disabled).map(|()| crate::hooks::describe())
             }
-            "get_context_breakdown" => Ok(crate::context_breakdown::breakdown(
-                &lane,
-                harness,
-                oauth_snapshot.as_ref(),
-            )
-            .await),
+            "get_context_breakdown" => {
+                Ok(
+                    crate::context_breakdown::breakdown(&lane, harness, oauth_snapshot.as_ref())
+                        .await,
+                )
+            }
             // Another engine (a parallel chat in the desktop) changed the
             // credentials or provider settings: rebuild provider runtimes from
             // what is saved now.
@@ -1414,7 +1469,12 @@ where
                     "question": msg.get("question").cloned().unwrap_or(serde_json::Value::Null),
                 });
                 side_questions
-                    .handle(harness, RPC_SIDE_CHAT_OWNER, args, Arc::new(|_| Ok(serde_json::Value::Null)))
+                    .handle(
+                        harness,
+                        RPC_SIDE_CHAT_OWNER,
+                        args,
+                        Arc::new(|_| Ok(serde_json::Value::Null)),
+                    )
                     .await
             }
             // Subagents report, wake their parent and are cancelled through
@@ -2401,10 +2461,11 @@ async fn rpc_queue_message(
     // `contentBlocks` (text and images, as for `prompt`) or a plain `message`.
     let message = if msg.get("contentBlocks").is_some() {
         let command = msg.clone();
-        let parsed =
-            tokio::task::spawn_blocking(move || crate::rpc::prompt_content::parse_prompt_content(&command))
-                .await
-                .map_err(|_| "queue_message validation worker failed".to_string())??;
+        let parsed = tokio::task::spawn_blocking(move || {
+            crate::rpc::prompt_content::parse_prompt_content(&command)
+        })
+        .await
+        .map_err(|_| "queue_message validation worker failed".to_string())??;
         if parsed.has_images() {
             let model = lane.get_model().await.map_err(|e| e.to_string())?;
             if !model.input.contains(&evo_ai::types::InputModality::Image) {
@@ -2412,8 +2473,12 @@ async fn rpc_queue_message(
             }
         }
         let content = match parsed {
-            crate::rpc::prompt_content::ParsedPrompt::Legacy(text) => evo_ai::types::UserContent::from(text),
-            crate::rpc::prompt_content::ParsedPrompt::Blocks(blocks) => evo_ai::types::UserContent::Blocks(blocks),
+            crate::rpc::prompt_content::ParsedPrompt::Legacy(text) => {
+                evo_ai::types::UserContent::from(text)
+            }
+            crate::rpc::prompt_content::ParsedPrompt::Blocks(blocks) => {
+                evo_ai::types::UserContent::Blocks(blocks)
+            }
         };
         evo_agent::message::AgentMessage::User(UserMessage::new(content, rpc_now_ms()))
     } else {
@@ -2745,7 +2810,9 @@ async fn rpc_report_lost_background_agents(harness: &AgentHarness) -> Vec<String
         Ok(entries) => entries,
         Err(_) => return Vec::new(),
     };
-    let Ok(items) = rpc_project_transcript(entries) else { return Vec::new() };
+    let Ok(items) = rpc_project_transcript(entries) else {
+        return Vec::new();
+    };
     let messages: Vec<serde_json::Value> = items.into_iter().map(|(_, value)| value).collect();
     crate::agent_tool::report_lost_background_agents(harness, &messages).await
 }
@@ -3303,7 +3370,7 @@ async fn rpc_set_model(
         .iter()
         .find(|m| {
             m.id.eq_ignore_ascii_case(id)
-                && provider.map_or(true, |provider| m.provider.eq_ignore_ascii_case(provider))
+                && provider.is_none_or(|provider| m.provider.eq_ignore_ascii_case(provider))
         })
         .cloned()
         .ok_or_else(|| format!("unknown model: {id}"))?;
@@ -3338,7 +3405,7 @@ fn rpc_set_default_model(
                 .iter()
                 .find(|m| {
                     m.id.eq_ignore_ascii_case(id)
-                        && provider.map_or(true, |p| m.provider.eq_ignore_ascii_case(p))
+                        && provider.is_none_or(|p| m.provider.eq_ignore_ascii_case(p))
                 })
                 .ok_or_else(|| format!("unknown model: {id}"))?;
             settings.default_provider = Some(model.provider.clone());
@@ -5259,7 +5326,10 @@ ok
                     && m["body"]["node"]["meta"]["wake"][0] == "s_child-chat"
             })
             .await;
-        assert_eq!(woken["body"]["node"]["meta"]["wakeTitles"]["s_child-chat"], "Child");
+        assert_eq!(
+            woken["body"]["node"]["meta"]["wakeTitles"]["s_child-chat"],
+            "Child"
+        );
         // The same mail again is a duplicate; mail for another session is refused.
         output
             .wait_for(|m| m["corr"] == "mail-1" && m["body"]["duplicate"] == true)
@@ -5269,8 +5339,10 @@ ok
 
         // The woken turn clears the request and reports how it ended.
         client
-            .write_all(b"{\"type\":\"prompt\",\"id\":5,\"message\":\"wake\"}
-")
+            .write_all(
+                b"{\"type\":\"prompt\",\"id\":5,\"message\":\"wake\"}
+",
+            )
             .await
             .unwrap();
         // (Parallel RPC tests share the default session id: match the text.)

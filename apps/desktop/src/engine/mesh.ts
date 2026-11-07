@@ -1,4 +1,4 @@
-// Session mesh protocol, version 1 (docs/features/session-mesh-protocol/sdd.md,
+// Session mesh protocol, version 1 (docs/features/session-mesh-protocol/spec.md,
 // crates/evo-protocol/src/mesh.rs). Every conversation an engine hosts — its
 // session, subagents, plugin children, side questions — is a node with an
 // address (`s_<session>/a_<agent>`). The engine streams `{"type":"mesh"}`

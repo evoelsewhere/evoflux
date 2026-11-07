@@ -18,7 +18,7 @@
 //! Exact pages (LibreOffice → PDF) are not produced here: the engine converts with
 //! [`crate::Runtime::convert_to_pdf`] and the viewer shows the PDF with pdf.js.
 //!
-//! Design: `docs/features/office-v3-parity/sdd.md`.
+//! Design: `docs/features/office-v3-parity/spec.md`.
 
 pub mod cache;
 pub mod docx;
@@ -95,7 +95,11 @@ pub fn supports(path: &Path) -> bool {
 /// (see [`live::DeckPlan::live_for`]); renderers then add skeletons for the
 /// slides or sheets still to come. The caller has already run
 /// [`security::preflight`].
-pub fn render_html(source: &Path, bytes: &[u8], live: Option<&DeckPlan>) -> Result<String, PreviewError> {
+pub fn render_html(
+    source: &Path,
+    bytes: &[u8],
+    live: Option<&DeckPlan>,
+) -> Result<String, PreviewError> {
     let title = source
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())

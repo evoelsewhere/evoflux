@@ -29,7 +29,8 @@ async fn parent(script: FauxScript) -> AgentHarness {
 fn job(owner: u64) -> Arc<Job> {
     Arc::new(Job {
         owner,
-        address: crate::mesh::Address::session("test").child(crate::mesh::NodeKind::Agent, &owner.to_string()),
+        address: crate::mesh::Address::session("test")
+            .child(crate::mesh::NodeKind::Agent, &owner.to_string()),
         cancel: CancellationToken::new(),
         invocation_signal: None,
         state: Mutex::new(State::default()),
@@ -51,7 +52,12 @@ async fn wait(manager: &ChildAgents, parent: &AgentHarness, id: &str) -> Value {
     tokio::time::timeout(Duration::from_secs(3), async {
         loop {
             let value = manager
-                .handle(parent, 7, std::path::Path::new("."), json!({"op":"poll","childId":id}))
+                .handle(
+                    parent,
+                    7,
+                    std::path::Path::new("."),
+                    json!({"op":"poll","childId":id}),
+                )
                 .await
                 .unwrap();
             if value["status"] != "running" {
@@ -69,7 +75,12 @@ async fn child_reports_and_owner_scoped_disposal_are_independent_of_parent_trans
     let parent = parent(FauxScript::new().with_text("child report")).await;
     let manager = ChildAgents::default();
     let started = manager
-        .handle(&parent, 7, std::path::Path::new("."), json!({"op":"start","task":"report"}))
+        .handle(
+            &parent,
+            7,
+            std::path::Path::new("."),
+            json!({"op":"start","task":"report"}),
+        )
         .await
         .unwrap();
     let id = started["childId"].as_str().unwrap();
@@ -80,12 +91,22 @@ async fn child_reports_and_owner_scoped_disposal_are_independent_of_parent_trans
     assert!(parent.get_tip_id().await.unwrap().is_none());
     for op in ["poll", "cancel", "dispose"] {
         assert!(manager
-            .handle(&parent, 8, std::path::Path::new("."), json!({"op":op,"childId":id}))
+            .handle(
+                &parent,
+                8,
+                std::path::Path::new("."),
+                json!({"op":op,"childId":id})
+            )
             .await
             .is_err());
     }
     manager
-        .handle(&parent, 7, std::path::Path::new("."), json!({"op":"dispose","childId":id}))
+        .handle(
+            &parent,
+            7,
+            std::path::Path::new("."),
+            json!({"op":"dispose","childId":id}),
+        )
         .await
         .unwrap();
     assert!(manager.jobs.lock().unwrap().is_empty());
@@ -101,12 +122,22 @@ async fn cancellation_and_unload_stop_pending_children_and_reject_stale_starts()
     .await;
     let manager = ChildAgents::default();
     let started = manager
-        .handle(&parent, 7, std::path::Path::new("."), json!({"op":"start","task":"report"}))
+        .handle(
+            &parent,
+            7,
+            std::path::Path::new("."),
+            json!({"op":"start","task":"report"}),
+        )
         .await
         .unwrap();
     let id = started["childId"].as_str().unwrap();
     manager
-        .handle(&parent, 7, std::path::Path::new("."), json!({"op":"cancel","childId":id}))
+        .handle(
+            &parent,
+            7,
+            std::path::Path::new("."),
+            json!({"op":"cancel","childId":id}),
+        )
         .await
         .unwrap();
     assert!(wait(&manager, &parent, id).await["error"]
@@ -116,7 +147,12 @@ async fn cancellation_and_unload_stop_pending_children_and_reject_stale_starts()
     manager.cancel_owner(7);
     assert!(manager.jobs.lock().unwrap().is_empty());
     assert!(manager
-        .handle(&parent, 7, std::path::Path::new("."), json!({"op":"start","task":"report"}))
+        .handle(
+            &parent,
+            7,
+            std::path::Path::new("."),
+            json!({"op":"start","task":"report"})
+        )
         .await
         .unwrap_err()
         .contains("unloaded"));
@@ -193,14 +229,24 @@ async fn poll_drains_bounded_batches_before_delivering_a_terminal_result() {
     job.state.lock().unwrap().result = Some(json!({"status":"completed","text":"report"}));
     manager.jobs.lock().unwrap().insert("c".into(), job);
     let a = manager
-        .handle(&parent, 7, std::path::Path::new("."), json!({"op":"poll","childId":"c"}))
+        .handle(
+            &parent,
+            7,
+            std::path::Path::new("."),
+            json!({"op":"poll","childId":"c"}),
+        )
         .await
         .unwrap();
     assert_eq!(a["status"], "running");
     assert!(a["result"].is_null());
     assert_eq!(a["deltas"].as_array().unwrap().len(), 2);
     let b = manager
-        .handle(&parent, 7, std::path::Path::new("."), json!({"op":"poll","childId":"c"}))
+        .handle(
+            &parent,
+            7,
+            std::path::Path::new("."),
+            json!({"op":"poll","childId":"c"}),
+        )
         .await
         .unwrap();
     assert_eq!(b["status"], "done");
@@ -213,7 +259,12 @@ async fn capacity_is_bounded_even_while_disposed_children_are_cleaning_up() {
     let manager = ChildAgents::default();
     manager.active.store(MAX_JOBS, Ordering::Release);
     assert!(manager
-        .handle(&parent, 7, std::path::Path::new("."), json!({"op":"start","task":"report"}))
+        .handle(
+            &parent,
+            7,
+            std::path::Path::new("."),
+            json!({"op":"start","task":"report"})
+        )
         .await
         .unwrap_err()
         .contains("cleanup"));
@@ -223,7 +274,12 @@ async fn capacity_is_bounded_even_while_disposed_children_are_cleaning_up() {
         manager.jobs.lock().unwrap().insert(format!("c{n}"), job(7));
     }
     assert!(manager
-        .handle(&parent, 7, std::path::Path::new("."), json!({"op":"start","task":"report"}))
+        .handle(
+            &parent,
+            7,
+            std::path::Path::new("."),
+            json!({"op":"start","task":"report"})
+        )
         .await
         .unwrap_err()
         .contains("capacity"));

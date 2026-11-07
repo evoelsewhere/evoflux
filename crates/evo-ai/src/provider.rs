@@ -206,13 +206,20 @@ pub(crate) fn apply_copilot_request_headers(
         return;
     }
     let by_user = matches!(ctx.messages.last(), Some(Message::User(_)));
-    set_http_header(headers, "x-initiator", Some(if by_user { "user" } else { "agent" }));
+    set_http_header(
+        headers,
+        "x-initiator",
+        Some(if by_user { "user" } else { "agent" }),
+    );
     let has_image = ctx.messages.iter().any(|message| match message {
         Message::User(user) => match &user.content {
             UserContent::Blocks(blocks) => blocks.iter().any(|b| matches!(b, Content::Image(_))),
             UserContent::Text(_) => false,
         },
-        Message::ToolResult(result) => result.content.iter().any(|b| matches!(b, Content::Image(_))),
+        Message::ToolResult(result) => result
+            .content
+            .iter()
+            .any(|b| matches!(b, Content::Image(_))),
         Message::Assistant(_) => false,
     });
     if has_image {

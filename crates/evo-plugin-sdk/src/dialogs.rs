@@ -69,7 +69,7 @@ pub fn validate(ui: &Value, tool_call_id: Option<&str>) -> Result<(), String> {
         None => Ok(()),
         Some(Value::String(purpose)) if purpose == "question" => Ok(()),
         Some(Value::String(purpose)) if purpose == "permission" => {
-            if tool_call_id.map_or(true, |id| id.trim().is_empty()) {
+            if tool_call_id.is_none_or(|id| id.trim().is_empty()) {
                 return Err("permission dialog requires a nonempty toolCallId".to_owned());
             }
             permission_options(ui).map(|_| ())

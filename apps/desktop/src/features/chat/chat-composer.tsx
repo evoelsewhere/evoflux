@@ -196,7 +196,7 @@ export function ChatComposer() {
 
   /**
    * Send `message` with the attachments and the chat's document annotations
-   * (their block goes last, docs/features/office-v3-parity/sdd.md). While the
+   * (their block goes last, docs/features/office-v3-parity/spec.md). While the
    * agent works it is read at its next step, or with `queue` once it
    * finishes; otherwise it starts a turn.
    */

@@ -26,11 +26,16 @@ use serde_json::{json, Value};
 use tokio_util::sync::CancellationToken;
 
 fn lsp_dir() -> PathBuf {
-    crate::config::agent_dir().map(|d| d.join("lsp")).unwrap_or_else(|_| PathBuf::from(".evo-lsp"))
+    crate::config::agent_dir()
+        .map(|d| d.join("lsp"))
+        .unwrap_or_else(|_| PathBuf::from(".evo-lsp"))
 }
 
 fn disabled() -> Vec<String> {
-    crate::settings::load_settings().ok().and_then(|s| s.disabled_language_servers).unwrap_or_default()
+    crate::settings::load_settings()
+        .ok()
+        .and_then(|s| s.disabled_language_servers)
+        .unwrap_or_default()
 }
 
 pub fn pool() -> &'static Pool {
@@ -85,7 +90,10 @@ pub fn create_lsp_tool(cwd: PathBuf) -> Arc<dyn AgentTool> {
 }
 
 fn text<'a>(params: &'a Value, key: &str) -> Option<&'a str> {
-    params.get(key).and_then(Value::as_str).filter(|s| !s.trim().is_empty())
+    params
+        .get(key)
+        .and_then(Value::as_str)
+        .filter(|s| !s.trim().is_empty())
 }
 
 impl LspTool {
@@ -97,15 +105,34 @@ impl LspTool {
             "diagnostics" => ops::diagnostics(pool, &self.cwd, path).await,
             "symbols" => ops::symbols(pool, &self.cwd, path.ok_or("`symbols` needs `path`")?).await,
             "workspace_symbols" => {
-                let query = text(params, "query").or_else(|| text(params, "symbol")).ok_or("`workspace_symbols` needs `query`")?;
-                let path = path.ok_or("`workspace_symbols` needs `path` (any file of the language)")?;
+                let query = text(params, "query")
+                    .or_else(|| text(params, "symbol"))
+                    .ok_or("`workspace_symbols` needs `query`")?;
+                let path =
+                    path.ok_or("`workspace_symbols` needs `path` (any file of the language)")?;
                 ops::workspace_symbols(pool, &self.cwd, query, path).await
             }
             op => {
                 let path = path.ok_or_else(|| format!("`{op}` needs `path`"))?;
-                let line = params.get("line").and_then(Value::as_u64).ok_or_else(|| format!("`{op}` needs `line`"))? as u32;
-                let character = params.get("character").and_then(Value::as_u64).map(|c| c as u32);
-                ops::at(pool, &self.cwd, op, path, line, text(params, "symbol"), character).await
+                let line = params
+                    .get("line")
+                    .and_then(Value::as_u64)
+                    .ok_or_else(|| format!("`{op}` needs `line`"))?
+                    as u32;
+                let character = params
+                    .get("character")
+                    .and_then(Value::as_u64)
+                    .map(|c| c as u32);
+                ops::at(
+                    pool,
+                    &self.cwd,
+                    op,
+                    path,
+                    line,
+                    text(params, "symbol"),
+                    character,
+                )
+                .await
             }
         }
     }
@@ -168,7 +195,11 @@ pub fn start_install(id: &str) -> Result<(), String> {
         if state.running {
             return Err(format!("{} is already being installed", server.name));
         }
-        *state = InstallState { running: true, log: Vec::new(), error: None };
+        *state = InstallState {
+            running: true,
+            log: Vec::new(),
+            error: None,
+        };
     }
     let id = id.to_string();
     tokio::spawn(async move {
@@ -225,7 +256,9 @@ pub async fn describe(cwd: &Path) -> Value {
     let dir = lsp_dir();
     let detected = {
         let cwd = cwd.to_path_buf();
-        tokio::task::spawn_blocking(move || detect::detect(&cwd)).await.unwrap_or_default()
+        tokio::task::spawn_blocking(move || detect::detect(&cwd))
+            .await
+            .unwrap_or_default()
     };
     let running = pool().running().await;
     let off = disabled();
@@ -276,7 +309,10 @@ mod tests {
         std::fs::create_dir_all(dir.path().join("src")).unwrap();
         std::fs::write(dir.path().join("src/main.rs"), "fn main() {}").unwrap();
         let list = describe(dir.path()).await;
-        assert_eq!(list["servers"].as_array().unwrap().len(), catalog::SERVERS.len());
+        assert_eq!(
+            list["servers"].as_array().unwrap().len(),
+            catalog::SERVERS.len()
+        );
         assert_eq!(list["detected"][0]["server"], "rust-analyzer");
         assert!(start_install("nope").is_err());
     }

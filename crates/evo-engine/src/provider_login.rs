@@ -86,7 +86,8 @@ pub struct LoginState {
 }
 
 fn flows() -> &'static Mutex<HashMap<String, (LoginState, CancellationToken)>> {
-    static FLOWS: OnceLock<Mutex<HashMap<String, (LoginState, CancellationToken)>>> = OnceLock::new();
+    static FLOWS: OnceLock<Mutex<HashMap<String, (LoginState, CancellationToken)>>> =
+        OnceLock::new();
     FLOWS.get_or_init(Default::default)
 }
 
@@ -107,7 +108,11 @@ fn update(provider: &str, state: LoginState) {
 }
 
 pub fn cancel(provider: &str) {
-    if let Some((_, token)) = flows().lock().unwrap_or_else(|e| e.into_inner()).remove(provider) {
+    if let Some((_, token)) = flows()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .remove(provider)
+    {
         token.cancel();
     }
 }
@@ -144,22 +149,24 @@ fn form(pairs: &[(&str, &str)]) -> String {
 pub async fn begin(provider: &str) -> Result<LoginState, String> {
     cancel(provider);
     let token = CancellationToken::new();
-    let (state, task): (LoginState, std::pin::Pin<Box<dyn std::future::Future<Output = Result<String, String>> + Send>>) =
-        match provider {
-            "codex" => {
-                let (state, task) = codex_begin(token.clone()).await?;
-                (state, Box::pin(task))
-            }
-            "copilot" => {
-                let (state, task) = copilot_begin(token.clone()).await?;
-                (state, Box::pin(task))
-            }
-            "xiaomi" => {
-                let (state, task) = xiaomi_begin(token.clone()).await?;
-                (state, Box::pin(task))
-            }
-            other => return Err(format!("{other} has no sign-in flow")),
-        };
+    let (state, task): (
+        LoginState,
+        std::pin::Pin<Box<dyn std::future::Future<Output = Result<String, String>> + Send>>,
+    ) = match provider {
+        "codex" => {
+            let (state, task) = codex_begin(token.clone()).await?;
+            (state, Box::pin(task))
+        }
+        "copilot" => {
+            let (state, task) = copilot_begin(token.clone()).await?;
+            (state, Box::pin(task))
+        }
+        "xiaomi" => {
+            let (state, task) = xiaomi_begin(token.clone()).await?;
+            (state, Box::pin(task))
+        }
+        other => return Err(format!("{other} has no sign-in flow")),
+    };
     flows()
         .lock()
         .unwrap_or_else(|e| e.into_inner())
@@ -177,11 +184,29 @@ pub async fn begin(provider: &str) -> Result<LoginState, String> {
                 if let Ok(provider) = crate::provider_settings::find(&id) {
                     let _ = crate::provider_settings::discover(provider).await;
                 }
-                update(&id, LoginState { status: "success", url: None, user_code: None, error: None, account: Some(account) });
+                update(
+                    &id,
+                    LoginState {
+                        status: "success",
+                        url: None,
+                        user_code: None,
+                        error: None,
+                        account: Some(account),
+                    },
+                );
                 notify(Some(&id), "login");
             }
             Err(error) => {
-                update(&id, LoginState { status: "error", url: None, user_code: None, error: Some(error), account: None });
+                update(
+                    &id,
+                    LoginState {
+                        status: "error",
+                        url: None,
+                        user_code: None,
+                        error: Some(error),
+                        account: None,
+                    },
+                );
                 notify(Some(&id), "login_failed");
             }
         }
@@ -210,7 +235,9 @@ fn codex_account(tokens: &Value) -> (Option<String>, Option<String>) {
     let mut account = None;
     let mut email = None;
     for key in ["id_token", "access_token"] {
-        let Some(claims) = tokens.get(key).and_then(Value::as_str).and_then(jwt_claims) else { continue };
+        let Some(claims) = tokens.get(key).and_then(Value::as_str).and_then(jwt_claims) else {
+            continue;
+        };
         account = account.or_else(|| {
             claims
                 .get("chatgpt_account_id")
@@ -219,7 +246,12 @@ fn codex_account(tokens: &Value) -> (Option<String>, Option<String>) {
                 .and_then(Value::as_str)
                 .map(str::to_string)
         });
-        email = email.or_else(|| claims.get("email").and_then(Value::as_str).map(str::to_string));
+        email = email.or_else(|| {
+            claims
+                .get("email")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+        });
     }
     (account, email)
 }
@@ -237,7 +269,11 @@ fn codex_save(tokens: &Value, previous_refresh: Option<&str>) -> Result<(String,
         .or(previous_refresh)
         .unwrap_or_default()
         .to_string();
-    let expires = now() + tokens.get("expires_in").and_then(Value::as_i64).unwrap_or(3600);
+    let expires = now()
+        + tokens
+            .get("expires_in")
+            .and_then(Value::as_i64)
+            .unwrap_or(3600);
     crate::config::upsert_oauth_token("codex", access.clone(), refresh, expires)
         .map_err(|error| error.to_string())?;
     let (account, email) = codex_account(tokens);
@@ -279,7 +315,13 @@ const CALLBACK_FAILED: &str = "<!doctype html><meta charset=utf-8><title>evo</ti
 
 async fn codex_begin(
     token: CancellationToken,
-) -> Result<(LoginState, impl std::future::Future<Output = Result<String, String>> + Send), String> {
+) -> Result<
+    (
+        LoginState,
+        impl std::future::Future<Output = Result<String, String>> + Send,
+    ),
+    String,
+> {
     let verifier = format!(
         "{}{}",
         uuid::Uuid::new_v4().simple(),
@@ -302,7 +344,10 @@ async fn codex_begin(
             ("response_type", "code"),
             ("client_id", CODEX_CLIENT_ID),
             ("redirect_uri", &redirect),
-            ("scope", "openid profile email offline_access api.connectors.read api.connectors.invoke"),
+            (
+                "scope",
+                "openid profile email offline_access api.connectors.read api.connectors.invoke"
+            ),
             ("code_challenge", &challenge),
             ("code_challenge_method", "S256"),
             ("id_token_add_organizations", "true"),
@@ -311,7 +356,13 @@ async fn codex_begin(
             ("originator", CODEX_ORIGINATOR),
         ])
     );
-    let shown = LoginState { status: "pending", url: Some(url), user_code: None, error: None, account: None };
+    let shown = LoginState {
+        status: "pending",
+        url: Some(url),
+        user_code: None,
+        error: None,
+        account: None,
+    };
     let task = async move {
         let code = loop {
             let accepted = tokio::select! {
@@ -319,7 +370,9 @@ async fn codex_begin(
                 stream = async { v4.as_ref().map_err(|_| ())?.accept().await.map_err(|_| ()) }, if v4.is_ok() => stream,
                 stream = async { v6.as_ref().map_err(|_| ())?.accept().await.map_err(|_| ()) }, if v6.is_ok() => stream,
             };
-            let Ok((mut stream, _)) = accepted else { continue };
+            let Ok((mut stream, _)) = accepted else {
+                continue;
+            };
             let mut buffer = vec![0u8; 8192];
             let read = tokio::time::timeout(Duration::from_secs(5), stream.read(&mut buffer))
                 .await
@@ -334,7 +387,11 @@ async fn codex_begin(
                 .map(|url| url.query_pairs().into_owned().collect())
                 .unwrap_or_default();
             if parsed.as_ref().map(|url| url.path()) != Some("/auth/callback") {
-                let _ = stream.write_all(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").await;
+                let _ = stream
+                    .write_all(
+                        b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                    )
+                    .await;
                 continue;
             }
             let ok = query.get("state") == Some(&state) && query.contains_key("code");
@@ -365,7 +422,9 @@ async fn codex_begin(
         ])
         .await?;
         codex_save(&tokens, None)?;
-        Ok(codex_account(&tokens).1.unwrap_or_else(|| "ChatGPT account".into()))
+        Ok(codex_account(&tokens)
+            .1
+            .unwrap_or_else(|| "ChatGPT account".into()))
     };
     Ok((shown, task))
 }
@@ -374,7 +433,12 @@ async fn codex_begin(
 /// async workers.
 fn codex_refresh(handle: &tokio::runtime::Handle) -> Result<RefreshedOAuth, String> {
     let store = crate::config::read_auth().map_err(|error| error.to_string())?;
-    let Some(crate::config::Credential::Oauth { refresh, expires, access }) = store.get("codex").cloned() else {
+    let Some(crate::config::Credential::Oauth {
+        refresh,
+        expires,
+        access,
+    }) = store.get("codex").cloned()
+    else {
         return Err("not signed in to Codex".into());
     };
     // Another request may have refreshed it already.
@@ -412,7 +476,13 @@ fn github(request: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
 
 async fn copilot_begin(
     token: CancellationToken,
-) -> Result<(LoginState, impl std::future::Future<Output = Result<String, String>> + Send), String> {
+) -> Result<
+    (
+        LoginState,
+        impl std::future::Future<Output = Result<String, String>> + Send,
+    ),
+    String,
+> {
     let http = client();
     let device: Value = github(http.post("https://github.com/login/device/code"))
         .json(&json!({"client_id": COPILOT_CLIENT_ID, "scope": "read:user"}))
@@ -427,14 +497,28 @@ async fn copilot_begin(
         .and_then(Value::as_str)
         .ok_or("GitHub did not start the device flow")?
         .to_string();
-    let user_code = device.get("user_code").and_then(Value::as_str).unwrap_or_default().to_string();
+    let user_code = device
+        .get("user_code")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
     let uri = device
         .get("verification_uri")
         .and_then(Value::as_str)
         .unwrap_or("https://github.com/login/device")
         .to_string();
-    let mut interval = device.get("interval").and_then(Value::as_u64).unwrap_or(5).max(1);
-    let shown = LoginState { status: "pending", url: Some(uri), user_code: Some(user_code), error: None, account: None };
+    let mut interval = device
+        .get("interval")
+        .and_then(Value::as_u64)
+        .unwrap_or(5)
+        .max(1);
+    let shown = LoginState {
+        status: "pending",
+        url: Some(uri),
+        user_code: Some(user_code),
+        error: None,
+        account: None,
+    };
     let task = async move {
         let access = loop {
             tokio::select! {
@@ -484,11 +568,11 @@ async fn copilot_begin(
             .await
             .ok();
         let login = match login {
-            Some(response) => response
-                .json::<Value>()
-                .await
-                .ok()
-                .and_then(|user| user.get("login").and_then(Value::as_str).map(str::to_string)),
+            Some(response) => response.json::<Value>().await.ok().and_then(|user| {
+                user.get("login")
+                    .and_then(Value::as_str)
+                    .map(str::to_string)
+            }),
             None => None,
         };
         let account = login.unwrap_or_else(|| "GitHub account".into());
@@ -520,7 +604,10 @@ pub(crate) async fn copilot_account_api(token: &str) -> Option<String> {
         .json()
         .await
         .ok()?;
-    let api = user.pointer("/endpoints/api")?.as_str()?.trim_end_matches('/');
+    let api = user
+        .pointer("/endpoints/api")?
+        .as_str()?
+        .trim_end_matches('/');
     (api.starts_with("https://") && api.contains("githubcopilot.com")).then(|| api.to_string())
 }
 
@@ -553,16 +640,25 @@ const MIMO_CLIENT: &str = "mimocode";
 /// signing in again rotates the same key.
 fn mimo_key_name() -> String {
     let saved = crate::provider_settings::option("xiaomi", "keyName");
-    if let Some(name) = saved.as_ref().and_then(Value::as_str).filter(|n| !n.is_empty()) {
+    if let Some(name) = saved
+        .as_ref()
+        .and_then(Value::as_str)
+        .filter(|n| !n.is_empty())
+    {
         return name.to_string();
     }
-    let name = format!("evo-key-{}", &uuid::Uuid::new_v4().simple().to_string()[..8]);
+    let name = format!(
+        "evo-key-{}",
+        &uuid::Uuid::new_v4().simple().to_string()[..8]
+    );
     let _ = crate::provider_settings::set_options("xiaomi", json!({"keyName": name}));
     name
 }
 
 /// X25519 SubjectPublicKeyInfo DER prefix (RFC 8410).
-const X25519_SPKI_PREFIX: [u8; 12] = [0x30, 0x2a, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x6e, 0x03, 0x21, 0x00];
+const X25519_SPKI_PREFIX: [u8; 12] = [
+    0x30, 0x2a, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x6e, 0x03, 0x21, 0x00,
+];
 
 /// Open the platform's sealed reply with our private key.
 fn mimo_decrypt(
@@ -588,13 +684,16 @@ fn mimo_decrypt(
         aead::UnboundKey::new(&aead::AES_256_GCM, &key).map_err(|_| "bad key".to_string())?,
     );
     let mut sealed = sealed.to_vec();
-    let nonce = aead::Nonce::try_assume_unique_for_key(nonce).map_err(|_| "bad nonce".to_string())?;
+    let nonce =
+        aead::Nonce::try_assume_unique_for_key(nonce).map_err(|_| "bad nonce".to_string())?;
     let plain = key
         .open_in_place(nonce, aead::Aad::empty(), &mut sealed)
         .map_err(|_| "The sign-in reply was issued for another attempt.".to_string())?;
     let payload: Value = serde_json::from_slice(plain)
         .map_err(|_| "The sign-in reply was not the expected JSON.".to_string())?;
-    let object = payload.as_object().ok_or("The sign-in reply was not a JSON object.")?;
+    let object = payload
+        .as_object()
+        .ok_or("The sign-in reply was not a JSON object.")?;
     Ok(object
         .iter()
         .filter_map(|(k, v)| match v {
@@ -607,7 +706,13 @@ fn mimo_decrypt(
 
 async fn xiaomi_begin(
     token: CancellationToken,
-) -> Result<(LoginState, impl std::future::Future<Output = Result<String, String>> + Send), String> {
+) -> Result<
+    (
+        LoginState,
+        impl std::future::Future<Output = Result<String, String>> + Send,
+    ),
+    String,
+> {
     let rng = ring::rand::SystemRandom::new();
     let private = ring::agreement::EphemeralPrivateKey::generate(&ring::agreement::X25519, &rng)
         .map_err(|_| "Could not create a key pair".to_string())?;
@@ -633,7 +738,13 @@ async fn xiaomi_begin(
             ("key_name", &mimo_key_name()),
         ])
     );
-    let shown = LoginState { status: "pending", url: Some(url), user_code: None, error: None, account: None };
+    let shown = LoginState {
+        status: "pending",
+        url: Some(url),
+        user_code: None,
+        error: None,
+        account: None,
+    };
     let task = async move {
         let blob = loop {
             let accepted = tokio::select! {
@@ -641,7 +752,9 @@ async fn xiaomi_begin(
                 stream = v4.accept() => stream.map_err(|_| ()),
                 stream = async { v6.as_ref().map_err(|_| ())?.accept().await.map_err(|_| ()) }, if v6.is_ok() => stream,
             };
-            let Ok((mut stream, _)) = accepted else { continue };
+            let Ok((mut stream, _)) = accepted else {
+                continue;
+            };
             let mut buffer = vec![0u8; 16_384];
             let read = tokio::time::timeout(Duration::from_secs(5), stream.read(&mut buffer))
                 .await
@@ -650,12 +763,17 @@ async fn xiaomi_begin(
                 .unwrap_or(0);
             let request = String::from_utf8_lossy(&buffer[..read]).to_string();
             let target = request.split_whitespace().nth(1).unwrap_or("/").to_string();
-            let query: HashMap<String, String> = reqwest::Url::parse(&format!("http://localhost{target}"))
-                .map(|url| url.query_pairs().into_owned().collect())
-                .unwrap_or_default();
+            let query: HashMap<String, String> =
+                reqwest::Url::parse(&format!("http://localhost{target}"))
+                    .map(|url| url.query_pairs().into_owned().collect())
+                    .unwrap_or_default();
             let Some(blob) = query.get("u").filter(|u| !u.is_empty()).cloned() else {
                 // A favicon or another stray request.
-                let _ = stream.write_all(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").await;
+                let _ = stream
+                    .write_all(
+                        b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                    )
+                    .await;
                 continue;
             };
             break (blob, stream);
@@ -663,7 +781,11 @@ async fn xiaomi_begin(
         let (blob, mut stream) = blob;
         drop((v4, v6));
         let outcome = mimo_decrypt(private, &blob);
-        let status = if outcome.is_ok() { "status=success" } else { "status=error&message=decrypt_failed" };
+        let status = if outcome.is_ok() {
+            "status=success"
+        } else {
+            "status=error&message=decrypt_failed"
+        };
         let _ = stream
             .write_all(
                 format!(
@@ -673,18 +795,31 @@ async fn xiaomi_begin(
             )
             .await;
         let payload = outcome?;
-        let key = payload.get("sk").map(|k| k.trim()).filter(|k| !k.is_empty())
+        let key = payload
+            .get("sk")
+            .map(|k| k.trim())
+            .filter(|k| !k.is_empty())
             .ok_or("The platform returned no API key for this account.")?;
         crate::config::upsert_credential(
             "xiaomi",
-            crate::config::Credential::ApiKey { key: Some(key.to_string()), env: None },
+            crate::config::Credential::ApiKey {
+                key: Some(key.to_string()),
+                env: None,
+            },
         )
         .map_err(|error| error.to_string())?;
         // Token plans are served from the account's own host.
-        if let Some(base) = payload.get("url").map(|u| u.trim().trim_end_matches('/')).filter(|u| u.starts_with("https://")) {
+        if let Some(base) = payload
+            .get("url")
+            .map(|u| u.trim().trim_end_matches('/'))
+            .filter(|u| u.starts_with("https://"))
+        {
             crate::provider_settings::set_base_url("xiaomi", Some(base))?;
         }
-        let account = payload.get("uid").cloned().unwrap_or_else(|| "MiMo account".into());
+        let account = payload
+            .get("uid")
+            .cloned()
+            .unwrap_or_else(|| "MiMo account".into());
         crate::provider_settings::set_options("xiaomi", json!({"account": account}))?;
         Ok(account)
     };
@@ -746,8 +881,12 @@ mod tests {
         let key = aead::LessSafeKey::new(aead::UnboundKey::new(&aead::AES_256_GCM, &key).unwrap());
         let nonce = [7u8; 12];
         let mut sealed = json.as_bytes().to_vec();
-        key.seal_in_place_append_tag(aead::Nonce::assume_unique_for_key(nonce), aead::Aad::empty(), &mut sealed)
-            .unwrap();
+        key.seal_in_place_append_tag(
+            aead::Nonce::assume_unique_for_key(nonce),
+            aead::Aad::empty(),
+            &mut sealed,
+        )
+        .unwrap();
         let mut blob = ephemeral_public;
         blob.extend_from_slice(&nonce);
         blob.extend_from_slice(&sealed);
@@ -760,13 +899,19 @@ mod tests {
         let rng = SystemRandom::new();
         let ours = agreement::EphemeralPrivateKey::generate(&agreement::X25519, &rng).unwrap();
         let public = ours.compute_public_key().unwrap().as_ref().to_vec();
-        let blob = seal_for(&public, r#"{"sk":"sk-test","uid":"42","url":"https://token-plan-sgp.xiaomimimo.com/v1"}"#);
+        let blob = seal_for(
+            &public,
+            r#"{"sk":"sk-test","uid":"42","url":"https://token-plan-sgp.xiaomimimo.com/v1"}"#,
+        );
         let payload = mimo_decrypt(ours, &blob).unwrap();
         assert_eq!(payload["sk"], "sk-test");
         assert_eq!(payload["uid"], "42");
 
         let other = agreement::EphemeralPrivateKey::generate(&agreement::X25519, &rng).unwrap();
-        assert!(mimo_decrypt(other, &blob).is_err(), "another attempt's key cannot open it");
+        assert!(
+            mimo_decrypt(other, &blob).is_err(),
+            "another attempt's key cannot open it"
+        );
         let spki = [X25519_SPKI_PREFIX.as_slice(), &public].concat();
         assert_eq!(spki.len(), 44);
     }
@@ -782,6 +927,9 @@ mod tests {
 
     #[test]
     fn form_encodes_reserved_characters() {
-        assert_eq!(form(&[("redirect_uri", "http://localhost:1455/a b")]), "redirect%5Furi=http%3A%2F%2Flocalhost%3A1455%2Fa%20b");
+        assert_eq!(
+            form(&[("redirect_uri", "http://localhost:1455/a b")]),
+            "redirect%5Furi=http%3A%2F%2Flocalhost%3A1455%2Fa%20b"
+        );
     }
 }

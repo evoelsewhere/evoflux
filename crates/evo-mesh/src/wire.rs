@@ -1,4 +1,4 @@
-//! Session mesh wire types, version 1 (`docs/features/session-mesh-protocol/sdd.md`).
+//! Session mesh wire types, version 1 (`docs/features/session-mesh-protocol/spec.md`).
 //!
 //! One envelope for everything said between conversations — sessions, nested
 //! sessions, subagents, side questions — and their clients. On the existing
@@ -72,7 +72,13 @@ pub struct Address(String);
 /// Characters an id segment may not contain (they would break the path).
 fn clean_id(id: &str) -> String {
     id.chars()
-        .map(|c| if c == '/' || c.is_whitespace() || c.is_control() { '_' } else { c })
+        .map(|c| {
+            if c == '/' || c.is_whitespace() || c.is_control() {
+                '_'
+            } else {
+                c
+            }
+        })
         .collect()
 }
 
@@ -92,12 +98,20 @@ impl Address {
         let mut segments = text.split('/');
         match segments.next().and_then(NodeKind::from_segment) {
             Some(NodeKind::Session) => {}
-            _ => return Err(format!("address `{text}` must start with a session segment `s_<id>`")),
+            _ => {
+                return Err(format!(
+                    "address `{text}` must start with a session segment `s_<id>`"
+                ))
+            }
         }
         for segment in segments {
             match NodeKind::from_segment(segment) {
                 Some(NodeKind::Agent | NodeKind::Side) => {}
-                _ => return Err(format!("address `{text}` has an invalid segment `{segment}`")),
+                _ => {
+                    return Err(format!(
+                        "address `{text}` has an invalid segment `{segment}`"
+                    ))
+                }
             }
         }
         Ok(Address(text.to_string()))
@@ -128,7 +142,9 @@ impl Address {
 
     /// The node hosting this one (`None` for a session).
     pub fn host(&self) -> Option<Address> {
-        self.0.rsplit_once('/').map(|(host, _)| Address(host.to_string()))
+        self.0
+            .rsplit_once('/')
+            .map(|(host, _)| Address(host.to_string()))
     }
 
     /// Whether this node runs in the engine of `session`.
@@ -264,7 +280,12 @@ pub struct Node {
 
 impl Node {
     /// A new running node of `kind` at `id`, started by `parent`.
-    pub fn new(id: Address, parent: Option<&Node>, title: impl Into<String>, origin: Origin) -> Self {
+    pub fn new(
+        id: Address,
+        parent: Option<&Node>,
+        title: impl Into<String>,
+        origin: Origin,
+    ) -> Self {
         Node {
             kind: id.kind(),
             root: parent.map_or_else(|| id.clone(), |p| p.root.clone()),
@@ -289,7 +310,9 @@ impl Node {
 
 /// How much a subscriber wants to see. Ordered: each level includes the ones
 /// before it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Serialize, Deserialize,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum Level {
     /// Nothing (not subscribed).
@@ -418,7 +441,9 @@ pub enum MeshCommand {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         of: Option<Address>,
     },
-    Get { node: Address },
+    Get {
+        node: Address,
+    },
     /// Stop a node's run; with `cascade` (default) also what it started.
     Cancel {
         node: Address,
@@ -454,7 +479,10 @@ pub struct MeshError {
 
 impl MeshError {
     pub fn new(code: ErrorCode, message: impl Into<String>) -> Self {
-        MeshError { code, message: message.into() }
+        MeshError {
+            code,
+            message: message.into(),
+        }
     }
 }
 
@@ -554,8 +582,15 @@ pub struct Envelope {
 /// Split a `{"op":…,"body":…}` value into its parts.
 fn op_body(value: Value) -> (String, Value) {
     let mut value = value;
-    let op = value.get("op").and_then(Value::as_str).unwrap_or_default().to_string();
-    let body = value.get_mut("body").map(Value::take).unwrap_or(Value::Null);
+    let op = value
+        .get("op")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let body = value
+        .get_mut("body")
+        .map(Value::take)
+        .unwrap_or(Value::Null);
     (op, body)
 }
 
@@ -608,7 +643,11 @@ impl Envelope {
             body,
         );
         envelope.corr = Some(command.id.clone());
-        envelope.trace = Trace { root: command.trace.root.clone(), cause: Some(command.id.clone()), hops: 0 };
+        envelope.trace = Trace {
+            root: command.trace.root.clone(),
+            cause: Some(command.id.clone()),
+            hops: 0,
+        };
         envelope
     }
 
@@ -624,28 +663,56 @@ impl Envelope {
             return Err(MeshError::new(ErrorCode::BadRequest, "not a command"));
         }
         if self.v != VERSION {
-            return Err(MeshError::new(ErrorCode::Unsupported, format!("mesh version {} is not supported", self.v)));
+            return Err(MeshError::new(
+                ErrorCode::Unsupported,
+                format!("mesh version {} is not supported", self.v),
+            ));
         }
-        serde_json::from_value(serde_json::json!({ "op": self.op, "body": self.body }))
-            .map_err(|error| MeshError::new(ErrorCode::BadRequest, format!("invalid `{}` command: {error}", self.op)))
+        serde_json::from_value(serde_json::json!({ "op": self.op, "body": self.body })).map_err(
+            |error| {
+                MeshError::new(
+                    ErrorCode::BadRequest,
+                    format!("invalid `{}` command: {error}", self.op),
+                )
+            },
+        )
     }
 
     /// A `mail` message from `from` to `to`.
-    pub fn mail(id: String, from: impl Into<String>, to: impl Into<String>, body: &MailBody) -> Self {
+    pub fn mail(
+        id: String,
+        from: impl Into<String>,
+        to: impl Into<String>,
+        body: &MailBody,
+    ) -> Self {
         let body = serde_json::to_value(body).unwrap_or(Value::Null);
-        Envelope::new(Kind::Mail, id, "message".into(), from.into(), to.into(), body)
+        Envelope::new(
+            Kind::Mail,
+            id,
+            "message".into(),
+            from.into(),
+            to.into(),
+            body,
+        )
     }
 
     /// The typed body of a `mail` message.
     pub fn as_mail(&self) -> Result<MailBody, MeshError> {
         if self.kind != Kind::Mail || self.op != "message" {
-            return Err(MeshError::new(ErrorCode::BadRequest, format!("not a mail message (`{}`)", self.op)));
+            return Err(MeshError::new(
+                ErrorCode::BadRequest,
+                format!("not a mail message (`{}`)", self.op),
+            ));
         }
         if self.v != VERSION {
-            return Err(MeshError::new(ErrorCode::Unsupported, format!("mesh version {} is not supported", self.v)));
+            return Err(MeshError::new(
+                ErrorCode::Unsupported,
+                format!("mesh version {} is not supported", self.v),
+            ));
         }
-        serde_json::from_value(self.body.clone())
-            .map_err(|error| MeshError::new(ErrorCode::BadRequest, format!("invalid mail: {error}")))
+        serde_json::from_value(self.body.clone()).map_err(|error| {
+            MeshError::new(ErrorCode::BadRequest, format!("invalid mail: {error}"))
+        })
     }
 
     /// Whether a wire object is a mesh envelope (by its `type` tag).
@@ -661,7 +728,12 @@ mod tests {
 
     fn agent_node() -> Node {
         let session = Node::new(Address::session("S1"), None, "chat", Origin::User);
-        let mut agent = Node::new(Address::session("S1").child(NodeKind::Agent, "A1"), Some(&session), "Find auth", Origin::Agent);
+        let mut agent = Node::new(
+            Address::session("S1").child(NodeKind::Agent, "A1"),
+            Some(&session),
+            "Find auth",
+            Origin::Agent,
+        );
         agent.meta = json!({ "callId": "call-1", "agentType": "explore" });
         agent
     }
@@ -686,7 +758,12 @@ mod tests {
             assert!(Address::parse(bad).is_err(), "{bad} should be rejected");
         }
         assert!(serde_json::from_value::<Address>(json!("a_1/s_2")).is_err());
-        assert_eq!(serde_json::from_value::<Address>(json!("s_1/a_2/q_3")).unwrap().kind(), NodeKind::Side);
+        assert_eq!(
+            serde_json::from_value::<Address>(json!("s_1/a_2/q_3"))
+                .unwrap()
+                .kind(),
+            NodeKind::Side
+        );
     }
 
     #[test]
@@ -701,19 +778,33 @@ mod tests {
     #[test]
     fn event_envelopes_round_trip_on_the_wire() {
         let events = vec![
-            MeshEvent::NodeState { node: agent_node(), prev: Some(NodeState::Starting) },
+            MeshEvent::NodeState {
+                node: agent_node(),
+                prev: Some(NodeState::Starting),
+            },
             MeshEvent::NodeReport {
                 node: agent_node().id,
                 status: RunStatus::Done,
                 text: "report 🐈".into(),
-                usage: MeshUsage { input: 3, output: 4, total_tokens: 7, cost: 0.5, ..Default::default() },
+                usage: MeshUsage {
+                    input: 3,
+                    output: 4,
+                    total_tokens: 7,
+                    cost: 0.5,
+                    ..Default::default()
+                },
                 worktree: Some(json!({ "kept": true })),
             },
             MeshEvent::NodeActivity {
                 node: agent_node().id,
                 turns: 2,
                 tool_uses: 5,
-                tool: Some(ToolRow { call_id: "c".into(), name: "bash".into(), args: json!({"command":"rg"}), phase: "running".into() }),
+                tool: Some(ToolRow {
+                    call_id: "c".into(),
+                    name: "bash".into(),
+                    args: json!({"command":"rg"}),
+                    phase: "running".into(),
+                }),
                 text: None,
                 rows: None,
             },
@@ -723,10 +814,22 @@ mod tests {
                 tool_uses: 1,
                 tool: None,
                 text: Some("tail".into()),
-                rows: Some(vec![ToolRow { call_id: "c".into(), name: "read".into(), args: json!({}), phase: "done".into() }]),
+                rows: Some(vec![ToolRow {
+                    call_id: "c".into(),
+                    name: "read".into(),
+                    args: json!({}),
+                    phase: "done".into(),
+                }]),
             },
-            MeshEvent::NodeUsage { node: agent_node().id, own: MeshUsage::default(), subtree: MeshUsage::default() },
-            MeshEvent::NodeEvent { node: agent_node().id, event: json!({ "type": "turn_start" }) },
+            MeshEvent::NodeUsage {
+                node: agent_node().id,
+                own: MeshUsage::default(),
+                subtree: MeshUsage::default(),
+            },
+            MeshEvent::NodeEvent {
+                node: agent_node().id,
+                event: json!({ "type": "turn_start" }),
+            },
         ];
         for (seq, event) in events.into_iter().enumerate() {
             let envelope = Envelope::event(format!("m_{seq}"), seq as u64, 42, &event);
@@ -745,12 +848,25 @@ mod tests {
 
     #[test]
     fn wire_names_are_stable() {
-        let event = MeshEvent::NodeUsage { node: agent_node().id, own: MeshUsage::default(), subtree: MeshUsage::default() };
+        let event = MeshEvent::NodeUsage {
+            node: agent_node().id,
+            own: MeshUsage::default(),
+            subtree: MeshUsage::default(),
+        };
         let wire = serde_json::to_value(Envelope::event("m".into(), 1, 2, &event)).unwrap();
         assert_eq!(wire["op"], "node_usage");
         assert!(wire["body"].get("self").is_some());
         assert!(wire["body"]["self"].get("cacheRead").is_some());
-        let state = serde_json::to_value(Envelope::event("m".into(), 1, 2, &MeshEvent::NodeState { node: agent_node(), prev: None })).unwrap();
+        let state = serde_json::to_value(Envelope::event(
+            "m".into(),
+            1,
+            2,
+            &MeshEvent::NodeState {
+                node: agent_node(),
+                prev: None,
+            },
+        ))
+        .unwrap();
         assert_eq!(state["body"]["node"]["id"], "s_S1/a_A1");
         assert_eq!(state["body"]["node"]["state"], "running");
         assert_eq!(state["body"]["node"]["meta"]["callId"], "call-1");
@@ -759,14 +875,40 @@ mod tests {
 
     #[test]
     fn levels_are_ordered_and_assigned() {
-        assert!(Level::None < Level::State && Level::State < Level::Summary && Level::Summary < Level::Full);
+        assert!(
+            Level::None < Level::State
+                && Level::State < Level::Summary
+                && Level::Summary < Level::Full
+        );
         let id = agent_node().id;
-        assert_eq!(MeshEvent::NodeState { node: agent_node(), prev: None }.level(), Level::State);
         assert_eq!(
-            MeshEvent::NodeActivity { node: id.clone(), turns: 0, tool_uses: 0, tool: None, text: None, rows: None }.level(),
+            MeshEvent::NodeState {
+                node: agent_node(),
+                prev: None
+            }
+            .level(),
+            Level::State
+        );
+        assert_eq!(
+            MeshEvent::NodeActivity {
+                node: id.clone(),
+                turns: 0,
+                tool_uses: 0,
+                tool: None,
+                text: None,
+                rows: None
+            }
+            .level(),
             Level::Summary
         );
-        assert_eq!(MeshEvent::NodeEvent { node: id, event: Value::Null }.level(), Level::Full);
+        assert_eq!(
+            MeshEvent::NodeEvent {
+                node: id,
+                event: Value::Null
+            }
+            .level(),
+            Level::Full
+        );
     }
 
     #[test]
@@ -776,36 +918,75 @@ mod tests {
             "from": "client:w1", "to": "hub", "body": { "level": "summary", "since": 3 }
         });
         let envelope: Envelope = serde_json::from_value(raw).unwrap();
-        assert_eq!(envelope.as_command().unwrap(), MeshCommand::Subscribe { level: Level::Summary, since: Some(3) });
+        assert_eq!(
+            envelope.as_command().unwrap(),
+            MeshCommand::Subscribe {
+                level: Level::Summary,
+                since: Some(3)
+            }
+        );
 
         let cancel: Envelope = serde_json::from_value(json!({
             "type": "mesh", "v": 1, "id": "c", "kind": "cmd", "op": "cancel", "from": "client:w1", "to": "hub",
             "body": { "node": "s_S1/a_A1" }
         }))
         .unwrap();
-        assert_eq!(cancel.as_command().unwrap(), MeshCommand::Cancel { node: agent_node().id, cascade: true });
+        assert_eq!(
+            cancel.as_command().unwrap(),
+            MeshCommand::Cancel {
+                node: agent_node().id,
+                cascade: true
+            }
+        );
 
-        let list = Envelope::command("l".into(), "client:w1", &MeshCommand::List { scope: ListScope::Children, of: Some(Address::session("S1")) });
+        let list = Envelope::command(
+            "l".into(),
+            "client:w1",
+            &MeshCommand::List {
+                scope: ListScope::Children,
+                of: Some(Address::session("S1")),
+            },
+        );
         let wire = serde_json::to_value(&list).unwrap();
         assert_eq!(wire["op"], "list");
         assert_eq!(wire["body"]["scope"], "children");
-        assert_eq!(serde_json::from_value::<Envelope>(wire).unwrap().as_command().unwrap(), list.as_command().unwrap());
+        assert_eq!(
+            serde_json::from_value::<Envelope>(wire)
+                .unwrap()
+                .as_command()
+                .unwrap(),
+            list.as_command().unwrap()
+        );
 
         let ok = Envelope::response("r1".into(), &envelope, Ok(json!({ "seq": 9 })));
         assert_eq!(ok.kind, Kind::Res);
         assert_eq!(ok.corr.as_deref(), Some("w1-7"));
         assert_eq!(ok.to, "client:w1");
         assert_eq!(ok.from, "hub");
-        let failed = Envelope::response("r2".into(), &envelope, Err(MeshError::new(ErrorCode::NotFound, "no node")));
-        assert_eq!(serde_json::to_value(&failed).unwrap()["body"]["error"]["code"], "not_found");
+        let failed = Envelope::response(
+            "r2".into(),
+            &envelope,
+            Err(MeshError::new(ErrorCode::NotFound, "no node")),
+        );
+        assert_eq!(
+            serde_json::to_value(&failed).unwrap()["body"]["error"]["code"],
+            "not_found"
+        );
     }
 
     #[test]
     fn mail_round_trips_and_answers_with_correlation() {
-        let body = MailBody { text: "note 🐈".into(), deliver: Deliver::Wake, title: Some("Child".into()) };
+        let body = MailBody {
+            text: "note 🐈".into(),
+            deliver: Deliver::Wake,
+            title: Some("Child".into()),
+        };
         let mail = Envelope::mail("mail-1".into(), "s_child", "s_parent", &body);
         let wire = serde_json::to_value(&mail).unwrap();
-        assert_eq!((wire["kind"].as_str(), wire["op"].as_str()), (Some("mail"), Some("message")));
+        assert_eq!(
+            (wire["kind"].as_str(), wire["op"].as_str()),
+            (Some("mail"), Some("message"))
+        );
         assert_eq!(wire["body"]["deliver"], "wake");
         let back: Envelope = serde_json::from_value(wire).unwrap();
         assert_eq!(back.as_mail().unwrap(), body);
@@ -814,8 +995,19 @@ mod tests {
         plain.body = json!({ "text": "x" });
         assert_eq!(plain.as_mail().unwrap().deliver, Deliver::Queue);
         let ack = Envelope::response("r".into(), &back, Ok(json!({ "queued": "next_turn" })));
-        assert_eq!((ack.corr.as_deref(), ack.to.as_str(), ack.from.as_str()), (Some("mail-1"), "s_child", "s_parent"));
-        assert!(Envelope::command("c".into(), "x", &MeshCommand::Get { node: Address::session("S") }).as_mail().is_err());
+        assert_eq!(
+            (ack.corr.as_deref(), ack.to.as_str(), ack.from.as_str()),
+            (Some("mail-1"), "s_child", "s_parent")
+        );
+        assert!(Envelope::command(
+            "c".into(),
+            "x",
+            &MeshCommand::Get {
+                node: Address::session("S")
+            }
+        )
+        .as_mail()
+        .is_err());
     }
 
     #[test]
@@ -825,16 +1017,47 @@ mod tests {
         assert!(!Envelope::is_envelope(&legacy));
         assert!(serde_json::from_value::<Envelope>(legacy).is_err());
 
-        let mut bad = Envelope::command("x".into(), "client:w", &MeshCommand::Get { node: Address::session("S") });
+        let mut bad = Envelope::command(
+            "x".into(),
+            "client:w",
+            &MeshCommand::Get {
+                node: Address::session("S"),
+            },
+        );
         bad.body = json!({ "node": "not-an-address" });
         assert_eq!(bad.as_command().unwrap_err().code, ErrorCode::BadRequest);
         bad.op = "teleport".into();
         assert_eq!(bad.as_command().unwrap_err().code, ErrorCode::BadRequest);
-        let mut future = Envelope::command("y".into(), "client:w", &MeshCommand::Get { node: Address::session("S") });
+        let mut future = Envelope::command(
+            "y".into(),
+            "client:w",
+            &MeshCommand::Get {
+                node: Address::session("S"),
+            },
+        );
         future.v = 2;
-        assert_eq!(future.as_command().unwrap_err().code, ErrorCode::Unsupported);
-        let event = Envelope::event("e".into(), 0, 0, &MeshEvent::NodeEvent { node: Address::session("S"), event: Value::Null });
+        assert_eq!(
+            future.as_command().unwrap_err().code,
+            ErrorCode::Unsupported
+        );
+        let event = Envelope::event(
+            "e".into(),
+            0,
+            0,
+            &MeshEvent::NodeEvent {
+                node: Address::session("S"),
+                event: Value::Null,
+            },
+        );
         assert!(event.as_command().is_err());
-        assert!(Envelope::command("z".into(), "c", &MeshCommand::Get { node: Address::session("S") }).as_event().is_none());
+        assert!(Envelope::command(
+            "z".into(),
+            "c",
+            &MeshCommand::Get {
+                node: Address::session("S")
+            }
+        )
+        .as_event()
+        .is_none());
     }
 }

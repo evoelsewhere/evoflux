@@ -619,7 +619,10 @@ mod tests {
         ] {
             let name = frame["type"].as_str().unwrap();
             assert!(SUPPORTED_COMMANDS.contains(&name), "{name} not advertised");
-            assert!(serde_json::from_value::<Request>(frame.clone()).is_ok(), "{name} rejected");
+            assert!(
+                serde_json::from_value::<Request>(frame.clone()).is_ok(),
+                "{name} rejected"
+            );
         }
     }
 

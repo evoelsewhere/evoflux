@@ -15,7 +15,10 @@ const ENDPOINT: &str = "https://en.wikipedia.org/w/api.php";
 /// The article's address for a page title.
 fn article_url(title: &str) -> String {
     let mut url = Url::parse("https://en.wikipedia.org/wiki/").unwrap();
-    url.path_segments_mut().unwrap().pop_if_empty().push(&title.replace(' ', "_"));
+    url.path_segments_mut()
+        .unwrap()
+        .pop_if_empty()
+        .push(&title.replace(' ', "_"));
     url.into()
 }
 
@@ -29,7 +32,11 @@ pub fn parse_results(json: &Value) -> Vec<SearchResult> {
             let title = hit.get("title").and_then(Value::as_str)?.to_string();
             let snippet = hit.get("snippet").and_then(Value::as_str).unwrap_or("");
             let text = squash(Html::parse_fragment(snippet).root_element().text());
-            Some(SearchResult { url: article_url(&title), title, snippet: clip(&text) })
+            Some(SearchResult {
+                url: article_url(&title),
+                title,
+                snippet: clip(&text),
+            })
         })
         .collect()
 }
@@ -45,7 +52,11 @@ pub async fn search(query: &str, want: usize) -> Result<Vec<SearchResult>, Strin
         .append_pair("format", "json")
         .append_pair("formatversion", "2")
         .append_pair("utf8", "1");
-    let response = client().get(url).send().await.map_err(|e| format!("could not be reached: {}", describe(e)))?;
+    let response = client()
+        .get(url)
+        .send()
+        .await
+        .map_err(|e| format!("could not be reached: {}", describe(e)))?;
     let status = response.status().as_u16();
     let content_type = response
         .headers()
@@ -80,9 +91,15 @@ mod tests {
         .unwrap();
         let results = parse_results(&json);
         assert_eq!(results.len(), 2);
-        assert_eq!(results[0].url, "https://en.wikipedia.org/wiki/Gold_as_an_investment");
+        assert_eq!(
+            results[0].url,
+            "https://en.wikipedia.org/wiki/Gold_as_an_investment"
+        );
         assert_eq!(results[0].snippet, "Gold is bought & sold");
-        assert_eq!(results[1].url, "https://en.wikipedia.org/wiki/Price_of_gold_(US$)");
+        assert_eq!(
+            results[1].url,
+            "https://en.wikipedia.org/wiki/Price_of_gold_(US$)"
+        );
         assert!(parse_results(&serde_json::json!({})).is_empty());
     }
 }

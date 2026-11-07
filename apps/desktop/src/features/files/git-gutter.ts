@@ -1,7 +1,7 @@
 // Changed-line markers in the Files editor: the open document is diffed
 // against its text at HEAD in the browser (no git call per keystroke), and the
 // gutter marks added, modified and removed lines. Clicking a marker peeks at
-// the committed text of that hunk. Design: docs/features/files-git/sdd.md.
+// the committed text of that hunk. Design: docs/features/files-git/spec.md.
 
 import { RangeSet, StateEffect, StateField, type EditorState, type Extension } from "@codemirror/state";
 import { Decoration, EditorView, GutterMarker, ViewPlugin, WidgetType, gutter, type DecorationSet, type ViewUpdate } from "@codemirror/view";

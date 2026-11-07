@@ -84,7 +84,10 @@ mod tests {
         assert_eq!(css_color(Some("aabbcc"), "x"), "#aabbcc");
         assert_eq!(css_color(Some("theme"), "transparent"), "transparent");
         assert_eq!(css_color(None, "inherit"), "inherit");
-        assert_eq!(css_font_family("Calibri"), "&quot;Calibri&quot;,Arial,sans-serif");
+        assert_eq!(
+            css_font_family("Calibri"),
+            "&quot;Calibri&quot;,Arial,sans-serif"
+        );
         assert!(css_font_family("Aptos Display").contains("Helvetica Neue"));
     }
 

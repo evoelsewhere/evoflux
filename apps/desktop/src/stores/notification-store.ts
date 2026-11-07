@@ -2,7 +2,7 @@
 //
 // Features do not write here directly — they call `notify()` from
 // `@/features/notifications/notify`, which also decides whether a toast or an
-// OS notification goes out. See /docs/features/notifications/sdd.md at the repo root.
+// OS notification goes out. See /docs/features/notifications/spec.md at the repo root.
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";

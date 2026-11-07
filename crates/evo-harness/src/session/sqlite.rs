@@ -163,25 +163,36 @@ enum Cas {
 /// mode ignores the busy timeout, so a connection opened while another engine
 /// holds the database retries for a while instead of failing.
 fn enable_wal(conn: &Connection) -> SessionResult<()> {
-    let mode = |conn: &Connection| conn.query_row("PRAGMA journal_mode", [], |row| row.get::<_, String>(0));
+    let mode = |conn: &Connection| {
+        conn.query_row("PRAGMA journal_mode", [], |row| row.get::<_, String>(0))
+    };
     let mut attempt = 0;
     loop {
         let result = mode(conn).and_then(|current| {
             if current.eq_ignore_ascii_case("wal") {
                 Ok(current)
             } else {
-                conn.query_row("PRAGMA journal_mode = WAL", [], |row| row.get::<_, String>(0))
+                conn.query_row("PRAGMA journal_mode = WAL", [], |row| {
+                    row.get::<_, String>(0)
+                })
             }
         });
         match result {
             Ok(_) => return Ok(()),
             Err(rusqlite::Error::SqliteFailure(error, _))
-                if matches!(error.code, rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked) && attempt < 100 =>
+                if matches!(
+                    error.code,
+                    rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked
+                ) && attempt < 100 =>
             {
                 attempt += 1;
                 std::thread::sleep(std::time::Duration::from_millis(50));
             }
-            Err(error) => return Err(SessionError::storage(format!("initialize SQLite database: {error}"))),
+            Err(error) => {
+                return Err(SessionError::storage(format!(
+                    "initialize SQLite database: {error}"
+                )))
+            }
         }
     }
 }

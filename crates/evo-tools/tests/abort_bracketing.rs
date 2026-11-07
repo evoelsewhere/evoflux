@@ -223,9 +223,7 @@ async fn run_write(
 ) -> Result<evo_agent::types::AgentToolResult, evo_agent::error::AgentError> {
     let signal = signal.unwrap_or_default();
     let on_update = Arc::new(|_p| ());
-    let prepared = tool
-        .prepare_arguments(params.clone())
-        .unwrap_or_else(|_| params);
+    let prepared = tool.prepare_arguments(params.clone()).unwrap_or(params);
     tool.execute("write-x", prepared, signal, on_update).await
 }
 

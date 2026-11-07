@@ -55,7 +55,7 @@ import { Badge, EmptyNote, IconAction, ListRow, Properties, Split } from "./cust
 // single command files; agent types are markdown files. All are read from the
 // active chat's engine (crates/evo-engine/src/customize.rs); connectors,
 // plugins and hooks come in later phases
-// (docs/features/customize-skills-plugins-connectors/sdd.md).
+// (docs/features/customize-skills-plugins-connectors/spec.md).
 
 const sections: { id: CustomizeSection; title: string; icon: React.ComponentType<{ className?: string }>; soon?: boolean }[] = [
   { id: "instructions", title: "Instructions", icon: NotebookPenIcon },

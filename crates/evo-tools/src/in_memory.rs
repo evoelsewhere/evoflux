@@ -280,10 +280,8 @@ impl FileSystem for InMemoryExecutionEnv {
         }
         let text = self.read_text_file(path, cancel).await?;
         let mut lines: Vec<String> = text.split('\n').map(|s| s.to_string()).collect();
-        if text.ends_with('\n') {
-            if lines.last().map(|s| s.is_empty()).unwrap_or(false) {
-                lines.pop();
-            }
+        if text.ends_with('\n') && lines.last().map(|s| s.is_empty()).unwrap_or(false) {
+            lines.pop();
         }
         if let Some(m) = max_lines {
             lines.truncate(m);

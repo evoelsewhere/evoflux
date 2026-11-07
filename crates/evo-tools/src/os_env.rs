@@ -220,10 +220,10 @@ impl OsExecutionEnv {
             if let Some(cfg) = windows_probe_bash().await {
                 return Ok(cfg);
             }
-            return Err(ExecutionError::new(
+            Err(ExecutionError::new(
                 ExecutionErrorCode::ShellUnavailable,
                 "bash not found. Install Git for Windows / MSYS2 / Cygwin, or set shellPath.",
-            ));
+            ))
         }
         // POSIX.
         #[cfg(not(windows))]
@@ -266,10 +266,14 @@ impl Default for OsExecutionEnv {
 
 /// `current` PATH with `extra` appended, skipping folders already on it.
 fn path_with(current: Option<std::ffi::OsString>, extra: &[PathBuf]) -> Option<std::ffi::OsString> {
-    let mut entries: Vec<PathBuf> = current.as_deref().map(|p| std::env::split_paths(p).collect()).unwrap_or_default();
+    let mut entries: Vec<PathBuf> = current
+        .as_deref()
+        .map(|p| std::env::split_paths(p).collect())
+        .unwrap_or_default();
     let same = |a: &Path, b: &Path| {
         if cfg!(windows) {
-            a.to_string_lossy().eq_ignore_ascii_case(&b.to_string_lossy())
+            a.to_string_lossy()
+                .eq_ignore_ascii_case(&b.to_string_lossy())
         } else {
             a == b
         }
@@ -299,14 +303,20 @@ mod shell_env_provider_tests {
 
     #[test]
     fn path_is_appended_not_prepended_and_never_duplicated() {
-        let (a, b) = (PathBuf::from(if cfg!(windows) { r"C:" } else { "/a" }), PathBuf::from(if cfg!(windows) { r"C:" } else { "/b" }));
+        let (a, b) = (
+            PathBuf::from(if cfg!(windows) { r"C:" } else { "/a" }),
+            PathBuf::from(if cfg!(windows) { r"C:" } else { "/b" }),
+        );
         let current = std::env::join_paths([&a]).unwrap();
         let joined = path_with(Some(current.clone()), &[b.clone()]).unwrap();
         let parts: Vec<PathBuf> = std::env::split_paths(&joined).collect();
         assert_eq!(parts, vec![a.clone(), b.clone()]);
         let again = path_with(Some(joined), &[b.clone()]).unwrap();
         assert_eq!(std::env::split_paths(&again).count(), 2);
-        assert_eq!(std::env::split_paths(&path_with(None, &[b.clone()]).unwrap()).collect::<Vec<_>>(), vec![b]);
+        assert_eq!(
+            std::env::split_paths(&path_with(None, &[b.clone()]).unwrap()).collect::<Vec<_>>(),
+            vec![b]
+        );
     }
 }
 
@@ -486,7 +496,7 @@ async fn kill_process_tree(pid: u32) {
         }
         use windows_sys::Win32::System::Threading::CREATE_NO_WINDOW;
         let mut cmd = tokio::process::Command::new("taskkill");
-        cmd.args(&["/F", "/T", "/PID", &pid.to_string()]);
+        cmd.args(["/F", "/T", "/PID", &pid.to_string()]);
         cmd.creation_flags(CREATE_NO_WINDOW);
         cmd.stdin(std::process::Stdio::null());
         cmd.stdout(std::process::Stdio::null());

@@ -52,7 +52,8 @@ fn parse_ini(text: &str) -> HashMap<String, Section> {
             let name = name.trim().to_string();
             sections.entry(name.clone()).or_default();
             current = Some(name);
-        } else if let (Some(section), Some((key, value))) = (current.as_ref(), line.split_once('=')) {
+        } else if let (Some(section), Some((key, value))) = (current.as_ref(), line.split_once('='))
+        {
             sections
                 .entry(section.clone())
                 .or_default()
@@ -85,7 +86,11 @@ fn parse_time(value: &str) -> Option<i64> {
     let time = time.trim_end_matches('Z');
     let time = time.split(['+', '.']).next()?;
     let mut hms = time.split(':').map(|p| p.parse::<i64>().ok());
-    let (h, mi, s) = (hms.next()??, hms.next()??, hms.next().flatten().unwrap_or(0));
+    let (h, mi, s) = (
+        hms.next()??,
+        hms.next()??,
+        hms.next().flatten().unwrap_or(0),
+    );
     // Days from civil (Howard Hinnant).
     let y = if m <= 2 { y - 1 } else { y };
     let era = y.div_euclid(400);
@@ -135,7 +140,8 @@ async fn credential_process(command: &str) -> Result<(IamCredential, Option<i64>
     let get = |name: &str| json.get(name).and_then(Value::as_str).map(str::to_string);
     let credential = IamCredential {
         access_key_id: get("AccessKeyId").ok_or("credential_process: no AccessKeyId")?,
-        secret_access_key: get("SecretAccessKey").ok_or("credential_process: no SecretAccessKey")?,
+        secret_access_key: get("SecretAccessKey")
+            .ok_or("credential_process: no SecretAccessKey")?,
         session_token: get("SessionToken"),
     };
     Ok((credential, get("Expiration").and_then(|e| parse_time(&e))))
@@ -149,20 +155,29 @@ fn sso_token(start_url: &str) -> Result<String, String> {
     let entries = std::fs::read_dir(&dir).map_err(|_| sso_login_hint())?;
     let mut best: Option<(i64, String)> = None;
     for entry in entries.flatten() {
-        let Ok(text) = std::fs::read_to_string(entry.path()) else { continue };
-        let Ok(json) = serde_json::from_str::<Value>(&text) else { continue };
-        if json.get("startUrl").and_then(Value::as_str).map(|u| u.trim_end_matches('/'))
+        let Ok(text) = std::fs::read_to_string(entry.path()) else {
+            continue;
+        };
+        let Ok(json) = serde_json::from_str::<Value>(&text) else {
+            continue;
+        };
+        if json
+            .get("startUrl")
+            .and_then(Value::as_str)
+            .map(|u| u.trim_end_matches('/'))
             != Some(start_url.trim_end_matches('/'))
         {
             continue;
         }
         let (Some(token), Some(expires)) = (
             json.get("accessToken").and_then(Value::as_str),
-            json.get("expiresAt").and_then(Value::as_str).and_then(parse_time),
+            json.get("expiresAt")
+                .and_then(Value::as_str)
+                .and_then(parse_time),
         ) else {
             continue;
         };
-        if best.as_ref().map_or(true, |(at, _)| expires > *at) {
+        if best.as_ref().is_none_or(|(at, _)| expires > *at) {
             best = Some((expires, token.to_string()));
         }
     }
@@ -199,7 +214,10 @@ async fn sso_credentials(
     let token = sso_token(&start_url)?;
     let url = reqwest::Url::parse_with_params(
         &format!("https://portal.sso.{region}.amazonaws.com/federation/credentials"),
-        &[("role_name", role.as_str()), ("account_id", account.as_str())],
+        &[
+            ("role_name", role.as_str()),
+            ("account_id", account.as_str()),
+        ],
     )
     .map_err(|_| format!("Invalid SSO region: {region}"))?;
     let response = http
@@ -216,14 +234,19 @@ async fn sso_credentials(
         ));
     }
     let json: Value = response.json().await.map_err(|error| error.to_string())?;
-    let role = json.get("roleCredentials").ok_or("AWS SSO returned no role credentials")?;
+    let role = json
+        .get("roleCredentials")
+        .ok_or("AWS SSO returned no role credentials")?;
     let get = |name: &str| role.get(name).and_then(Value::as_str).map(str::to_string);
     let credential = IamCredential {
         access_key_id: get("accessKeyId").ok_or("AWS SSO: no accessKeyId")?,
         secret_access_key: get("secretAccessKey").ok_or("AWS SSO: no secretAccessKey")?,
         session_token: get("sessionToken"),
     };
-    let expires = role.get("expiration").and_then(Value::as_i64).map(|ms| ms / 1000);
+    let expires = role
+        .get("expiration")
+        .and_then(Value::as_i64)
+        .map(|ms| ms / 1000);
     Ok((credential, expires))
 }
 
@@ -249,12 +272,15 @@ pub async fn resolve(http: &reqwest::Client, profile: &str) -> Result<IamCredent
         }
     }
     let name = if profile.is_empty() {
-        std::env::var("AWS_PROFILE").ok().filter(|p| !p.is_empty()).unwrap_or_else(|| "default".into())
+        std::env::var("AWS_PROFILE")
+            .ok()
+            .filter(|p| !p.is_empty())
+            .unwrap_or_else(|| "default".into())
     } else {
         profile.to_string()
     };
     if let Some((credential, expires)) = cache().lock().ok().and_then(|c| c.get(&name).cloned()) {
-        if expires.map_or(true, |at| at > now() + 300) {
+        if expires.is_none_or(|at| at > now() + 300) {
             return Ok(credential);
         }
     }
@@ -265,13 +291,20 @@ pub async fn resolve(http: &reqwest::Client, profile: &str) -> Result<IamCredent
     Ok(resolved.0)
 }
 
-async fn resolve_uncached(http: &reqwest::Client, name: &str) -> Result<(IamCredential, Option<i64>), String> {
+async fn resolve_uncached(
+    http: &reqwest::Client,
+    name: &str,
+) -> Result<(IamCredential, Option<i64>), String> {
     let credentials = read_ini(aws_file("AWS_SHARED_CREDENTIALS_FILE", "credentials"));
     if let Some(keys) = credentials.get(name).and_then(static_keys) {
         return Ok((keys, None));
     }
     let config = read_ini(aws_file("AWS_CONFIG_FILE", "config"));
-    let section_name = if name == "default" { "default".to_string() } else { format!("profile {name}") };
+    let section_name = if name == "default" {
+        "default".to_string()
+    } else {
+        format!("profile {name}")
+    };
     let Some(section) = config.get(&section_name).or_else(|| config.get(name)) else {
         return Err(format!(
             "AWS profile \"{name}\" was not found in ~/.aws/credentials or ~/.aws/config"
@@ -291,7 +324,9 @@ async fn resolve_uncached(http: &reqwest::Client, name: &str) -> Result<(IamCred
             "AWS profile \"{name}\" assumes a role (role_arn), which evo cannot resolve yet; use an SSO, credential_process or key profile"
         ));
     }
-    Err(format!("AWS profile \"{name}\" has no credentials evo can use"))
+    Err(format!(
+        "AWS profile \"{name}\" has no credentials evo can use"
+    ))
 }
 
 #[cfg(test)]
@@ -314,23 +349,38 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let credentials = dir.join("credentials");
         let config = dir.join("config");
-        std::fs::write(&credentials, "[work]
+        std::fs::write(
+            &credentials,
+            "[work]
 aws_access_key_id = AKWORK
 aws_secret_access_key = SKWORK
-").unwrap();
-        std::fs::write(&config, "[profile roles]
+",
+        )
+        .unwrap();
+        std::fs::write(
+            &config,
+            "[profile roles]
 role_arn = arn:aws:iam::1:role/x
 source_profile = work
-").unwrap();
+",
+        )
+        .unwrap();
         // Only this test reads these variables.
         std::env::set_var("AWS_SHARED_CREDENTIALS_FILE", &credentials);
         std::env::set_var("AWS_CONFIG_FILE", &config);
         let http = reqwest::Client::new();
         let work = resolve(&http, "work").await.unwrap();
-        assert_eq!((work.access_key_id.as_str(), work.secret_access_key.as_str()), ("AKWORK", "SKWORK"));
+        assert_eq!(
+            (work.access_key_id.as_str(), work.secret_access_key.as_str()),
+            ("AKWORK", "SKWORK")
+        );
         let roles = resolve(&http, "roles").await.err().unwrap();
         assert!(roles.contains("role_arn"), "{roles}");
-        assert!(resolve(&http, "missing").await.err().unwrap().contains("not found"));
+        assert!(resolve(&http, "missing")
+            .await
+            .err()
+            .unwrap()
+            .contains("not found"));
         std::env::remove_var("AWS_SHARED_CREDENTIALS_FILE");
         std::env::remove_var("AWS_CONFIG_FILE");
         let _ = std::fs::remove_dir_all(&dir);
@@ -340,6 +390,9 @@ source_profile = work
     fn parses_aws_times() {
         assert_eq!(parse_time("1970-01-01T00:00:00Z"), Some(0));
         assert_eq!(parse_time("2026-10-26T07:33:20Z"), Some(1_793_000_000));
-        assert_eq!(parse_time("2026-10-26T07:33:20.123+00:00"), Some(1_793_000_000));
+        assert_eq!(
+            parse_time("2026-10-26T07:33:20.123+00:00"),
+            Some(1_793_000_000)
+        );
     }
 }

@@ -1,4 +1,4 @@
-//! This engine's side of the session mesh (`docs/features/session-mesh-protocol/sdd.md`).
+//! This engine's side of the session mesh (`docs/features/session-mesh-protocol/spec.md`).
 //!
 //! The [`LocalRouter`] is the one registry of the conversations this engine
 //! hosts: its session, the subagents of the `agent` tool
@@ -22,8 +22,8 @@ use serde_json::{json, Value};
 use tokio::sync::broadcast;
 
 pub use evo_protocol::mesh::{
-    Address, Deliver, Envelope, ErrorCode, Level, ListScope, MailBody, MeshCommand, MeshError, MeshEvent, MeshUsage,
-    Node, NodeKind, NodeState, Origin, RunStatus, ToolRow,
+    Address, Deliver, Envelope, ErrorCode, Level, ListScope, MailBody, MeshCommand, MeshError,
+    MeshEvent, MeshUsage, Node, NodeKind, NodeState, Origin, RunStatus, ToolRow,
 };
 
 /// A model call's usage in mesh terms.
@@ -244,17 +244,30 @@ impl LocalRouter {
     pub fn subscriber(&self) -> Subscriber<'_> {
         let id = self.ids.fetch_add(1, Ordering::Relaxed) + 1;
         lock(&self.subscribers).insert(id, Level::None);
-        Subscriber { router: self, id, level: Arc::new(AtomicU8::new(0)) }
+        Subscriber {
+            router: self,
+            id,
+            level: Arc::new(AtomicU8::new(0)),
+        }
     }
 
     fn recompute(&self) {
-        let max = lock(&self.subscribers).values().copied().max().unwrap_or(Level::None);
+        let max = lock(&self.subscribers)
+            .values()
+            .copied()
+            .max()
+            .unwrap_or(Level::None);
         self.level.store(level_code(max), Ordering::Release);
     }
 
     /// Set `subscriber`'s level and return the retained envelopes after
     /// `since` (all retained ones when `None`) that the level includes.
-    pub fn subscribe(&self, subscriber: &Subscriber<'_>, level: Level, since: Option<u64>) -> (u64, Vec<Envelope>) {
+    pub fn subscribe(
+        &self,
+        subscriber: &Subscriber<'_>,
+        level: Level,
+        since: Option<u64>,
+    ) -> (u64, Vec<Envelope>) {
         subscriber.level.store(level_code(level), Ordering::Release);
         lock(&self.subscribers).insert(subscriber.id, level);
         self.recompute();
@@ -269,7 +282,9 @@ impl LocalRouter {
         // one snapshot per node instead (the rows replace what it had).
         if level >= Level::Summary {
             for entry in &inner.nodes {
-                let Some(activity) = &entry.activity else { continue };
+                let Some(activity) = &entry.activity else {
+                    continue;
+                };
                 let event = MeshEvent::NodeActivity {
                     node: entry.node.id.clone(),
                     turns: activity.turns,
@@ -285,7 +300,11 @@ impl LocalRouter {
     }
 
     pub fn next_id(&self) -> String {
-        format!("m_{}_{}", self.epoch, self.ids.fetch_add(1, Ordering::Relaxed) + 1)
+        format!(
+            "m_{}_{}",
+            self.epoch,
+            self.ids.fetch_add(1, Ordering::Relaxed) + 1
+        )
     }
 
     fn publish(&self, inner: &mut Inner, event: MeshEvent) {
@@ -324,7 +343,13 @@ impl LocalRouter {
                 let prev = entry.node.state;
                 entry.node.state = NodeState::Closed;
                 entry.node.ended_at = Some(now_ms());
-                self.publish(&mut inner, MeshEvent::NodeState { node: entry.node, prev: Some(prev) });
+                self.publish(
+                    &mut inner,
+                    MeshEvent::NodeState {
+                        node: entry.node,
+                        prev: Some(prev),
+                    },
+                );
             }
         }
         let mut node = Node::new(id.clone(), None, title, Origin::User);
@@ -332,7 +357,14 @@ impl LocalRouter {
         node.started_at = now_ms();
         node.caps = vec!["spawn.agent".into(), "mail.children".into()];
         inner.root = Some(id.clone());
-        inner.nodes.insert(0, Entry { node: node.clone(), cancel: None, activity: None });
+        inner.nodes.insert(
+            0,
+            Entry {
+                node: node.clone(),
+                cancel: None,
+                activity: None,
+            },
+        );
         self.publish(&mut inner, MeshEvent::NodeState { node, prev: None });
         id
     }
@@ -343,12 +375,26 @@ impl LocalRouter {
 
     /// A new node hosted here, started by the node at its address's host
     /// (its parent by lineage). `title`, `origin` and `meta` describe it.
-    pub fn spawn(&self, id: Address, title: &str, origin: Origin, meta: Value, cancel: Option<CancelFn>) -> Node {
+    pub fn spawn(
+        &self,
+        id: Address,
+        title: &str,
+        origin: Origin,
+        meta: Value,
+        cancel: Option<CancelFn>,
+    ) -> Node {
         let mut inner = lock(&self.inner);
-        let parent = id.host().and_then(|host| inner.find(&host).map(|index| inner.nodes[index].node.clone()));
+        let parent = id.host().and_then(|host| {
+            inner
+                .find(&host)
+                .map(|index| inner.nodes[index].node.clone())
+        });
         // A host this router does not know (e.g. a session that is not the
         // root) still gives the node its lineage.
-        let parent = parent.or_else(|| id.host().map(|host| Node::new(host, None, "", Origin::User)));
+        let parent = parent.or_else(|| {
+            id.host()
+                .map(|host| Node::new(host, None, "", Origin::User))
+        });
         let mut node = Node::new(id, parent.as_ref(), title, origin);
         node.started_at = now_ms();
         node.meta = if meta.is_object() { meta } else { json!({}) };
@@ -358,16 +404,38 @@ impl LocalRouter {
             _ => vec!["mail.parent".into()],
         };
         match inner.find(&node.id) {
-            Some(index) => inner.nodes[index] = Entry { node: node.clone(), cancel, activity: None },
-            None => inner.nodes.push(Entry { node: node.clone(), cancel, activity: None }),
+            Some(index) => {
+                inner.nodes[index] = Entry {
+                    node: node.clone(),
+                    cancel,
+                    activity: None,
+                }
+            }
+            None => inner.nodes.push(Entry {
+                node: node.clone(),
+                cancel,
+                activity: None,
+            }),
         }
-        self.publish(&mut inner, MeshEvent::NodeState { node: node.clone(), prev: None });
+        self.publish(
+            &mut inner,
+            MeshEvent::NodeState {
+                node: node.clone(),
+                prev: None,
+            },
+        );
         node
     }
 
     /// Change a node's state. Unchanged state and status emit nothing.
     /// `Closed` removes the node after announcing it.
-    pub fn transition(&self, id: &Address, state: NodeState, status: Option<RunStatus>, reason: Option<String>) {
+    pub fn transition(
+        &self,
+        id: &Address,
+        state: NodeState,
+        status: Option<RunStatus>,
+        reason: Option<String>,
+    ) {
         let mut inner = lock(&self.inner);
         let Some(index) = inner.find(id) else { return };
         let node = &mut inner.nodes[index].node;
@@ -394,7 +462,13 @@ impl LocalRouter {
         if state == NodeState::Closed {
             inner.nodes.remove(index);
         }
-        self.publish(&mut inner, MeshEvent::NodeState { node: snapshot, prev: Some(prev) });
+        self.publish(
+            &mut inner,
+            MeshEvent::NodeState {
+                node: snapshot,
+                prev: Some(prev),
+            },
+        );
     }
 
     /// Change a node's record without announcing it (the next state change carries it).
@@ -418,10 +492,19 @@ impl LocalRouter {
 
     /// What a running node is doing. Always folded into the node's snapshot
     /// (for later subscribers); sent at the summary level.
-    pub fn activity(&self, id: &Address, turns: u32, tool_uses: u32, tool: Option<ToolRow>, text: Option<String>) {
+    pub fn activity(
+        &self,
+        id: &Address,
+        turns: u32,
+        tool_uses: u32,
+        tool: Option<ToolRow>,
+        text: Option<String>,
+    ) {
         let mut inner = lock(&self.inner);
         let Some(index) = inner.find(id) else { return };
-        let activity = inner.nodes[index].activity.get_or_insert_with(Activity::default);
+        let activity = inner.nodes[index]
+            .activity
+            .get_or_insert_with(Activity::default);
         activity.turns = turns;
         activity.tool_uses = tool_uses;
         if let Some(text) = &text {
@@ -438,7 +521,17 @@ impl LocalRouter {
                 }
             }
         }
-        self.publish(&mut inner, MeshEvent::NodeActivity { node: id.clone(), turns, tool_uses, tool, text, rows: None });
+        self.publish(
+            &mut inner,
+            MeshEvent::NodeActivity {
+                node: id.clone(),
+                turns,
+                tool_uses,
+                tool,
+                text,
+                rows: None,
+            },
+        );
     }
 
     // ── Waiting and loops ──────────────────────────────────────────────────
@@ -516,7 +609,13 @@ impl LocalRouter {
     /// [`request_wake`](Self::request_wake) with why: `report` (a finished
     /// agent or session), `mail` (a message or question from a node). The
     /// reason goes to `meta.wakeReasons`, so the host can say what woke it.
-    pub fn request_wake_for(&self, session: &Address, from: &Address, title: Option<&str>, reason: &str) {
+    pub fn request_wake_for(
+        &self,
+        session: &Address,
+        from: &Address,
+        title: Option<&str>,
+        reason: &str,
+    ) {
         let mut inner = lock(&self.inner);
         let index = match inner.find(session) {
             Some(index) => index,
@@ -526,7 +625,14 @@ impl LocalRouter {
                 let mut node = Node::new(session.clone(), None, "", Origin::User);
                 node.state = NodeState::Idle;
                 node.started_at = now_ms();
-                inner.nodes.insert(0, Entry { node, cancel: None, activity: None });
+                inner.nodes.insert(
+                    0,
+                    Entry {
+                        node,
+                        cancel: None,
+                        activity: None,
+                    },
+                );
                 0
             }
         };
@@ -535,16 +641,29 @@ impl LocalRouter {
             node.meta = json!({});
         }
         if let Some(title) = title {
-            let titles = node.meta.as_object_mut().expect("object").entry("wakeTitles").or_insert_with(|| json!({}));
+            let titles = node
+                .meta
+                .as_object_mut()
+                .expect("object")
+                .entry("wakeTitles")
+                .or_insert_with(|| json!({}));
             if let Some(titles) = titles.as_object_mut() {
                 titles.insert(from.to_string(), json!(title));
             }
         }
-        let reasons = node.meta.as_object_mut().expect("object").entry("wakeReasons").or_insert_with(|| json!({}));
+        let reasons = node
+            .meta
+            .as_object_mut()
+            .expect("object")
+            .entry("wakeReasons")
+            .or_insert_with(|| json!({}));
         // A report outranks a message from the same node (the host labels the wake by it).
         let changed = match reasons.as_object_mut() {
             Some(reasons) => {
-                let before = reasons.get(from.as_str()).and_then(Value::as_str).map(str::to_string);
+                let before = reasons
+                    .get(from.as_str())
+                    .and_then(Value::as_str)
+                    .map(str::to_string);
                 let keep = before.as_deref() == Some("report") && reason != "report";
                 if !keep {
                     reasons.insert(from.to_string(), json!(reason));
@@ -553,18 +672,37 @@ impl LocalRouter {
             }
             None => false,
         };
-        let wake = node.meta.as_object_mut().expect("object").entry("wake").or_insert_with(|| json!([]));
-        let Some(list) = wake.as_array_mut() else { return };
+        let wake = node
+            .meta
+            .as_object_mut()
+            .expect("object")
+            .entry("wake")
+            .or_insert_with(|| json!([]));
+        let Some(list) = wake.as_array_mut() else {
+            return;
+        };
         if list.iter().any(|item| item == from.as_str()) {
             if changed {
                 let snapshot = node.clone();
-                self.publish(&mut inner, MeshEvent::NodeState { prev: Some(snapshot.state), node: snapshot });
+                self.publish(
+                    &mut inner,
+                    MeshEvent::NodeState {
+                        prev: Some(snapshot.state),
+                        node: snapshot,
+                    },
+                );
             }
             return;
         }
         list.push(json!(from.as_str()));
         let snapshot = node.clone();
-        self.publish(&mut inner, MeshEvent::NodeState { prev: Some(snapshot.state), node: snapshot });
+        self.publish(
+            &mut inner,
+            MeshEvent::NodeState {
+                prev: Some(snapshot.state),
+                node: snapshot,
+            },
+        );
     }
 
     /// The nodes whose messages wait for `session`'s next turn.
@@ -589,18 +727,41 @@ impl LocalRouter {
             let own = inner.nodes[index].node.usage;
             let parent = inner.nodes[index].node.parent.clone();
             let subtree = inner.subtree_usage(&at);
-            self.publish(&mut inner, MeshEvent::NodeUsage { node: at, own, subtree });
+            self.publish(
+                &mut inner,
+                MeshEvent::NodeUsage {
+                    node: at,
+                    own,
+                    subtree,
+                },
+            );
             current = parent;
         }
     }
 
     /// A node finished a run with `text` (state level).
-    pub fn report(&self, id: &Address, status: RunStatus, text: String, usage: MeshUsage, worktree: Option<Value>) {
+    pub fn report(
+        &self,
+        id: &Address,
+        status: RunStatus,
+        text: String,
+        usage: MeshUsage,
+        worktree: Option<Value>,
+    ) {
         let mut inner = lock(&self.inner);
         if inner.find(id).is_none() {
             return;
         }
-        self.publish(&mut inner, MeshEvent::NodeReport { node: id.clone(), status, text, usage, worktree });
+        self.publish(
+            &mut inner,
+            MeshEvent::NodeReport {
+                node: id.clone(),
+                status,
+                text,
+                usage,
+                worktree,
+            },
+        );
     }
 
     /// One engine event of a hosted node (full level only).
@@ -613,7 +774,13 @@ impl LocalRouter {
         if inner.find(id).is_none() {
             return;
         }
-        self.publish(&mut inner, MeshEvent::NodeEvent { node: id.clone(), event: projected });
+        self.publish(
+            &mut inner,
+            MeshEvent::NodeEvent {
+                node: id.clone(),
+                event: projected,
+            },
+        );
     }
 
     pub fn get(&self, id: &Address) -> Option<Node> {
@@ -624,7 +791,9 @@ impl LocalRouter {
     pub fn list(&self, scope: ListScope, of: Option<&Address>) -> Result<Vec<Node>, MeshError> {
         let inner = lock(&self.inner);
         let of = match (scope, of) {
-            (ListScope::All, _) => return Ok(inner.nodes.iter().map(|entry| entry.node.clone()).collect()),
+            (ListScope::All, _) => {
+                return Ok(inner.nodes.iter().map(|entry| entry.node.clone()).collect())
+            }
             (_, Some(of)) => of.clone(),
             (_, None) => inner
                 .root
@@ -652,26 +821,44 @@ impl LocalRouter {
         let targets: Vec<(Address, CancelFn)> = {
             let inner = lock(&self.inner);
             if inner.find(id).is_none() {
-                return Err(MeshError::new(ErrorCode::NotFound, format!("no node `{id}` here")));
+                return Err(MeshError::new(
+                    ErrorCode::NotFound,
+                    format!("no node `{id}` here"),
+                ));
             }
-            let members = if cascade { inner.subtree(id) } else { vec![id.clone()] };
+            let members = if cascade {
+                inner.subtree(id)
+            } else {
+                vec![id.clone()]
+            };
             // Children first, so a parent does not wait on a child that is stopping.
             members
                 .into_iter()
                 .rev()
                 .filter_map(|member| {
                     let index = inner.find(&member)?;
-                    inner.nodes[index].cancel.clone().map(|cancel| (member, cancel))
+                    inner.nodes[index]
+                        .cancel
+                        .clone()
+                        .map(|cancel| (member, cancel))
                 })
                 .collect()
         };
         // Outside the lock: a cancel handle may report back synchronously.
-        Ok(targets.into_iter().filter(|(_, cancel)| cancel()).map(|(member, _)| member).collect())
+        Ok(targets
+            .into_iter()
+            .filter(|(_, cancel)| cancel())
+            .map(|(member, _)| member)
+            .collect())
     }
 
     /// Answer a `cmd` envelope. Also returns the envelopes to replay before
     /// any new event (for `subscribe`).
-    pub fn handle(&self, envelope: &Envelope, subscriber: &Subscriber<'_>) -> (Envelope, Vec<Envelope>) {
+    pub fn handle(
+        &self,
+        envelope: &Envelope,
+        subscriber: &Subscriber<'_>,
+    ) -> (Envelope, Vec<Envelope>) {
         let mut replay = Vec::new();
         let result = envelope.as_command().and_then(|command| match command {
             MeshCommand::Subscribe { level, since } => {
@@ -679,16 +866,18 @@ impl LocalRouter {
                 replay = retained;
                 Ok(json!({ "level": level, "seq": seq, "root": self.root() }))
             }
-            MeshCommand::List { scope, of } => {
-                self.list(scope, of.as_ref()).map(|nodes| json!({ "nodes": nodes }))
-            }
+            MeshCommand::List { scope, of } => self
+                .list(scope, of.as_ref())
+                .map(|nodes| json!({ "nodes": nodes })),
             MeshCommand::Get { node } => self
                 .get(&node)
                 .map(|node| json!({ "node": node }))
-                .ok_or_else(|| MeshError::new(ErrorCode::NotFound, format!("no node `{node}` here"))),
-            MeshCommand::Cancel { node, cascade } => {
-                self.cancel(&node, cascade).map(|cancelled| json!({ "cancelled": cancelled }))
-            }
+                .ok_or_else(|| {
+                    MeshError::new(ErrorCode::NotFound, format!("no node `{node}` here"))
+                }),
+            MeshCommand::Cancel { node, cascade } => self
+                .cancel(&node, cascade)
+                .map(|cancelled| json!({ "cancelled": cancelled })),
         });
         (Envelope::response(self.next_id(), envelope, result), replay)
     }
@@ -706,9 +895,16 @@ impl LocalRouter {
 /// that started this one.
 pub fn session_run(session_id: &str, running: bool, report: Option<(RunStatus, String)>) {
     let root = router().set_root(session_id, "");
-    let state = if running { NodeState::Running } else { NodeState::Idle };
+    let state = if running {
+        NodeState::Running
+    } else {
+        NodeState::Idle
+    };
     if running {
-        router().set_meta(&root, json!({ "wake": [], "wakeTitles": {}, "wakeReasons": {} }));
+        router().set_meta(
+            &root,
+            json!({ "wake": [], "wakeTitles": {}, "wakeReasons": {} }),
+        );
         // A new run of the session: nodes may talk again.
         lock(&router().pair_mail).clear();
     }
@@ -731,18 +927,28 @@ const SEEN_MAIL_KEPT: usize = 512;
 /// for its next one (and a wake request when the mail asks for one). Answers
 /// with a `res` envelope whose `corr` is the mail's id, so the sender can mark
 /// it delivered.
-pub async fn receive_mail(harness: &evo_harness::agent_harness::AgentHarness, envelope: &Envelope) -> Envelope {
+pub async fn receive_mail(
+    harness: &evo_harness::agent_harness::AgentHarness,
+    envelope: &Envelope,
+) -> Envelope {
     let result = take_mail(harness, envelope).await;
     Envelope::response(router().next_id(), envelope, result)
 }
 
-async fn take_mail(harness: &evo_harness::agent_harness::AgentHarness, envelope: &Envelope) -> Result<Value, MeshError> {
+async fn take_mail(
+    harness: &evo_harness::agent_harness::AgentHarness,
+    envelope: &Envelope,
+) -> Result<Value, MeshError> {
     let body = envelope.as_mail()?;
     let session = Address::session(&harness.session().storage().metadata().id);
     if envelope.to != session.as_str() {
-        return Err(MeshError::new(ErrorCode::NotFound, format!("this engine runs {session}, not {}", envelope.to)));
+        return Err(MeshError::new(
+            ErrorCode::NotFound,
+            format!("this engine runs {session}, not {}", envelope.to),
+        ));
     }
-    let from = Address::parse(&envelope.from).map_err(|e| MeshError::new(ErrorCode::BadRequest, e))?;
+    let from =
+        Address::parse(&envelope.from).map_err(|e| MeshError::new(ErrorCode::BadRequest, e))?;
     if lock(&SEEN_MAIL).contains(&envelope.id) {
         return Ok(json!({ "duplicate": true }));
     }
@@ -750,7 +956,8 @@ async fn take_mail(harness: &evo_harness::agent_harness::AgentHarness, envelope:
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
         .unwrap_or(0);
-    let message = evo_agent::AgentMessage::from(evo_ai::types::UserMessage::new(body.text.clone(), now));
+    let message =
+        evo_agent::AgentMessage::from(evo_ai::types::UserMessage::new(body.text.clone(), now));
     let lane = harness.lane("main");
     let running = harness.has_active_run();
     let (queued, result) = match (running, body.deliver) {
@@ -759,7 +966,12 @@ async fn take_mail(harness: &evo_harness::agent_harness::AgentHarness, envelope:
         (true, _) => ("steer", lane.steer(message).await),
         (false, _) => ("next_turn", lane.next_run(message).await),
     };
-    result.map_err(|error| MeshError::new(ErrorCode::Unsupported, format!("could not queue the mail: {error}")))?;
+    result.map_err(|error| {
+        MeshError::new(
+            ErrorCode::Unsupported,
+            format!("could not queue the mail: {error}"),
+        )
+    })?;
     {
         let mut seen = lock(&SEEN_MAIL);
         seen.push_back(envelope.id.clone());
@@ -807,7 +1019,13 @@ mod tests {
 
     fn agent(router: &LocalRouter, root: &Address, id: &str, cancel: Option<CancelFn>) -> Address {
         let address = root.child(NodeKind::Agent, id);
-        router.spawn(address.clone(), id, Origin::Agent, json!({ "callId": format!("call-{id}") }), cancel);
+        router.spawn(
+            address.clone(),
+            id,
+            Origin::Agent,
+            json!({ "callId": format!("call-{id}") }),
+            cancel,
+        );
         address
     }
 
@@ -820,7 +1038,13 @@ mod tests {
         let root = router.set_root("S", "chat");
         let a = agent(&router, &root, "1", None);
         router.transition(&a, NodeState::Running, None, None); // unchanged: silent
-        router.report(&a, RunStatus::Done, "found it".into(), MeshUsage::default(), None);
+        router.report(
+            &a,
+            RunStatus::Done,
+            "found it".into(),
+            MeshUsage::default(),
+            None,
+        );
         router.transition(&a, NodeState::Settled, Some(RunStatus::Done), None);
         router.transition(&a, NodeState::Closed, None, None);
 
@@ -835,14 +1059,24 @@ mod tests {
             .collect();
         assert_eq!(
             kinds,
-            ["s_S:Idle", "s_S/a_1:Running", "s_S/a_1:report", "s_S/a_1:Settled", "s_S/a_1:Closed"]
+            [
+                "s_S:Idle",
+                "s_S/a_1:Running",
+                "s_S/a_1:report",
+                "s_S/a_1:Settled",
+                "s_S/a_1:Closed"
+            ]
         );
-        let MeshEvent::NodeState { node, prev } = &events[1] else { panic!() };
+        let MeshEvent::NodeState { node, prev } = &events[1] else {
+            panic!()
+        };
         assert_eq!(node.parent, Some(root.clone()));
         assert_eq!(node.depth, 1);
         assert_eq!(node.meta["callId"], "call-1");
         assert_eq!(*prev, None);
-        let MeshEvent::NodeState { node, prev } = &events[4] else { panic!() };
+        let MeshEvent::NodeState { node, prev } = &events[4] else {
+            panic!()
+        };
         assert_eq!(node.status, Some(RunStatus::Done));
         assert_eq!(*prev, Some(NodeState::Settled));
         assert!(router.get(&a).is_none());
@@ -856,8 +1090,17 @@ mod tests {
         let root = router.set_root("S", "chat");
         let a = agent(&router, &root, "1", None);
         router.activity(&a, 1, 1, None, Some("hello".into()));
-        router.usage(&a, MeshUsage { input: 5, ..Default::default() });
-        assert!(drain(&mut rx).is_empty(), "nobody subscribed: nothing is sent");
+        router.usage(
+            &a,
+            MeshUsage {
+                input: 5,
+                ..Default::default()
+            },
+        );
+        assert!(
+            drain(&mut rx).is_empty(),
+            "nobody subscribed: nothing is sent"
+        );
         // ...but state events were retained and replay on subscribe, followed
         // by the activity snapshot.
         let sub = router.subscriber();
@@ -866,17 +1109,41 @@ mod tests {
         let ops: Vec<_> = replay.iter().map(|e| e.op.as_str()).collect();
         assert_eq!(ops, ["node_state", "node_state", "node_activity"]);
         let (_, after) = router.subscribe(&sub, Level::Summary, Some(1));
-        let ops: Vec<_> = after.iter().map(|e| (e.op.as_str(), e.from.as_str())).collect();
-        assert_eq!(ops, [("node_state", "s_S/a_1"), ("node_activity", "s_S/a_1")]);
+        let ops: Vec<_> = after
+            .iter()
+            .map(|e| (e.op.as_str(), e.from.as_str()))
+            .collect();
+        assert_eq!(
+            ops,
+            [("node_state", "s_S/a_1"), ("node_activity", "s_S/a_1")]
+        );
 
         router.activity(&a, 2, 3, None, None);
-        router.usage(&a, MeshUsage { input: 7, cost: 0.25, ..Default::default() });
+        router.usage(
+            &a,
+            MeshUsage {
+                input: 7,
+                cost: 0.25,
+                ..Default::default()
+            },
+        );
         let events = drain(&mut rx);
-        assert!(matches!(&events[0], MeshEvent::NodeActivity { turns: 2, tool_uses: 3, .. }));
+        assert!(matches!(
+            &events[0],
+            MeshEvent::NodeActivity {
+                turns: 2,
+                tool_uses: 3,
+                ..
+            }
+        ));
         // The node's usage, then the root's subtree total.
-        let MeshEvent::NodeUsage { node, own, subtree } = &events[1] else { panic!() };
+        let MeshEvent::NodeUsage { node, own, subtree } = &events[1] else {
+            panic!()
+        };
         assert_eq!((node.as_str(), own.input, subtree.input), ("s_S/a_1", 7, 7));
-        let MeshEvent::NodeUsage { node, own, subtree } = &events[2] else { panic!() };
+        let MeshEvent::NodeUsage { node, own, subtree } = &events[2] else {
+            panic!()
+        };
         assert_eq!((node.as_str(), own.input, subtree.input), ("s_S", 0, 7));
         assert_eq!(subtree.cost, 0.25);
     }
@@ -895,11 +1162,20 @@ mod tests {
         };
         let a = agent(&router, &root, "1", Some(handle("a1", true)));
         let nested = a.child(NodeKind::Agent, "2");
-        router.spawn(nested.clone(), "nested", Origin::Agent, json!({}), Some(handle("a2", true)));
+        router.spawn(
+            nested.clone(),
+            "nested",
+            Origin::Agent,
+            json!({}),
+            Some(handle("a2", true)),
+        );
         let idle = agent(&router, &root, "3", Some(handle("a3", false)));
 
         assert_eq!(router.get(&nested).unwrap().parent, Some(a.clone()));
-        assert_eq!(router.list(ListScope::Children, Some(&root)).unwrap().len(), 2);
+        assert_eq!(
+            router.list(ListScope::Children, Some(&root)).unwrap().len(),
+            2
+        );
         assert_eq!(router.list(ListScope::Subtree, None).unwrap().len(), 3);
 
         let stopped = router.cancel(&root, true).unwrap();
@@ -908,7 +1184,10 @@ mod tests {
         assert_eq!(router.cancel(&a, false).unwrap(), vec![a.clone()]);
         assert!(router.cancel(&idle, false).unwrap().is_empty());
         assert_eq!(
-            router.cancel(&root.child(NodeKind::Agent, "nope"), true).unwrap_err().code,
+            router
+                .cancel(&root.child(NodeKind::Agent, "nope"), true)
+                .unwrap_err()
+                .code,
             ErrorCode::NotFound
         );
     }
@@ -931,21 +1210,44 @@ mod tests {
         let command = |c: MeshCommand| Envelope::command("c-1".into(), "client:w", &c);
         let sub = router.subscriber();
 
-        let (res, replay) = router.handle(&command(MeshCommand::Subscribe { level: Level::State, since: None }), &sub);
+        let (res, replay) = router.handle(
+            &command(MeshCommand::Subscribe {
+                level: Level::State,
+                since: None,
+            }),
+            &sub,
+        );
         assert_eq!(res.corr.as_deref(), Some("c-1"));
         assert_eq!(res.body["root"], "s_S");
         assert_eq!(replay.len(), 2);
         assert_eq!(router.level(), Level::State);
 
-        let (res, _) = router.handle(&command(MeshCommand::List { scope: ListScope::Children, of: None }), &sub);
+        let (res, _) = router.handle(
+            &command(MeshCommand::List {
+                scope: ListScope::Children,
+                of: None,
+            }),
+            &sub,
+        );
         assert_eq!(res.body["nodes"][0]["id"], "s_S/a_1");
         let (res, _) = router.handle(&command(MeshCommand::Get { node: a.clone() }), &sub);
         assert_eq!(res.body["node"]["kind"], "agent");
-        let (res, _) = router.handle(&command(MeshCommand::Cancel { node: a.clone(), cascade: true }), &sub);
+        let (res, _) = router.handle(
+            &command(MeshCommand::Cancel {
+                node: a.clone(),
+                cascade: true,
+            }),
+            &sub,
+        );
         assert_eq!(res.body["cancelled"][0], "s_S/a_1");
         assert!(stopped.load(Ordering::SeqCst));
 
-        let (res, _) = router.handle(&command(MeshCommand::Get { node: root.child(NodeKind::Side, "x") }), &sub);
+        let (res, _) = router.handle(
+            &command(MeshCommand::Get {
+                node: root.child(NodeKind::Side, "x"),
+            }),
+            &sub,
+        );
         assert_eq!(res.body["error"]["code"], "not_found");
         let mut bad = command(MeshCommand::Get { node: a });
         bad.op = "teleport".into();
@@ -958,10 +1260,21 @@ mod tests {
         let router = LocalRouter::default();
         let root = router.set_root("S", "chat");
         let a = agent(&router, &root, "1", None);
-        let row = |id: &str, phase: &str| ToolRow { call_id: id.into(), name: "bash".into(), args: json!({}), phase: phase.into() };
+        let row = |id: &str, phase: &str| ToolRow {
+            call_id: id.into(),
+            name: "bash".into(),
+            args: json!({}),
+            phase: phase.into(),
+        };
         // Nobody subscribed: still folded.
         router.activity(&a, 1, 1, Some(row("c1", "running")), None);
-        router.activity(&a, 1, 2, Some(row("c2", "running")), Some("thinking".into()));
+        router.activity(
+            &a,
+            1,
+            2,
+            Some(row("c2", "running")),
+            Some("thinking".into()),
+        );
         router.activity(&a, 2, 2, Some(row("c1", "done")), None);
 
         let sub = router.subscriber();
@@ -970,14 +1283,26 @@ mod tests {
             .iter()
             .filter_map(Envelope::as_event)
             .find_map(|event| match event {
-                MeshEvent::NodeActivity { node, turns, tool_uses, text, rows: Some(rows), .. } if node == a => {
-                    Some((turns, tool_uses, text, rows))
-                }
+                MeshEvent::NodeActivity {
+                    node,
+                    turns,
+                    tool_uses,
+                    text,
+                    rows: Some(rows),
+                    ..
+                } if node == a => Some((turns, tool_uses, text, rows)),
                 _ => None,
             })
             .expect("a snapshot");
-        assert_eq!((snapshot.0, snapshot.1, snapshot.2.as_deref()), (2, 2, Some("thinking")));
-        let phases: Vec<_> = snapshot.3.iter().map(|r| (r.call_id.as_str(), r.phase.as_str())).collect();
+        assert_eq!(
+            (snapshot.0, snapshot.1, snapshot.2.as_deref()),
+            (2, 2, Some("thinking"))
+        );
+        let phases: Vec<_> = snapshot
+            .3
+            .iter()
+            .map(|r| (r.call_id.as_str(), r.phase.as_str()))
+            .collect();
         assert_eq!(phases, [("c1", "done"), ("c2", "running")]);
 
         // A state-level subscriber gets no activity.
@@ -1003,8 +1328,13 @@ mod tests {
         assert_eq!(router.pending_wake(&root), [a.to_string(), b.to_string()]);
         let events = drain(&mut rx);
         assert_eq!(events.len(), 2);
-        let MeshEvent::NodeState { node, prev } = &events[1] else { panic!() };
-        assert_eq!((node.id.clone(), node.state, *prev), (root.clone(), NodeState::Idle, Some(NodeState::Idle)));
+        let MeshEvent::NodeState { node, prev } = &events[1] else {
+            panic!()
+        };
+        assert_eq!(
+            (node.id.clone(), node.state, *prev),
+            (root.clone(), NodeState::Idle, Some(NodeState::Idle))
+        );
         assert_eq!(node.meta["wake"], json!([a.as_str(), b.as_str()]));
 
         // A message, then a report from the same node: the upgrade is
@@ -1014,11 +1344,16 @@ mod tests {
         router.request_wake_for(&root, &c, None, "mail");
         assert_eq!(drain(&mut rx).len(), 1);
         router.request_wake_for(&root, &c, None, "report");
-        let MeshEvent::NodeState { node, .. } = drain(&mut rx).pop().expect("announced") else { panic!() };
+        let MeshEvent::NodeState { node, .. } = drain(&mut rx).pop().expect("announced") else {
+            panic!()
+        };
         assert_eq!(node.meta["wakeReasons"][c.as_str()], "report");
         router.request_wake_for(&root, &c, None, "mail");
         assert!(drain(&mut rx).is_empty());
-        assert_eq!(router.get(&root).unwrap().meta["wakeReasons"][c.as_str()], "report");
+        assert_eq!(
+            router.get(&root).unwrap().meta["wakeReasons"][c.as_str()],
+            "report"
+        );
 
         // A session the router has not seen is tracked, not made the root.
         let other = Address::session("T");
@@ -1039,8 +1374,14 @@ mod tests {
         let _ab = router.try_wait(&a, &b).unwrap();
         let bc = router.try_wait(&b, &c).unwrap();
         // c asking a, or a asking the session, would never end.
-        assert_eq!(router.try_wait(&c, &a).err().unwrap().code, ErrorCode::WouldDeadlock);
-        assert_eq!(router.try_wait(&a, &root).err().unwrap().code, ErrorCode::WouldDeadlock);
+        assert_eq!(
+            router.try_wait(&c, &a).err().unwrap().code,
+            ErrorCode::WouldDeadlock
+        );
+        assert_eq!(
+            router.try_wait(&a, &root).err().unwrap().code,
+            ErrorCode::WouldDeadlock
+        );
         assert!(router.would_deadlock(&a, &a));
         // So would c asking the session (it waits on c through a and b); an
         // agent outside the chain may ask it. Once b's ask ends, c may ask a.
@@ -1053,11 +1394,17 @@ mod tests {
     #[test]
     fn a_pair_talking_in_a_loop_is_stopped() {
         let router = LocalRouter::default();
-        let (a, b) = (Address::session("S").child(NodeKind::Agent, "a"), Address::session("S").child(NodeKind::Agent, "b"));
+        let (a, b) = (
+            Address::session("S").child(NodeKind::Agent, "a"),
+            Address::session("S").child(NodeKind::Agent, "b"),
+        );
         for _ in 0..MAX_PAIR_MAIL {
             router.count_mail(&a, &b).unwrap();
         }
-        assert_eq!(router.count_mail(&a, &b).unwrap_err().code, ErrorCode::Forbidden);
+        assert_eq!(
+            router.count_mail(&a, &b).unwrap_err().code,
+            ErrorCode::Forbidden
+        );
         assert!(router.count_mail(&b, &a).is_ok(), "per direction");
     }
 
@@ -1072,7 +1419,9 @@ mod tests {
         router.set_root("S2", "two");
         let events = drain(&mut rx);
         assert_eq!(events.len(), 3);
-        let MeshEvent::NodeState { node, .. } = &events[1] else { panic!() };
+        let MeshEvent::NodeState { node, .. } = &events[1] else {
+            panic!()
+        };
         assert_eq!((node.id.as_str(), node.state), ("s_S1", NodeState::Closed));
         assert_eq!(router.root(), Some(Address::session("S2")));
         assert_eq!(router.list(ListScope::All, None).unwrap().len(), 1);

@@ -458,7 +458,7 @@ export const useEngineStore = create<EngineStore>((set, get) => {
   // ── Session mesh ────────────────────────────────────────────────────────
   //
   // The engine pushes its nodes' lifecycle and activity (src/engine/mesh.ts,
-  // docs/features/session-mesh-protocol/sdd.md). This window subscribes at the
+  // docs/features/session-mesh-protocol/spec.md). This window subscribes at the
   // summary level and folds subagent events into the `agent` call's nested
   // view, live, for foreground and background agents alike. A subscription
   // replays the retained state and one activity snapshot per node, so a

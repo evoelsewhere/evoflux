@@ -417,7 +417,9 @@ fn resolve_timeout(timeout: Option<f64>, default_timeout: Option<f64>) -> Result
         .or(default_timeout)
         .unwrap_or(DEFAULT_BASH_TIMEOUT_SECONDS);
     // The sandbox's cap wins over a larger timeout the model asked for.
-    let secs = crate::sandbox::policy().clamp_timeout(Some(secs)).unwrap_or(secs);
+    let secs = crate::sandbox::policy()
+        .clamp_timeout(Some(secs))
+        .unwrap_or(secs);
     if !secs.is_finite() || secs <= 0.0 {
         return Err(AgentError::Tool(
             "Invalid timeout: must be a finite number of seconds".into(),

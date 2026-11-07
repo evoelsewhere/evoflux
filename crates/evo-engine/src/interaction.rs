@@ -63,12 +63,18 @@ pub fn validate(questions: &[Question]) -> Result<(), String> {
             return Err("every question needs text".into());
         }
         if q.options.len() == 1 || q.options.len() > 6 {
-            return Err(format!("\"{}\": give 2 to 6 options, or none for a free answer", q.question));
+            return Err(format!(
+                "\"{}\": give 2 to 6 options, or none for a free answer",
+                q.question
+            ));
         }
         let mut seen = std::collections::HashSet::new();
         for o in &q.options {
             if o.label.trim().is_empty() || !seen.insert(o.label.trim().to_lowercase()) {
-                return Err(format!("\"{}\": options need distinct, non-empty labels", q.question));
+                return Err(format!(
+                    "\"{}\": options need distinct, non-empty labels",
+                    q.question
+                ));
             }
         }
     }
@@ -84,12 +90,25 @@ pub fn format_answers(questions: &[Question], answers: &Value) -> String {
         let mut parts: Vec<String> = a
             .get("selected")
             .and_then(Value::as_array)
-            .map(|s| s.iter().filter_map(Value::as_str).map(|x| format!("\"{x}\"")).collect())
+            .map(|s| {
+                s.iter()
+                    .filter_map(Value::as_str)
+                    .map(|x| format!("\"{x}\""))
+                    .collect()
+            })
             .unwrap_or_default();
-        if let Some(other) = a.get("other").and_then(Value::as_str).filter(|s| !s.trim().is_empty()) {
+        if let Some(other) = a
+            .get("other")
+            .and_then(Value::as_str)
+            .filter(|s| !s.trim().is_empty())
+        {
             parts.push(format!("(their own words) {}", other.trim()));
         }
-        let answer = if parts.is_empty() { "(no answer)".to_string() } else { parts.join(", ") };
+        let answer = if parts.is_empty() {
+            "(no answer)".to_string()
+        } else {
+            parts.join(", ")
+        };
         text.push_str(&format!("{}. {} → {}\n", i + 1, q.question.trim(), answer));
     }
     text.push_str("\nGo on with these answers.");
@@ -172,8 +191,8 @@ impl AgentTool for AskUserTool {
         signal: CancellationToken,
         _on_update: Arc<dyn Fn(ToolResultPartial) + Send + Sync>,
     ) -> Result<AgentToolResult, AgentError> {
-        let input: AskInput =
-            serde_json::from_value(params).map_err(|e| AgentError::Validation(format!("ask_user input: {e}")))?;
+        let input: AskInput = serde_json::from_value(params)
+            .map_err(|e| AgentError::Validation(format!("ask_user input: {e}")))?;
         validate(&input.questions).map_err(AgentError::Validation)?;
         let no_one = || {
             AgentError::Tool(
@@ -229,7 +248,10 @@ impl AgentTool for AskUserTool {
             tokio::time::sleep(Duration::from_millis(150)).await;
         };
         Ok(AgentToolResult {
-            content: vec![TextContentOrImage::text(format_answers(&input.questions, &answers))],
+            content: vec![TextContentOrImage::text(format_answers(
+                &input.questions,
+                &answers,
+            ))],
             details: json!({ "questions": input.questions, "answers": answers }),
             ..Default::default()
         })
@@ -261,14 +283,23 @@ pub fn summarize(todos: &[Todo]) -> Result<String, String> {
             return Err("every task needs text".into());
         }
         if !matches!(t.status.as_str(), "pending" | "in_progress" | "completed") {
-            return Err(format!("\"{}\": status must be pending, in_progress or completed", t.content));
+            return Err(format!(
+                "\"{}\": status must be pending, in_progress or completed",
+                t.content
+            ));
         }
     }
     let done = todos.iter().filter(|t| t.status == "completed").count();
-    let active: Vec<&str> = todos.iter().filter(|t| t.status == "in_progress").map(|t| t.content.as_str()).collect();
+    let active: Vec<&str> = todos
+        .iter()
+        .filter(|t| t.status == "in_progress")
+        .map(|t| t.content.as_str())
+        .collect();
     let mut text = format!("Tasks updated: {done} of {} done.", todos.len());
     match active.len() {
-        0 if done < todos.len() => text.push_str(" Mark the next task in_progress when you start it."),
+        0 if done < todos.len() => {
+            text.push_str(" Mark the next task in_progress when you start it.")
+        }
         0 => {}
         1 => text.push_str(&format!(" In progress: {}.", active[0])),
         _ => text.push_str(" Keep only one task in_progress at a time."),
@@ -336,8 +367,8 @@ impl AgentTool for UpdateTodosTool {
         _signal: CancellationToken,
         _on_update: Arc<dyn Fn(ToolResultPartial) + Send + Sync>,
     ) -> Result<AgentToolResult, AgentError> {
-        let input: TodosInput =
-            serde_json::from_value(params).map_err(|e| AgentError::Validation(format!("update_todos input: {e}")))?;
+        let input: TodosInput = serde_json::from_value(params)
+            .map_err(|e| AgentError::Validation(format!("update_todos input: {e}")))?;
         let text = summarize(&input.todos).map_err(AgentError::Validation)?;
         Ok(AgentToolResult {
             content: vec![TextContentOrImage::text(text)],
@@ -355,7 +386,13 @@ mod tests {
         Question {
             question: text.into(),
             header: None,
-            options: options.iter().map(|l| QuestionOption { label: l.to_string(), description: None }).collect(),
+            options: options
+                .iter()
+                .map(|l| QuestionOption {
+                    label: l.to_string(),
+                    description: None,
+                })
+                .collect(),
             multi_select: false,
         }
     }
@@ -373,17 +410,34 @@ mod tests {
     #[test]
     fn answers_read_well() {
         let qs = [q("Which DB?", &["Postgres", "SQLite"]), q("Name?", &[])];
-        let text = format_answers(&qs, &json!([{ "selected": ["SQLite"] }, { "selected": [], "other": "evo-db" }]));
+        let text = format_answers(
+            &qs,
+            &json!([{ "selected": ["SQLite"] }, { "selected": [], "other": "evo-db" }]),
+        );
         assert!(text.contains("1. Which DB? → \"SQLite\""), "{text}");
-        assert!(text.contains("2. Name? → (their own words) evo-db"), "{text}");
+        assert!(
+            text.contains("2. Name? → (their own words) evo-db"),
+            "{text}"
+        );
     }
 
     #[test]
     fn todos_are_summarized() {
-        let t = |c: &str, s: &str| Todo { content: c.into(), status: s.into(), active_form: None };
-        let s = summarize(&[t("A", "completed"), t("B", "in_progress"), t("C", "pending")]).unwrap();
+        let t = |c: &str, s: &str| Todo {
+            content: c.into(),
+            status: s.into(),
+            active_form: None,
+        };
+        let s = summarize(&[
+            t("A", "completed"),
+            t("B", "in_progress"),
+            t("C", "pending"),
+        ])
+        .unwrap();
         assert_eq!(s, "Tasks updated: 1 of 3 done. In progress: B.");
         assert!(summarize(&[t("A", "doing")]).is_err());
-        assert!(summarize(&[t("A", "in_progress"), t("B", "in_progress")]).unwrap().contains("only one"));
+        assert!(summarize(&[t("A", "in_progress"), t("B", "in_progress")])
+            .unwrap()
+            .contains("only one"));
     }
 }

@@ -1,5 +1,5 @@
 //! Peer messaging between the conversations this engine hosts (session mesh
-//! phase 4, `docs/features/session-mesh-protocol/sdd.md`): the `send_message`,
+//! phase 4, `docs/features/session-mesh-protocol/spec.md`): the `send_message`,
 //! `ask`, `reply`, `list_nodes` and `cancel_node` tools.
 //!
 //! The session has one instance of each (bound to the session's node); every
@@ -57,7 +57,11 @@ fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 }
 
 fn text_result(text: impl Into<String>, details: Value) -> AgentToolResult {
-    AgentToolResult { content: vec![TextContentOrImage::text(text.into())], details, ..Default::default() }
+    AgentToolResult {
+        content: vec![TextContentOrImage::text(text.into())],
+        details,
+        ..Default::default()
+    }
 }
 
 // ── Pending asks ─────────────────────────────────────────────────────────────
@@ -84,7 +88,10 @@ pub fn run_ended(node: &Address, text: &str) {
         let answer = if text.trim().is_empty() {
             "(it finished without answering)".to_string()
         } else {
-            format!("(it did not call reply; its final message)\n{}", text.trim())
+            format!(
+                "(it did not call reply; its final message)\n{}",
+                text.trim()
+            )
         };
         let _ = ask.answer.send(answer);
     }
@@ -116,16 +123,18 @@ impl Ctx {
     }
 
     fn session_address(&self) -> Result<Address, AgentError> {
-        Ok(Address::session(&self.session()?.session().storage().metadata().id))
+        Ok(Address::session(
+            &self.session()?.session().storage().metadata().id,
+        ))
     }
 
     /// Who is calling.
     fn caller(&self) -> Result<Address, AgentError> {
         match &self.me {
             Some(me) => Ok(me.clone()),
-            None if evo_agent::tool_execution_scope::is_child_execution() => {
-                Err(AgentError::Tool("this tool is not available to this kind of child agent".into()))
-            }
+            None if evo_agent::tool_execution_scope::is_child_execution() => Err(AgentError::Tool(
+                "this tool is not available to this kind of child agent".into(),
+            )),
             None => self.session_address(),
         }
     }
@@ -157,11 +166,19 @@ fn reachable(me: &Node) -> Vec<Node> {
     if let Some(parent) = &me.parent {
         out.push(node_of(parent));
         if me.caps.iter().any(|cap| cap == "mail.siblings") {
-            let siblings = router.list(ListScope::Children, Some(parent)).unwrap_or_default();
-            out.extend(siblings.into_iter().filter(|n| n.id != me.id && n.kind == NodeKind::Agent));
+            let siblings = router
+                .list(ListScope::Children, Some(parent))
+                .unwrap_or_default();
+            out.extend(
+                siblings
+                    .into_iter()
+                    .filter(|n| n.id != me.id && n.kind == NodeKind::Agent),
+            );
         }
     }
-    let children = router.list(ListScope::Children, Some(&me.id)).unwrap_or_default();
+    let children = router
+        .list(ListScope::Children, Some(&me.id))
+        .unwrap_or_default();
     out.extend(children.into_iter().filter(|n| n.kind == NodeKind::Agent));
     out
 }
@@ -171,7 +188,9 @@ fn resolve(me: &Node, to: &str) -> Result<Node, AgentError> {
     let to = to.trim();
     let candidates = reachable(me);
     let found = if to.eq_ignore_ascii_case("parent") {
-        me.parent.as_ref().and_then(|p| candidates.iter().find(|n| n.id == *p))
+        me.parent
+            .as_ref()
+            .and_then(|p| candidates.iter().find(|n| n.id == *p))
     } else {
         candidates.iter().find(|n| {
             n.id.as_str() == to
@@ -180,10 +199,17 @@ fn resolve(me: &Node, to: &str) -> Result<Node, AgentError> {
         })
     };
     found.cloned().ok_or_else(|| {
-        let names: Vec<String> = candidates.iter().map(|n| format!("{} ({})", n.id, title_of(n))).collect();
+        let names: Vec<String> = candidates
+            .iter()
+            .map(|n| format!("{} ({})", n.id, title_of(n)))
+            .collect();
         AgentError::Validation(format!(
             "`{to}` is not a node you can reach; you can reach: {}",
-            if names.is_empty() { "nobody".to_string() } else { names.join(", ") }
+            if names.is_empty() {
+                "nobody".to_string()
+            } else {
+                names.join(", ")
+            }
         ))
     })
 }
@@ -207,20 +233,33 @@ fn render(id: &str, from: &Node, ask: bool, text: &str) -> String {
 }
 
 /// Put `text` in front of `to`'s model. Returns how it was delivered.
-async fn deliver(ctx: &Ctx, from: &Node, to: &Node, text: String, ask: bool) -> Result<&'static str, AgentError> {
+async fn deliver(
+    ctx: &Ctx,
+    from: &Node,
+    to: &Node,
+    text: String,
+    ask: bool,
+) -> Result<&'static str, AgentError> {
     match to.kind {
         NodeKind::Session => {
             let session = ctx.session()?;
             if to.id != ctx.session_address()? {
-                return Err(AgentError::Tool(format!("{} runs in another engine", to.id)));
+                return Err(AgentError::Tool(format!(
+                    "{} runs in another engine",
+                    to.id
+                )));
             }
             let message = AgentMessage::from(evo_ai::types::UserMessage::new(text, now_ms()));
             let lane = session.lane("main");
             if session.has_active_run() {
-                lane.steer(message).await.map_err(|e| AgentError::Tool(e.to_string()))?;
+                lane.steer(message)
+                    .await
+                    .map_err(|e| AgentError::Tool(e.to_string()))?;
                 Ok("delivered into its current turn")
             } else {
-                lane.next_run(message).await.map_err(|e| AgentError::Tool(e.to_string()))?;
+                lane.next_run(message)
+                    .await
+                    .map_err(|e| AgentError::Tool(e.to_string()))?;
                 mesh::router().request_wake_for(&to.id, &from.id, Some(&title_of(from)), "mail");
                 Ok("queued for its next turn; it is being woken")
             }
@@ -235,7 +274,12 @@ async fn deliver(ctx: &Ctx, from: &Node, to: &Node, text: String, ask: bool) -> 
 // ── Tools ────────────────────────────────────────────────────────────────────
 
 fn schema(name: &str, description: &str, parameters: Value) -> Tool {
-    Tool { name: name.into(), description: description.into(), parameters: Schema::new(parameters), constrained_sampling: None }
+    Tool {
+        name: name.into(),
+        description: description.into(),
+        parameters: Schema::new(parameters),
+        constrained_sampling: None,
+    }
 }
 
 /// The five tools for the session (`me: None`) or for the agent at `me`.
@@ -301,9 +345,15 @@ pub fn create(harness: HarnessCell, me: Option<Address>) -> Vec<Arc<dyn AgentToo
 }
 
 fn string_arg(params: &Value, key: &str) -> Result<String, AgentError> {
-    let value = params.get(key).and_then(Value::as_str).map(str::trim).unwrap_or_default();
+    let value = params
+        .get(key)
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .unwrap_or_default();
     if value.is_empty() || value.len() > MAX_TEXT {
-        return Err(AgentError::Validation(format!("`{key}` must contain 1-{MAX_TEXT} bytes")));
+        return Err(AgentError::Validation(format!(
+            "`{key}` must contain 1-{MAX_TEXT} bytes"
+        )));
     }
     Ok(value.to_string())
 }
@@ -341,9 +391,18 @@ impl AgentTool for SendMessage {
         let me = node_of(&self.ctx.caller()?);
         let to = resolve(&me, &string_arg(&params, "to")?)?;
         let message = string_arg(&params, "message")?;
-        mesh::router().count_mail(&me.id, &to.id).map_err(|e| AgentError::Tool(e.message))?;
+        mesh::router()
+            .count_mail(&me.id, &to.id)
+            .map_err(|e| AgentError::Tool(e.message))?;
         let id = mesh::router().next_id();
-        let how = deliver(&self.ctx, &me, &to, render(&id, &me, false, &message), false).await?;
+        let how = deliver(
+            &self.ctx,
+            &me,
+            &to,
+            render(&id, &me, false, &message),
+            false,
+        )
+        .await?;
         Ok(text_result(
             format!("Sent to {} ({how}).", title_of(&to)),
             json!({ "mail": { "id": id, "from": me.id, "to": to.id, "delivery": how } }),
@@ -370,16 +429,31 @@ impl AgentTool for Ask {
         let me = node_of(&self.ctx.caller()?);
         let to = resolve(&me, &string_arg(&params, "to")?)?;
         let question = string_arg(&params, "question")?;
-        let secs = params.get("timeoutSeconds").and_then(Value::as_u64).unwrap_or(DEFAULT_ASK_SECS).clamp(10, MAX_ASK_SECS);
+        let secs = params
+            .get("timeoutSeconds")
+            .and_then(Value::as_u64)
+            .unwrap_or(DEFAULT_ASK_SECS)
+            .clamp(10, MAX_ASK_SECS);
         let router = mesh::router();
         // Waiting on someone who waits on us would never end.
-        let _wait = router.try_wait(&me.id, &to.id).map_err(|e| AgentError::Tool(e.message))?;
-        router.count_mail(&me.id, &to.id).map_err(|e| AgentError::Tool(e.message))?;
+        let _wait = router
+            .try_wait(&me.id, &to.id)
+            .map_err(|e| AgentError::Tool(e.message))?;
+        router
+            .count_mail(&me.id, &to.id)
+            .map_err(|e| AgentError::Tool(e.message))?;
         let id = router.next_id();
         let (answer_tx, answer_rx) = oneshot::channel();
-        lock(&ASKS).push(PendingAsk { id: id.clone(), from: me.id.clone(), to: to.id.clone(), answer: answer_tx });
+        lock(&ASKS).push(PendingAsk {
+            id: id.clone(),
+            from: me.id.clone(),
+            to: to.id.clone(),
+            answer: answer_tx,
+        });
         let forget = |id: &str| lock(&ASKS).retain(|ask| ask.id != id);
-        if let Err(error) = deliver(&self.ctx, &me, &to, render(&id, &me, true, &question), true).await {
+        if let Err(error) =
+            deliver(&self.ctx, &me, &to, render(&id, &me, true, &question), true).await
+        {
             forget(&id);
             return Err(error);
         }
@@ -389,7 +463,9 @@ impl AgentTool for Ask {
             _ = signal.cancelled() => Err("cancelled".to_string()),
         };
         forget(&id);
-        let answer = outcome.map_err(|reason| AgentError::Tool(format!("{} did not answer: {reason}", title_of(&to))))?;
+        let answer = outcome.map_err(|reason| {
+            AgentError::Tool(format!("{} did not answer: {reason}", title_of(&to)))
+        })?;
         Ok(text_result(
             format!("{} answered:\n{answer}", title_of(&to)),
             json!({ "ask": { "id": id, "from": me.id, "to": to.id } }),
@@ -424,13 +500,18 @@ impl AgentTool for Reply {
                 )));
             };
             if asks[index].to != me {
-                return Err(AgentError::Validation(format!("question `{id}` was not asked to you")));
+                return Err(AgentError::Validation(format!(
+                    "question `{id}` was not asked to you"
+                )));
             }
             asks.remove(index)
         };
         let to = ask.from.clone();
         let _ = ask.answer.send(answer);
-        Ok(text_result(format!("Answered {to}."), json!({ "reply": { "askId": id, "to": to } })))
+        Ok(text_result(
+            format!("Answered {to}."),
+            json!({ "reply": { "askId": id, "to": to } }),
+        ))
     }
 }
 
@@ -491,9 +572,14 @@ impl AgentTool for CancelNode {
         let me = node_of(&self.ctx.caller()?);
         let target = resolve(&me, &string_arg(&params, "node")?)?;
         if target.parent.as_ref() != Some(&me.id) {
-            return Err(AgentError::Validation(format!("{} was not started by you", title_of(&target))));
+            return Err(AgentError::Validation(format!(
+                "{} was not started by you",
+                title_of(&target)
+            )));
         }
-        let cancelled = mesh::router().cancel(&target.id, true).map_err(|e| AgentError::Tool(e.message))?;
+        let cancelled = mesh::router()
+            .cancel(&target.id, true)
+            .map_err(|e| AgentError::Tool(e.message))?;
         let text = if cancelled.is_empty() {
             format!("{} was not running.", title_of(&target))
         } else {

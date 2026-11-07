@@ -1,4 +1,4 @@
-//! The hub: sessions talking to sessions (`docs/features/session-mesh-protocol/sdd.md`).
+//! The hub: sessions talking to sessions (`docs/features/session-mesh-protocol/spec.md`).
 //!
 //! Each session runs in its own engine; whoever relays those engines' stdout
 //! (the desktop shell) feeds every line to [`Hub::on_line`] and carries out the
@@ -121,7 +121,11 @@ pub enum Effect {
     /// `chat` has mail but no engine set up to take it: a window should start
     /// (or set up) its engine, in `cwd` if given, restoring its transcript
     /// when `restore`, then call [`Hub::on_hosted`].
-    Host { chat: String, cwd: Option<String>, restore: bool },
+    Host {
+        chat: String,
+        cwd: Option<String>,
+        restore: bool,
+    },
     /// A turn of `chat` is about to start with `text` (comes right before
     /// the `Send` of the prompt). The engine does not echo a run's prompt,
     /// so the window showing the chat adds the turn, as for a typed prompt.
@@ -266,7 +270,11 @@ impl<S: MailStore> Hub<S> {
     }
 
     fn next_id(&self, prefix: &str) -> String {
-        format!("{prefix}_{}_{}", self.epoch, self.ids.fetch_add(1, Ordering::Relaxed) + 1)
+        format!(
+            "{prefix}_{}_{}",
+            self.epoch,
+            self.ids.fetch_add(1, Ordering::Relaxed) + 1
+        )
     }
 
     fn with_engine<T>(&self, chat: &str, f: impl FnOnce(&mut Engine) -> T) -> T {
@@ -296,7 +304,11 @@ impl<S: MailStore> Hub<S> {
         if self.store.pending(chat).is_empty() {
             Vec::new()
         } else {
-            vec![Effect::Host { chat: chat.into(), cwd: None, restore: true }]
+            vec![Effect::Host {
+                chat: chat.into(),
+                cwd: None,
+                restore: true,
+            }]
         }
     }
 
@@ -369,8 +381,12 @@ impl<S: MailStore> Hub<S> {
         if line.get("from").and_then(Value::as_str) != Some(Address::session(chat).as_str()) {
             return Vec::new();
         }
-        let Ok(envelope) = serde_json::from_value::<Envelope>(line.clone()) else { return Vec::new() };
-        let Some(MeshEvent::NodeReport { status, text, .. }) = envelope.as_event() else { return Vec::new() };
+        let Ok(envelope) = serde_json::from_value::<Envelope>(line.clone()) else {
+            return Vec::new();
+        };
+        let Some(MeshEvent::NodeReport { status, text, .. }) = envelope.as_event() else {
+            return Vec::new();
+        };
         {
             let mut seen = lock(&self.seen_reports);
             let seen = seen.entry(chat.to_string()).or_default();
@@ -382,19 +398,30 @@ impl<S: MailStore> Hub<S> {
                 seen.pop_front();
             }
         }
-        let Some(parent) = self.store.parent_of(chat) else { return Vec::new() };
+        let Some(parent) = self.store.parent_of(chat) else {
+            return Vec::new();
+        };
         let title = self.store.title_of(chat).unwrap_or_default();
-        self.post(chat, &parent, MailBody {
-            text: session_note(chat, &title, status, &text),
-            deliver: Deliver::Wake,
-            title: Some(title),
-        })
+        self.post(
+            chat,
+            &parent,
+            MailBody {
+                text: session_note(chat, &title, status, &text),
+                deliver: Deliver::Wake,
+                title: Some(title),
+            },
+        )
     }
 
     /// An RPC response; if it answers a prompt we sent, the prompt is delivered.
     fn on_response(&self, chat: &str, line: &Value) {
-        let Some(id) = line.get("id").and_then(Value::as_str) else { return };
-        let accepted = line.get("success").and_then(Value::as_bool).unwrap_or(false);
+        let Some(id) = line.get("id").and_then(Value::as_str) else {
+            return;
+        };
+        let accepted = line
+            .get("success")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
         if lock(&self.in_flight).contains_key(id) && !accepted {
             // Refused (a run started meanwhile): it goes out when that run ends.
             self.with_engine(chat, |e| e.busy = e.busy || line_says_busy(line));
@@ -413,7 +440,13 @@ impl<S: MailStore> Hub<S> {
 
     /// Store mail from `from` to `to` and send it if `to` can take it.
     pub fn post(&self, from: &str, to: &str, body: MailBody) -> Vec<Effect> {
-        let mail = Mail { id: self.next_id("mail"), from_chat: from.into(), to_chat: to.into(), body, created_at: now_ms() };
+        let mail = Mail {
+            id: self.next_id("mail"),
+            from_chat: from.into(),
+            to_chat: to.into(),
+            body,
+            created_at: now_ms(),
+        };
         if let Err(error) = self.store.insert(&mail) {
             // Not stored: still try to deliver it now rather than lose it.
             eprintln!("[evo-mesh] could not store mail {}: {error}", mail.id);
@@ -421,7 +454,11 @@ impl<S: MailStore> Hub<S> {
         match self.deliverable(&mail) {
             Some(true) => self.send(&mail),
             Some(false) => Vec::new(),
-            None => vec![Effect::Host { chat: to.into(), cwd: None, restore: true }],
+            None => vec![Effect::Host {
+                chat: to.into(),
+                cwd: None,
+                restore: true,
+            }],
         }
     }
 
@@ -443,17 +480,24 @@ impl<S: MailStore> Hub<S> {
             Deliver::Prompt => {
                 // A running engine reads it at its next step (steering); an
                 // idle one starts a turn (and is busy from now on).
-                let busy = self.with_engine(&mail.to_chat, |e| std::mem::replace(&mut e.busy, true));
+                let busy =
+                    self.with_engine(&mail.to_chat, |e| std::mem::replace(&mut e.busy, true));
                 if busy {
                     json!({ "type": "queue_message", "id": mail.id, "message": mail.body.text, "deliverAs": "steer" })
                 } else {
-                    effects.push(Effect::Prompted { chat: mail.to_chat.clone(), text: mail.body.text.clone() });
+                    effects.push(Effect::Prompted {
+                        chat: mail.to_chat.clone(),
+                        text: mail.body.text.clone(),
+                    });
                     json!({ "type": "prompt", "id": mail.id, "message": mail.body.text })
                 }
             }
             _ => serde_json::to_value(mail.envelope()).unwrap_or(Value::Null),
         };
-        effects.push(Effect::Send { chat: mail.to_chat.clone(), line });
+        effects.push(Effect::Send {
+            chat: mail.to_chat.clone(),
+            line,
+        });
         effects
     }
 
@@ -462,7 +506,10 @@ impl<S: MailStore> Hub<S> {
         let pending = self.store.pending(chat);
         let fresh: Vec<Mail> = {
             let in_flight = lock(&self.in_flight);
-            pending.into_iter().filter(|mail| !in_flight.contains_key(&mail.id)).collect()
+            pending
+                .into_iter()
+                .filter(|mail| !in_flight.contains_key(&mail.id))
+                .collect()
         };
         fresh
             .iter()
@@ -475,13 +522,21 @@ impl<S: MailStore> Hub<S> {
 
     /// Start a nested session of `parent` now: create it, send its brief,
     /// and have a window host its engine.
-    pub fn start_session(&self, parent: &str, spec: &SessionSpec) -> Result<(CreatedSession, Vec<Effect>), String> {
+    pub fn start_session(
+        &self,
+        parent: &str,
+        spec: &SessionSpec,
+    ) -> Result<(CreatedSession, Vec<Effect>), String> {
         let created = self.store.create_session(parent, spec)?;
-        let mut effects = self.post(parent, &created.id, MailBody {
-            text: spec.prompt.clone(),
-            deliver: Deliver::Prompt,
-            title: None,
-        });
+        let mut effects = self.post(
+            parent,
+            &created.id,
+            MailBody {
+                text: spec.prompt.clone(),
+                deliver: Deliver::Prompt,
+                title: None,
+            },
+        );
         // A new chat has no engine yet: host it where its worktree says.
         for effect in effects.iter_mut() {
             if let Effect::Host { chat, cwd, restore } = effect {
@@ -495,14 +550,24 @@ impl<S: MailStore> Hub<S> {
     }
 
     fn children_running(&self, parent: &str) -> usize {
-        self.store.children_of(parent).iter().filter(|child| self.is_busy(&child.id)).count()
+        self.store
+            .children_of(parent)
+            .iter()
+            .filter(|child| self.is_busy(&child.id))
+            .count()
     }
 
     fn on_tool_call(&self, chat: &str, line: &Value) -> Vec<Effect> {
-        let Some(name) = line.get("toolName").and_then(Value::as_str).filter(|n| is_session_tool(n)) else {
+        let Some(name) = line
+            .get("toolName")
+            .and_then(Value::as_str)
+            .filter(|n| is_session_tool(n))
+        else {
             return Vec::new();
         };
-        let Some(request_id) = line.get("requestId").and_then(Value::as_str) else { return Vec::new() };
+        let Some(request_id) = line.get("requestId").and_then(Value::as_str) else {
+            return Vec::new();
+        };
         let args = line.get("arguments").cloned().unwrap_or(Value::Null);
         let (result, mut effects) = match name {
             "start_session" => self.call_start(chat, &args),
@@ -515,25 +580,57 @@ impl<S: MailStore> Hub<S> {
             "requestId": request_id,
             "result": result,
         });
-        effects.insert(0, Effect::Send { chat: chat.into(), line: answer });
+        effects.insert(
+            0,
+            Effect::Send {
+                chat: chat.into(),
+                line: answer,
+            },
+        );
         effects
     }
 
     fn call_start(&self, chat: &str, args: &Value) -> (Value, Vec<Effect>) {
-        let text = |key: &str| args.get(key).and_then(Value::as_str).unwrap_or_default().to_string();
-        let title: String = text("title").split_whitespace().collect::<Vec<_>>().join(" ").chars().take(120).collect();
+        let text = |key: &str| {
+            args.get(key)
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string()
+        };
+        let title: String = text("title")
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+            .chars()
+            .take(120)
+            .collect();
         let prompt = text("prompt").trim().to_string();
         let fork = args.get("context").and_then(Value::as_str) == Some("fork");
-        let worktree = args.get("worktree").and_then(Value::as_bool).unwrap_or(false);
+        let worktree = args
+            .get("worktree")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
         if title.is_empty() || prompt.is_empty() {
-            return (tool_result("start_session needs a title and a prompt.", None, true), Vec::new());
+            return (
+                tool_result("start_session needs a title and a prompt.", None, true),
+                Vec::new(),
+            );
         }
         if self.store.parent_of(chat).is_some() {
-            return (tool_result("Nested sessions cannot start sessions of their own.", None, true), Vec::new());
+            return (
+                tool_result(
+                    "Nested sessions cannot start sessions of their own.",
+                    None,
+                    true,
+                ),
+                Vec::new(),
+            );
         }
         let running = self.children_running(chat);
         if running >= MAX_RUNNING_CHILDREN {
-            let text = format!("{running} sessions from this chat are already running; wait for one to finish.");
+            let text = format!(
+                "{running} sessions from this chat are already running; wait for one to finish."
+            );
             return (tool_result(text, None, true), Vec::new());
         }
         let context = if fork { "fork" } else { "fresh" };
@@ -547,7 +644,12 @@ impl<S: MailStore> Hub<S> {
             );
             return (tool_result(text, Some(proposal), false), Vec::new());
         }
-        let spec = SessionSpec { title: title.clone(), prompt: prompt.clone(), fork, worktree };
+        let spec = SessionSpec {
+            title: title.clone(),
+            prompt: prompt.clone(),
+            fork,
+            worktree,
+        };
         match self.start_session(chat, &spec) {
             Ok((created, effects)) => {
                 let started = json!({
@@ -560,22 +662,61 @@ impl<S: MailStore> Hub<S> {
                 );
                 (tool_result(text, Some(started), false), effects)
             }
-            Err(error) => (tool_result(format!("The session could not be started: {error}"), None, true), Vec::new()),
+            Err(error) => (
+                tool_result(
+                    format!("The session could not be started: {error}"),
+                    None,
+                    true,
+                ),
+                Vec::new(),
+            ),
         }
     }
 
     fn call_message(&self, chat: &str, args: &Value) -> (Value, Vec<Effect>) {
-        let target = args.get("sessionId").and_then(Value::as_str).unwrap_or_default();
-        let message = args.get("message").and_then(Value::as_str).unwrap_or_default().trim();
+        let target = args
+            .get("sessionId")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        let message = args
+            .get("message")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .trim();
         if target.is_empty() || self.store.parent_of(target).as_deref() != Some(chat) {
-            return (tool_result(format!("No session {target} was started from this chat."), None, true), Vec::new());
+            return (
+                tool_result(
+                    format!("No session {target} was started from this chat."),
+                    None,
+                    true,
+                ),
+                Vec::new(),
+            );
         }
         if message.is_empty() {
-            return (tool_result("message_session needs a message.", None, true), Vec::new());
+            return (
+                tool_result("message_session needs a message.", None, true),
+                Vec::new(),
+            );
         }
         let title = self.store.title_of(target).unwrap_or_default();
-        let effects = self.post(chat, target, MailBody { text: message.into(), deliver: Deliver::Prompt, title: None });
-        (tool_result(format!("Sent to \"{title}\". You will get a note when it finishes its turn."), None, false), effects)
+        let effects = self.post(
+            chat,
+            target,
+            MailBody {
+                text: message.into(),
+                deliver: Deliver::Prompt,
+                title: None,
+            },
+        );
+        (
+            tool_result(
+                format!("Sent to \"{title}\". You will get a note when it finishes its turn."),
+                None,
+                false,
+            ),
+            effects,
+        )
     }
 
     fn call_list(&self, chat: &str) -> Value {
@@ -606,7 +747,9 @@ impl<S: MailStore> Hub<S> {
 
 /// Whether a refused prompt was refused because a run is active.
 fn line_says_busy(line: &Value) -> bool {
-    line.get("error").and_then(Value::as_str).is_some_and(|e| e.contains("active") || e.contains("running"))
+    line.get("error")
+        .and_then(Value::as_str)
+        .is_some_and(|e| e.contains("active") || e.contains("running"))
 }
 
 /// A [`MailStore`] in memory (tests, and hosts without a database).
@@ -643,7 +786,11 @@ impl MailStore for MemoryStore {
         Ok(())
     }
     fn pending(&self, chat: &str) -> Vec<Mail> {
-        lock(&self.mail).iter().filter(|(m, done)| !done && m.to_chat == chat).map(|(m, _)| m.clone()).collect()
+        lock(&self.mail)
+            .iter()
+            .filter(|(m, done)| !done && m.to_chat == chat)
+            .map(|(m, _)| m.clone())
+            .collect()
     }
     fn mark_delivered(&self, id: &str) {
         for (mail, done) in lock(&self.mail).iter_mut() {
@@ -673,7 +820,11 @@ impl MailStore for MemoryStore {
         lock(&self.parents).insert(id.clone(), parent.into());
         lock(&self.titles).insert(id.clone(), spec.title.clone());
         let cwd = spec.worktree.then(|| format!("/worktrees/{id}"));
-        Ok(CreatedSession { id, title: spec.title.clone(), cwd })
+        Ok(CreatedSession {
+            id,
+            title: spec.title.clone(),
+            cwd,
+        })
     }
 }
 
@@ -691,14 +842,27 @@ mod tests {
 
     /// A fresh report envelope (each with its own id, as an engine sends them).
     fn report(chat: &str, from: Address, status: RunStatus, text: &str) -> Value {
-        let event = MeshEvent::NodeReport { node: from, status, text: text.into(), usage: MeshUsage::default(), worktree: None };
+        let event = MeshEvent::NodeReport {
+            node: from,
+            status,
+            text: text.into(),
+            usage: MeshUsage::default(),
+            worktree: None,
+        };
         let id = format!("m_{chat}_{}", NEXT.fetch_add(1, Ordering::Relaxed));
         serde_json::to_value(Envelope::event(id, 1, 0, &event)).unwrap()
     }
 
     fn ack(mail_line: &Value, error: bool) -> Value {
         let envelope: Envelope = serde_json::from_value(mail_line.clone()).unwrap();
-        let body = if error { Err(crate::wire::MeshError::new(crate::wire::ErrorCode::BadRequest, "no")) } else { Ok(json!({})) };
+        let body = if error {
+            Err(crate::wire::MeshError::new(
+                crate::wire::ErrorCode::BadRequest,
+                "no",
+            ))
+        } else {
+            Ok(json!({}))
+        };
         serde_json::to_value(Envelope::response("r".into(), &envelope, body)).unwrap()
     }
 
@@ -734,13 +898,24 @@ mod tests {
     fn a_nested_sessions_turn_reaches_its_running_parent_as_a_wake_note() {
         let hub = hub();
         assert!(hub.on_line("parent", &json!({"type":"ready"})).is_empty());
-        let effects = hub.on_line("child", &report("child", Address::session("child"), RunStatus::Done, "All green."));
+        let effects = hub.on_line(
+            "child",
+            &report(
+                "child",
+                Address::session("child"),
+                RunStatus::Done,
+                "All green.",
+            ),
+        );
         let sent = sent(&effects);
         assert_eq!(sent.len(), 1);
         let (to, line) = &sent[0];
         assert_eq!(to, "parent");
         let envelope: Envelope = serde_json::from_value(line.clone()).unwrap();
-        assert_eq!((envelope.from.as_str(), envelope.to.as_str()), ("s_child", "s_parent"));
+        assert_eq!(
+            (envelope.from.as_str(), envelope.to.as_str()),
+            ("s_child", "s_parent")
+        );
         let body = envelope.as_mail().unwrap();
         assert_eq!(body.deliver, Deliver::Wake);
         assert_eq!(body.title.as_deref(), Some("Fix \"the\" tests"));
@@ -748,7 +923,10 @@ mod tests {
             body.text,
             "<nested-session id=\"child\" title=\"Fix 'the' tests\" status=\"done\">\nAll green.\n</nested-session>"
         );
-        assert!(!hub.store().all()[0].1, "not delivered before the engine answers");
+        assert!(
+            !hub.store().all()[0].1,
+            "not delivered before the engine answers"
+        );
         hub.on_line("parent", &ack(line, false));
         assert!(hub.store().all()[0].1);
         // Nothing left to send when the parent restarts.
@@ -759,14 +937,29 @@ mod tests {
     #[test]
     fn mail_for_a_closed_session_asks_for_a_host_and_waits() {
         let hub = hub();
-        let effects = hub.on_line("child", &report("child", Address::session("child"), RunStatus::Failed, ""));
+        let effects = hub.on_line(
+            "child",
+            &report("child", Address::session("child"), RunStatus::Failed, ""),
+        );
         assert_eq!(hosts(&effects), vec![("parent".to_string(), None, true)]);
         // Another turn while it is closed: both wait, in order.
-        hub.on_line("child", &report("child", Address::session("child"), RunStatus::Done, "second"));
+        hub.on_line(
+            "child",
+            &report(
+                "child",
+                Address::session("child"),
+                RunStatus::Done,
+                "second",
+            ),
+        );
         let sent = sent(&hub.on_line("parent", &json!({"type":"ready"})));
         assert_eq!(sent.len(), 2);
         let first: Envelope = serde_json::from_value(sent[0].1.clone()).unwrap();
-        assert!(first.as_mail().unwrap().text.contains("status=\"error\">\n(no reply text)"));
+        assert!(first
+            .as_mail()
+            .unwrap()
+            .text
+            .contains("status=\"error\">\n(no reply text)"));
         // A second `ready` does not send what is already on its way.
         assert!(hub.on_line("parent", &json!({"type":"ready"})).is_empty());
         for (_, line) in &sent {
@@ -779,17 +972,29 @@ mod tests {
     fn unanswered_or_refused_mail_is_sent_again_after_a_restart() {
         let hub = hub();
         hub.on_line("parent", &json!({"type":"ready"}));
-        let first = sent(&hub.on_line("child", &report("child", Address::session("child"), RunStatus::Done, "a")));
+        let first = sent(&hub.on_line(
+            "child",
+            &report("child", Address::session("child"), RunStatus::Done, "a"),
+        ));
         // The engine dies before answering: the host is asked to start it again.
-        assert_eq!(hosts(&hub.on_exit("parent")), vec![("parent".to_string(), None, true)]);
+        assert_eq!(
+            hosts(&hub.on_exit("parent")),
+            vec![("parent".to_string(), None, true)]
+        );
         let again = sent(&hub.on_line("parent", &json!({"type":"ready"})));
         assert_eq!(again.len(), 1);
-        assert_eq!(again[0].1["id"], first[0].1["id"], "same id: the engine drops duplicates");
+        assert_eq!(
+            again[0].1["id"], first[0].1["id"],
+            "same id: the engine drops duplicates"
+        );
         // A refusal leaves it pending too.
         hub.on_line("parent", &ack(&again[0].1, true));
         assert!(!hub.store().all()[0].1);
         hub.on_start("parent");
-        assert_eq!(sent(&hub.on_line("parent", &json!({"type":"ready"}))).len(), 1);
+        assert_eq!(
+            sent(&hub.on_line("parent", &json!({"type":"ready"}))).len(),
+            1
+        );
     }
 
     #[test]
@@ -797,10 +1002,24 @@ mod tests {
         let hub = hub();
         hub.on_line("parent", &json!({"type":"ready"}));
         let agent = Address::session("child").child(NodeKind::Agent, "a1");
-        assert!(hub.on_line("child", &report("child", agent, RunStatus::Done, "x")).is_empty());
-        assert!(hub.on_line("parent", &report("parent", Address::session("parent"), RunStatus::Done, "x")).is_empty());
-        assert!(hub.on_line("other", &report("other", Address::session("child"), RunStatus::Done, "x")).is_empty());
-        assert!(hub.on_line("child", &json!({"type":"agent_settled"})).is_empty());
+        assert!(hub
+            .on_line("child", &report("child", agent, RunStatus::Done, "x"))
+            .is_empty());
+        assert!(hub
+            .on_line(
+                "parent",
+                &report("parent", Address::session("parent"), RunStatus::Done, "x")
+            )
+            .is_empty());
+        assert!(hub
+            .on_line(
+                "other",
+                &report("other", Address::session("child"), RunStatus::Done, "x")
+            )
+            .is_empty());
+        assert!(hub
+            .on_line("child", &json!({"type":"agent_settled"}))
+            .is_empty());
         assert!(hub.on_line("child", &json!("garbage")).is_empty());
         assert!(hub.store().all().is_empty());
     }
@@ -822,23 +1041,50 @@ mod tests {
     #[test]
     fn start_session_proposes_unless_auto_start_is_on() {
         let hub = Hub::new(MemoryStore::default());
-        let effects = hub.on_line("p", &call("start_session", json!({"title":"  Fix   CI ", "prompt":"Make it green", "worktree": true})));
+        let effects = hub.on_line(
+            "p",
+            &call(
+                "start_session",
+                json!({"title":"  Fix   CI ", "prompt":"Make it green", "worktree": true}),
+            ),
+        );
         let answers = sent(&effects);
         assert_eq!(answers.len(), 1, "only the answer: nothing started");
         let (to, answer) = &answers[0];
         assert_eq!(to, "p");
-        assert_eq!((answer["type"].as_str(), answer["requestId"].as_str()), (Some("external_tool_response"), Some("req-start_session")));
+        assert_eq!(
+            (answer["type"].as_str(), answer["requestId"].as_str()),
+            (Some("external_tool_response"), Some("req-start_session"))
+        );
         let proposal = &answer["result"]["structuredContent"];
-        assert_eq!((proposal["status"].as_str(), proposal["title"].as_str()), (Some("proposed"), Some("Fix CI")));
-        assert_eq!((proposal["context"].as_str(), proposal["worktree"].as_bool()), (Some("fresh"), Some(true)));
-        assert!(proposal["proposalId"].as_str().unwrap().starts_with("proposal_"));
+        assert_eq!(
+            (proposal["status"].as_str(), proposal["title"].as_str()),
+            (Some("proposed"), Some("Fix CI"))
+        );
+        assert_eq!(
+            (proposal["context"].as_str(), proposal["worktree"].as_bool()),
+            (Some("fresh"), Some(true))
+        );
+        assert!(proposal["proposalId"]
+            .as_str()
+            .unwrap()
+            .starts_with("proposal_"));
         assert!(hub.store().children_of("p").is_empty());
 
         hub.set_auto_start(true);
-        let effects = hub.on_line("p", &call("start_session", json!({"title":"Fix CI", "prompt":"Make it green", "context":"fork"})));
+        let effects = hub.on_line(
+            "p",
+            &call(
+                "start_session",
+                json!({"title":"Fix CI", "prompt":"Make it green", "context":"fork"}),
+            ),
+        );
         let answer = &sent(&effects)[0].1;
         let started = &answer["result"]["structuredContent"];
-        assert_eq!((started["status"].as_str(), started["sessionId"].as_str()), (Some("started"), Some("new-1")));
+        assert_eq!(
+            (started["status"].as_str(), started["sessionId"].as_str()),
+            (Some("started"), Some("new-1"))
+        );
         // The new chat's engine is hosted (a fork restores its copied transcript).
         assert_eq!(hosts(&effects), vec![("new-1".to_string(), None, true)]);
         assert_eq!(hub.store().parent_of("new-1").as_deref(), Some("p"));
@@ -848,18 +1094,42 @@ mod tests {
     fn a_started_session_gets_its_brief_once_a_window_hosts_it() {
         let hub = Hub::new(MemoryStore::default());
         let (created, effects) = hub
-            .start_session("p", &SessionSpec { title: "T".into(), prompt: "Do it".into(), fork: false, worktree: true })
+            .start_session(
+                "p",
+                &SessionSpec {
+                    title: "T".into(),
+                    prompt: "Do it".into(),
+                    fork: false,
+                    worktree: true,
+                },
+            )
             .unwrap();
-        assert_eq!(hosts(&effects), vec![(created.id.clone(), Some(format!("/worktrees/{}", created.id)), false)]);
+        assert_eq!(
+            hosts(&effects),
+            vec![(
+                created.id.clone(),
+                Some(format!("/worktrees/{}", created.id)),
+                false
+            )]
+        );
         // Ready is not enough: its tools are not set up yet.
         assert!(sent(&hub.on_line(&created.id, &json!({"type":"ready"}))).is_empty());
         let hosted = hub.on_hosted(&created.id);
         // The window showing it adds the turn first: the engine does not echo it.
-        assert_eq!(hosted[0], Effect::Prompted { chat: created.id.clone(), text: "Do it".into() });
+        assert_eq!(
+            hosted[0],
+            Effect::Prompted {
+                chat: created.id.clone(),
+                text: "Do it".into()
+            }
+        );
         let sent_now = sent(&hosted);
         assert_eq!(sent_now.len(), 1);
         let prompt = &sent_now[0].1;
-        assert_eq!((prompt["type"].as_str(), prompt["message"].as_str()), (Some("prompt"), Some("Do it")));
+        assert_eq!(
+            (prompt["type"].as_str(), prompt["message"].as_str()),
+            (Some("prompt"), Some("Do it"))
+        );
         assert!(hub.is_busy(&created.id));
         hub.on_line(&created.id, &accepted(&prompt["id"]));
         assert!(hub.store().all()[0].1, "accepted: delivered");
@@ -870,35 +1140,77 @@ mod tests {
         let hub = hub();
         hub.on_hosted("child");
         // Only the chat that started it may message it.
-        let refused = sent(&hub.on_line("stranger", &call("message_session", json!({"sessionId":"child","message":"hi"}))));
+        let refused = sent(&hub.on_line(
+            "stranger",
+            &call(
+                "message_session",
+                json!({"sessionId":"child","message":"hi"}),
+            ),
+        ));
         assert_eq!(refused[0].1["result"]["isError"], true);
-        let effects = hub.on_line("parent", &call("message_session", json!({"sessionId":"child","message":"and the docs?"})));
+        let effects = hub.on_line(
+            "parent",
+            &call(
+                "message_session",
+                json!({"sessionId":"child","message":"and the docs?"}),
+            ),
+        );
         let sent_now = sent(&effects);
-        assert_eq!(sent_now[0].1["result"]["content"][0]["text"], "Sent to \"Fix \"the\" tests\". You will get a note when it finishes its turn.");
-        assert_eq!((sent_now[1].0.as_str(), sent_now[1].1["type"].as_str()), ("child", Some("prompt")));
+        assert_eq!(
+            sent_now[0].1["result"]["content"][0]["text"],
+            "Sent to \"Fix \"the\" tests\". You will get a note when it finishes its turn."
+        );
+        assert_eq!(
+            (sent_now[1].0.as_str(), sent_now[1].1["type"].as_str()),
+            ("child", Some("prompt"))
+        );
         // While that turn runs, the next one steers it (read at its next step).
         hub.on_line("child", &json!({"type":"agent_start"}));
-        let next = sent(&hub.on_line("parent", &call("message_session", json!({"sessionId":"child","message":"also tests"}))));
-        assert_eq!((next[1].1["type"].as_str(), next[1].1["deliverAs"].as_str()), (Some("queue_message"), Some("steer")));
+        let next = sent(&hub.on_line(
+            "parent",
+            &call(
+                "message_session",
+                json!({"sessionId":"child","message":"also tests"}),
+            ),
+        ));
+        assert_eq!(
+            (next[1].1["type"].as_str(), next[1].1["deliverAs"].as_str()),
+            (Some("queue_message"), Some("steer"))
+        );
     }
 
     #[test]
     fn a_refused_prompt_goes_out_when_the_run_ends() {
         let hub = hub();
         hub.on_hosted("child");
-        let first = sent(&hub.on_line("parent", &call("message_session", json!({"sessionId":"child","message":"one"}))));
+        let first = sent(&hub.on_line(
+            "parent",
+            &call(
+                "message_session",
+                json!({"sessionId":"child","message":"one"}),
+            ),
+        ));
         // The engine refused: a run had just started.
         hub.on_line("child", &json!({"type":"response","id": first[1].1["id"], "success": false, "error": "a run is already active"}));
         assert!(!hub.store().all()[0].1);
         let retried = sent(&hub.on_line("child", &json!({"type":"agent_settled"})));
         assert_eq!(retried.len(), 1);
-        assert_eq!((retried[0].1["type"].as_str(), retried[0].1["id"].clone()), (Some("prompt"), first[1].1["id"].clone()));
+        assert_eq!(
+            (retried[0].1["type"].as_str(), retried[0].1["id"].clone()),
+            (Some("prompt"), first[1].1["id"].clone())
+        );
     }
 
     #[test]
     fn a_message_to_a_closed_child_hosts_it_first() {
         let hub = hub();
-        let effects = hub.on_line("parent", &call("message_session", json!({"sessionId":"child","message":"wake up"})));
+        let effects = hub.on_line(
+            "parent",
+            &call(
+                "message_session",
+                json!({"sessionId":"child","message":"wake up"}),
+            ),
+        );
         assert_eq!(hosts(&effects), vec![("child".to_string(), None, true)]);
         assert_eq!(sent(&hub.on_hosted("child"))[0].1["message"], "wake up");
     }
@@ -906,21 +1218,33 @@ mod tests {
     #[test]
     fn list_sessions_shows_live_state_and_nested_sessions_cannot_start_more() {
         let hub = hub();
-        let list = |hub: &Hub<MemoryStore>| sent(&hub.on_line("parent", &call("list_sessions", json!({}))))[0].1["result"]["structuredContent"]["sessions"][0]["status"].clone();
+        let list = |hub: &Hub<MemoryStore>| {
+            sent(&hub.on_line("parent", &call("list_sessions", json!({}))))[0].1["result"]
+                ["structuredContent"]["sessions"][0]["status"]
+                .clone()
+        };
         assert_eq!(list(&hub), "idle");
         hub.on_line("child", &json!({"type":"agent_start"}));
         assert_eq!(list(&hub), "running");
-        hub.on_line("child", &json!({"type":"ui_dialog_request","requestId":"q"}));
+        hub.on_line(
+            "child",
+            &json!({"type":"ui_dialog_request","requestId":"q"}),
+        );
         assert_eq!(list(&hub), "waiting");
         hub.on_line("child", &json!({"type":"ui_dialog_closed","requestId":"q"}));
         hub.on_line("child", &json!({"type":"agent_settled"}));
         assert_eq!(list(&hub), "idle");
         // One level deep.
         hub.set_auto_start(true);
-        let answer = sent(&hub.on_line("child", &call("start_session", json!({"title":"x","prompt":"y"}))));
+        let answer = sent(&hub.on_line(
+            "child",
+            &call("start_session", json!({"title":"x","prompt":"y"})),
+        ));
         assert_eq!(answer[0].1["result"]["isError"], true);
         // Other tools are not the hub's.
-        assert!(hub.on_line("parent", &call("browser_open", json!({}))).is_empty());
+        assert!(hub
+            .on_line("parent", &call("browser_open", json!({})))
+            .is_empty());
     }
 
     #[test]
@@ -934,14 +1258,27 @@ mod tests {
         for i in 0..MAX_RUNNING_CHILDREN {
             hub.on_line(&format!("c{i}"), &json!({"type":"agent_start"}));
         }
-        let answer = sent(&hub.on_line("p", &call("start_session", json!({"title":"x","prompt":"y"}))));
-        assert!(answer[0].1["result"]["content"][0]["text"].as_str().unwrap().contains("already running"));
+        let answer = sent(&hub.on_line(
+            "p",
+            &call("start_session", json!({"title":"x","prompt":"y"})),
+        ));
+        assert!(answer[0].1["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("already running"));
     }
 
     #[test]
     fn long_reports_are_cut_and_titles_quoted() {
-        let note = session_note("c", "a \"b\"", RunStatus::Cancelled, &"é".repeat(REPORT_CHARS + 50));
-        assert!(note.starts_with("<nested-session id=\"c\" title=\"a 'b'\" status=\"cancelled\">\n"));
+        let note = session_note(
+            "c",
+            "a \"b\"",
+            RunStatus::Cancelled,
+            &"é".repeat(REPORT_CHARS + 50),
+        );
+        assert!(
+            note.starts_with("<nested-session id=\"c\" title=\"a 'b'\" status=\"cancelled\">\n")
+        );
         assert_eq!(note.matches('é').count(), REPORT_CHARS);
         assert_eq!(session_tools().as_array().unwrap().len(), 3);
         assert!(is_session_tool("list_sessions") && !is_session_tool("agent"));

@@ -5,7 +5,7 @@
 | Status | Accepted |
 | Date | 2026-11-05 |
 | ADD sections | [7. Data view](../README.md#7-data-view) |
-| Related | [App database SDD](../../features/app-database/sdd.md) |
+| Related | [App database spec](../../features/app-database/spec.md) |
 
 ## Context
 

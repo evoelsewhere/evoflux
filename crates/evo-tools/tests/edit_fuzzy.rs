@@ -45,9 +45,7 @@ async fn run_edit(
     let on_update = Arc::new(|_p| ());
     // prepare_arguments folds legacy fields + JSON-string edits, mirroring the
     // TS pre-validation step the loop applies before execute.
-    let prepared = tool
-        .prepare_arguments(params.clone())
-        .unwrap_or_else(|_| params);
+    let prepared = tool.prepare_arguments(params.clone()).unwrap_or(params);
     tool.execute("edit-1", prepared, signal, on_update).await
 }
 

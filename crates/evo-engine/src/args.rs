@@ -446,7 +446,9 @@ pub fn parse_args(args: &[String]) -> Args {
             "--session" => result.session = take_value(&mut result, "--session"),
             "--session-id" => result.session_id = take_value(&mut result, "--session-id"),
             "--fork" => result.fork = take_value(&mut result, "--fork"),
-            "--sandbox-config" => result.sandbox_config = take_value(&mut result, "--sandbox-config"),
+            "--sandbox-config" => {
+                result.sandbox_config = take_value(&mut result, "--sandbox-config")
+            }
             "--models" => {
                 if let Some(v) = take_value(&mut result, &flag_key) {
                     result.models = Some(split_csv(&v));

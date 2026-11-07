@@ -37,7 +37,7 @@ import { Legend, ModelBars, TimeChart, type Metric, type SeriesInfo } from "./us
 // stands out; model efficiency (cost per response, per 1k output tokens,
 // speed, cache, failures) against today's models.dev prices; what the same
 // tokens would cost on other models; then by chat, by source and the latest
-// responses. Design: docs/features/usage-and-cost/sdd.md.
+// responses. Design: docs/features/usage-and-cost/spec.md.
 
 const REFRESH_MS = 15_000;
 

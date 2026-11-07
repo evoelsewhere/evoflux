@@ -13,11 +13,12 @@ consequences and the alternatives rejected. The
 | [0003](0003-engine-runs-as-a-child-process-per-chat.md) | The engine runs as a child process, one per open chat | Accepted | 2026-11-06 |
 | [0004](0004-bun-for-desktop-javascript.md) | bun is the only JavaScript package manager for the desktop | Accepted | 2026-11-06 |
 | [0005](0005-real-engine-and-live-reload.md) | The app always runs the real engine; configuration reloads live | Accepted | 2026-11-06 |
-| [0006](0006-documentation-follows-add-and-sdd.md) | Design documentation follows ADD, SDD and ADR | Accepted | 2026-11-06 |
+| [0006](0006-documentation-follows-add-and-sdd.md) | Design documentation follows ADD, SDD and ADR | Superseded by [0011](0011-features-follow-spec-driven-development.md) | 2026-11-06 |
 | [0007](0007-one-transcript-file-per-chat.md) | Each chat's transcript is a SQLite file of its own, written only by that chat's engine | Accepted | 2026-11-06 |
 | [0008](0008-optional-libreoffice-runtime.md) | Office documents use an optional, pinned LibreOffice runtime downloaded on demand | Accepted | 2026-11-07 |
 | [0009](0009-native-office-preview-renderer.md) | Office files render natively in the engine; LibreOffice gives exact pages | Accepted | 2026-11-07 |
 | [0010](0010-engine-enforces-approval-mode.md) | The engine enforces the approval mode on every tool call | Accepted | 2026-11-07 |
+| [0011](0011-features-follow-spec-driven-development.md) | Features follow Spec-Driven Development: spec, plan, tasks | Accepted | 2026-11-07 |
 
 ## Rules
 

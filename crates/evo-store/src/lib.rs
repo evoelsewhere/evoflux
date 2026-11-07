@@ -6,7 +6,7 @@
 //! app settings, mail between sessions, usage and cost history and the run
 //! log. Both the engine and
 //! the desktop shell open it through this crate, so there is one schema and
-//! one migration history (`docs/features/app-database/sdd.md`).
+//! one migration history (`docs/features/app-database/spec.md`).
 //!
 //! Each chat's transcript is a file of its own (`transcripts/<chat id>.db`,
 //! [`transcripts`]), written only by that chat's engine, so engines never wait
@@ -127,9 +127,17 @@ pub enum DbError {
     Sqlite(#[from] rusqlite::Error),
     #[error("{path} is not an evo database")]
     Foreign { path: PathBuf },
-    #[error("{path} was written by a newer evo (schema {found}, this build knows {known}); update evo")]
-    TooNew { path: PathBuf, found: i64, known: i64 },
-    #[error("migration {version} ({name}) changed after it was applied; add a new migration instead")]
+    #[error(
+        "{path} was written by a newer evo (schema {found}, this build knows {known}); update evo"
+    )]
+    TooNew {
+        path: PathBuf,
+        found: i64,
+        known: i64,
+    },
+    #[error(
+        "migration {version} ({name}) changed after it was applied; add a new migration instead"
+    )]
     Tampered { version: i64, name: String },
     #[error("{0:?} is not a valid chat id")]
     InvalidId(String),
@@ -211,14 +219,18 @@ fn enable_wal(connection: &Connection) -> rusqlite::Result<()> {
                 if mode.eq_ignore_ascii_case("wal") {
                     Ok(mode)
                 } else {
-                    connection.query_row("PRAGMA journal_mode = WAL", [], |row| row.get::<_, String>(0))
+                    connection.query_row("PRAGMA journal_mode = WAL", [], |row| {
+                        row.get::<_, String>(0)
+                    })
                 }
             });
         match result {
             Ok(_) => return Ok(()),
             Err(rusqlite::Error::SqliteFailure(error, _))
-                if matches!(error.code, rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked)
-                    && attempt < 100 =>
+                if matches!(
+                    error.code,
+                    rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked
+                ) && attempt < 100 =>
             {
                 attempt += 1;
                 std::thread::sleep(Duration::from_millis(50));
@@ -450,7 +462,9 @@ mod tests {
         drop(connection);
         let connection = open_at(&path).unwrap();
         let count: i64 = connection
-            .query_row("SELECT COUNT(*) FROM schema_migrations", [], |row| row.get(0))
+            .query_row("SELECT COUNT(*) FROM schema_migrations", [], |row| {
+                row.get(0)
+            })
             .unwrap();
         assert_eq!(count, MIGRATIONS.len() as i64);
     }
@@ -460,15 +474,29 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("evo.db");
         let mut connection = Connection::open(&path).unwrap();
-        let first = [Migration { version: 1, name: "a", sql: "CREATE TABLE a (x INTEGER) STRICT;" }];
+        let first = [Migration {
+            version: 1,
+            name: "a",
+            sql: "CREATE TABLE a (x INTEGER) STRICT;",
+        }];
         migrate(&mut connection, &path, &first).unwrap();
         let both = [
-            Migration { version: 1, name: "a", sql: "CREATE TABLE a (x INTEGER) STRICT;" },
-            Migration { version: 2, name: "b", sql: "ALTER TABLE a ADD COLUMN y TEXT;" },
+            Migration {
+                version: 1,
+                name: "a",
+                sql: "CREATE TABLE a (x INTEGER) STRICT;",
+            },
+            Migration {
+                version: 2,
+                name: "b",
+                sql: "ALTER TABLE a ADD COLUMN y TEXT;",
+            },
         ];
         migrate(&mut connection, &path, &both).unwrap();
         assert_eq!(version(&connection), 2);
-        connection.execute("INSERT INTO a (x, y) VALUES (1, 'ok')", []).unwrap();
+        connection
+            .execute("INSERT INTO a (x, y) VALUES (1, 'ok')", [])
+            .unwrap();
     }
 
     #[test]
@@ -476,16 +504,28 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("evo.db");
         let mut connection = Connection::open(&path).unwrap();
-        let original = [Migration { version: 1, name: "a", sql: "CREATE TABLE a (x INTEGER);" }];
+        let original = [Migration {
+            version: 1,
+            name: "a",
+            sql: "CREATE TABLE a (x INTEGER);",
+        }];
         migrate(&mut connection, &path, &original).unwrap();
-        let edited = [Migration { version: 1, name: "a", sql: "CREATE TABLE a (x TEXT);" }];
+        let edited = [Migration {
+            version: 1,
+            name: "a",
+            sql: "CREATE TABLE a (x TEXT);",
+        }];
         assert!(matches!(
             migrate(&mut connection, &path, &edited),
             Err(DbError::Tampered { version: 1, .. })
         ));
         assert!(matches!(
             migrate(&mut connection, &path, &[]),
-            Err(DbError::TooNew { found: 1, known: 0, .. })
+            Err(DbError::TooNew {
+                found: 1,
+                known: 0,
+                ..
+            })
         ));
     }
 
@@ -540,7 +580,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("evo.db");
         let mut connection = Connection::open(&path).unwrap();
-        connection.pragma_update(None, "foreign_keys", "ON").unwrap();
+        connection
+            .pragma_update(None, "foreign_keys", "ON")
+            .unwrap();
         migrate(&mut connection, &path, &MIGRATIONS[..6]).unwrap();
         connection
             .execute_batch(
@@ -558,11 +600,20 @@ mod tests {
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
             )
             .unwrap();
-        assert_eq!((chats, sessions, search), (1, 1, 0), "the shell moves transcripts, not the migration");
+        assert_eq!(
+            (chats, sessions, search),
+            (1, 1, 0),
+            "the shell moves transcripts, not the migration"
+        );
         connection
-            .execute("INSERT INTO chat_search (chat_id, stamp, body) VALUES ('c', 's', 'text')", [])
+            .execute(
+                "INSERT INTO chat_search (chat_id, stamp, body) VALUES ('c', 's', 'text')",
+                [],
+            )
             .unwrap();
-        connection.execute("DELETE FROM chats WHERE id = 'c'", []).unwrap();
+        connection
+            .execute("DELETE FROM chats WHERE id = 'c'", [])
+            .unwrap();
         let left: i64 = connection
             .query_row("SELECT COUNT(*) FROM chat_search", [], |row| row.get(0))
             .unwrap();
@@ -602,7 +653,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("evo.db");
         let mut connection = Connection::open(&path).unwrap();
-        connection.pragma_update(None, "foreign_keys", "ON").unwrap();
+        connection
+            .pragma_update(None, "foreign_keys", "ON")
+            .unwrap();
         migrate(&mut connection, &path, &MIGRATIONS[..7]).unwrap();
         connection
             .execute(

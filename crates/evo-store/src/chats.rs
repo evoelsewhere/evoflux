@@ -169,7 +169,12 @@ fn new_id(prefix: &str) -> String {
     use std::sync::atomic::{AtomicU64, Ordering};
     static COUNTER: AtomicU64 = AtomicU64::new(0);
     let n = COUNTER.fetch_add(1, Ordering::Relaxed);
-    format!("{prefix}-{:x}{:04x}{:x}", now_ms(), std::process::id() & 0xffff, n)
+    format!(
+        "{prefix}-{:x}{:04x}{:x}",
+        now_ms(),
+        std::process::id() & 0xffff,
+        n
+    )
 }
 
 pub fn list_workspaces(conn: &Connection) -> Result<Vec<Workspace>, DbError> {
@@ -207,7 +212,11 @@ pub fn ensure_workspace(conn: &Connection, path: &str) -> Result<Workspace, DbEr
     )?)
 }
 
-pub fn set_workspace_collapsed(conn: &Connection, id: &str, collapsed: bool) -> Result<(), DbError> {
+pub fn set_workspace_collapsed(
+    conn: &Connection,
+    id: &str,
+    collapsed: bool,
+) -> Result<(), DbError> {
     conn.execute(
         "UPDATE workspaces SET collapsed = ?2 WHERE id = ?1",
         params![id, collapsed],
@@ -242,7 +251,8 @@ pub fn list_chats(conn: &Connection, archived: bool) -> Result<Vec<Chat>, DbErro
     } else {
         "archived_at IS NULL ORDER BY pinned DESC, updated_at DESC"
     };
-    let mut statement = conn.prepare(&format!("SELECT {CHAT_COLUMNS} FROM chats WHERE {filter}"))?;
+    let mut statement =
+        conn.prepare(&format!("SELECT {CHAT_COLUMNS} FROM chats WHERE {filter}"))?;
     let rows = statement.query_map([], chat_row)?;
     Ok(rows.collect::<Result<_, _>>()?)
 }
@@ -279,7 +289,11 @@ pub fn create_chat(conn: &Connection, chat: &NewChat) -> Result<Chat, DbError> {
     get_chat(conn, &chat.id)?.ok_or_else(|| DbError::Sqlite(rusqlite::Error::QueryReturnedNoRows))
 }
 
-pub fn update_chat(conn: &Connection, id: &str, patch: &ChatPatch) -> Result<Option<Chat>, DbError> {
+pub fn update_chat(
+    conn: &Connection,
+    id: &str,
+    patch: &ChatPatch,
+) -> Result<Option<Chat>, DbError> {
     if let Some(title) = &patch.title {
         conn.execute(
             "UPDATE chats SET title = ?2, title_source = 'user' WHERE id = ?1",
@@ -293,10 +307,16 @@ pub fn update_chat(conn: &Connection, id: &str, patch: &ChatPatch) -> Result<Opt
         )?;
     }
     if let Some(pinned) = patch.pinned {
-        conn.execute("UPDATE chats SET pinned = ?2 WHERE id = ?1", params![id, pinned])?;
+        conn.execute(
+            "UPDATE chats SET pinned = ?2 WHERE id = ?1",
+            params![id, pinned],
+        )?;
     }
     if let Some(unread) = patch.unread {
-        conn.execute("UPDATE chats SET unread = ?2 WHERE id = ?1", params![id, unread])?;
+        conn.execute(
+            "UPDATE chats SET unread = ?2 WHERE id = ?1",
+            params![id, unread],
+        )?;
     }
     if let Some(archived) = patch.archived {
         let at = archived.then(now_ms);
@@ -315,7 +335,11 @@ pub fn update_chat(conn: &Connection, id: &str, patch: &ChatPatch) -> Result<Opt
 }
 
 /// Add one finished turn to a chat's totals and bump its activity time.
-pub fn record_turn(conn: &Connection, id: &str, turn: &TurnRecord) -> Result<Option<Chat>, DbError> {
+pub fn record_turn(
+    conn: &Connection,
+    id: &str,
+    turn: &TurnRecord,
+) -> Result<Option<Chat>, DbError> {
     let preview = turn.preview.as_deref().map(|text| {
         let line = text.split_whitespace().collect::<Vec<_>>().join(" ");
         line.chars().take(200).collect::<String>()
@@ -386,7 +410,11 @@ pub fn fork_chat(
 }
 
 /// The worktree a chat works in, or (`None`) its workspace folder again.
-pub fn set_worktree(conn: &Connection, id: &str, worktree_path: Option<&str>) -> Result<Option<Chat>, DbError> {
+pub fn set_worktree(
+    conn: &Connection,
+    id: &str,
+    worktree_path: Option<&str>,
+) -> Result<Option<Chat>, DbError> {
     conn.execute(
         "UPDATE chats SET worktree_path = ?2 WHERE id = ?1",
         params![id, worktree_path],
@@ -395,9 +423,13 @@ pub fn set_worktree(conn: &Connection, id: &str, worktree_path: Option<&str>) ->
 }
 
 /// Link a chat to the chat that started it, or (`None`) detach it.
-pub fn set_parent(conn: &Connection, id: &str, parent_chat_id: Option<&str>) -> Result<Option<Chat>, DbError> {
+pub fn set_parent(
+    conn: &Connection,
+    id: &str,
+    parent_chat_id: Option<&str>,
+) -> Result<Option<Chat>, DbError> {
     if parent_chat_id == Some(id) {
-        return Ok(get_chat(conn, id)?);
+        return get_chat(conn, id);
     }
     conn.execute(
         "UPDATE chats SET parent_chat_id = ?2 WHERE id = ?1",
@@ -407,7 +439,11 @@ pub fn set_parent(conn: &Connection, id: &str, parent_chat_id: Option<&str>) -> 
 }
 
 /// Move a chat to another workspace (`None`: "This computer").
-pub fn move_chat(conn: &Connection, id: &str, workspace_id: Option<&str>) -> Result<Option<Chat>, DbError> {
+pub fn move_chat(
+    conn: &Connection,
+    id: &str,
+    workspace_id: Option<&str>,
+) -> Result<Option<Chat>, DbError> {
     conn.execute(
         "UPDATE chats SET workspace_id = ?2 WHERE id = ?1",
         params![id, workspace_id],
@@ -488,7 +524,10 @@ pub fn search_chats(
     limit: u32,
 ) -> Result<Vec<Chat>, DbError> {
     refresh_search(conn, transcripts_dir)?;
-    let escaped = query.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
+    let escaped = query
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_");
     let pattern = format!("%{escaped}%");
     let columns = CHAT_COLUMNS
         .split(", ")
@@ -517,8 +556,19 @@ mod tests {
     #[test]
     fn nested_sessions_link_to_their_parent() {
         let (_dir, mut conn) = db();
-        let parent = create_chat(&conn, &NewChat { id: "p".into(), title: "Parent".into(), ..Default::default() }).unwrap();
-        assert_eq!((parent.parent_chat_id.as_deref(), parent.origin.as_str()), (None, "user"));
+        let parent = create_chat(
+            &conn,
+            &NewChat {
+                id: "p".into(),
+                title: "Parent".into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            (parent.parent_chat_id.as_deref(), parent.origin.as_str()),
+            (None, "user")
+        );
         let child = create_chat(
             &conn,
             &NewChat {
@@ -530,20 +580,64 @@ mod tests {
             },
         )
         .unwrap();
-        assert_eq!((child.parent_chat_id.as_deref(), child.origin.as_str()), (Some("p"), "agent"));
+        assert_eq!(
+            (child.parent_chat_id.as_deref(), child.origin.as_str()),
+            (Some("p"), "agent")
+        );
         assert_eq!(list_chats(&conn, false).unwrap().len(), 2);
         // Deleting the parent keeps the child, at the top level.
         delete_chat(&mut conn, "p").unwrap();
         let orphan = get_chat(&conn, "c").unwrap().unwrap();
         assert_eq!(orphan.parent_chat_id, None);
         // Linking and detaching; a chat is never its own parent.
-        create_chat(&conn, &NewChat { id: "q".into(), title: "Q".into(), ..Default::default() }).unwrap();
-        assert_eq!(set_parent(&conn, "c", Some("q")).unwrap().unwrap().parent_chat_id.as_deref(), Some("q"));
-        assert_eq!(set_parent(&conn, "c", Some("c")).unwrap().unwrap().parent_chat_id.as_deref(), Some("q"));
-        assert_eq!(set_parent(&conn, "c", None).unwrap().unwrap().parent_chat_id, None);
+        create_chat(
+            &conn,
+            &NewChat {
+                id: "q".into(),
+                title: "Q".into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            set_parent(&conn, "c", Some("q"))
+                .unwrap()
+                .unwrap()
+                .parent_chat_id
+                .as_deref(),
+            Some("q")
+        );
+        assert_eq!(
+            set_parent(&conn, "c", Some("c"))
+                .unwrap()
+                .unwrap()
+                .parent_chat_id
+                .as_deref(),
+            Some("q")
+        );
+        assert_eq!(
+            set_parent(&conn, "c", None)
+                .unwrap()
+                .unwrap()
+                .parent_chat_id,
+            None
+        );
         // A chat's worktree folder.
-        assert_eq!(set_worktree(&conn, "c", Some("/w/1")).unwrap().unwrap().worktree_path.as_deref(), Some("/w/1"));
-        assert_eq!(set_worktree(&conn, "c", None).unwrap().unwrap().worktree_path, None);
+        assert_eq!(
+            set_worktree(&conn, "c", Some("/w/1"))
+                .unwrap()
+                .unwrap()
+                .worktree_path
+                .as_deref(),
+            Some("/w/1")
+        );
+        assert_eq!(
+            set_worktree(&conn, "c", None)
+                .unwrap()
+                .unwrap()
+                .worktree_path,
+            None
+        );
     }
 
     #[test]
@@ -572,57 +666,132 @@ mod tests {
         .unwrap();
         assert_eq!(chat.title_source, "auto");
 
-        let renamed = update_chat(&conn, "c1", &ChatPatch { title: Some("Build".into()), ..Default::default() })
-            .unwrap()
-            .unwrap();
+        let renamed = update_chat(
+            &conn,
+            "c1",
+            &ChatPatch {
+                title: Some("Build".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap()
+        .unwrap();
         assert_eq!(renamed.title_source, "user");
-        let kept = update_chat(&conn, "c1", &ChatPatch { auto_title: Some("x".into()), ..Default::default() })
-            .unwrap()
-            .unwrap();
+        let kept = update_chat(
+            &conn,
+            "c1",
+            &ChatPatch {
+                auto_title: Some("x".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap()
+        .unwrap();
         assert_eq!(kept.title, "Build");
 
         let after = record_turn(
             &conn,
             "c1",
-            &TurnRecord { preview: Some("Done.\n\nAll  green".into()), cost_usd: 0.5, tokens: 10, unread: true, ..Default::default() },
+            &TurnRecord {
+                preview: Some("Done.\n\nAll  green".into()),
+                cost_usd: 0.5,
+                tokens: 10,
+                unread: true,
+                ..Default::default()
+            },
         )
         .unwrap()
         .unwrap();
-        assert_eq!((after.turn_count, after.tokens, after.unread), (1, 10, true));
+        assert_eq!(
+            (after.turn_count, after.tokens, after.unread),
+            (1, 10, true)
+        );
         assert_eq!(after.preview.as_deref(), Some("Done. All green"));
 
-        update_chat(&conn, "c1", &ChatPatch { pinned: Some(true), ..Default::default() }).unwrap();
-        update_chat(&conn, "c1", &ChatPatch { archived: Some(true), ..Default::default() }).unwrap();
+        update_chat(
+            &conn,
+            "c1",
+            &ChatPatch {
+                pinned: Some(true),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        update_chat(
+            &conn,
+            "c1",
+            &ChatPatch {
+                archived: Some(true),
+                ..Default::default()
+            },
+        )
+        .unwrap();
         assert!(list_chats(&conn, false).unwrap().is_empty());
         let archived = list_chats(&conn, true).unwrap();
         assert!(!archived[0].pinned, "archiving unpins");
 
         let files = _dir.path().join(transcripts::DIR_NAME);
         let c1 = write_transcript(&files, "c1", r#"{"records":[{"text":"needle"}]}"#);
-        assert_eq!(search_chats(&mut conn, &files, "NEEDLE", 10).unwrap().len(), 1);
-        assert_eq!(search_chats(&mut conn, &files, "100%", 10).unwrap().len(), 0);
+        assert_eq!(
+            search_chats(&mut conn, &files, "NEEDLE", 10).unwrap().len(),
+            1
+        );
+        assert_eq!(
+            search_chats(&mut conn, &files, "100%", 10).unwrap().len(),
+            0
+        );
 
-        let fork = fork_chat(&mut conn, &files, "c1", "c2", "Build (fork)").unwrap().unwrap();
-        assert_eq!((fork.title.as_str(), fork.turn_count, fork.tokens), ("Build (fork)", 1, 0));
+        let fork = fork_chat(&mut conn, &files, "c1", "c2", "Build (fork)")
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            (fork.title.as_str(), fork.turn_count, fork.tokens),
+            ("Build (fork)", 1, 0)
+        );
         assert_eq!(fork.workspace_id.as_deref(), Some(ws.id.as_str()));
         let copy = transcripts::path_in(&files, "c2").unwrap();
         let (parent, state): (Option<String>, String) = Connection::open(&copy)
             .unwrap()
-            .query_row("SELECT parent_session_id, state_json FROM sessions WHERE id = 'c2'", [], |r| {
-                Ok((r.get(0)?, r.get(1)?))
-            })
+            .query_row(
+                "SELECT parent_session_id, state_json FROM sessions WHERE id = 'c2'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
             .unwrap();
-        assert_eq!((parent.as_deref(), state.contains("needle")), (Some("c1"), true));
-        assert!(fork_chat(&mut conn, &files, "missing", "c3", "x").unwrap().is_none());
+        assert_eq!(
+            (parent.as_deref(), state.contains("needle")),
+            (Some("c1"), true)
+        );
+        assert!(fork_chat(&mut conn, &files, "missing", "c3", "x")
+            .unwrap()
+            .is_none());
         assert!(!transcripts::path_in(&files, "c3").unwrap().exists());
         // A fork onto an existing chat id fails and leaves no stray file.
-        create_chat(&conn, &NewChat { id: "taken".into(), title: "T".into(), ..Default::default() }).unwrap();
+        create_chat(
+            &conn,
+            &NewChat {
+                id: "taken".into(),
+                title: "T".into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
         assert!(fork_chat(&mut conn, &files, "c1", "taken", "x").is_err());
         assert!(!transcripts::path_in(&files, "taken").unwrap().exists());
         delete_chat(&mut conn, "taken").unwrap();
         // A chat with no transcript yet forks into a chat with none.
-        create_chat(&conn, &NewChat { id: "empty".into(), title: "E".into(), ..Default::default() }).unwrap();
-        assert!(fork_chat(&mut conn, &files, "empty", "empty2", "x").unwrap().is_some());
+        create_chat(
+            &conn,
+            &NewChat {
+                id: "empty".into(),
+                title: "E".into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert!(fork_chat(&mut conn, &files, "empty", "empty2", "x")
+            .unwrap()
+            .is_some());
         assert!(!transcripts::path_in(&files, "empty2").unwrap().exists());
         delete_chat(&mut conn, "empty").unwrap();
         delete_chat(&mut conn, "empty2").unwrap();
@@ -630,13 +799,20 @@ mod tests {
         let moved = move_chat(&conn, "c2", None).unwrap().unwrap();
         assert_eq!(moved.workspace_id, None);
         delete_chat(&mut conn, "c2").unwrap();
-        let indexed: i64 = conn.query_row("SELECT COUNT(*) FROM chat_search", [], |r| r.get(0)).unwrap();
+        let indexed: i64 = conn
+            .query_row("SELECT COUNT(*) FROM chat_search", [], |r| r.get(0))
+            .unwrap();
         assert_eq!(indexed, 1, "a deleted chat's search text goes with it");
 
         let removed = remove_workspace(&mut conn, &ws.id).unwrap();
         assert_eq!(removed, vec!["c1".to_string()]);
-        assert!(c1.exists(), "files are removed by the caller, after the engine stops");
-        let left: i64 = conn.query_row("SELECT COUNT(*) FROM chat_search", [], |r| r.get(0)).unwrap();
+        assert!(
+            c1.exists(),
+            "files are removed by the caller, after the engine stops"
+        );
+        let left: i64 = conn
+            .query_row("SELECT COUNT(*) FROM chat_search", [], |r| r.get(0))
+            .unwrap();
         assert_eq!(left, 0);
     }
 
@@ -659,10 +835,21 @@ mod tests {
         let (dir, mut conn) = db();
         let files = dir.path().join(transcripts::DIR_NAME);
         for id in ["a", "b"] {
-            create_chat(&conn, &NewChat { id: id.into(), title: format!("Chat {id}"), ..Default::default() }).unwrap();
+            create_chat(
+                &conn,
+                &NewChat {
+                    id: id.into(),
+                    title: format!("Chat {id}"),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
         }
         // No transcripts yet: titles still match, nothing is indexed.
-        assert_eq!(search_chats(&mut conn, &files, "chat a", 10).unwrap().len(), 1);
+        assert_eq!(
+            search_chats(&mut conn, &files, "chat a", 10).unwrap().len(),
+            1
+        );
         assert_eq!(refresh_search(&mut conn, &files).unwrap(), 0);
 
         write_transcript(&files, "a", r#"{"records":[{"text":"alpha"}]}"#);
@@ -671,19 +858,35 @@ mod tests {
         // Unchanged files are not read again.
         assert_eq!(refresh_search(&mut conn, &files).unwrap(), 0);
         let ids = |found: Vec<Chat>| found.into_iter().map(|chat| chat.id).collect::<Vec<_>>();
-        assert_eq!(ids(search_chats(&mut conn, &files, "ALPHA", 10).unwrap()), vec!["a"]);
+        assert_eq!(
+            ids(search_chats(&mut conn, &files, "ALPHA", 10).unwrap()),
+            vec!["a"]
+        );
 
         // A new turn in `b` is found by the next search.
         std::thread::sleep(std::time::Duration::from_millis(20));
-        write_transcript(&files, "b", r#"{"records":[{"text":"beta"},{"text":"gamma ray"}]}"#);
-        assert_eq!(ids(search_chats(&mut conn, &files, "gamma", 10).unwrap()), vec!["b"]);
+        write_transcript(
+            &files,
+            "b",
+            r#"{"records":[{"text":"beta"},{"text":"gamma ray"}]}"#,
+        );
+        assert_eq!(
+            ids(search_chats(&mut conn, &files, "gamma", 10).unwrap()),
+            vec!["b"]
+        );
         // Identifiers and type tags are not searchable text.
-        assert!(search_chats(&mut conn, &files, "records", 10).unwrap().is_empty());
+        assert!(search_chats(&mut conn, &files, "records", 10)
+            .unwrap()
+            .is_empty());
 
         // A transcript removed from disk drops out of the search.
         transcripts::remove(&transcripts::path_in(&files, "a").unwrap()).unwrap();
-        assert!(search_chats(&mut conn, &files, "alpha", 10).unwrap().is_empty());
-        let indexed: i64 = conn.query_row("SELECT COUNT(*) FROM chat_search", [], |r| r.get(0)).unwrap();
+        assert!(search_chats(&mut conn, &files, "alpha", 10)
+            .unwrap()
+            .is_empty());
+        let indexed: i64 = conn
+            .query_row("SELECT COUNT(*) FROM chat_search", [], |r| r.get(0))
+            .unwrap();
         assert_eq!(indexed, 1);
     }
 }

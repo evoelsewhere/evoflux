@@ -3,13 +3,15 @@
 | | |
 | --- | --- |
 | Status | Living document — describes the system as built |
-| Updated | 2026-11-06 |
+| Updated | 2026-11-07 |
 | Decisions | [ADR index](decisions/README.md) |
 | Features | [Feature catalogue](../features/README.md) |
 
 This document describes how evo is put together as a whole: its processes,
 crates, interfaces, where state lives, and the rules every feature must fit
-into. Feature-level design lives in the SDDs under `docs/features/`; the
+into. Each feature is specified, planned and broken into tasks under
+`docs/features/<slug>/` (`spec.md`, `plan.md`, `tasks.md` — Spec-Driven
+Development); the
 reasons behind the structure live in the ADRs under `decisions/`. Rules for
 keeping this document current are in [docs/README.md](../README.md).
 
@@ -23,7 +25,8 @@ agent reaches.
 
 In scope: the Rust engine and library crates under `crates/`, the wire
 protocol, and the desktop app under `apps/desktop/`. Out of scope: the
-visual language ([DESIGN.md](../../DESIGN.md)) and per-feature design (SDDs).
+visual language ([DESIGN.md](../../DESIGN.md)) and per-feature specs, plans
+and tasks (`docs/features/`).
 
 ## 2. System context
 
@@ -211,7 +214,7 @@ Subagents run inside their parent's engine; nested sessions are separate
 engines. All of them are nodes on the **session mesh**: the hub in the shell
 routes control, observation and mail between engines and windows; each engine
 has a local router for its in-process nodes. Design:
-[session mesh SDD](../features/session-mesh-protocol/sdd.md).
+[session mesh spec](../features/session-mesh-protocol/spec.md).
 
 ## 7. Data view
 
@@ -241,7 +244,7 @@ Rules:
   ([ADR 0002](decisions/0002-models-dev-is-the-model-database.md)); no model is
   hardcoded.
 
-Details: [app database SDD](../features/app-database/sdd.md).
+Details: [app database spec](../features/app-database/spec.md).
 
 ## 8. Interfaces
 
@@ -270,7 +273,7 @@ Details: [app database SDD](../features/app-database/sdd.md).
   notification. An engine that exits is reported in its chat; the transcript
   is durable in `evo.db`, so the chat continues in a new engine.
 - **Notifications.** One pipeline for toasts, the bell and OS notifications
-  ([notifications SDD](../features/notifications/sdd.md)).
+  ([notifications spec](../features/notifications/spec.md)).
 - **Telemetry.** `evo-telemetry` contracts with a no-op default; nothing leaves
   the device unless a real context is configured.
 - **Testing.** Library crates test against `faux` providers and in-memory
@@ -299,11 +302,10 @@ The index of decisions, their status and links is in
 | Item | Impact | Where tracked |
 | --- | --- | --- |
 | Some crate READMEs and `embedded-docs/` still describe the removed CLI/TUI | misleading docs for contributors and the agent | — |
-| Older SDDs predate the SDD template | harder to scan; status paragraphs mix history and current state | [feature catalogue](../features/README.md) |
 | Browser screenshots and trusted input are Windows-only | platform gap | [apps/desktop/README.md](../../apps/desktop/README.md) "Known gaps" |
 | The desktop has no automated UI test runner | regressions found late | — |
 | Main JS bundle ~1.2 MB | startup time | [apps/desktop/README.md](../../apps/desktop/README.md) "Known gaps" |
-| A transcript's `state_json` is the whole reducer snapshot, rewritten on every write | slow writes in very long chats | [app database SDD](../features/app-database/sdd.md) "Planned tables" |
+| A transcript's `state_json` is the whole reducer snapshot, rewritten on every write | slow writes in very long chats | [app database plan, "Planned tables"](../features/app-database/plan.md#planned-tables) |
 
 ## 13. Glossary
 

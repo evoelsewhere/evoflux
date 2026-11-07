@@ -20,7 +20,7 @@
 //! finished, and files read mid-write (not a complete ZIP package) are ignored
 //! until the next save.
 //!
-//! Design: `docs/features/office-v3-parity/sdd.md`.
+//! Design: `docs/features/office-v3-parity/spec.md`.
 
 use std::collections::HashMap;
 use std::io::Cursor;

@@ -122,7 +122,7 @@ function segments(parts: Part[]): Segment[] {
       continue;
     }
     // A `show_widget` widget is part of the answer: it stands on its own and
-    // stays in sight when the turn folds (docs/features/office-v3-parity/sdd.md).
+    // stays in sight when the turn folds (docs/features/office-v3-parity/spec.md).
     if (part.kind === "tool" && part.name === "show_widget") {
       out.push({ kind: "widget", key: part.key, part });
       continue;

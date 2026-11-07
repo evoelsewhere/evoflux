@@ -5,7 +5,7 @@
 //! does not stop searching. Each backend paces itself and pauses after a
 //! block instead of retrying. Results are cached for [`CACHE_FOR`].
 //!
-//! Design: `docs/features/web-search-and-fetch/sdd.md`.
+//! Design: `docs/features/web-search-and-fetch/spec.md`.
 
 pub mod duckduckgo;
 pub mod exa;
@@ -71,7 +71,9 @@ impl Backend {
         match self {
             Backend::Wikipedia => {
                 q.recency.is_none()
-                    && allowed(q).iter().all(|d| d == "wikipedia.org" || d.ends_with(".wikipedia.org"))
+                    && allowed(q)
+                        .iter()
+                        .all(|d| d == "wikipedia.org" || d.ends_with(".wikipedia.org"))
             }
             _ => true,
         }
@@ -100,7 +102,9 @@ impl Pause {
         match *until {
             Some(t) if Instant::now() < t => {
                 let wait = t.saturating_duration_since(Instant::now()).as_secs().max(1);
-                Err(format!("{name} is paused after limiting automated searches (about {wait}s left)"))
+                Err(format!(
+                    "{name} is paused after limiting automated searches (about {wait}s left)"
+                ))
             }
             _ => {
                 *until = None;
@@ -129,17 +133,31 @@ pub(crate) fn clean_domain(d: &str) -> String {
 }
 
 pub(crate) fn allowed(q: &Query) -> Vec<String> {
-    q.allowed_domains.iter().map(|d| clean_domain(d)).filter(|d| !d.is_empty()).collect()
+    q.allowed_domains
+        .iter()
+        .map(|d| clean_domain(d))
+        .filter(|d| !d.is_empty())
+        .collect()
 }
 
 pub(crate) fn blocked(q: &Query) -> Vec<String> {
-    q.blocked_domains.iter().map(|d| clean_domain(d)).filter(|d| !d.is_empty()).collect()
+    q.blocked_domains
+        .iter()
+        .map(|d| clean_domain(d))
+        .filter(|d| !d.is_empty())
+        .collect()
 }
 
 /// Whether `url`'s host is `domain` or under it.
 fn on_domain(url: &str, domain: &str) -> bool {
-    let Ok(parsed) = Url::parse(url) else { return false };
-    let host = parsed.host_str().unwrap_or("").trim_start_matches("www.").to_ascii_lowercase();
+    let Ok(parsed) = Url::parse(url) else {
+        return false;
+    };
+    let host = parsed
+        .host_str()
+        .unwrap_or("")
+        .trim_start_matches("www.")
+        .to_ascii_lowercase();
     let (dom, path) = match domain.split_once('/') {
         Some((d, p)) => (d, Some(p)),
         None => (domain, None),
@@ -150,7 +168,11 @@ fn on_domain(url: &str, domain: &str) -> bool {
 
 /// Collapse whitespace.
 pub(crate) fn squash(text: impl Iterator<Item = impl AsRef<str>>) -> String {
-    text.map(|t| t.as_ref().to_string()).collect::<String>().split_whitespace().collect::<Vec<_>>().join(" ")
+    text.map(|t| t.as_ref().to_string())
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// `text` cut at [`SNIPPET_MAX`] characters.
@@ -171,17 +193,28 @@ pub async fn search(q: &Query) -> Result<Found, String> {
     }
     let max = q.max_results.clamp(1, MAX_RESULTS);
     // Domain limits are also applied to the results, so ask for more.
-    let want = if q.allowed_domains.is_empty() && q.blocked_domains.is_empty() { max } else { MAX_RESULTS };
+    let want = if q.allowed_domains.is_empty() && q.blocked_domains.is_empty() {
+        max
+    } else {
+        MAX_RESULTS
+    };
     let key = format!(
         "{}\u{1}{}\u{1}{}\u{1}{}\u{1}{want}",
-        q.query.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase(),
+        q.query
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+            .to_lowercase(),
         allowed(q).join(","),
         blocked(q).join(","),
         q.recency.as_deref().unwrap_or("")
     );
     if let Some((at, found)) = cache().lock().unwrap().get(&key) {
         if at.elapsed() < CACHE_FOR {
-            return Ok(Found { source: found.source, results: filter(found.results.clone(), q, max) });
+            return Ok(Found {
+                source: found.source,
+                results: filter(found.results.clone(), q, max),
+            });
         }
     }
     let mut failures: Vec<String> = Vec::new();
@@ -195,11 +228,17 @@ pub async fn search(q: &Query) -> Result<Found, String> {
                 if kept.is_empty() {
                     continue;
                 }
-                let found = Found { source: backend.name(), results };
+                let found = Found {
+                    source: backend.name(),
+                    results,
+                };
                 let mut cache = cache().lock().unwrap();
                 cache.retain(|_, (at, _)| at.elapsed() < CACHE_FOR);
                 cache.insert(key, (Instant::now(), found));
-                return Ok(Found { source: backend.name(), results: kept });
+                return Ok(Found {
+                    source: backend.name(),
+                    results: kept,
+                });
             }
             Err(e) => failures.push(format!("{}: {e}", backend.name())),
         }
@@ -207,7 +246,10 @@ pub async fn search(q: &Query) -> Result<Found, String> {
     let tried = Backend::CHAIN.iter().filter(|b| b.suits(q)).count();
     if failures.len() < tried {
         // At least one backend answered, with nothing.
-        return Ok(Found { source: "", results: Vec::new() });
+        return Ok(Found {
+            source: "",
+            results: Vec::new(),
+        });
     }
     Err(format!(
         "every search backend failed ({}); try again later, or search in the browser tool",
@@ -231,7 +273,11 @@ mod tests {
     use super::*;
 
     fn result(url: &str) -> SearchResult {
-        SearchResult { title: "t".into(), url: url.into(), snippet: String::new() }
+        SearchResult {
+            title: "t".into(),
+            url: url.into(),
+            snippet: String::new(),
+        }
     }
 
     #[test]
@@ -242,7 +288,10 @@ mod tests {
             blocked_domains: vec!["www.pinterest.com".into()],
             ..Default::default()
         };
-        let all = vec![result("https://doc.rust-lang.org/book/"), result("https://www.rust-lang.org/learn")];
+        let all = vec![
+            result("https://doc.rust-lang.org/book/"),
+            result("https://www.rust-lang.org/learn"),
+        ];
         assert_eq!(filter(all, &q, 10).len(), 1);
         assert!(on_domain("https://blog.example.com/a", "example.com"));
         assert!(!on_domain("https://notexample.com/a", "example.com"));
@@ -251,13 +300,25 @@ mod tests {
 
     #[test]
     fn wikipedia_is_skipped_when_it_cannot_serve_the_query() {
-        let plain = Query { query: "rust".into(), ..Default::default() };
+        let plain = Query {
+            query: "rust".into(),
+            ..Default::default()
+        };
         assert!(Backend::Wikipedia.suits(&plain));
-        let recent = Query { recency: Some("week".into()), ..plain.clone() };
+        let recent = Query {
+            recency: Some("week".into()),
+            ..plain.clone()
+        };
         assert!(!Backend::Wikipedia.suits(&recent));
-        let docs = Query { allowed_domains: vec!["docs.rs".into()], ..plain.clone() };
+        let docs = Query {
+            allowed_domains: vec!["docs.rs".into()],
+            ..plain.clone()
+        };
         assert!(!Backend::Wikipedia.suits(&docs));
-        let wiki = Query { allowed_domains: vec!["en.wikipedia.org".into()], ..plain };
+        let wiki = Query {
+            allowed_domains: vec!["en.wikipedia.org".into()],
+            ..plain
+        };
         assert!(Backend::Wikipedia.suits(&wiki));
     }
 

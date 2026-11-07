@@ -31,19 +31,15 @@ pub(super) fn parse(line: &str) -> Result<SessionMutation> {
                     entry.details = Some(Value::Null);
                 }
             }
-            Entry::BranchSummary(entry) => {
-                if value.get("details") == Some(&Value::Null) {
-                    entry.details = Some(Value::Null);
-                }
+            Entry::BranchSummary(entry) if value.get("details") == Some(&Value::Null) => {
+                entry.details = Some(Value::Null);
             }
             _ => {}
         },
         SessionMutation::Record {
             record: LaneRecord::AssistantFrame(frame),
-        } => {
-            if value.get("frame") == Some(&Value::Null) {
-                frame.frame = Some(Value::Null);
-            }
+        } if value.get("frame") == Some(&Value::Null) => {
+            frame.frame = Some(Value::Null);
         }
         _ => {}
     }

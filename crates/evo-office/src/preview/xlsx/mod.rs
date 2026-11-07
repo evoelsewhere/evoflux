@@ -10,7 +10,7 @@
 //! and column, `td[data-cell]` carrying `data-display-value` and
 //! `data-formula`, at least 40 rows × 20 columns and at most 500 × 100.
 //!
-//! Design: `docs/features/office-v3-parity/sdd.md`.
+//! Design: `docs/features/office-v3-parity/spec.md`.
 
 mod book;
 mod chart;

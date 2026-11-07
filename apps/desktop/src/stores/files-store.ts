@@ -1,6 +1,6 @@
 // Files tool: the open files (tabs), the explorer's expanded folders, and each
 // open file's load/save state, and what git says about the tree's folder
-// (docs/features/files-git/sdd.md). The editor text itself lives in CodeMirror
+// (docs/features/files-git/spec.md). The editor text itself lives in CodeMirror
 // states kept beside the store (features/files/code-editor.tsx).
 
 import { create } from "zustand";

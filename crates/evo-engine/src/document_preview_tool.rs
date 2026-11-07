@@ -15,7 +15,7 @@
 //! sandbox's denied patterns apply as for the other file tools. The tool only
 //! reads.
 //!
-//! Design: `docs/features/office-v3-parity/sdd.md`.
+//! Design: `docs/features/office-v3-parity/spec.md`.
 
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;

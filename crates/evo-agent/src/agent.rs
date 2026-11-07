@@ -505,7 +505,7 @@ impl Agent {
             .expect("run lock")
             .as_ref()
             .map(|r| r.abort.clone())
-            .unwrap_or_else(CancellationToken::new)
+            .unwrap_or_default()
     }
 
     fn context_snapshot(&self) -> AgentContext {

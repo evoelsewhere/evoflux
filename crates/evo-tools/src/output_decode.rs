@@ -172,7 +172,7 @@ fn decode_legacy(decoder: &mut Decoder, bytes: &[u8], last: bool, out: &mut Stri
 #[cfg(windows)]
 pub fn console_encoding() -> &'static Encoding {
     static ENCODING: std::sync::OnceLock<&'static Encoding> = std::sync::OnceLock::new();
-    *ENCODING.get_or_init(|| {
+    ENCODING.get_or_init(|| {
         console_code_page()
             .and_then(codepage::to_encoding)
             .unwrap_or(encoding_rs::UTF_8)

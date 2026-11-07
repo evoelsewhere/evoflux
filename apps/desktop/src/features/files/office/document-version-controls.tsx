@@ -1,5 +1,5 @@
 // Undo / redo / version history of an Office document, in the viewer's
-// toolbar (docs/features/office-v3-parity/sdd.md, FR-12; port of v3
+// toolbar (docs/features/office-v3-parity/spec.md, FR-12; port of v3
 // web/src/components/document-version-controls.tsx).
 //
 // The engine keeps every settled save of the file as a version

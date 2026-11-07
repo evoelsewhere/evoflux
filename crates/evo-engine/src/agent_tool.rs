@@ -70,7 +70,15 @@ const MAX_ROWS: usize = 50;
 /// Bytes of the child's latest text kept in the snapshot.
 const MAX_TEXT: usize = 4096;
 /// Argument fields shown for a child's tool call (what the UI labels it by).
-const ARG_FIELDS: &[&str] = &["command", "path", "file_path", "pattern", "query", "url", "description"];
+const ARG_FIELDS: &[&str] = &[
+    "command",
+    "path",
+    "file_path",
+    "pattern",
+    "query",
+    "url",
+    "description",
+];
 /// A foreground run's tie to its tool call ([`drive`]).
 const ATTACHED: u8 = 0;
 /// The call returned on a steering message; the run goes on in the background.
@@ -80,8 +88,9 @@ const FINISHED: u8 = 2;
 
 /// Steering the person or another session sent, per session: a counter that
 /// waiting foreground agents watch ([`steered`]).
-static STEERED: LazyLock<Mutex<std::collections::HashMap<String, tokio::sync::watch::Sender<u64>>>> =
-    LazyLock::new(Default::default);
+static STEERED: LazyLock<
+    Mutex<std::collections::HashMap<String, tokio::sync::watch::Sender<u64>>>,
+> = LazyLock::new(Default::default);
 
 /// A steering message for the session `session_id` was queued (RPC
 /// `queue_message`, `deliverAs: steer`): foreground agents its run waits for
@@ -94,7 +103,10 @@ pub fn steered(session_id: &str) {
 
 /// Changes after now of [`steered`] for `session_id`.
 fn steering(session_id: &str) -> tokio::sync::watch::Receiver<u64> {
-    lock(&STEERED).entry(session_id.to_string()).or_insert_with(|| tokio::sync::watch::channel(0).0).subscribe()
+    lock(&STEERED)
+        .entry(session_id.to_string())
+        .or_insert_with(|| tokio::sync::watch::channel(0).0)
+        .subscribe()
 }
 
 /// Messages about background agents start with this, so hosts can show them
@@ -120,14 +132,21 @@ pub fn unreported_background_agents(messages: &[Value], queued: &str) -> Vec<(St
                 if child["background"] == json!(true) && child["status"] == json!("running") {
                     if let Some(id) = child["agentId"].as_str().filter(|id| !id.is_empty()) {
                         open.retain(|(open_id, _)| open_id != id);
-                        open.push((id.to_string(), child["description"].as_str().unwrap_or("").to_string()));
+                        open.push((
+                            id.to_string(),
+                            child["description"].as_str().unwrap_or("").to_string(),
+                        ));
                     }
                 }
             }
             Some("user") => {
                 let text = match &message["content"] {
                     Value::String(text) => text.clone(),
-                    Value::Array(blocks) => blocks.iter().filter_map(|b| b["text"].as_str()).collect::<Vec<_>>().join("\n"),
+                    Value::Array(blocks) => blocks
+                        .iter()
+                        .filter_map(|b| b["text"].as_str())
+                        .collect::<Vec<_>>()
+                        .join("\n"),
                     _ => String::new(),
                 };
                 if text.contains(NOTE_TAG) {
@@ -137,7 +156,9 @@ pub fn unreported_background_agents(messages: &[Value], queued: &str) -> Vec<(St
             _ => {}
         }
     }
-    open.retain(|(id, _)| !queued.contains(&format!("id=\\\"{id}\\\"")) && !queued.contains(&format!("id=\"{id}\"")));
+    open.retain(|(id, _)| {
+        !queued.contains(&format!("id=\\\"{id}\\\"")) && !queued.contains(&format!("id=\"{id}\""))
+    });
     open
 }
 
@@ -178,7 +199,11 @@ pub async fn report_lost_background_agents(
     if lost.is_empty() {
         return Vec::new();
     }
-    let note = lost.iter().map(|(id, description)| lost_agent_note(id, description)).collect::<Vec<_>>().join("\n\n");
+    let note = lost
+        .iter()
+        .map(|(id, description)| lost_agent_note(id, description))
+        .collect::<Vec<_>>()
+        .join("\n\n");
     let message = AgentMessage::from(evo_ai::types::UserMessage::new(note, now_ms() as i64));
     match harness.lane("main").next_run(message).await {
         Ok(_) => lost.into_iter().map(|(id, _)| id).collect(),
@@ -258,16 +283,24 @@ impl Progress {
     /// touched, or the text tail after a text delta.
     fn activity(&self, event: &AgentEvent) -> (Option<ToolRow>, Option<String>) {
         match event {
-            AgentEvent::ToolExecutionStart { tool_call_id, .. } | AgentEvent::ToolExecutionEnd { tool_call_id, .. } => {
-                let row = self.rows.iter().rev().find(|row| row["callId"] == *tool_call_id).map(|row| ToolRow {
-                    call_id: tool_call_id.clone(),
-                    name: row["name"].as_str().unwrap_or_default().to_string(),
-                    args: row["args"].clone(),
-                    phase: row["phase"].as_str().unwrap_or("running").to_string(),
-                });
+            AgentEvent::ToolExecutionStart { tool_call_id, .. }
+            | AgentEvent::ToolExecutionEnd { tool_call_id, .. } => {
+                let row = self
+                    .rows
+                    .iter()
+                    .rev()
+                    .find(|row| row["callId"] == *tool_call_id)
+                    .map(|row| ToolRow {
+                        call_id: tool_call_id.clone(),
+                        name: row["name"].as_str().unwrap_or_default().to_string(),
+                        args: row["args"].clone(),
+                        phase: row["phase"].as_str().unwrap_or("running").to_string(),
+                    });
                 (row, None)
             }
-            AgentEvent::MessageUpdate { .. } | AgentEvent::MessageStart { .. } => (None, Some(self.text.clone())),
+            AgentEvent::MessageUpdate { .. } | AgentEvent::MessageStart { .. } => {
+                (None, Some(self.text.clone()))
+            }
             _ => (None, None),
         }
     }
@@ -275,7 +308,10 @@ impl Progress {
     fn observe(&mut self, event: &AgentEvent) {
         match event {
             AgentEvent::TurnEnd { .. } => self.turns += 1,
-            AgentEvent::MessageStart { message: AgentMessage::Assistant(_), .. } => self.text.clear(),
+            AgentEvent::MessageStart {
+                message: AgentMessage::Assistant(_),
+                ..
+            } => self.text.clear(),
             AgentEvent::MessageUpdate {
                 assistant_message_event: AssistantMessageEvent::TextDelta { delta, .. },
                 ..
@@ -289,17 +325,27 @@ impl Progress {
                     self.text.drain(..cut);
                 }
             }
-            AgentEvent::MessageEnd { message: AgentMessage::Assistant(message), .. } => {
+            AgentEvent::MessageEnd {
+                message: AgentMessage::Assistant(message),
+                ..
+            } => {
                 self.usage.add(&message.usage);
                 crate::usage_log::record(message, crate::usage_log::Source::Subagent);
             }
-            AgentEvent::ToolExecutionStart { tool_call_id, tool_name, args } => {
+            AgentEvent::ToolExecutionStart {
+                tool_call_id,
+                tool_name,
+                args,
+            } => {
                 self.tool_uses += 1;
                 let shown: serde_json::Map<String, Value> = ARG_FIELDS
                     .iter()
                     .filter_map(|key| {
                         let text = args.get(*key)?.as_str()?;
-                        Some((key.to_string(), Value::String(text.chars().take(200).collect())))
+                        Some((
+                            key.to_string(),
+                            Value::String(text.chars().take(200).collect()),
+                        ))
                     })
                     .collect();
                 self.rows.push_back(json!({
@@ -312,8 +358,17 @@ impl Progress {
                     self.rows.pop_front();
                 }
             }
-            AgentEvent::ToolExecutionEnd { tool_call_id, is_error, .. } => {
-                if let Some(row) = self.rows.iter_mut().rev().find(|row| row["callId"] == *tool_call_id) {
+            AgentEvent::ToolExecutionEnd {
+                tool_call_id,
+                is_error,
+                ..
+            } => {
+                if let Some(row) = self
+                    .rows
+                    .iter_mut()
+                    .rev()
+                    .find(|row| row["callId"] == *tool_call_id)
+                {
                     row["phase"] = json!(if *is_error { "error" } else { "done" });
                 }
             }
@@ -339,19 +394,34 @@ impl ProgressEmitter {
         let snapshot = {
             let mut progress = lock(&self.progress);
             progress.observe(&event);
-            if matches!(event, AgentEvent::MessageEnd { message: AgentMessage::Assistant(_), .. }) {
+            if matches!(
+                event,
+                AgentEvent::MessageEnd {
+                    message: AgentMessage::Assistant(_),
+                    ..
+                }
+            ) {
                 router.usage(&self.address, mesh::usage_of(&progress.usage));
             }
             let mut last = lock(&self.last);
             let due = last.is_none_or(|at| at.elapsed() >= UPDATE_EVERY)
-                || matches!(event, AgentEvent::ToolExecutionStart { .. } | AgentEvent::ToolExecutionEnd { .. });
+                || matches!(
+                    event,
+                    AgentEvent::ToolExecutionStart { .. } | AgentEvent::ToolExecutionEnd { .. }
+                );
             if !due {
                 return;
             }
             *last = Some(Instant::now());
             // Folded by the router even without subscribers, for later ones.
             let (tool, text) = progress.activity(&event);
-            router.activity(&self.address, progress.turns, progress.tool_uses, tool, text);
+            router.activity(
+                &self.address,
+                progress.turns,
+                progress.tool_uses,
+                tool,
+                text,
+            );
             progress.snapshot()
         };
         let update = lock(&self.update).clone();
@@ -373,7 +443,11 @@ impl AgentEmitter for ProgressEmitter {
 
 /// An update carrying only the snapshot (no text output yet).
 fn partial(snapshot: Value) -> AgentToolResult {
-    AgentToolResult { content: Vec::new(), details: json!({ "child": snapshot }), ..Default::default() }
+    AgentToolResult {
+        content: Vec::new(),
+        details: json!({ "child": snapshot }),
+        ..Default::default()
+    }
 }
 
 // ── Registry ────────────────────────────────────────────────────────────────
@@ -495,7 +569,12 @@ enum Outcome {
 
 /// One run of `job` on `brief`. `foreground` is the waiting tool call's signal;
 /// `scope` ends with the parent's run (foreground) or session (background).
-async fn run(job: Arc<Job>, brief: String, foreground: Option<CancellationToken>, scope: CancellationToken) -> Outcome {
+async fn run(
+    job: Arc<Job>,
+    brief: String,
+    foreground: Option<CancellationToken>,
+    scope: CancellationToken,
+) -> Outcome {
     let Some(child) = lock(&job.child).clone() else {
         return Outcome::Failed("the agent was closed".into());
     };
@@ -509,7 +588,10 @@ async fn run(job: Arc<Job>, brief: String, foreground: Option<CancellationToken>
     }
     let call_id = lock(&job.call_id).clone();
     let background = job.background.load(Ordering::Acquire);
-    mesh::router().set_meta(&job.address, json!({ "callId": call_id, "background": background }));
+    mesh::router().set_meta(
+        &job.address,
+        json!({ "callId": call_id, "background": background }),
+    );
     mesh::router().transition(&job.address, NodeState::Running, None, None);
     let lane = child.harness.lane("main");
     let prompt = lane.prompt_text(&brief, Vec::new());
@@ -542,11 +624,23 @@ async fn run(job: Arc<Job>, brief: String, foreground: Option<CancellationToken>
     match outcome {
         Ok(result) => {
             let outcome = crate::extensions_actions::run_outcome_json(result.outcome);
-            let text = outcome.get("text").and_then(Value::as_str).unwrap_or("").trim().to_string();
+            let text = outcome
+                .get("text")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .trim()
+                .to_string();
             if outcome.get("status").and_then(Value::as_str) == Some("completed") {
-                Outcome::Report(if text.is_empty() { "(the subagent returned no text)".into() } else { capped(text, &job.id) })
+                Outcome::Report(if text.is_empty() {
+                    "(the subagent returned no text)".into()
+                } else {
+                    capped(text, &job.id)
+                })
             } else {
-                Outcome::Failed(format!("its run {}", outcome["status"].as_str().unwrap_or("failed")))
+                Outcome::Failed(format!(
+                    "its run {}",
+                    outcome["status"].as_str().unwrap_or("failed")
+                ))
             }
         }
         Err(reason) => Outcome::Failed(reason),
@@ -584,7 +678,8 @@ async fn settle(job: &Job, outcome: &Outcome, cancelled: bool) -> Value {
             if let Some(child) = child {
                 let _ = child.harness.close().await;
             }
-            worktree_report = Some(crate::child_agents::finish_worktree(created, job.cwd.clone()).await);
+            worktree_report =
+                Some(crate::child_agents::finish_worktree(created, job.cwd.clone()).await);
         }
     }
     let mut progress = lock(&job.progress);
@@ -620,9 +715,18 @@ fn announce(job: &Job, outcome: &Outcome, snapshot: &Value, usage: MeshUsage) {
     };
     let worktree = snapshot.get("worktree").filter(|w| !w.is_null()).cloned();
     let resumable = lock(&job.child).is_some();
-    router.set_meta(&job.address, json!({ "worktree": worktree, "resumable": resumable }));
+    router.set_meta(
+        &job.address,
+        json!({ "worktree": worktree, "resumable": resumable }),
+    );
     router.usage(&job.address, usage);
-    router.report(&job.address, status, report_text(outcome, snapshot), usage, worktree);
+    router.report(
+        &job.address,
+        status,
+        report_text(outcome, snapshot),
+        usage,
+        worktree,
+    );
     let reason = snapshot["error"].as_str().map(str::to_string);
     router.transition(&job.address, NodeState::Settled, Some(status), reason);
     // Questions it did not `reply` to get its report as their answer.
@@ -651,17 +755,26 @@ async fn tell_parent(job: &Job, outcome: &Outcome, snapshot: &Value) {
     if job.quiet.swap(false, Ordering::AcqRel) {
         return;
     }
-    let Some(parent) = job.parent.upgrade() else { return };
+    let Some(parent) = job.parent.upgrade() else {
+        return;
+    };
     let status = snapshot["status"].as_str().unwrap_or("done");
     let note = format!(
         "{NOTE_TAG} id=\"{}\" description=\"{}\" status=\"{status}\">\n{}\n</background-agent>",
         job.id,
-        snapshot["description"].as_str().unwrap_or("").replace('"', "'"),
+        snapshot["description"]
+            .as_str()
+            .unwrap_or("")
+            .replace('"', "'"),
         report_text(outcome, snapshot)
     );
     let message = AgentMessage::from(evo_ai::types::UserMessage::new(note, now_ms() as i64));
     let lane = parent.lane("main");
-    let queued = if parent.has_active_run() { lane.steer(message).await } else { lane.next_run(message).await };
+    let queued = if parent.has_active_run() {
+        lane.steer(message).await
+    } else {
+        lane.next_run(message).await
+    };
     // Idle now (or its run ended meanwhile): it needs a run to read the report.
     if queued.is_ok() && !parent.has_active_run() {
         mesh::router().request_wake(&Address::session(&job.session_id), &job.address, None);
@@ -745,13 +858,23 @@ async fn drive(
     let state = Arc::new(std::sync::atomic::AtomicU8::new(ATTACHED));
     let stop = CancellationToken::new();
     let life = CancellationToken::new();
-    tokio::spawn(lifetime(state.clone(), stop.clone(), life.clone(), signal.clone(), scope, session));
+    tokio::spawn(lifetime(
+        state.clone(),
+        stop.clone(),
+        life.clone(),
+        signal.clone(),
+        scope,
+        session,
+    ));
     let (sender, receiver) = tokio::sync::oneshot::channel();
     {
         let (job, state, life) = (job.clone(), state.clone(), life.clone());
         tokio::spawn(async move {
             let outcome = run(job.clone(), brief, Some(stop), life.clone()).await;
-            if state.compare_exchange(ATTACHED, FINISHED, Ordering::AcqRel, Ordering::Acquire).is_ok() {
+            if state
+                .compare_exchange(ATTACHED, FINISHED, Ordering::AcqRel, Ordering::Acquire)
+                .is_ok()
+            {
                 let _ = sender.send(outcome);
             } else {
                 // Released: it reports like a background agent.
@@ -784,8 +907,15 @@ async fn drive(
     // This run's usage only: earlier runs of a continued agent were counted then.
     let usage = usage_since(&lock(&job.progress).usage, &before);
     match outcome {
-        Outcome::Report(_) => Ok(result(report_text(&outcome, &snapshot), snapshot, Some(usage))),
-        Outcome::Failed(reason) => Err(AgentError::Tool(format!("subagent {} stopped: {reason}", job.id))),
+        Outcome::Report(_) => Ok(result(
+            report_text(&outcome, &snapshot),
+            snapshot,
+            Some(usage),
+        )),
+        Outcome::Failed(reason) => Err(AgentError::Tool(format!(
+            "subagent {} stopped: {reason}",
+            job.id
+        ))),
     }
 }
 
@@ -852,13 +982,19 @@ fn released(job: &Job) -> AgentToolResult {
 /// Put a mail message in front of the agent at `address` (mesh_tools.rs):
 /// into its current run, or for its next one. A question (`ask`) to an idle
 /// agent continues it in the background to answer.
-pub(crate) async fn deliver(address: &Address, text: String, ask: bool) -> Result<&'static str, String> {
+pub(crate) async fn deliver(
+    address: &Address,
+    text: String,
+    ask: bool,
+) -> Result<&'static str, String> {
     let job = lock(&registry().jobs)
         .iter()
         .find(|job| job.address == *address)
         .cloned()
         .ok_or("that agent is gone")?;
-    let child = lock(&job.child).clone().ok_or("that agent was closed and takes no messages")?;
+    let child = lock(&job.child)
+        .clone()
+        .ok_or("that agent was closed and takes no messages")?;
     let lane = child.harness.lane("main");
     if job.running.load(Ordering::Acquire) {
         let message = AgentMessage::from(evo_ai::types::UserMessage::new(text, now_ms() as i64));
@@ -875,9 +1011,16 @@ pub(crate) async fn deliver(address: &Address, text: String, ask: bool) -> Resul
     job.running.store(true, Ordering::Release);
     job.quiet.store(true, Ordering::Release);
     let scope = parent.session_scope_token();
-    drive(job, text, true, scope, CancellationToken::new(), Arc::new(|_| {}))
-        .await
-        .map_err(|e| e.to_string())?;
+    drive(
+        job,
+        text,
+        true,
+        scope,
+        CancellationToken::new(),
+        Arc::new(|_| {}),
+    )
+    .await
+    .map_err(|e| e.to_string())?;
     Ok("it was continued to answer")
 }
 
@@ -889,7 +1032,9 @@ fn parent_of(cell: &HarnessCell) -> Result<AgentHarness, AgentError> {
 
 fn refuse_nested() -> Result<(), AgentError> {
     if evo_agent::tool_execution_scope::is_child_execution() {
-        return Err(AgentError::Tool("subagents cannot start or message subagents".into()));
+        return Err(AgentError::Tool(
+            "subagents cannot start or message subagents".into(),
+        ));
     }
     Ok(())
 }
@@ -909,7 +1054,8 @@ fn find_model(models: &[evo_ai::Model], wanted: &str) -> Option<evo_ai::Model> {
     models
         .iter()
         .find(|m| {
-            m.id.eq_ignore_ascii_case(wanted) || format!("{}/{}", m.provider, m.id).eq_ignore_ascii_case(wanted)
+            m.id.eq_ignore_ascii_case(wanted)
+                || format!("{}/{}", m.provider, m.id).eq_ignore_ascii_case(wanted)
         })
         .cloned()
 }
@@ -940,11 +1086,18 @@ pub struct SubagentTool {
 
 pub fn create_agent_tool(harness: HarnessCell, cwd: PathBuf) -> Arc<dyn AgentTool> {
     let types = agents::load(&cwd);
-    Arc::new(SubagentTool { schema: schema(&types), harness, cwd })
+    Arc::new(SubagentTool {
+        schema: schema(&types),
+        harness,
+        cwd,
+    })
 }
 
 fn schema(types: &[AgentType]) -> Tool {
-    let listing: String = types.iter().map(|t| format!("\n- {}: {}", t.name, t.description)).collect();
+    let listing: String = types
+        .iter()
+        .map(|t| format!("\n- {}: {}", t.name, t.description))
+        .collect();
     let names: Vec<&str> = types.iter().map(|t| t.name.as_str()).collect();
     Tool {
         name: "agent".into(),
@@ -1006,23 +1159,41 @@ impl AgentTool for SubagentTool {
         refuse_nested()?;
         let task = input.prompt.trim();
         if task.is_empty() || task.len() > 50_000 {
-            return Err(AgentError::Validation("prompt must contain 1-50000 bytes".into()));
+            return Err(AgentError::Validation(
+                "prompt must contain 1-50000 bytes".into(),
+            ));
         }
-        let description = input.description.as_deref().map(str::trim).filter(|d| !d.is_empty()).unwrap_or("Agent");
+        let description = input
+            .description
+            .as_deref()
+            .map(str::trim)
+            .filter(|d| !d.is_empty())
+            .unwrap_or("Agent");
         let description: String = description.chars().take(200).collect();
 
         // Agent types are read per call, so a new `.evo/agents` file works at once.
         let types = agents::load(&self.cwd);
         let wanted = input.agent_type.as_deref().unwrap_or(agents::DEFAULT_TYPE);
-        let agent = types.iter().find(|t| t.name == wanted).cloned().ok_or_else(|| {
-            let names: Vec<_> = types.iter().map(|t| t.name.as_str()).collect();
-            AgentError::Validation(format!("unknown agent type `{wanted}`; available: {}", names.join(", ")))
-        })?;
+        let agent = types
+            .iter()
+            .find(|t| t.name == wanted)
+            .cloned()
+            .ok_or_else(|| {
+                let names: Vec<_> = types.iter().map(|t| t.name.as_str()).collect();
+                AgentError::Validation(format!(
+                    "unknown agent type `{wanted}`; available: {}",
+                    names.join(", ")
+                ))
+            })?;
         let isolated = match input.isolation.as_deref() {
             None => agent.worktree,
             Some("worktree") => true,
             Some("none") => false,
-            Some(other) => return Err(AgentError::Validation(format!("unknown isolation `{other}`"))),
+            Some(other) => {
+                return Err(AgentError::Validation(format!(
+                    "unknown isolation `{other}`"
+                )))
+            }
         };
         let parent = parent_of(&self.harness)?;
         let session_id = parent.session().storage().metadata().id.clone();
@@ -1045,17 +1216,20 @@ impl AgentTool for SubagentTool {
                 .map(str::to_string)
                 .collect::<Vec<_>>()
         });
-        let model = match input.model.as_deref().or(agent.model.as_deref()) {
-            Some(id) => Some(find_model(&parent.available_models(), id).ok_or_else(|| {
-                AgentError::Validation(format!("model `{id}` is not available"))
-            })?),
-            None => None,
-        };
+        let model =
+            match input.model.as_deref().or(agent.model.as_deref()) {
+                Some(id) => Some(find_model(&parent.available_models(), id).ok_or_else(|| {
+                    AgentError::Validation(format!("model `{id}` is not available"))
+                })?),
+                None => None,
+            };
 
         let worktree = if isolated {
-            Some(crate::child_agents::create_worktree(&self.cwd).await.map_err(|e| {
-                AgentError::Tool(format!("could not create a worktree: {e}"))
-            })?)
+            Some(
+                crate::child_agents::create_worktree(&self.cwd)
+                    .await
+                    .map_err(|e| AgentError::Tool(format!("could not create a worktree: {e}")))?,
+            )
         } else {
             None
         };
@@ -1079,7 +1253,9 @@ impl AgentTool for SubagentTool {
             ended_at: None,
             rows: VecDeque::new(),
             text: String::new(),
-            worktree: worktree.as_ref().map(|created| crate::child_agents::worktree_json(created, None)),
+            worktree: worktree
+                .as_ref()
+                .map(|created| crate::child_agents::worktree_json(created, None)),
             error: None,
         }));
         let update: Arc<Mutex<Option<Update>>> = Arc::new(Mutex::new(None));
@@ -1109,11 +1285,18 @@ impl AgentTool for SubagentTool {
                 .map(evo_harness::types::HarnessTool::new),
         );
         // A read-only type is held to it by a guard on every tool call.
-        let guard = agent
-            .read_only
-            .then(|| Arc::new(crate::read_only::guard) as evo_harness::agent_harness::ChildToolGuard);
+        let guard = agent.read_only.then(|| {
+            Arc::new(crate::read_only::guard) as evo_harness::agent_harness::ChildToolGuard
+        });
         let child = match parent
-            .create_child_guarded(session, emitter, agent.max_turns(), requested, replacements, guard)
+            .create_child_guarded(
+                session,
+                emitter,
+                agent.max_turns(),
+                requested,
+                replacements,
+                guard,
+            )
             .await
         {
             Ok(child) => child,
@@ -1121,14 +1304,18 @@ impl AgentTool for SubagentTool {
                 if let Some(created) = worktree {
                     crate::child_agents::finish_worktree(created, self.cwd.clone()).await;
                 }
-                return Err(AgentError::Tool(format!("could not start the subagent: {error}")));
+                return Err(AgentError::Tool(format!(
+                    "could not start the subagent: {error}"
+                )));
             }
         };
         let lane = child.harness.lane("main");
         if let Some(model) = model {
             if let Err(error) = lane.set_model(model).await {
                 let _ = child.harness.close().await;
-                return Err(AgentError::Tool(format!("could not set the subagent's model: {error}")));
+                return Err(AgentError::Tool(format!(
+                    "could not set the subagent's model: {error}"
+                )));
             }
         } else if let Ok(model) = lane.get_model().await {
             lock(&progress).model = model.id;
@@ -1136,14 +1323,23 @@ impl AgentTool for SubagentTool {
         // The type's thinking level, as close as its model allows.
         if let (Some(level), Ok(model)) = (agent.thinking, lane.get_model().await) {
             if model.reasoning {
-                if let Err(error) = lane.set_thinking_level(model.clamp_thinking_level(level)).await {
+                if let Err(error) = lane
+                    .set_thinking_level(model.clamp_thinking_level(level))
+                    .await
+                {
                     let _ = child.harness.close().await;
-                    return Err(AgentError::Tool(format!("could not set the subagent's thinking level: {error}")));
+                    return Err(AgentError::Tool(format!(
+                        "could not set the subagent's thinking level: {error}"
+                    )));
                 }
             }
         }
         // A background child outlives this run; a foreground one ends with it.
-        let scope = if input.background { parent.session_scope_token() } else { child.scope.clone() };
+        let scope = if input.background {
+            parent.session_scope_token()
+        } else {
+            child.scope.clone()
+        };
 
         let place = match &worktree {
             Some(created) => format!(
@@ -1271,16 +1467,23 @@ impl AgentTool for MessageAgentTool {
         refuse_nested()?;
         let message = input.message.trim();
         if message.is_empty() || message.len() > 50_000 {
-            return Err(AgentError::Validation("message must contain 1-50000 bytes".into()));
+            return Err(AgentError::Validation(
+                "message must contain 1-50000 bytes".into(),
+            ));
         }
         let parent = parent_of(&self.harness)?;
         let session_id = parent.session().storage().metadata().id.clone();
         let job = registry()
             .get(&input.agent_id)
             .filter(|job| job.session_id == session_id)
-            .ok_or_else(|| AgentError::Validation(format!("no subagent `{}` in this session", input.agent_id)))?;
+            .ok_or_else(|| {
+                AgentError::Validation(format!("no subagent `{}` in this session", input.agent_id))
+            })?;
         if job.running.load(Ordering::Acquire) {
-            return Err(AgentError::Tool(format!("subagent {} is still running", job.id)));
+            return Err(AgentError::Tool(format!(
+                "subagent {} is still running",
+                job.id
+            )));
         }
         if lock(&job.child).is_none() {
             return Err(AgentError::Tool(format!(
@@ -1292,8 +1495,20 @@ impl AgentTool for MessageAgentTool {
         job.running.store(true, Ordering::Release);
         *lock(&job.call_id) = tool_call_id.to_string();
         // Background: on the session's scope; foreground: ends with this call.
-        let scope = if input.background { parent.session_scope_token() } else { signal.child_token() };
-        drive(job, message.to_string(), input.background, scope, signal, on_update).await
+        let scope = if input.background {
+            parent.session_scope_token()
+        } else {
+            signal.child_token()
+        };
+        drive(
+            job,
+            message.to_string(),
+            input.background,
+            scope,
+            signal,
+            on_update,
+        )
+        .await
     }
 }
 

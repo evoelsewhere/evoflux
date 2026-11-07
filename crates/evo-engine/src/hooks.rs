@@ -63,7 +63,11 @@ fn load(cwd: &Path, trusted: bool) -> Hooks {
     let mut hooks = load_settings(cwd, trusted);
     // Enabled plugins' hooks/hooks.json (and inline hooks).
     for (plugin, events) in crate::plugins::hooks() {
-        hooks.add_events(&events, &format!("plugin:{plugin}"), &format!("plugin {plugin}"));
+        hooks.add_events(
+            &events,
+            &format!("plugin:{plugin}"),
+            &format!("plugin {plugin}"),
+        );
     }
     hooks
 }

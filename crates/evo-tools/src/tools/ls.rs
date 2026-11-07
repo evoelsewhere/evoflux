@@ -153,7 +153,7 @@ impl AgentTool for LsTool {
 
         // Sort alphabetically, case-insensitive. Mirrors TS
         // `entries.sort((a,b) => a.toLowerCase().localeCompare(b.toLowerCase()))`.
-        entries.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        entries.sort_by_key(|a| a.name.to_lowercase());
 
         // Format with directory indicators.
         let mut results: Vec<String> = Vec::new();

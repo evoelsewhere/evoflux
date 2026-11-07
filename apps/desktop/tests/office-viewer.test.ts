@@ -1,5 +1,5 @@
 // Unit tests for the Files tool's Office viewer helpers
-// (docs/features/office-v3-parity/sdd.md FR-5, FR-9). Run with `bun test` in apps/desktop.
+// (docs/features/office-v3-parity/spec.md FR-5, FR-9). Run with `bun test` in apps/desktop.
 
 import { describe, expect, test } from "bun:test";
 import { NATIVE_OFFICE_FILE, officeKind } from "../src/features/files/office/kinds";

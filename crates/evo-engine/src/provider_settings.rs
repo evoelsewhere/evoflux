@@ -18,7 +18,9 @@
 use std::collections::BTreeMap;
 use std::sync::OnceLock;
 
-use evo_ai::providers::bedrock::{decode_iam_credential, encode_iam_credential, region_of, IamCredential};
+use evo_ai::providers::bedrock::{
+    decode_iam_credential, encode_iam_credential, region_of, IamCredential,
+};
 use evo_runtime::models_dev::ModelsDev;
 use evo_runtime::provider_catalog::{
     self, AuthKind, CatalogProvider, DiscoveredModel, ProviderState,
@@ -83,7 +85,11 @@ fn read_store(db: &rusqlite::Connection) -> rusqlite::Result<ProviderStore> {
                 models: None,
                 custom: Vec::new(),
                 discovered_at: row.get(6)?,
-                discovery_error: if status.as_deref() == Some("error") { row.get(5)? } else { None },
+                discovery_error: if status.as_deref() == Some("error") {
+                    row.get(5)?
+                } else {
+                    None
+                },
             },
         ))
     })?;
@@ -138,7 +144,9 @@ fn ensure_row(tx: &rusqlite::Transaction<'_>, provider: &str) -> rusqlite::Resul
     Ok(())
 }
 
-fn transact(write: impl FnOnce(&rusqlite::Transaction<'_>) -> rusqlite::Result<()>) -> Result<(), String> {
+fn transact(
+    write: impl FnOnce(&rusqlite::Transaction<'_>) -> rusqlite::Result<()>,
+) -> Result<(), String> {
     let mut db = db()?;
     // IMMEDIATE: take evo.db's write lock up front, waiting out the busy
     // timeout. A deferred transaction reads first and fails at once with
@@ -165,7 +173,12 @@ pub fn set_base_url(provider: &str, url: Option<&str>) -> Result<(), String> {
 
 /// One saved option of `provider` (see [`set_options`]).
 pub fn option(provider: &str, key: &str) -> Option<Value> {
-    load_store().providers.get(provider)?.options.get(key).cloned()
+    load_store()
+        .providers
+        .get(provider)?
+        .options
+        .get(key)
+        .cloned()
 }
 
 /// Merge `patch` into `provider`'s options (a `null` value removes a key).
@@ -229,7 +242,9 @@ pub fn manifests() -> Vec<evo_extensions::ProviderManifest> {
         .providers
         .iter()
         .filter(|provider| participates(provider, store.providers.get(&provider.id)))
-        .filter_map(|provider| provider.declaration(&state_of(store.providers.get(&provider.id), &db), &values))
+        .filter_map(|provider| {
+            provider.declaration(&state_of(store.providers.get(&provider.id), &db), &values)
+        })
         .map(|declaration| evo_extensions::ProviderManifest {
             id: declaration.id,
             models: declaration.models,
@@ -240,7 +255,9 @@ pub fn manifests() -> Vec<evo_extensions::ProviderManifest> {
 }
 
 /// Catalog manifests followed by `packages`, a package winning on an id clash.
-pub fn with_catalog(packages: &[evo_extensions::ProviderManifest]) -> Vec<evo_extensions::ProviderManifest> {
+pub fn with_catalog(
+    packages: &[evo_extensions::ProviderManifest],
+) -> Vec<evo_extensions::ProviderManifest> {
     let mut all: Vec<_> = manifests()
         .into_iter()
         .filter(|manifest| !packages.iter().any(|package| package.id == manifest.id))
@@ -266,17 +283,30 @@ fn fields(
     env_key: Option<String>,
 ) -> Vec<Value> {
     let stored_key = match stored {
-        Some(Credential::ApiKey { key: Some(key), .. }) if !key.trim().is_empty() => Some(key.as_str()),
+        Some(Credential::ApiKey { key: Some(key), .. }) if !key.trim().is_empty() => {
+            Some(key.as_str())
+        }
         _ => None,
     };
     let iam = stored_key.and_then(decode_iam_credential);
-    let profile = stored_key
-        .and_then(|key| key.strip_prefix(evo_ai::providers::aws_credentials::PROFILE_CREDENTIAL_PREFIX));
-    let secret = |name: &str, label: &str, required: bool, has: bool, env: Option<&str>, from_env: Option<String>| {
+    let profile = stored_key.and_then(|key| {
+        key.strip_prefix(evo_ai::providers::aws_credentials::PROFILE_CREDENTIAL_PREFIX)
+    });
+    let secret = |name: &str,
+                  label: &str,
+                  required: bool,
+                  has: bool,
+                  env: Option<&str>,
+                  from_env: Option<String>| {
         json!({"name": name, "label": label, "secret": true, "required": required,
                "env": env, "hasValue": has, "fromEnv": if has { None } else { from_env }})
     };
-    let text = |name: &str, label: &str, required: bool, value: Option<String>, placeholder: &str, env: Option<&str>| {
+    let text = |name: &str,
+                label: &str,
+                required: bool,
+                value: Option<String>,
+                placeholder: &str,
+                env: Option<&str>| {
         json!({"name": name, "label": label, "secret": false, "required": required,
                "env": env, "value": value, "placeholder": placeholder})
     };
@@ -287,17 +317,61 @@ fn fields(
                 .and_then(|saved| saved.base_url.as_deref())
                 .and_then(region_of);
             vec![
-                text("region", "Region", false, region, "us-east-1", Some("AWS_REGION")),
+                text(
+                    "region",
+                    "Region",
+                    false,
+                    region,
+                    "us-east-1",
+                    Some("AWS_REGION"),
+                ),
                 // A named profile from ~/.aws: keys, credential_process or SSO.
-                text("profile", "AWS profile (~/.aws: SSO, credential_process or keys)", false,
-                     profile.map(|p| if p.is_empty() { "default".to_string() } else { p.to_string() }),
-                     "default", Some("AWS_PROFILE")),
-                secret("apiKey", "Bedrock API key", false, stored_key.is_some() && iam.is_none() && profile.is_none(),
-                       Some("AWS_BEARER_TOKEN_BEDROCK"), env_key),
-                secret("accessKeyId", "Access key ID", false, iam.is_some(), None, None),
-                secret("secretAccessKey", "Secret access key", false, iam.is_some(), None, None),
-                secret("sessionToken", "Session token (optional)", false,
-                       iam.as_ref().is_some_and(|iam| iam.session_token.is_some()), None, None),
+                text(
+                    "profile",
+                    "AWS profile (~/.aws: SSO, credential_process or keys)",
+                    false,
+                    profile.map(|p| {
+                        if p.is_empty() {
+                            "default".to_string()
+                        } else {
+                            p.to_string()
+                        }
+                    }),
+                    "default",
+                    Some("AWS_PROFILE"),
+                ),
+                secret(
+                    "apiKey",
+                    "Bedrock API key",
+                    false,
+                    stored_key.is_some() && iam.is_none() && profile.is_none(),
+                    Some("AWS_BEARER_TOKEN_BEDROCK"),
+                    env_key,
+                ),
+                secret(
+                    "accessKeyId",
+                    "Access key ID",
+                    false,
+                    iam.is_some(),
+                    None,
+                    None,
+                ),
+                secret(
+                    "secretAccessKey",
+                    "Secret access key",
+                    false,
+                    iam.is_some(),
+                    None,
+                    None,
+                ),
+                secret(
+                    "sessionToken",
+                    "Session token (optional)",
+                    false,
+                    iam.as_ref().is_some_and(|iam| iam.session_token.is_some()),
+                    None,
+                    None,
+                ),
             ]
         }
         (_, Some("vertex")) => {
@@ -306,30 +380,84 @@ fn fields(
                 .and_then(provider_catalog::vertex_parts)
                 .unzip();
             vec![
-                secret("apiKey", "Google Cloud API key", true, stored_key.is_some(),
-                       provider.api_key_env.as_deref(), env_key),
-                text("project", "Project ID (optional — empty for express mode)", false, project,
-                     "my-gcp-project", Some("GOOGLE_CLOUD_PROJECT")),
-                text("location", "Location", false, location, "global", Some("GOOGLE_CLOUD_LOCATION")),
+                secret(
+                    "apiKey",
+                    "Google Cloud API key",
+                    true,
+                    stored_key.is_some(),
+                    provider.api_key_env.as_deref(),
+                    env_key,
+                ),
+                text(
+                    "project",
+                    "Project ID (optional — empty for express mode)",
+                    false,
+                    project,
+                    "my-gcp-project",
+                    Some("GOOGLE_CLOUD_PROJECT"),
+                ),
+                text(
+                    "location",
+                    "Location",
+                    false,
+                    location,
+                    "global",
+                    Some("GOOGLE_CLOUD_LOCATION"),
+                ),
             ]
         }
         (_, Some("foundry")) => vec![
-            text("baseUrl", "Resource name or endpoint URL", true,
-                 saved.and_then(|saved| saved.base_url.clone()),
-                 "my-resource or https://my-resource.services.ai.azure.com", provider.base_url_env.as_deref()),
-            secret("apiKey", "API key", true, stored_key.is_some(), provider.api_key_env.as_deref(), env_key),
-            text("deployments", "Deployments", true,
-                 saved.map(|saved| saved.custom.join(", ")).filter(|list| !list.is_empty()),
-                 "gpt-5.1, claude-sonnet-4-6", None),
+            text(
+                "baseUrl",
+                "Resource name or endpoint URL",
+                true,
+                saved.and_then(|saved| saved.base_url.clone()),
+                "my-resource or https://my-resource.services.ai.azure.com",
+                provider.base_url_env.as_deref(),
+            ),
+            secret(
+                "apiKey",
+                "API key",
+                true,
+                stored_key.is_some(),
+                provider.api_key_env.as_deref(),
+                env_key,
+            ),
+            text(
+                "deployments",
+                "Deployments",
+                true,
+                saved
+                    .map(|saved| saved.custom.join(", "))
+                    .filter(|list| !list.is_empty()),
+                "gpt-5.1, claude-sonnet-4-6",
+                None,
+            ),
         ],
         _ => {
             let mut out = Vec::new();
             if provider.api_key_env.is_some() {
-                out.push(secret("apiKey", if provider.anonymous { "API key (optional)" } else { "API key" },
-                                !provider.anonymous, stored_key.is_some(), provider.api_key_env.as_deref(), env_key));
+                out.push(secret(
+                    "apiKey",
+                    if provider.anonymous {
+                        "API key (optional)"
+                    } else {
+                        "API key"
+                    },
+                    !provider.anonymous,
+                    stored_key.is_some(),
+                    provider.api_key_env.as_deref(),
+                    env_key,
+                ));
             }
-            out.push(text("baseUrl", "Base URL", false, saved.and_then(|saved| saved.base_url.clone()),
-                          &provider.base_url, provider.base_url_env.as_deref()));
+            out.push(text(
+                "baseUrl",
+                "Base URL",
+                false,
+                saved.and_then(|saved| saved.base_url.clone()),
+                &provider.base_url,
+                provider.base_url_env.as_deref(),
+            ));
             out
         }
     }
@@ -355,12 +483,20 @@ pub fn list(packages: &[evo_extensions::ProviderManifest]) -> Value {
             let state = states.get(&provider.id);
             let ready = state.is_some_and(|state| state.is_ready());
             let connected = provider.supported
-                && if provider.anonymous { saved.is_some_and(|saved| saved.enabled) } else { ready };
+                && if provider.anonymous {
+                    saved.is_some_and(|saved| saved.enabled)
+                } else {
+                    ready
+                };
             let env_key = provider.key_env(&values).filter(|name| {
                 evo_runtime::ValueSource::env(&values, name).is_some_and(|v| !v.trim().is_empty())
             });
             let state_of = state_of(saved, &db);
-            let model_count = if provider.supported { provider.models(&state_of, &values).len() } else { 0 };
+            let model_count = if provider.supported {
+                provider.models(&state_of, &values).len()
+            } else {
+                0
+            };
             json!({
                 "id": provider.id,
                 "label": provider.label,
@@ -390,7 +526,10 @@ pub fn list(packages: &[evo_extensions::ProviderManifest]) -> Value {
             })
         })
         .collect();
-    let connected = rows.iter().filter(|row| row["connected"].as_bool() == Some(true)).count();
+    let connected = rows
+        .iter()
+        .filter(|row| row["connected"].as_bool() == Some(true))
+        .count();
     json!({
         "providers": rows,
         "recommended": catalog.recommended,
@@ -419,7 +558,13 @@ fn save_key(provider: &str, key: &str) -> Result<(), String> {
     if key.is_empty() {
         config::delete_credential(provider).map(|_| ())
     } else {
-        config::upsert_credential(provider, Credential::ApiKey { key: Some(key.to_string()), env: None })
+        config::upsert_credential(
+            provider,
+            Credential::ApiKey {
+                key: Some(key.to_string()),
+                env: None,
+            },
+        )
     }
     .map_err(|error| error.to_string())
 }
@@ -464,23 +609,35 @@ pub fn apply(provider: &CatalogProvider, change: &ProviderChange) -> Result<(), 
                         save_key(&provider.id, &key)?;
                     } else if let Some(profile) = get("profile").filter(|p| !p.trim().is_empty()) {
                         let profile = profile.trim();
-                        if profile.chars().any(|c| c.is_whitespace() || c == '[' || c == ']') {
+                        if profile
+                            .chars()
+                            .any(|c| c.is_whitespace() || c == '[' || c == ']')
+                        {
                             return Err("A profile name has no spaces or brackets".into());
                         }
                         save_key(
                             &provider.id,
-                            &format!("{}{profile}", evo_ai::providers::aws_credentials::PROFILE_CREDENTIAL_PREFIX),
+                            &format!(
+                                "{}{profile}",
+                                evo_ai::providers::aws_credentials::PROFILE_CREDENTIAL_PREFIX
+                            ),
                         )?;
                     }
                 }
             }
             if let Some(region) = get("region") {
                 if !region.is_empty()
-                    && !region.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+                    && !region
+                        .chars()
+                        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
                 {
                     return Err("Region looks like us-east-1".into());
                 }
-                base_url = Some(if region.is_empty() { String::new() } else { provider_catalog::bedrock_base_url(&region) });
+                base_url = Some(if region.is_empty() {
+                    String::new()
+                } else {
+                    provider_catalog::bedrock_base_url(&region)
+                });
             }
         }
         Some("foundry") => {
@@ -493,11 +650,14 @@ pub fn apply(provider: &CatalogProvider, change: &ProviderChange) -> Result<(), 
                 save_key(&provider.id, &key)?;
             }
             if get("project").is_some() || get("location").is_some() {
-                let valid = |value: &str| value.chars().all(|c| c.is_ascii_alphanumeric() || c == '-');
+                let valid =
+                    |value: &str| value.chars().all(|c| c.is_ascii_alphanumeric() || c == '-');
                 let project = get("project").unwrap_or_default();
                 let location = get("location").unwrap_or_default();
                 if !valid(project.trim()) || !valid(location.trim()) {
-                    return Err("Project and location are ids like my-project and us-central1".into());
+                    return Err(
+                        "Project and location are ids like my-project and us-central1".into(),
+                    );
                 }
                 base_url = Some(provider_catalog::vertex_base_url(&project, &location));
             }
@@ -533,7 +693,10 @@ pub fn apply(provider: &CatalogProvider, change: &ProviderChange) -> Result<(), 
                     "DELETE FROM provider_models WHERE provider_id = ?1 AND source = 'discovered'",
                     [&provider.id],
                 )?;
-                tx.execute("DELETE FROM provider_discovery WHERE provider_id = ?1", [&provider.id])?;
+                tx.execute(
+                    "DELETE FROM provider_discovery WHERE provider_id = ?1",
+                    [&provider.id],
+                )?;
             }
             tx.execute(
                 "UPDATE provider_settings SET base_url = ?2 WHERE provider_id = ?1",
@@ -566,14 +729,20 @@ pub fn apply(provider: &CatalogProvider, change: &ProviderChange) -> Result<(), 
 pub fn remove(provider: &CatalogProvider) -> Result<(), String> {
     config::delete_credential(&provider.id).map_err(|error| error.to_string())?;
     transact(|tx| {
-        tx.execute("DELETE FROM provider_settings WHERE provider_id = ?1", [&provider.id])?;
+        tx.execute(
+            "DELETE FROM provider_settings WHERE provider_id = ?1",
+            [&provider.id],
+        )?;
         Ok(())
     })
 }
 
 /// Record a discovery attempt; on success replace the discovered models
 /// (user-added ones are kept).
-fn record_discovery(provider: &CatalogProvider, outcome: &Result<Vec<DiscoveredModel>, String>) -> Result<(), String> {
+fn record_discovery(
+    provider: &CatalogProvider,
+    outcome: &Result<Vec<DiscoveredModel>, String>,
+) -> Result<(), String> {
     transact(|tx| {
         ensure_row(tx, &provider.id)?;
         let at = now();
@@ -639,9 +808,15 @@ pub fn request_key(provider: &CatalogProvider) -> Option<String> {
         api_key_env: provider.key_env(&values),
         requires_auth: !provider.anonymous,
     };
-    evo_runtime::credentials::resolve(&provider.id, models_cfg.providers.get(&provider.id), &auth, Some(&declaration), &values)
-        .key
-        .or_else(|| provider.default_api_key.clone())
+    evo_runtime::credentials::resolve(
+        &provider.id,
+        models_cfg.providers.get(&provider.id),
+        &auth,
+        Some(&declaration),
+        &values,
+    )
+    .key
+    .or_else(|| provider.default_api_key.clone())
 }
 
 const DISCOVERY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
@@ -653,7 +828,10 @@ pub async fn discover(provider: &CatalogProvider) -> Result<Option<Vec<Discovere
     if !provider.supported {
         return Err(format!("{} is not available yet", provider.label));
     }
-    if matches!(provider.endpoint.as_deref(), Some("bedrock") | Some("foundry") | Some("vertex")) {
+    if matches!(
+        provider.endpoint.as_deref(),
+        Some("bedrock") | Some("foundry") | Some("vertex")
+    ) {
         return Ok(None);
     }
     let store = load_store();
@@ -665,7 +843,10 @@ pub async fn discover(provider: &CatalogProvider) -> Result<Option<Vec<Discovere
         return Err("This provider has no endpoint configured".into());
     }
     let key = if provider.login.as_deref() == Some("codex") {
-        crate::provider_login::fresh_codex_token().await.ok().or_else(|| request_key(provider))
+        crate::provider_login::fresh_codex_token()
+            .await
+            .ok()
+            .or_else(|| request_key(provider))
     } else {
         request_key(provider)
     };
@@ -683,27 +864,44 @@ pub async fn discover(provider: &CatalogProvider) -> Result<Option<Vec<Discovere
         }
     }
     if key.is_none() && !provider.anonymous {
-        return Err(if provider.login.is_some() { "Sign in first".into() } else { "Add an API key first".into() });
+        return Err(if provider.login.is_some() {
+            "Sign in first".into()
+        } else {
+            "Add an API key first".into()
+        });
     }
     let client = reqwest::Client::builder()
         .timeout(DISCOVERY_TIMEOUT)
         .build()
         .map_err(|_| "Could not create an HTTP client".to_string())?;
-    let (url, parse): (String, fn(&Value) -> Vec<DiscoveredModel>) = match provider.login.as_deref() {
-        Some("codex") => (format!("{base}/models?client_version=1.0.0"), parse_codex_models),
+    let (url, parse): (String, fn(&Value) -> Vec<DiscoveredModel>) = match provider.login.as_deref()
+    {
+        Some("codex") => (
+            format!("{base}/models?client_version=1.0.0"),
+            parse_codex_models,
+        ),
         Some("copilot") => (format!("{base}/models"), parse_copilot_models),
-        _ if provider.default_api() == evo_ai::Api::GoogleGenerativeAi => {
-            (format!("{}/models?pageSize=1000", base.trim_end_matches('/')), parse_gemini_models)
-        }
+        _ if provider.default_api() == evo_ai::Api::GoogleGenerativeAi => (
+            format!("{}/models?pageSize=1000", base.trim_end_matches('/')),
+            parse_gemini_models,
+        ),
         _ => (provider.models_url(&base), parse_model_list),
     };
-    let mut request = client.get(&url).header("user-agent", evo_ai::http::user_agent());
-    for (name, value) in provider.headers.iter().chain(saved.map(|s| &s.headers).into_iter().flatten()) {
+    let mut request = client
+        .get(&url)
+        .header("user-agent", evo_ai::http::user_agent());
+    for (name, value) in provider
+        .headers
+        .iter()
+        .chain(saved.map(|s| &s.headers).into_iter().flatten())
+    {
         request = request.header(name, value);
     }
     if let Some(key) = key.as_deref() {
         request = if provider.default_api() == evo_ai::Api::AnthropicMessages {
-            request.header("x-api-key", key).header("anthropic-version", "2023-06-01")
+            request
+                .header("x-api-key", key)
+                .header("anthropic-version", "2023-06-01")
         } else if provider.default_api() == evo_ai::Api::GoogleGenerativeAi {
             request.header("x-goog-api-key", key)
         } else {
@@ -737,15 +935,20 @@ async fn fetch_models(
     })?;
     let status = response.status();
     if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
-        return Err(format!("{} rejected the credential ({status})", provider.label));
+        return Err(format!(
+            "{} rejected the credential ({status})",
+            provider.label
+        ));
     }
     if !status.is_success() {
         return Err(format!("{} answered {status} for {url}", provider.label));
     }
-    let body: Value = response
-        .json()
-        .await
-        .map_err(|_| format!("{} returned a model list evo could not read", provider.label))?;
+    let body: Value = response.json().await.map_err(|_| {
+        format!(
+            "{} returned a model list evo could not read",
+            provider.label
+        )
+    })?;
     let models = parse(&body);
     if models.is_empty() {
         return Err(format!("{} returned no models", provider.label));
@@ -761,14 +964,20 @@ fn finish(mut models: Vec<DiscoveredModel>) -> Vec<DiscoveredModel> {
 
 /// `{"data":[{"id"}]}` (OpenAI, Anthropic) or `{"models":[{"name"}]}` (Gemini).
 fn parse_model_list(body: &Value) -> Vec<DiscoveredModel> {
-    let items = body.get("data").or_else(|| body.get("models")).and_then(Value::as_array);
+    let items = body
+        .get("data")
+        .or_else(|| body.get("models"))
+        .and_then(Value::as_array);
     finish(
         items
             .into_iter()
             .flatten()
             .filter(|item| catalog_item_is_agent_model(item))
             .filter_map(|item| {
-                let id = item.get("id").or_else(|| item.get("name")).and_then(Value::as_str)?;
+                let id = item
+                    .get("id")
+                    .or_else(|| item.get("name"))
+                    .and_then(Value::as_str)?;
                 let id = id.strip_prefix("models/").unwrap_or(id).trim();
                 (!id.is_empty()).then(|| catalog_item_metadata(id, item))
             })
@@ -783,7 +992,12 @@ fn positive(value: Option<&Value>) -> Option<u64> {
 fn strings(value: Option<&Value>) -> Vec<String> {
     value
         .and_then(Value::as_array)
-        .map(|list| list.iter().filter_map(Value::as_str).map(|s| s.to_ascii_lowercase()).collect())
+        .map(|list| {
+            list.iter()
+                .filter_map(Value::as_str)
+                .map(|s| s.to_ascii_lowercase())
+                .collect()
+        })
         .unwrap_or_default()
 }
 
@@ -807,9 +1021,12 @@ fn catalog_item_metadata(id: &str, item: &Value) -> DiscoveredModel {
         .and_then(Value::as_bool)
         .or_else(|| {
             (!parameters.is_empty()).then(|| {
-                parameters
-                    .iter()
-                    .any(|p| matches!(p.as_str(), "reasoning" | "include_reasoning" | "reasoning_effort"))
+                parameters.iter().any(|p| {
+                    matches!(
+                        p.as_str(),
+                        "reasoning" | "include_reasoning" | "reasoning_effort"
+                    )
+                })
             })
         });
     let efforts = item.get("reasoning").filter(|r| r.is_object()).map(|r| {
@@ -821,7 +1038,11 @@ fn catalog_item_metadata(id: &str, item: &Value) -> DiscoveredModel {
     });
     let inputs = {
         let modalities = strings(item.pointer("/architecture/input_modalities"));
-        if modalities.is_empty() { strings(item.get("input_modalities")) } else { modalities }
+        if modalities.is_empty() {
+            strings(item.get("input_modalities"))
+        } else {
+            modalities
+        }
     };
     let vision = if inputs.is_empty() {
         item.get("supports_image_in").and_then(Value::as_bool)
@@ -850,7 +1071,11 @@ fn catalog_item_metadata(id: &str, item: &Value) -> DiscoveredModel {
 fn catalog_item_is_agent_model(item: &Value) -> bool {
     let outputs = {
         let modalities = strings(item.pointer("/architecture/output_modalities"));
-        if modalities.is_empty() { strings(item.get("output_modalities")) } else { modalities }
+        if modalities.is_empty() {
+            strings(item.get("output_modalities"))
+        } else {
+            modalities
+        }
     };
     if !outputs.is_empty() && !outputs.iter().any(|m| m == "text") {
         return false;
@@ -862,8 +1087,14 @@ fn catalog_item_is_agent_model(item: &Value) -> bool {
 /// Ollama's own API: `/api/tags` lists models, `/api/show` says what each
 /// does (tools, thinking, vision) and its context length — the OpenAI shim
 /// says none of it.
-async fn discover_ollama(client: &reqwest::Client, base: &str) -> Result<Vec<DiscoveredModel>, String> {
-    let root = base.trim_end_matches('/').trim_end_matches("/v1").to_string();
+async fn discover_ollama(
+    client: &reqwest::Client,
+    base: &str,
+) -> Result<Vec<DiscoveredModel>, String> {
+    let root = base
+        .trim_end_matches('/')
+        .trim_end_matches("/v1")
+        .to_string();
     let tags: Value = client
         .get(format!("{root}/api/tags"))
         .send()
@@ -877,11 +1108,21 @@ async fn discover_ollama(client: &reqwest::Client, base: &str) -> Result<Vec<Dis
         .and_then(Value::as_array)
         .into_iter()
         .flatten()
-        .filter_map(|m| m.get("name").or_else(|| m.get("model")).and_then(Value::as_str).map(str::to_string))
+        .filter_map(|m| {
+            m.get("name")
+                .or_else(|| m.get("model"))
+                .and_then(Value::as_str)
+                .map(str::to_string)
+        })
         .collect();
     let mut models = Vec::new();
     for name in names {
-        let show: Value = match client.post(format!("{root}/api/show")).json(&json!({"model": name})).send().await {
+        let show: Value = match client
+            .post(format!("{root}/api/show"))
+            .json(&json!({"model": name}))
+            .send()
+            .await
+        {
             Ok(response) => response.json().await.unwrap_or(Value::Null),
             Err(_) => Value::Null,
         };
@@ -932,7 +1173,10 @@ fn parse_gemini_models(body: &Value) -> Vec<DiscoveredModel> {
                 let id = name.strip_prefix("models/").unwrap_or(name).trim();
                 (!id.is_empty()).then(|| DiscoveredModel {
                     id: id.to_string(),
-                    name: item.get("displayName").and_then(Value::as_str).map(str::to_string),
+                    name: item
+                        .get("displayName")
+                        .and_then(Value::as_str)
+                        .map(str::to_string),
                     context_window: item.get("inputTokenLimit").and_then(Value::as_u64),
                     max_tokens: item.get("outputTokenLimit").and_then(Value::as_u64),
                     reasoning: item.get("thinking").and_then(Value::as_bool),
@@ -952,8 +1196,10 @@ fn parse_codex_models(body: &Value) -> Vec<DiscoveredModel> {
             .flatten()
             // Hidden or not served over the API: not for the picker.
             .filter(|item| {
-                !matches!(item.get("visibility").and_then(Value::as_str), Some("hide" | "hidden"))
-                    && item.get("supported_in_api") != Some(&Value::Bool(false))
+                !matches!(
+                    item.get("visibility").and_then(Value::as_str),
+                    Some("hide" | "hidden")
+                ) && item.get("supported_in_api") != Some(&Value::Bool(false))
             })
             .filter_map(|item| {
                 let id = item.get("slug").and_then(Value::as_str)?.to_string();
@@ -963,16 +1209,28 @@ fn parse_codex_models(body: &Value) -> Vec<DiscoveredModel> {
                     .into_iter()
                     .flatten()
                     .filter_map(|level| {
-                        level.as_str().or_else(|| level.get("effort").and_then(Value::as_str)).map(str::to_string)
+                        level
+                            .as_str()
+                            .or_else(|| level.get("effort").and_then(Value::as_str))
+                            .map(str::to_string)
                     })
                     .collect();
                 let inputs = strings(item.get("input_modalities"));
                 // The endpoint accepts this share of the window (EvoFlux
                 // CODEX_EFFECTIVE_CONTEXT_WINDOW_PERCENT).
-                let percent = item.get("effective_context_window_percent").and_then(Value::as_u64).unwrap_or(95);
-                let context_window = item.get("context_window").and_then(Value::as_u64).map(|w| w * percent / 100);
+                let percent = item
+                    .get("effective_context_window_percent")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(95);
+                let context_window = item
+                    .get("context_window")
+                    .and_then(Value::as_u64)
+                    .map(|w| w * percent / 100);
                 Some(DiscoveredModel {
-                    name: item.get("display_name").and_then(Value::as_str).map(str::to_string),
+                    name: item
+                        .get("display_name")
+                        .and_then(Value::as_str)
+                        .map(str::to_string),
                     context_window,
                     reasoning: Some(true),
                     api: Some("openai-responses".into()),
@@ -994,7 +1252,11 @@ fn parse_copilot_models(body: &Value) -> Vec<DiscoveredModel> {
             .into_iter()
             .flatten()
             .filter(|item| item.get("model_picker_enabled").and_then(Value::as_bool) != Some(false))
-            .filter(|item| item.pointer("/capabilities/type").and_then(Value::as_str).map_or(true, |t| t == "chat"))
+            .filter(|item| {
+                item.pointer("/capabilities/type")
+                    .and_then(Value::as_str)
+                    .is_none_or(|t| t == "chat")
+            })
             .filter_map(|item| {
                 let id = item.get("id").and_then(Value::as_str)?.to_string();
                 // Spelled with or without the leading slash ("/responses",
@@ -1023,11 +1285,18 @@ fn parse_copilot_models(body: &Value) -> Vec<DiscoveredModel> {
                 Some(DiscoveredModel {
                     name: item.get("name").and_then(Value::as_str).map(str::to_string),
                     api: Some(api.into()),
-                    context_window: limits.and_then(|l| l.get("max_context_window_tokens")).and_then(Value::as_u64),
-                    max_tokens: limits.and_then(|l| l.get("max_output_tokens")).and_then(Value::as_u64),
-                    vision: supports.and_then(|s| s.get("vision")).and_then(Value::as_bool),
-                    reasoning: supports
-                        .map(|s| s.get("reasoning_effort").is_some() || s.get("thinking").is_some()),
+                    context_window: limits
+                        .and_then(|l| l.get("max_context_window_tokens"))
+                        .and_then(Value::as_u64),
+                    max_tokens: limits
+                        .and_then(|l| l.get("max_output_tokens"))
+                        .and_then(Value::as_u64),
+                    vision: supports
+                        .and_then(|s| s.get("vision"))
+                        .and_then(Value::as_bool),
+                    reasoning: supports.map(|s| {
+                        s.get("reasoning_effort").is_some() || s.get("thinking").is_some()
+                    }),
                     // The efforts this account's Copilot accepts for the model.
                     efforts: supports
                         .map(|s| strings(s.get("reasoning_effort")))
@@ -1057,10 +1326,27 @@ mod tests {
         let ids: Vec<&str> = models.iter().map(|m| m.id.as_str()).collect();
         assert_eq!(ids, ["a/model", "kimi-k3", "plain"]);
         let rich = &models[0];
-        assert_eq!((rich.context_window, rich.max_tokens, rich.vision, rich.reasoning), (Some(200000), Some(32000), Some(true), Some(true)));
-        assert_eq!(rich.efforts.as_deref(), Some(&["low".to_string(), "high".to_string(), "none".to_string()][..]));
-        assert_eq!((models[1].reasoning, models[1].vision), (Some(true), Some(false)));
-        assert_eq!((models[2].reasoning, models[2].context_window), (None, None));
+        assert_eq!(
+            (
+                rich.context_window,
+                rich.max_tokens,
+                rich.vision,
+                rich.reasoning
+            ),
+            (Some(200000), Some(32000), Some(true), Some(true))
+        );
+        assert_eq!(
+            rich.efforts.as_deref(),
+            Some(&["low".to_string(), "high".to_string(), "none".to_string()][..])
+        );
+        assert_eq!(
+            (models[1].reasoning, models[1].vision),
+            (Some(true), Some(false))
+        );
+        assert_eq!(
+            (models[2].reasoning, models[2].context_window),
+            (None, None)
+        );
     }
 
     #[test]
@@ -1082,7 +1368,9 @@ mod tests {
             .map(|m| m.id)
             .collect();
         assert_eq!(ids, ["a", "b"]);
-        let models = parse_model_list(&json!({"models":[{"name":"models/gemini-3-pro","displayName":"Gemini 3 Pro"}]}));
+        let models = parse_model_list(
+            &json!({"models":[{"name":"models/gemini-3-pro","displayName":"Gemini 3 Pro"}]}),
+        );
         assert_eq!(models[0].id, "gemini-3-pro");
     }
 
@@ -1101,12 +1389,21 @@ mod tests {
         let gpt = models.iter().find(|m| m.id == "gpt-5.5").unwrap();
         assert_eq!(gpt.api.as_deref(), Some("openai-responses"));
         assert_eq!(gpt.context_window, Some(400_000));
-        assert_eq!(models.iter().find(|m| m.id == "claude-sonnet-5").unwrap().api.as_deref(), Some("openai-completions"));
+        assert_eq!(
+            models
+                .iter()
+                .find(|m| m.id == "claude-sonnet-5")
+                .unwrap()
+                .api
+                .as_deref(),
+            Some("openai-completions")
+        );
     }
 
     #[test]
     fn codex_reads_slugs_and_effective_window() {
-        let models = parse_codex_models(&json!({"models":[{"slug":"gpt-5.5","context_window":400000}]}));
+        let models =
+            parse_codex_models(&json!({"models":[{"slug":"gpt-5.5","context_window":400000}]}));
         assert_eq!(models[0].id, "gpt-5.5");
         assert_eq!(models[0].context_window, Some(380_000));
     }
@@ -1115,7 +1412,10 @@ mod tests {
     fn keyless_local_providers_participate_only_once_enabled() {
         let ollama = provider_catalog::find("ollama").unwrap();
         assert!(!participates(ollama, None));
-        let saved = SavedProvider { enabled: true, ..Default::default() };
+        let saved = SavedProvider {
+            enabled: true,
+            ..Default::default()
+        };
         assert!(participates(ollama, Some(&saved)));
     }
 }

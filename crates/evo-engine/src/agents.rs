@@ -114,7 +114,13 @@ Report:
 
 /// The types every session has.
 pub fn builtin() -> Vec<AgentType> {
-    let read_only_tools = || Some(vec!["read".to_string(), "bash".to_string(), "powershell".to_string()]);
+    let read_only_tools = || {
+        Some(vec![
+            "read".to_string(),
+            "bash".to_string(),
+            "powershell".to_string(),
+        ])
+    };
     let builtin = |name: &str, description: &str, prompt: &str| AgentType {
         name: name.into(),
         description: description.into(),
@@ -205,7 +211,9 @@ pub fn load(cwd: &Path) -> Vec<AgentType> {
 pub fn load_from(dirs: &[PathBuf]) -> Vec<AgentType> {
     let mut types: Vec<AgentType> = Vec::new();
     for dir in dirs {
-        let Ok(entries) = std::fs::read_dir(dir) else { continue };
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            continue;
+        };
         let mut files: Vec<PathBuf> = entries
             .flatten()
             .map(|entry| entry.path())
@@ -231,17 +239,28 @@ pub fn load_from(dirs: &[PathBuf]) -> Vec<AgentType> {
 fn valid_name(name: &str) -> bool {
     !name.is_empty()
         && name.len() <= 64
-        && name.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+        && name
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
 }
 
 /// One agent type file. `name` defaults to the file name.
 pub fn parse(file: &Path) -> Result<AgentType, String> {
     let text = std::fs::read_to_string(file).map_err(|e| e.to_string())?;
     let (front, body) = evo_harness::frontmatter::parse_frontmatter(&text)?;
-    let stem = file.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
-    let name = front.get("name").and_then(Value::as_str).map(str::to_string).unwrap_or(stem);
+    let stem = file
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let name = front
+        .get("name")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .unwrap_or(stem);
     if !valid_name(&name) {
-        return Err(format!("name `{name}` must be lowercase letters, digits and hyphens (at most 64)"));
+        return Err(format!(
+            "name `{name}` must be lowercase letters, digits and hyphens (at most 64)"
+        ));
     }
     let description = front
         .get("description")
@@ -255,11 +274,18 @@ pub fn parse(file: &Path) -> Result<AgentType, String> {
     // `tools: [read, bash]` or `tools: read, bash`.
     let tools: Option<Vec<String>> = match front.get("tools") {
         None | Some(Value::Null) => None,
-        Some(Value::Array(items)) => {
-            Some(items.iter().filter_map(Value::as_str).map(evo_tool_name).collect())
-        }
+        Some(Value::Array(items)) => Some(
+            items
+                .iter()
+                .filter_map(Value::as_str)
+                .map(evo_tool_name)
+                .collect(),
+        ),
         Some(Value::String(list)) => Some(
-            list.split(',').map(evo_tool_name).filter(|s| !s.is_empty()).collect(),
+            list.split(',')
+                .map(evo_tool_name)
+                .filter(|s| !s.is_empty())
+                .collect(),
         ),
         Some(_) => return Err("tools must be a list of tool names".into()),
     };
@@ -273,7 +299,9 @@ pub fn parse(file: &Path) -> Result<AgentType, String> {
         .and_then(Value::as_str)
         .map(str::trim)
         // Short family aliases are not model ids: use the parent's model.
-        .filter(|m| !m.is_empty() && !matches!(*m, "inherit" | "sonnet" | "opus" | "haiku" | "fable"))
+        .filter(|m| {
+            !m.is_empty() && !matches!(*m, "inherit" | "sonnet" | "opus" | "haiku" | "fable")
+        })
         .map(str::to_string);
     let worktree = front.get("isolation").and_then(Value::as_str) == Some("worktree");
     let read_only = match front.get("access") {
@@ -296,9 +324,16 @@ pub fn parse(file: &Path) -> Result<AgentType, String> {
     };
     let max_turns = match front.get("maxTurns") {
         None | Some(Value::Null) => None,
-        Some(value) => match value.as_u64().or_else(|| value.as_str()?.trim().parse().ok()) {
+        Some(value) => match value
+            .as_u64()
+            .or_else(|| value.as_str()?.trim().parse().ok())
+        {
             Some(turns) if (1..=u64::from(MAX_CHILD_TURNS)).contains(&turns) => Some(turns as u32),
-            _ => return Err(format!("maxTurns must be a whole number from 1 to {MAX_CHILD_TURNS}")),
+            _ => {
+                return Err(format!(
+                    "maxTurns must be a whole number from 1 to {MAX_CHILD_TURNS}"
+                ))
+            }
         },
     };
     let prompt = body.trim().to_string();
@@ -335,23 +370,39 @@ mod tests {
             "reviewer.md",
             "---\ndescription: Reviews changes.\ntools: [read, bash]\nmodel: some-model\nisolation: worktree\n---\nYou review code.\n",
         );
-        write(&user, "reviewer.md", "---\ndescription: The user's reviewer.\n---\nUser version.\n");
+        write(
+            &user,
+            "reviewer.md",
+            "---\ndescription: The user's reviewer.\n---\nUser version.\n",
+        );
         write(&user, "writer.md", "---\nname: docs-writer\ndescription: Writes docs.\ntools: read, write\n---\nWrite docs.\n");
-        write(&user, "broken.md", "---\nname: Bad Name\ndescription: x\n---\n");
+        write(
+            &user,
+            "broken.md",
+            "---\nname: Bad Name\ndescription: x\n---\n",
+        );
         write(&user, "nodesc.md", "no frontmatter at all\n");
 
         let types = load_from(&[project, user]);
         let reviewer = types.iter().find(|t| t.name == "reviewer").unwrap();
         assert_eq!(reviewer.description, "Reviews changes.");
-        assert_eq!(reviewer.tools.as_deref(), Some(&["read".to_string(), "bash".to_string()][..]));
+        assert_eq!(
+            reviewer.tools.as_deref(),
+            Some(&["read".to_string(), "bash".to_string()][..])
+        );
         assert_eq!(reviewer.model.as_deref(), Some("some-model"));
         assert!(reviewer.worktree);
         assert_eq!(reviewer.prompt, "You review code.");
         let writer = types.iter().find(|t| t.name == "docs-writer").unwrap();
-        assert_eq!(writer.tools.as_deref(), Some(&["read".to_string(), "write".to_string()][..]));
+        assert_eq!(
+            writer.tools.as_deref(),
+            Some(&["read".to_string(), "write".to_string()][..])
+        );
         assert!(writer.model.is_none());
         // Invalid files are skipped; built-ins are always there.
-        assert!(!types.iter().any(|t| t.name == "Bad Name" || t.name == "nodesc"));
+        assert!(!types
+            .iter()
+            .any(|t| t.name == "Bad Name" || t.name == "nodesc"));
         for name in ["general", "explore", "plan"] {
             assert!(types.iter().any(|t| t.name == name), "missing {name}");
         }
@@ -365,7 +416,11 @@ mod tests {
             "auditor.md",
             "---\ndescription: Audits.\naccess: read-only\nthinking: high\nmaxTurns: 60\n---\nAudit.\n",
         );
-        write(root.path(), "plain.md", "---\ndescription: Plain.\nthinking: inherit\n---\nPlain.\n");
+        write(
+            root.path(),
+            "plain.md",
+            "---\ndescription: Plain.\nthinking: inherit\n---\nPlain.\n",
+        );
         let types = load_from(&[root.path().to_path_buf()]);
         let auditor = types.iter().find(|t| t.name == "auditor").unwrap();
         assert!(auditor.read_only);
@@ -382,8 +437,15 @@ mod tests {
             ("turns.md", "maxTurns: 0"),
             ("many.md", "maxTurns: 1000"),
         ] {
-            write(root.path(), file, &format!("---\ndescription: x\n{front}\n---\nx\n"));
-            assert!(parse(&root.path().join(file)).is_err(), "{front} was accepted");
+            write(
+                root.path(),
+                file,
+                &format!("---\ndescription: x\n{front}\n---\nx\n"),
+            );
+            assert!(
+                parse(&root.path().join(file)).is_err(),
+                "{front} was accepted"
+            );
         }
     }
 
@@ -394,19 +456,34 @@ mod tests {
         assert!(get("explore").read_only && get("plan").read_only);
         assert!(!get("general").read_only && get("general").tools.is_none());
         for agent in &types {
-            assert!((1..=MAX_CHILD_TURNS).contains(&agent.max_turns()), "{}", agent.name);
-            assert!(agent.prompt.contains("Report:"), "{} has no report format", agent.name);
+            assert!(
+                (1..=MAX_CHILD_TURNS).contains(&agent.max_turns()),
+                "{}",
+                agent.name
+            );
+            assert!(
+                agent.prompt.contains("Report:"),
+                "{} has no report format",
+                agent.name
+            );
         }
     }
 
     #[test]
     fn a_file_can_replace_a_builtin() {
         let root = tempfile::tempdir().unwrap();
-        write(root.path(), "explore.md", "---\ndescription: My explorer.\nmodel: inherit\n---\nMine.\n");
+        write(
+            root.path(),
+            "explore.md",
+            "---\ndescription: My explorer.\nmodel: inherit\n---\nMine.\n",
+        );
         let types = load_from(&[root.path().to_path_buf()]);
         let explore: Vec<_> = types.iter().filter(|t| t.name == "explore").collect();
         assert_eq!(explore.len(), 1);
         assert_eq!(explore[0].description, "My explorer.");
-        assert!(explore[0].model.is_none(), "`inherit` means the parent's model");
+        assert!(
+            explore[0].model.is_none(),
+            "`inherit` means the parent's model"
+        );
     }
 }

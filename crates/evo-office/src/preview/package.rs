@@ -78,7 +78,9 @@ impl Package {
 
     /// A part's bytes.
     pub fn bytes(&self, name: &str) -> Option<&[u8]> {
-        self.parts.get(name.trim_start_matches('/')).map(Vec::as_slice)
+        self.parts
+            .get(name.trim_start_matches('/'))
+            .map(Vec::as_slice)
     }
 
     /// A part as UTF-8 text (a leading BOM removed). Invalid UTF-8 is replaced.
@@ -157,13 +159,25 @@ impl Package {
         let doc = super::html::parse_xml(&text).ok()?;
         let wanted = format!("/{part}");
         let mut by_extension = None;
-        let ext = part.rsplit('.').next().unwrap_or_default().to_ascii_lowercase();
+        let ext = part
+            .rsplit('.')
+            .next()
+            .unwrap_or_default()
+            .to_ascii_lowercase();
         for node in doc.root_element().children().filter(|n| n.is_element()) {
             match node.tag_name().name() {
-                "Override" if node.attribute("PartName").is_some_and(|p| p.eq_ignore_ascii_case(&wanted)) => {
+                "Override"
+                    if node
+                        .attribute("PartName")
+                        .is_some_and(|p| p.eq_ignore_ascii_case(&wanted)) =>
+                {
                     return node.attribute("ContentType").map(str::to_string);
                 }
-                "Default" if node.attribute("Extension").is_some_and(|e| e.eq_ignore_ascii_case(&ext)) => {
+                "Default"
+                    if node
+                        .attribute("Extension")
+                        .is_some_and(|e| e.eq_ignore_ascii_case(&ext)) =>
+                {
                     by_extension = node.attribute("ContentType").map(str::to_string);
                 }
                 _ => {}
@@ -201,10 +215,19 @@ mod tests {
 
     #[test]
     fn resolves_relative_and_absolute_targets() {
-        assert_eq!(resolve("ppt/slides", "../slideLayouts/slideLayout1.xml"), "ppt/slideLayouts/slideLayout1.xml");
-        assert_eq!(resolve("ppt/slides", "/ppt/media/image1.png"), "ppt/media/image1.png");
+        assert_eq!(
+            resolve("ppt/slides", "../slideLayouts/slideLayout1.xml"),
+            "ppt/slideLayouts/slideLayout1.xml"
+        );
+        assert_eq!(
+            resolve("ppt/slides", "/ppt/media/image1.png"),
+            "ppt/media/image1.png"
+        );
         assert_eq!(resolve("", "word/document.xml"), "word/document.xml");
-        assert_eq!(resolve("xl", "./worksheets/sheet1.xml"), "xl/worksheets/sheet1.xml");
+        assert_eq!(
+            resolve("xl", "./worksheets/sheet1.xml"),
+            "xl/worksheets/sheet1.xml"
+        );
     }
 
     #[test]
@@ -223,7 +246,13 @@ mod tests {
         assert_eq!(rels[0].target, "ppt/slideLayouts/slideLayout2.xml");
         assert_eq!(rels[0].kind(), "slideLayout");
         assert!(rels[1].external);
-        assert_eq!(pkg.content_type("ppt/slides/slide1.xml").as_deref(), Some("slide+xml"));
-        assert_eq!(pkg.content_type("x/y.xml").as_deref(), Some("application/xml"));
+        assert_eq!(
+            pkg.content_type("ppt/slides/slide1.xml").as_deref(),
+            Some("slide+xml")
+        );
+        assert_eq!(
+            pkg.content_type("x/y.xml").as_deref(),
+            Some("application/xml")
+        );
     }
 }

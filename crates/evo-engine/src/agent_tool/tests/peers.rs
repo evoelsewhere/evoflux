@@ -54,17 +54,34 @@ fn say(text: impl Into<String>) -> evo_ai::types::AssistantMessage {
 static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
 /// A parent with the built-in tools, `agent` and the mesh tools.
-async fn parent_with_mesh(cwd: &std::path::Path, script: FauxScript, events: Arc<Collector>) -> AgentHarness {
+async fn parent_with_mesh(
+    cwd: &std::path::Path,
+    script: FauxScript,
+    events: Arc<Collector>,
+) -> AgentHarness {
     let provider = evo_ai::providers::faux::FauxProvider::new(script);
     let cell: HarnessCell = Arc::new(OnceLock::new());
     let mut tools = crate::session::builtin_tools_in(cwd);
-    tools.push(HarnessTool::new(create_agent_tool(cell.clone(), cwd.to_path_buf())));
-    tools.extend(crate::mesh_tools::create(cell.clone(), None).into_iter().map(HarnessTool::new));
-    let active_tool_names = tools.iter().map(|tool| tool.tool.schema().name.clone()).collect();
+    tools.push(HarnessTool::new(create_agent_tool(
+        cell.clone(),
+        cwd.to_path_buf(),
+    )));
+    tools.extend(
+        crate::mesh_tools::create(cell.clone(), None)
+            .into_iter()
+            .map(HarnessTool::new),
+    );
+    let active_tool_names = tools
+        .iter()
+        .map(|tool| tool.tool.schema().name.clone())
+        .collect();
     let session = Session::new(
         Arc::new(InMemorySessionStorage::new(
             SessionMetadata {
-                id: format!("peers-{}", NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)),
+                id: format!(
+                    "peers-{}",
+                    NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                ),
                 created_at: 0,
                 parent_session_id: None,
             },
@@ -88,7 +105,9 @@ async fn parent_with_mesh(cwd: &std::path::Path, script: FauxScript, events: Arc
     harness
 }
 
-fn script(step: impl Fn(&Context) -> evo_ai::types::AssistantMessage + Send + Sync + 'static) -> FauxScript {
+fn script(
+    step: impl Fn(&Context) -> evo_ai::types::AssistantMessage + Send + Sync + 'static,
+) -> FauxScript {
     let step = FauxStep::factory(step);
     let script = FauxScript::new();
     script.append_responses(vec![step; 60]);
@@ -103,9 +122,12 @@ fn agent_results(events: &Collector) -> Vec<(AgentToolResult, bool)> {
         .unwrap()
         .iter()
         .filter_map(|event| match event {
-            AgentEvent::ToolExecutionEnd { tool_name, result, is_error, .. } if tool_name == "agent" => {
-                Some((result.clone(), *is_error))
-            }
+            AgentEvent::ToolExecutionEnd {
+                tool_name,
+                result,
+                is_error,
+                ..
+            } if tool_name == "agent" => Some((result.clone(), *is_error)),
             _ => None,
         })
         .collect()
@@ -140,7 +162,11 @@ async fn a_subagent_asks_its_sibling_and_gets_the_answer() {
             let replied = results.iter().any(|(name, _, _)| name == "reply");
             return match asked {
                 Some(question) if !replied => {
-                    let id = question.split("<mail id=\"").nth(1).and_then(|s| s.split('"').next()).unwrap();
+                    let id = question
+                        .split("<mail id=\"")
+                        .nth(1)
+                        .and_then(|s| s.split('"').next())
+                        .unwrap();
                     call("reply", json!({ "askId": id, "answer": "swordfish" }))
                 }
                 Some(_) => say("replied"),
@@ -151,9 +177,10 @@ async fn a_subagent_asks_its_sibling_and_gets_the_answer() {
             // The asker: list who is around, ask the sibling, report.
             return match results.last() {
                 None => call("list_nodes", json!({})),
-                Some((name, _, _)) if name == "list_nodes" => {
-                    call("ask", json!({ "to": "Answerer", "question": "What is the code word?" }))
-                }
+                Some((name, _, _)) if name == "list_nodes" => call(
+                    "ask",
+                    json!({ "to": "Answerer", "question": "What is the code word?" }),
+                ),
                 Some((name, text, _)) if name == "ask" => say(format!("The code word: {text}")),
                 Some(_) => say("unexpected"),
             };
@@ -161,33 +188,56 @@ async fn a_subagent_asks_its_sibling_and_gets_the_answer() {
         // The parent: start the answerer, then the asker.
         seen.lock().unwrap().extend(users.clone());
         match results.len() {
-            0 => call("agent", json!({ "description": "Answerer", "prompt": "Remember the code word swordfish." })),
-            1 => call("agent", json!({ "description": "Asker", "prompt": "Find the code word: ask the Answerer." })),
+            0 => call(
+                "agent",
+                json!({ "description": "Answerer", "prompt": "Remember the code word swordfish." }),
+            ),
+            1 => call(
+                "agent",
+                json!({ "description": "Asker", "prompt": "Find the code word: ask the Answerer." }),
+            ),
             _ => say("done"),
         }
     });
     let events = Arc::new(Collector::default());
     let parent = parent_with_mesh(dir.path(), script, events.clone()).await;
-    parent.lane("main").prompt_text("go", Vec::new()).await.unwrap();
+    parent
+        .lane("main")
+        .prompt_text("go", Vec::new())
+        .await
+        .unwrap();
 
     let results = agent_results(&events);
     assert_eq!(results.len(), 2, "{results:?}");
     let (asker, is_error) = &results[1];
     assert!(!is_error, "{asker:?}");
     let text = report(asker);
-    assert!(text.contains("Answerer answered:") && text.contains("swordfish"), "{text}");
+    assert!(
+        text.contains("Answerer answered:") && text.contains("swordfish"),
+        "{text}"
+    );
     // list_nodes showed the parent and the sibling.
     let rows: Vec<String> = asker.details["child"]["tools"]
         .as_array()
         .unwrap()
         .iter()
-        .map(|row| format!("{}:{}", row["name"].as_str().unwrap(), row["phase"].as_str().unwrap()))
+        .map(|row| {
+            format!(
+                "{}:{}",
+                row["name"].as_str().unwrap(),
+                row["phase"].as_str().unwrap()
+            )
+        })
         .collect();
     assert_eq!(rows, ["list_nodes:done", "ask:done"]);
     // The answerer's continued run went to the asker, not to the parent as a note.
     tokio::time::sleep(Duration::from_millis(300)).await;
     assert!(
-        !parent_seen.lock().unwrap().iter().any(|u| u.starts_with(NOTE_TAG)),
+        !parent_seen
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|u| u.starts_with(NOTE_TAG)),
         "{:?}",
         parent_seen.lock().unwrap()
     );
@@ -204,11 +254,17 @@ async fn asking_the_session_that_waits_on_you_is_refused_and_a_message_reaches_i
         let results = tool_results(ctx);
         if first.contains("Check in with the parent") {
             return match results.last() {
-                None => call("ask", json!({ "to": "parent", "question": "May I delete the cache?" })),
+                None => call(
+                    "ask",
+                    json!({ "to": "parent", "question": "May I delete the cache?" }),
+                ),
                 Some((name, text, true)) if name == "ask" => {
                     // Refused: tell it instead, without waiting.
                     let _ = text;
-                    call("send_message", json!({ "to": "parent", "message": "FYI: the cache is 3 GB." }))
+                    call(
+                        "send_message",
+                        json!({ "to": "parent", "message": "FYI: the cache is 3 GB." }),
+                    )
                 }
                 Some((name, _, _)) if name == "send_message" => say("Told the parent."),
                 Some(_) => say("unexpected"),
@@ -216,49 +272,100 @@ async fn asking_the_session_that_waits_on_you_is_refused_and_a_message_reaches_i
         }
         seen.lock().unwrap().extend(users.clone());
         if results.is_empty() {
-            call("agent", json!({ "description": "Checker", "prompt": "Check in with the parent." }))
+            call(
+                "agent",
+                json!({ "description": "Checker", "prompt": "Check in with the parent." }),
+            )
         } else {
             say("ok")
         }
     });
     let events = Arc::new(Collector::default());
     let parent = parent_with_mesh(dir.path(), script, events.clone()).await;
-    parent.lane("main").prompt_text("go", Vec::new()).await.unwrap();
+    parent
+        .lane("main")
+        .prompt_text("go", Vec::new())
+        .await
+        .unwrap();
 
     let results = agent_results(&events);
     let (checker, is_error) = &results[0];
     assert!(!is_error, "{checker:?}");
-    let rows = checker.details["child"]["tools"].as_array().unwrap().clone();
-    assert_eq!((rows[0]["name"].as_str(), rows[0]["phase"].as_str()), (Some("ask"), Some("error")));
-    assert_eq!((rows[1]["name"].as_str(), rows[1]["phase"].as_str()), (Some("send_message"), Some("done")));
+    let rows = checker.details["child"]["tools"]
+        .as_array()
+        .unwrap()
+        .clone();
+    assert_eq!(
+        (rows[0]["name"].as_str(), rows[0]["phase"].as_str()),
+        (Some("ask"), Some("error"))
+    );
+    assert_eq!(
+        (rows[1]["name"].as_str(), rows[1]["phase"].as_str()),
+        (Some("send_message"), Some("done"))
+    );
     // The message was steered into the parent's run: its next step read it.
     let seen = parent_seen.lock().unwrap().clone();
-    let mail = seen.iter().find(|u| u.starts_with("<mail ")).expect("the parent read the message");
-    assert!(mail.contains("kind=\"message\"") && mail.contains("title=\"Checker\"") && mail.contains("3 GB"), "{mail}");
+    let mail = seen
+        .iter()
+        .find(|u| u.starts_with("<mail "))
+        .expect("the parent read the message");
+    assert!(
+        mail.contains("kind=\"message\"")
+            && mail.contains("title=\"Checker\"")
+            && mail.contains("3 GB"),
+        "{mail}"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn the_refusal_says_why_and_reply_checks_the_asker() {
     // Unit-level checks on the tools, without a model run.
     let dir = tempfile::tempdir().unwrap();
-    let parent = parent_with_mesh(dir.path(), script(|_| say("ok")), Arc::new(Collector::default())).await;
+    let parent = parent_with_mesh(
+        dir.path(),
+        script(|_| say("ok")),
+        Arc::new(Collector::default()),
+    )
+    .await;
     let cell: HarnessCell = Arc::new(OnceLock::new());
     let _ = cell.set(parent.downgrade());
     let tools = crate::mesh_tools::create(cell, None);
-    let by_name = |name: &str| tools.iter().find(|t| t.schema().name == name).unwrap().clone();
+    let by_name = |name: &str| {
+        tools
+            .iter()
+            .find(|t| t.schema().name == name)
+            .unwrap()
+            .clone()
+    };
     let noop: Arc<dyn Fn(ToolResultPartial) + Send + Sync> = Arc::new(|_| {});
     // Nobody to talk to yet.
     let error = by_name("send_message")
-        .execute("c1", json!({ "to": "nobody", "message": "hi" }), CancellationToken::new(), noop.clone())
+        .execute(
+            "c1",
+            json!({ "to": "nobody", "message": "hi" }),
+            CancellationToken::new(),
+            noop.clone(),
+        )
         .await
         .unwrap_err();
-    assert!(error.to_string().contains("you can reach: nobody"), "{error}");
+    assert!(
+        error.to_string().contains("you can reach: nobody"),
+        "{error}"
+    );
     // A reply to a question that does not exist.
     let error = by_name("reply")
-        .execute("c2", json!({ "askId": "m_0", "answer": "x" }), CancellationToken::new(), noop.clone())
+        .execute(
+            "c2",
+            json!({ "askId": "m_0", "answer": "x" }),
+            CancellationToken::new(),
+            noop.clone(),
+        )
         .await
         .unwrap_err();
     assert!(error.to_string().contains("no open question"), "{error}");
-    let listed = by_name("list_nodes").execute("c3", json!({}), CancellationToken::new(), noop).await.unwrap();
+    let listed = by_name("list_nodes")
+        .execute("c3", json!({}), CancellationToken::new(), noop)
+        .await
+        .unwrap();
     assert_eq!(listed.details["nodes"], json!([]));
 }

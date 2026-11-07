@@ -44,9 +44,7 @@ async fn run_edit_raw(
 ) -> Result<evo_agent::types::AgentToolResult, evo_agent::error::AgentError> {
     let signal = CancellationToken::new();
     let on_update = Arc::new(|_p| ());
-    let prepared = tool
-        .prepare_arguments(params.clone())
-        .unwrap_or_else(|_| params);
+    let prepared = tool.prepare_arguments(params.clone()).unwrap_or(params);
     tool.execute("edit-x", prepared, signal, on_update).await
 }
 

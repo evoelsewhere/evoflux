@@ -5,7 +5,7 @@
 | Status | Accepted (its "no HTML fallback" part superseded by [0009](0009-native-office-preview-renderer.md)) |
 | Date | 2026-11-07 |
 | ADD sections | [Crates](../README.md) |
-| Related | [Office documents SDD](../../features/office/sdd.md), [Code intelligence SDD](../../features/code-intelligence/sdd.md) |
+| Related | [Office documents spec](../../features/office/spec.md), [Code intelligence spec](../../features/code-intelligence/spec.md) |
 
 ## Context
 

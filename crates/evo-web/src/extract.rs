@@ -63,7 +63,9 @@ pub fn html_to_markdown(html: &str, base: &Url) -> (Option<String>, String) {
             (len >= 200 && (len * 4 >= body_len || len >= 2000)).then(|| best.html())
         })
         .unwrap_or_else(|| html.to_string());
-    let converter = htmd::HtmlToMarkdown::builder().skip_tags(SKIP.to_vec()).build();
+    let converter = htmd::HtmlToMarkdown::builder()
+        .skip_tags(SKIP.to_vec())
+        .build();
     let markdown = converter.convert(&root_html).unwrap_or_default();
     (title, tidy(&absolutize(&markdown, base)))
 }
@@ -84,7 +86,9 @@ fn absolutize(markdown: &str, base: &Url) -> String {
         {
             target.to_string()
         } else {
-            base.join(target).map(|u| u.to_string()).unwrap_or_else(|_| target.to_string())
+            base.join(target)
+                .map(|u| u.to_string())
+                .unwrap_or_else(|_| target.to_string())
         };
         out.push_str(&absolute);
         rest = &rest[end..];
@@ -136,7 +140,8 @@ mod tests {
 
     #[test]
     fn the_article_is_kept_and_the_chrome_dropped() {
-        let filler = "Rust is a language empowering everyone to build reliable software. ".repeat(10);
+        let filler =
+            "Rust is a language empowering everyone to build reliable software. ".repeat(10);
         let html = format!(
             r#"<html><head><title>Rust Book</title><script>evil()</script></head><body>
             <nav><a href="/menu">Menu item</a></nav>
@@ -148,7 +153,10 @@ mod tests {
         let (title, md) = html_to_markdown(&html, &base);
         assert_eq!(title.as_deref(), Some("Rust Book"));
         assert!(md.contains("# Ownership"), "{md}");
-        assert!(md.contains("[references](https://doc.rust-lang.org/book/ch04-02.html)"), "{md}");
+        assert!(
+            md.contains("[references](https://doc.rust-lang.org/book/ch04-02.html)"),
+            "{md}"
+        );
         assert!(!md.contains("Menu item"), "{md}");
         assert!(!md.contains("Copyright"), "{md}");
         assert!(!md.contains("evil"), "{md}");

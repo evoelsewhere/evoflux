@@ -325,7 +325,6 @@ fn normalize_optional_nulls(value: &mut Value, schema: &Value) {
                 }
                 _ => {}
             }
-            return;
         }
         Value::Object(map) => {
             let Some(sobj) = schema.as_object() else {

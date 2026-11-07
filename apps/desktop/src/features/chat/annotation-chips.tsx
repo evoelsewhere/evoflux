@@ -1,4 +1,4 @@
-// "Annotations: N" chips (docs/features/office-v3-parity/sdd.md, FR-10; port
+// "Annotations: N" chips (docs/features/office-v3-parity/spec.md, FR-10; port
 // of the v3 InputBar and UserBubble chips): the batch waiting in the composer,
 // with its list and per-item remove, and the annotations a sent message
 // carried, in place of its machine block.

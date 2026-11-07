@@ -15,7 +15,10 @@ const MAX_LINES: usize = 150;
 
 /// `path` as shown: relative to `cwd` when inside it, with `/`.
 pub fn show(path: &Path, cwd: &Path) -> String {
-    path.strip_prefix(cwd).unwrap_or(path).to_string_lossy().replace('\\', "/")
+    path.strip_prefix(cwd)
+        .unwrap_or(path)
+        .to_string_lossy()
+        .replace('\\', "/")
 }
 
 fn resolve(path: &str, cwd: &Path) -> PathBuf {
@@ -37,18 +40,37 @@ fn severity(n: Option<u64>) -> &'static str {
 }
 
 fn format_diagnostic(file: &str, d: &Value) -> String {
-    let line = d.pointer("/range/start/line").and_then(Value::as_u64).unwrap_or(0) + 1;
-    let col = d.pointer("/range/start/character").and_then(Value::as_u64).unwrap_or(0) + 1;
-    let message = d.get("message").and_then(Value::as_str).unwrap_or("").replace('\n', " ");
+    let line = d
+        .pointer("/range/start/line")
+        .and_then(Value::as_u64)
+        .unwrap_or(0)
+        + 1;
+    let col = d
+        .pointer("/range/start/character")
+        .and_then(Value::as_u64)
+        .unwrap_or(0)
+        + 1;
+    let message = d
+        .get("message")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .replace('\n', " ");
     let source = d.get("source").and_then(Value::as_str);
-    let code = d.get("code").map(|c| c.as_str().map(str::to_string).unwrap_or_else(|| c.to_string()));
+    let code = d.get("code").map(|c| {
+        c.as_str()
+            .map(str::to_string)
+            .unwrap_or_else(|| c.to_string())
+    });
     let tag = match (source, code) {
         (Some(s), Some(c)) => format!(" [{s} {c}]"),
         (Some(s), None) => format!(" [{s}]"),
         (None, Some(c)) => format!(" [{c}]"),
         _ => String::new(),
     };
-    format!("{file}:{line}:{col} {}: {message}{tag}", severity(d.get("severity").and_then(Value::as_u64)))
+    format!(
+        "{file}:{line}:{col} {}: {message}{tag}",
+        severity(d.get("severity").and_then(Value::as_u64))
+    )
 }
 
 fn rank(d: &Value) -> u64 {
@@ -65,7 +87,11 @@ pub async fn diagnostics(pool: &Pool, cwd: &Path, path: Option<&str>) -> Result<
                 let file = path_of(&uri).map(|p| show(&p, cwd)).unwrap_or(uri);
                 let mut list = list;
                 list.sort_by_key(rank);
-                lines.extend(list.iter().filter(|d| rank(d) <= 2).map(|d| format_diagnostic(&file, d)));
+                lines.extend(
+                    list.iter()
+                        .filter(|d| rank(d) <= 2)
+                        .map(|d| format_diagnostic(&file, d)),
+                );
             }
         }
         if lines.is_empty() {
@@ -80,7 +106,9 @@ pub async fn diagnostics(pool: &Pool, cwd: &Path, path: Option<&str>) -> Result<
     let sent_at = Instant::now();
     let (uri, version) = client.sync_file(&file).await?;
     let mut idle = client.wait_idle(INDEX_WAIT).await;
-    let mut list = client.diagnostics_for(&uri, version, sent_at, DIAGNOSTICS_WAIT).await;
+    let mut list = client
+        .diagnostics_for(&uri, version, sent_at, DIAGNOSTICS_WAIT)
+        .await;
     // A first, quick report can come before a slower check (`cargo check`):
     // once the server is idle again, take the newest report.
     if list.is_some() {
@@ -88,14 +116,21 @@ pub async fn diagnostics(pool: &Pool, cwd: &Path, path: Option<&str>) -> Result<
         if client.indexing() {
             idle = client.wait_idle(INDEX_WAIT).await;
         }
-        list = client.diagnostics_for(&uri, version, sent_at, Duration::ZERO).await.or(list);
+        list = client
+            .diagnostics_for(&uri, version, sent_at, Duration::ZERO)
+            .await
+            .or(list);
     }
     let shown = show(&file, cwd);
     let Some(mut list) = list else {
         return Ok(format!(
             "{} has not reported on {shown} yet{}. Try again in a moment.",
             client.server.name,
-            if idle { "" } else { " (it is still indexing the project)" }
+            if idle {
+                ""
+            } else {
+                " (it is still indexing the project)"
+            }
         ));
     };
     if list.is_empty() {
@@ -103,10 +138,19 @@ pub async fn diagnostics(pool: &Pool, cwd: &Path, path: Option<&str>) -> Result<
     }
     list.sort_by_key(rank);
     let total = list.len();
-    let lines: Vec<String> = list.iter().take(MAX_LINES).map(|d| format_diagnostic(&shown, d)).collect();
+    let lines: Vec<String> = list
+        .iter()
+        .take(MAX_LINES)
+        .map(|d| format_diagnostic(&shown, d))
+        .collect();
     let errors = list.iter().filter(|d| rank(d) == 1).count();
     let warnings = list.iter().filter(|d| rank(d) == 2).count();
-    Ok(format!("{errors} errors, {warnings} warnings ({}):\n{}{}", client.server.name, lines.join("\n"), more(total)))
+    Ok(format!(
+        "{errors} errors, {warnings} warnings ({}):\n{}{}",
+        client.server.name,
+        lines.join("\n"),
+        more(total)
+    ))
 }
 
 fn more(total: usize) -> String {
@@ -124,7 +168,12 @@ fn utf16(text: &str) -> u32 {
 
 /// The 0-based line and UTF-16 column for a 1-based `line` and either a
 /// `symbol` on it or a 1-based `character`.
-pub fn position(text: &str, line: u32, symbol: Option<&str>, character: Option<u32>) -> Result<(u32, u32), String> {
+pub fn position(
+    text: &str,
+    line: u32,
+    symbol: Option<&str>,
+    character: Option<u32>,
+) -> Result<(u32, u32), String> {
     let index = line.checked_sub(1).ok_or("lines start at 1")?;
     let row = text
         .split('\n')
@@ -151,7 +200,10 @@ pub fn position(text: &str, line: u32, symbol: Option<&str>, character: Option<u
             .ok_or_else(|| format!("`{symbol}` is not on line {line}: {}", row.trim()))?;
         utf16(&row[..start])
     } else if let Some(character) = character {
-        let chars: String = row.chars().take(character.saturating_sub(1) as usize).collect();
+        let chars: String = row
+            .chars()
+            .take(character.saturating_sub(1) as usize)
+            .collect();
         utf16(&chars)
     } else {
         let start = row.len() - row.trim_start().len();
@@ -169,8 +221,15 @@ fn locations(result: &Value) -> Vec<(String, u64, u64)> {
     items
         .iter()
         .filter_map(|item| {
-            let uri = item.get("uri").or_else(|| item.get("targetUri"))?.as_str()?.to_string();
-            let range = item.get("range").or_else(|| item.get("targetSelectionRange")).or_else(|| item.get("targetRange"))?;
+            let uri = item
+                .get("uri")
+                .or_else(|| item.get("targetUri"))?
+                .as_str()?
+                .to_string();
+            let range = item
+                .get("range")
+                .or_else(|| item.get("targetSelectionRange"))
+                .or_else(|| item.get("targetRange"))?;
             let line = range.pointer("/start/line")?.as_u64()?;
             let col = range.pointer("/start/character")?.as_u64()?;
             Some((uri, line, col))
@@ -186,9 +245,19 @@ async fn line_text(client: &Client, uri: &str, line: u64) -> String {
             None => None,
         },
     };
-    text.and_then(|t| t.split('\n').nth(line as usize).map(|l| l.trim().to_string()))
-        .map(|l| if l.chars().count() > 160 { format!("{}…", l.chars().take(160).collect::<String>()) } else { l })
-        .unwrap_or_default()
+    text.and_then(|t| {
+        t.split('\n')
+            .nth(line as usize)
+            .map(|l| l.trim().to_string())
+    })
+    .map(|l| {
+        if l.chars().count() > 160 {
+            format!("{}…", l.chars().take(160).collect::<String>())
+        } else {
+            l
+        }
+    })
+    .unwrap_or_default()
 }
 
 fn hover_text(result: &Value) -> String {
@@ -196,11 +265,18 @@ fn hover_text(result: &Value) -> String {
         match v {
             Value::String(s) => s.clone(),
             Value::Object(o) => match (o.get("language"), o.get("value")) {
-                (Some(lang), Some(Value::String(value))) => format!("```{}\n{value}\n```", lang.as_str().unwrap_or("")),
+                (Some(lang), Some(Value::String(value))) => {
+                    format!("```{}\n{value}\n```", lang.as_str().unwrap_or(""))
+                }
                 (_, Some(Value::String(value))) => value.clone(),
                 _ => String::new(),
             },
-            Value::Array(a) => a.iter().map(piece).filter(|s| !s.is_empty()).collect::<Vec<_>>().join("\n\n"),
+            Value::Array(a) => a
+                .iter()
+                .map(piece)
+                .filter(|s| !s.is_empty())
+                .collect::<Vec<_>>()
+                .join("\n\n"),
             _ => String::new(),
         }
     }
@@ -208,13 +284,41 @@ fn hover_text(result: &Value) -> String {
 }
 
 const SYMBOL_KINDS: &[&str] = &[
-    "", "file", "module", "namespace", "package", "class", "method", "property", "field", "constructor", "enum",
-    "interface", "function", "variable", "constant", "string", "number", "boolean", "array", "object", "key", "null",
-    "enum member", "struct", "event", "operator", "type parameter",
+    "",
+    "file",
+    "module",
+    "namespace",
+    "package",
+    "class",
+    "method",
+    "property",
+    "field",
+    "constructor",
+    "enum",
+    "interface",
+    "function",
+    "variable",
+    "constant",
+    "string",
+    "number",
+    "boolean",
+    "array",
+    "object",
+    "key",
+    "null",
+    "enum member",
+    "struct",
+    "event",
+    "operator",
+    "type parameter",
 ];
 
 fn kind_name(v: &Value) -> &'static str {
-    v.get("kind").and_then(Value::as_u64).and_then(|k| SYMBOL_KINDS.get(k as usize)).copied().unwrap_or("symbol")
+    v.get("kind")
+        .and_then(Value::as_u64)
+        .and_then(|k| SYMBOL_KINDS.get(k as usize))
+        .copied()
+        .unwrap_or("symbol")
 }
 
 fn outline(symbols: &[Value], depth: usize, out: &mut Vec<String>) {
@@ -227,8 +331,17 @@ fn outline(symbols: &[Value], depth: usize, out: &mut Vec<String>) {
             .and_then(Value::as_u64)
             .unwrap_or(0)
             + 1;
-        let detail = s.get("detail").and_then(Value::as_str).filter(|d| !d.is_empty()).map(|d| format!(" — {d}")).unwrap_or_default();
-        out.push(format!("{}{} {name} (line {line}){detail}", "  ".repeat(depth), kind_name(s)));
+        let detail = s
+            .get("detail")
+            .and_then(Value::as_str)
+            .filter(|d| !d.is_empty())
+            .map(|d| format!(" — {d}"))
+            .unwrap_or_default();
+        out.push(format!(
+            "{}{} {name} (line {line}){detail}",
+            "  ".repeat(depth),
+            kind_name(s)
+        ));
         if let Some(children) = s.get("children").and_then(Value::as_array) {
             outline(children, depth + 1, out);
         }
@@ -260,15 +373,22 @@ pub async fn at(
         "hover" => "textDocument/hover",
         other => return Err(format!("unknown operation `{other}`")),
     };
-    let mut params = json!({ "textDocument": { "uri": uri }, "position": { "line": row, "character": col } });
+    let mut params =
+        json!({ "textDocument": { "uri": uri }, "position": { "line": row, "character": col } });
     if op == "references" {
         params["context"] = json!({ "includeDeclaration": true });
     }
     let result = client.request_default(method, params).await?;
-    let what = symbol.map(|s| format!("`{s}`")).unwrap_or_else(|| format!("line {line}"));
+    let what = symbol
+        .map(|s| format!("`{s}`"))
+        .unwrap_or_else(|| format!("line {line}"));
     if op == "hover" {
         let text = hover_text(&result);
-        return Ok(if text.trim().is_empty() { format!("No information about {what}.") } else { text });
+        return Ok(if text.trim().is_empty() {
+            format!("No information about {what}.")
+        } else {
+            text
+        });
     }
     let found = locations(&result);
     if found.is_empty() {
@@ -277,8 +397,15 @@ pub async fn at(
     let total = found.len();
     let mut lines = Vec::new();
     for (uri, l, c) in found.iter().take(MAX_LINES) {
-        let file = path_of(uri).map(|p| show(&p, cwd)).unwrap_or_else(|| uri.clone());
-        lines.push(format!("{file}:{}:{} {}", l + 1, c + 1, line_text(&client, uri, *l).await));
+        let file = path_of(uri)
+            .map(|p| show(&p, cwd))
+            .unwrap_or_else(|| uri.clone());
+        lines.push(format!(
+            "{file}:{}:{} {}",
+            l + 1,
+            c + 1,
+            line_text(&client, uri, *l).await
+        ));
     }
     let head = match op {
         "references" => format!("{total} references to {what}:"),
@@ -294,7 +421,10 @@ pub async fn symbols(pool: &Pool, cwd: &Path, path: &str) -> Result<String, Stri
     let (uri, _) = client.sync_file(&file).await?;
     client.wait_idle(INDEX_WAIT).await;
     let result = client
-        .request_default("textDocument/documentSymbol", json!({ "textDocument": { "uri": uri } }))
+        .request_default(
+            "textDocument/documentSymbol",
+            json!({ "textDocument": { "uri": uri } }),
+        )
         .await?;
     let list = result.as_array().cloned().unwrap_or_default();
     if list.is_empty() {
@@ -304,16 +434,32 @@ pub async fn symbols(pool: &Pool, cwd: &Path, path: &str) -> Result<String, Stri
     outline(&list, 0, &mut out);
     let total = out.len();
     out.truncate(MAX_LINES * 2);
-    Ok(format!("{}:\n{}{}", show(&file, cwd), out.join("\n"), if total > MAX_LINES * 2 { format!("\n… {} more", total - MAX_LINES * 2) } else { String::new() }))
+    Ok(format!(
+        "{}:\n{}{}",
+        show(&file, cwd),
+        out.join("\n"),
+        if total > MAX_LINES * 2 {
+            format!("\n… {} more", total - MAX_LINES * 2)
+        } else {
+            String::new()
+        }
+    ))
 }
 
 /// Symbols named like `query` across the project of `path`'s language.
-pub async fn workspace_symbols(pool: &Pool, cwd: &Path, query: &str, path: &str) -> Result<String, String> {
+pub async fn workspace_symbols(
+    pool: &Pool,
+    cwd: &Path,
+    query: &str,
+    path: &str,
+) -> Result<String, String> {
     let file = resolve(path, cwd);
     let client = pool.client_for(&file, cwd).await?;
     let _ = client.sync_file(&file).await;
     client.wait_idle(INDEX_WAIT).await;
-    let result = client.request_default("workspace/symbol", json!({ "query": query })).await?;
+    let result = client
+        .request_default("workspace/symbol", json!({ "query": query }))
+        .await?;
     let list = result.as_array().cloned().unwrap_or_default();
     if list.is_empty() {
         return Ok(format!("No symbols matching `{query}`."));
@@ -324,10 +470,24 @@ pub async fn workspace_symbols(pool: &Pool, cwd: &Path, query: &str, path: &str)
         .take(MAX_LINES)
         .map(|s| {
             let name = s.get("name").and_then(Value::as_str).unwrap_or("?");
-            let uri = s.pointer("/location/uri").and_then(Value::as_str).unwrap_or("");
-            let line = s.pointer("/location/range/start/line").and_then(Value::as_u64).map(|l| format!(":{}", l + 1)).unwrap_or_default();
-            let file = path_of(uri).map(|p| show(&p, cwd)).unwrap_or_else(|| uri.to_string());
-            let container = s.get("containerName").and_then(Value::as_str).filter(|c| !c.is_empty()).map(|c| format!(" in {c}")).unwrap_or_default();
+            let uri = s
+                .pointer("/location/uri")
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            let line = s
+                .pointer("/location/range/start/line")
+                .and_then(Value::as_u64)
+                .map(|l| format!(":{}", l + 1))
+                .unwrap_or_default();
+            let file = path_of(uri)
+                .map(|p| show(&p, cwd))
+                .unwrap_or_else(|| uri.to_string());
+            let container = s
+                .get("containerName")
+                .and_then(Value::as_str)
+                .filter(|c| !c.is_empty())
+                .map(|c| format!(" in {c}"))
+                .unwrap_or_default();
             format!("{} {name}{container} — {file}{line}", kind_name(s))
         })
         .collect();
@@ -348,18 +508,25 @@ mod tests {
         assert!(position(text, 9, None, None).is_err());
         assert!(position(text, 2, Some("missing"), None).is_err());
         // UTF-16 columns: "é" is one unit, "😀" two.
-        assert_eq!(position("let é😀 = x;", 1, Some("x"), None).unwrap(), (0, 10));
+        assert_eq!(
+            position("let é😀 = x;", 1, Some("x"), None).unwrap(),
+            (0, 10)
+        );
     }
 
     #[test]
     fn diagnostics_read_well() {
         let d = json!({ "range": { "start": { "line": 4, "character": 2 } }, "severity": 1, "message": "mismatched types", "source": "rustc", "code": "E0308" });
-        assert_eq!(format_diagnostic("src/a.rs", &d), "src/a.rs:5:3 error: mismatched types [rustc E0308]");
+        assert_eq!(
+            format_diagnostic("src/a.rs", &d),
+            "src/a.rs:5:3 error: mismatched types [rustc E0308]"
+        );
     }
 
     #[test]
     fn locations_take_every_shape() {
-        let single = json!({ "uri": "file:///a.rs", "range": { "start": { "line": 1, "character": 2 } } });
+        let single =
+            json!({ "uri": "file:///a.rs", "range": { "start": { "line": 1, "character": 2 } } });
         let links = json!([{ "targetUri": "file:///b.rs", "targetSelectionRange": { "start": { "line": 3, "character": 0 } } }]);
         assert_eq!(locations(&single).len(), 1);
         assert_eq!(locations(&links)[0].0, "file:///b.rs");

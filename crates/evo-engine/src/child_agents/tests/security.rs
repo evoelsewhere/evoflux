@@ -173,7 +173,12 @@ async fn assert_capacity_retained(panic_after_start: bool) {
         .unwrap();
     let manager = ChildAgents::default();
     let child = manager
-        .handle(&parent, 7, std::path::Path::new("."), json!({"op":"start","task":"slow"}))
+        .handle(
+            &parent,
+            7,
+            std::path::Path::new("."),
+            json!({"op":"start","task":"slow"}),
+        )
         .await
         .unwrap();
     tokio::time::timeout(Duration::from_secs(2), async {

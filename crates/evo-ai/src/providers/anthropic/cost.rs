@@ -129,7 +129,7 @@ mod tests {
         let c2 = calculate_cost(&cost, &u2);
         assert!((c2.input - (3.0 / 1_000_000.0) * 200_000.0).abs() < 1e-9);
         // Sanity: JSON round-trips the tier struct (it derives Serialize).
-        let _ = serde_json::to_value(&cost.tiers[0]).unwrap();
+        let _ = serde_json::to_value(cost.tiers[0]).unwrap();
         let _ = json!(cost.tiers[0].input_tokens_above);
     }
 }

@@ -3059,7 +3059,10 @@ impl AgentHarness {
                         return None;
                     }
                     let mut found = skills.iter().filter(|skill| {
-                        skill.name.rsplit_once(':').is_some_and(|(_, last)| last == name)
+                        skill
+                            .name
+                            .rsplit_once(':')
+                            .is_some_and(|(_, last)| last == name)
                     });
                     match (found.next(), found.next()) {
                         (Some(one), None) => Some(one),
@@ -3079,7 +3082,12 @@ impl AgentHarness {
             } else {
                 None
             };
-            (skill, template, inner.skill_execution_env.clone(), inner.exact_resources)
+            (
+                skill,
+                template,
+                inner.skill_execution_env.clone(),
+                inner.exact_resources,
+            )
         };
         if let Some(template) = template {
             let parts = crate::prompt_templates::parse_command_args(args);

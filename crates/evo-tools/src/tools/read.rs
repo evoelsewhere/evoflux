@@ -236,7 +236,7 @@ impl AgentTool for ReadTool {
         let (output_text, details): (String, Option<TruncationResult>) = if truncation
             .first_line_exceeds_limit
         {
-            let first_line_size = format_size(all_lines[start_line].as_bytes().len());
+            let first_line_size = format_size(all_lines[start_line].len());
             (
                     format!(
                         "[Line {start_line_display} is {first_line_size}, exceeds {} limit. \

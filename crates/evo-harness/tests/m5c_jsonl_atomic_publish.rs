@@ -548,10 +548,7 @@ async fn failed_create_releases_reservation_and_is_retriable() {
         .err()
         .unwrap();
     assert_eq!(err.code, SessionErrorCode::Storage);
-    assert!(
-        faulty.armed.load(Ordering::SeqCst) == false,
-        "fault consumed"
-    );
+    assert!(!faulty.armed.load(Ordering::SeqCst), "fault consumed");
 
     // Build a fresh repo over the same (now-disarmed) FaultyFs: retry succeeds.
     let fs: Arc<dyn FileSystem> = faulty.clone();

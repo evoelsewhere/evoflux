@@ -1,5 +1,5 @@
 // The batch of document annotations waiting in a chat's composer, and the
-// viewer's requests to send them now (docs/features/office-v3-parity/sdd.md,
+// viewer's requests to send them now (docs/features/office-v3-parity/spec.md,
 // FR-10; port of v3 useDocumentAnnotationsStore).
 //
 // The Files viewer adds annotations; the composer shows them as one chip,

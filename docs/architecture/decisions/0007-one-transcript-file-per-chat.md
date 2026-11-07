@@ -5,7 +5,7 @@
 | Status | Accepted |
 | Date | 2026-11-06 |
 | ADD sections | [4. Process view](../README.md#4-process-view), [7. Data view](../README.md#7-data-view) |
-| Related | [0003](0003-engine-runs-as-a-child-process-per-chat.md), [App database SDD](../../features/app-database/sdd.md), [Session mesh SDD](../../features/session-mesh-protocol/sdd.md) |
+| Related | [0003](0003-engine-runs-as-a-child-process-per-chat.md), [App database spec](../../features/app-database/spec.md), [Session mesh spec](../../features/session-mesh-protocol/spec.md) |
 
 ## Context
 

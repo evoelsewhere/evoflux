@@ -256,14 +256,20 @@ struct Extra {
 }
 
 /// Save the skill settings given (a budget of 0 restores the default).
-pub fn set_skill_settings(listing_budget: Option<u64>, shell_disabled: Option<bool>) -> Result<(), String> {
+pub fn set_skill_settings(
+    listing_budget: Option<u64>,
+    shell_disabled: Option<bool>,
+) -> Result<(), String> {
     crate::settings::update_settings_value(|settings| {
         match listing_budget {
             Some(0) => {
                 settings.remove("skillListingBudgetChars");
             }
             Some(budget) => {
-                settings.insert("skillListingBudgetChars".into(), json!(budget.clamp(500, 200_000)));
+                settings.insert(
+                    "skillListingBudgetChars".into(),
+                    json!(budget.clamp(500, 200_000)),
+                );
             }
             None => {}
         }
@@ -369,7 +375,9 @@ fn skill_files(skill_md: &str) -> Vec<String> {
     let mut found = Vec::new();
     let mut stack = vec![(root.to_path_buf(), 0usize)];
     while let Some((dir, depth)) = stack.pop() {
-        let Ok(entries) = std::fs::read_dir(&dir) else { continue };
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
         for entry in entries.flatten() {
             let path = entry.path();
             let name = entry.file_name().to_string_lossy().into_owned();

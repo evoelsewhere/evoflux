@@ -391,7 +391,7 @@ pub async fn chat_delete(db: State<'_, Db>, engines: State<'_, EngineState>, id:
     // The engine holds its transcript open; Windows will not delete it.
     engines.stop(&id).await;
     db.remove_transcript(&id);
-    // The chat's Office document versions (docs/features/office-v3-parity/sdd.md):
+    // The chat's Office document versions (docs/features/office-v3-parity/spec.md):
     // kept by its engine under `<agent>/document-versions/<chat>`.
     if !id.is_empty() && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
         let versions = crate::mcp::agent_dir().join("document-versions").join(&id);
@@ -437,7 +437,7 @@ pub fn logs_clear(db: State<'_, Db>) -> Result<usize, String> {
 }
 
 /// Usage and cost totals, the per-day series and breakdowns for the Usage
-/// page (`docs/features/usage-and-cost/sdd.md`). Off the window's thread: a
+/// page (`docs/features/usage-and-cost/spec.md`). Off the window's thread: a
 /// long history takes a moment to sum.
 #[tauri::command]
 pub async fn usage_summary(app: AppHandle, query: UsageQuery) -> Result<UsageSummary, String> {

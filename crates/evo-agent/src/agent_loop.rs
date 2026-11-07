@@ -1453,31 +1453,6 @@ pub fn recorded_tool_result(
     Ok((result, recording.is_error))
 }
 
-#[cfg(test)]
-mod invalid_tool_call_tests {
-    use super::invalid_tool_call_reason;
-    use evo_ai::types::{ToolCall, ToolCallType};
-
-    fn call(id: &str, name: &str) -> ToolCall {
-        ToolCall {
-            kind: ToolCallType,
-            id: id.into(),
-            name: name.into(),
-            arguments: serde_json::json!({}),
-            thought_signature: None,
-            namespace: None,
-            recorded: None,
-        }
-    }
-
-    #[test]
-    fn rejects_empty_id_or_name_but_accepts_complete_call() {
-        assert!(invalid_tool_call_reason(&call("", "bash")).is_some());
-        assert!(invalid_tool_call_reason(&call("call-1", "")).is_some());
-        assert!(invalid_tool_call_reason(&call("call-1", "bash")).is_none());
-    }
-}
-
 /// Close the update gate even if execute unwinds or its owner is dropped.
 struct ToolUpdateGuard(Arc<AtomicBool>);
 
@@ -1621,25 +1596,22 @@ async fn finalize_executed_tool_call(
             is_error,
             context: current_context,
         };
-        match after(ctx, config.signal.clone()).await {
-            Some(after_result) => {
-                if let Some(c) = after_result.content {
-                    result.content = c;
-                }
-                if let Some(d) = after_result.details {
-                    result.details = d;
-                }
-                if let Some(u) = after_result.usage {
-                    result.usage = Some(u);
-                }
-                if let Some(t) = after_result.terminate {
-                    result.terminate = t;
-                }
-                if let Some(ie) = after_result.is_error {
-                    is_error = ie;
-                }
+        if let Some(after_result) = after(ctx, config.signal.clone()).await {
+            if let Some(c) = after_result.content {
+                result.content = c;
             }
-            None => {}
+            if let Some(d) = after_result.details {
+                result.details = d;
+            }
+            if let Some(u) = after_result.usage {
+                result.usage = Some(u);
+            }
+            if let Some(t) = after_result.terminate {
+                result.terminate = t;
+            }
+            if let Some(ie) = after_result.is_error {
+                is_error = ie;
+            }
         }
     }
 
@@ -1815,4 +1787,29 @@ async fn should_stop_after_turn(
 /// Emit one event via the emitter.
 async fn emit_event(emit: &Arc<dyn AgentEmitter>, event: AgentEvent) {
     emit.emit(event).await;
+}
+
+#[cfg(test)]
+mod invalid_tool_call_tests {
+    use super::invalid_tool_call_reason;
+    use evo_ai::types::{ToolCall, ToolCallType};
+
+    fn call(id: &str, name: &str) -> ToolCall {
+        ToolCall {
+            kind: ToolCallType,
+            id: id.into(),
+            name: name.into(),
+            arguments: serde_json::json!({}),
+            thought_signature: None,
+            namespace: None,
+            recorded: None,
+        }
+    }
+
+    #[test]
+    fn rejects_empty_id_or_name_but_accepts_complete_call() {
+        assert!(invalid_tool_call_reason(&call("", "bash")).is_some());
+        assert!(invalid_tool_call_reason(&call("call-1", "")).is_some());
+        assert!(invalid_tool_call_reason(&call("call-1", "bash")).is_none());
+    }
 }

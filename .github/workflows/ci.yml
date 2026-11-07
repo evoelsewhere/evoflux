@@ -33,6 +33,9 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           components: clippy
+          # The action denies warnings by default; clippy's backlog is only
+          # reported for now (see the note below).
+          rustflags: ""
       # Errors fail the build. Existing warnings are reported but not yet
       # denied; tighten to `-D warnings` once the backlog is cleared.
       - run: cargo clippy --workspace --all-targets --locked

@@ -199,7 +199,11 @@ fn thinking_config(model: &Model, level: ThinkingLevel) -> Option<Value> {
     if model.thinking_level_map.is_some() {
         // Named efforts (Gemini 3). Thinking cannot be switched off; "off"
         // asks for the least and hides it.
-        let effective = if level == ThinkingLevel::Off { ThinkingLevel::Minimal } else { level };
+        let effective = if level == ThinkingLevel::Off {
+            ThinkingLevel::Minimal
+        } else {
+            level
+        };
         let effort = effort_for(model, effective)?;
         return Some(json!({
             "thinkingLevel": effort,
@@ -241,7 +245,8 @@ pub(crate) fn build_request(model: &Model, ctx: &Context, opts: &SimpleStreamOpt
             }
             Message::Assistant(assistant) => {
                 // Signatures are only valid for the model that made them.
-                let same_model = assistant.provider == model.provider && assistant.model == model.id;
+                let same_model =
+                    assistant.provider == model.provider && assistant.model == model.id;
                 let mut parts = Vec::new();
                 for block in &assistant.content {
                     match block {
@@ -308,14 +313,23 @@ pub(crate) fn build_request(model: &Model, ctx: &Context, opts: &SimpleStreamOpt
     }
     // The conversation must open with a user turn (compaction can leave a
     // model turn first).
-    if contents.first().is_some_and(|first| first["role"] != "user") {
-        contents.insert(0, json!({"role": "user", "parts": [{"text": "(continue)"}]}));
+    if contents
+        .first()
+        .is_some_and(|first| first["role"] != "user")
+    {
+        contents.insert(
+            0,
+            json!({"role": "user", "parts": [{"text": "(continue)"}]}),
+        );
     }
 
     let mut body = Map::new();
     body.insert("contents".into(), Value::Array(contents));
     if let Some(system) = ctx.system_prompt.as_deref().filter(|s| !s.is_empty()) {
-        body.insert("systemInstruction".into(), json!({"parts": [{"text": system}]}));
+        body.insert(
+            "systemInstruction".into(),
+            json!({"parts": [{"text": system}]}),
+        );
     }
     let mut generation = Map::new();
     let max_tokens = opts.max_tokens.unwrap_or(model.max_tokens);
@@ -340,7 +354,10 @@ pub(crate) fn build_request(model: &Model, ctx: &Context, opts: &SimpleStreamOpt
                 })
             })
             .collect();
-        body.insert("tools".into(), json!([{"functionDeclarations": declarations}]));
+        body.insert(
+            "tools".into(),
+            json!([{"functionDeclarations": declarations}]),
+        );
     }
     if let Some(params) = &model.sampling_params {
         for (name, value) in params {
@@ -399,7 +416,9 @@ impl StreamState {
         if !self.started {
             self.started = true;
             producer
-                .push(AssistantMessageEvent::Start { partial: self.partial() })
+                .push(AssistantMessageEvent::Start {
+                    partial: self.partial(),
+                })
                 .await;
         }
     }
@@ -427,7 +446,11 @@ impl StreamState {
     }
 
     /// The open block of `kind`, opening one (and closing another) if needed.
-    async fn block(&mut self, producer: &mut AssistantMessageEventStreamProducer, kind: Open) -> usize {
+    async fn block(
+        &mut self,
+        producer: &mut AssistantMessageEventStreamProducer,
+        kind: Open,
+    ) -> usize {
         if let Some((index, open)) = self.open {
             if open == kind {
                 return index;
@@ -438,7 +461,10 @@ impl StreamState {
         let event = match kind {
             Open::Text => {
                 self.output.content.push(Content::text(""));
-                AssistantMessageEvent::TextStart { content_index, partial: self.partial() }
+                AssistantMessageEvent::TextStart {
+                    content_index,
+                    partial: self.partial(),
+                }
             }
             Open::Thinking => {
                 self.output.content.push(Content::Thinking(ThinkingContent {
@@ -447,7 +473,10 @@ impl StreamState {
                     thinking_signature: None,
                     redacted: false,
                 }));
-                AssistantMessageEvent::ThinkingStart { content_index, partial: self.partial() }
+                AssistantMessageEvent::ThinkingStart {
+                    content_index,
+                    partial: self.partial(),
+                }
             }
         };
         self.open = Some((content_index, kind));
@@ -473,19 +502,31 @@ impl StreamState {
         }
     }
 
-    async fn apply_part(&mut self, producer: &mut AssistantMessageEventStreamProducer, part: &Value) {
+    async fn apply_part(
+        &mut self,
+        producer: &mut AssistantMessageEventStreamProducer,
+        part: &Value,
+    ) {
         let signature = part.get("thoughtSignature").and_then(Value::as_str);
         if let Some(call) = part.get("functionCall") {
             self.close(producer).await;
             self.calls += 1;
-            let name = call.get("name").and_then(Value::as_str).unwrap_or_default().to_string();
+            let name = call
+                .get("name")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string();
             let id = call
                 .get("id")
                 .and_then(Value::as_str)
                 .filter(|id| !id.is_empty())
                 .map(str::to_string)
                 .unwrap_or_else(|| format!("call_{}_{}_{}", name, now_ms(), self.calls));
-            let arguments = call.get("args").cloned().filter(Value::is_object).unwrap_or_else(|| json!({}));
+            let arguments = call
+                .get("args")
+                .cloned()
+                .filter(Value::is_object)
+                .unwrap_or_else(|| json!({}));
             let tool_call = ToolCall {
                 kind: ToolCallType,
                 id,
@@ -496,9 +537,14 @@ impl StreamState {
                 recorded: None,
             };
             let content_index = self.output.content.len();
-            self.output.content.push(Content::ToolCall(tool_call.clone()));
+            self.output
+                .content
+                .push(Content::ToolCall(tool_call.clone()));
             producer
-                .push(AssistantMessageEvent::ToolCallStart { content_index, partial: self.partial() })
+                .push(AssistantMessageEvent::ToolCallStart {
+                    content_index,
+                    partial: self.partial(),
+                })
                 .await;
             producer
                 .push(AssistantMessageEvent::ToolCallDelta {
@@ -517,7 +563,10 @@ impl StreamState {
             return;
         }
         let text = part.get("text").and_then(Value::as_str).unwrap_or_default();
-        let thought = part.get("thought").and_then(Value::as_bool).unwrap_or(false);
+        let thought = part
+            .get("thought")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
         if !text.is_empty() {
             let kind = if thought { Open::Thinking } else { Open::Text };
             let content_index = self.block(producer, kind).await;
@@ -547,7 +596,10 @@ impl StreamState {
     }
 
     async fn apply(&mut self, producer: &mut AssistantMessageEventStreamProducer, chunk: &Value) {
-        if let Some(reason) = chunk.pointer("/promptFeedback/blockReason").and_then(Value::as_str) {
+        if let Some(reason) = chunk
+            .pointer("/promptFeedback/blockReason")
+            .and_then(Value::as_str)
+        {
             self.finish = Some(format!("BLOCKED:{reason}"));
         }
         if let Some(candidate) = chunk.pointer("/candidates/0") {
@@ -567,7 +619,8 @@ impl StreamState {
             let get = |name: &str| usage.get(name).and_then(Value::as_i64).unwrap_or(0);
             // promptTokenCount includes the cached part.
             let cached = get("cachedContentTokenCount");
-            self.output.usage.input = (get("promptTokenCount") + get("toolUsePromptTokenCount") - cached).max(0);
+            self.output.usage.input =
+                (get("promptTokenCount") + get("toolUsePromptTokenCount") - cached).max(0);
             self.output.usage.cache_read = cached;
             self.output.usage.output = get("candidatesTokenCount") + get("thoughtsTokenCount");
             self.output.usage.total_tokens =
@@ -578,7 +631,11 @@ impl StreamState {
 
     async fn finish(&mut self, producer: &mut AssistantMessageEventStreamProducer, model: &Model) {
         self.close(producer).await;
-        let has_tools = self.output.content.iter().any(|c| matches!(c, Content::ToolCall(_)));
+        let has_tools = self
+            .output
+            .content
+            .iter()
+            .any(|c| matches!(c, Content::ToolCall(_)));
         let reason = match self.finish.as_deref() {
             None | Some("STOP") | Some("FINISH_REASON_UNSPECIFIED") => {
                 if has_tools {
@@ -602,16 +659,32 @@ impl StreamState {
         self.output.stop_reason = reason.into();
         self.output.usage.cost = calculate_cost(&model.cost, &self.output.usage);
         producer
-            .push(AssistantMessageEvent::Done { reason, message: self.output.clone() })
+            .push(AssistantMessageEvent::Done {
+                reason,
+                message: self.output.clone(),
+            })
             .await;
     }
 
-    async fn error(&mut self, producer: &mut AssistantMessageEventStreamProducer, message: String, aborted: bool) {
-        self.output.stop_reason = if aborted { StopReason::Aborted } else { StopReason::Error };
+    async fn error(
+        &mut self,
+        producer: &mut AssistantMessageEventStreamProducer,
+        message: String,
+        aborted: bool,
+    ) {
+        self.output.stop_reason = if aborted {
+            StopReason::Aborted
+        } else {
+            StopReason::Error
+        };
         self.output.error_message = Some(message);
         producer
             .push(AssistantMessageEvent::Error {
-                reason: if aborted { ErrorReason::Aborted } else { ErrorReason::Error },
+                reason: if aborted {
+                    ErrorReason::Aborted
+                } else {
+                    ErrorReason::Error
+                },
                 error: self.output.clone(),
             })
             .await;
@@ -635,9 +708,7 @@ fn error_message(body: &str) -> String {
 
 pub(crate) fn stream_url(model: &Model) -> String {
     let base = model.base_url.trim_end_matches('/');
-    let base = base
-        .strip_suffix("/openai")
-        .unwrap_or(base);
+    let base = base.strip_suffix("/openai").unwrap_or(base);
     format!("{base}/models/{}:streamGenerateContent?alt=sse", model.id)
 }
 
@@ -651,7 +722,11 @@ async fn run_stream(
     let mut state = StreamState::new(model);
     let Some(key) = opts.api_key.clone().filter(|key| !key.trim().is_empty()) else {
         state
-            .error(producer, format!("No API key for provider: {}", model.provider), false)
+            .error(
+                producer,
+                format!("No API key for provider: {}", model.provider),
+                false,
+            )
             .await;
         return;
     };
@@ -659,13 +734,22 @@ async fn run_stream(
     let bytes = match serde_json::to_vec(&body) {
         Ok(bytes) => bytes,
         Err(error) => {
-            state.error(producer, format!("failed to encode request: {error}"), false).await;
+            state
+                .error(
+                    producer,
+                    format!("failed to encode request: {error}"),
+                    false,
+                )
+                .await;
             return;
         }
     };
     drop(body);
     let mut headers = BTreeMap::new();
-    for extra in [model.headers.as_ref(), opts.headers.as_ref()].into_iter().flatten() {
+    for extra in [model.headers.as_ref(), opts.headers.as_ref()]
+        .into_iter()
+        .flatten()
+    {
         for (name, value) in extra {
             crate::provider::set_http_header(&mut headers, name, Some(value));
         }
@@ -714,14 +798,16 @@ async fn run_stream(
     let response = match response {
         Ok(response) => response,
         Err(error) => {
-            state.error(producer, error.to_string(), error.is_abort()).await;
+            state
+                .error(producer, error.to_string(), error.is_abort())
+                .await;
             return;
         }
     };
 
     state.start(producer).await;
-    let mut events =
-        SseEventStream::new(response, opts.signal.clone()).with_idle_timeout(opts.stream_idle_timeout());
+    let mut events = SseEventStream::new(response, opts.signal.clone())
+        .with_idle_timeout(opts.stream_idle_timeout());
     loop {
         match events.next_event().await {
             Ok(Some(event)) => {
@@ -739,7 +825,11 @@ async fn run_stream(
                     }
                     Err(error) => {
                         state
-                            .error(producer, format!("Gemini sent an unreadable event: {error}"), false)
+                            .error(
+                                producer,
+                                format!("Gemini sent an unreadable event: {error}"),
+                                false,
+                            )
                             .await;
                         return;
                     }
@@ -750,7 +840,9 @@ async fn run_stream(
                 return;
             }
             Err(error) => {
-                state.error(producer, error.to_string(), error.is_abort()).await;
+                state
+                    .error(producer, error.to_string(), error.is_abort())
+                    .await;
                 return;
             }
         }
@@ -817,8 +909,14 @@ mod tests {
             json!({"thinkingLevel": "minimal", "includeThoughts": false})
         );
         let flash = gemini("gemini-2.5-flash");
-        assert_eq!(thinking_config(&flash, ThinkingLevel::Off).unwrap(), json!({"thinkingBudget": 0}));
-        assert_eq!(thinking_config(&gemini("gemini-2.5-pro"), ThinkingLevel::Off), None);
+        assert_eq!(
+            thinking_config(&flash, ThinkingLevel::Off).unwrap(),
+            json!({"thinkingBudget": 0})
+        );
+        assert_eq!(
+            thinking_config(&gemini("gemini-2.5-pro"), ThinkingLevel::Off),
+            None
+        );
         assert_eq!(
             thinking_config(&flash, ThinkingLevel::Medium).unwrap(),
             json!({"thinkingBudget": 8192, "includeThoughts": true})
@@ -826,7 +924,12 @@ mod tests {
     }
 
     fn assistant(model: &Model, content: Vec<Content>) -> Message {
-        let mut message = AssistantMessage::empty(Api::GoogleGenerativeAi, model.provider.clone(), model.id.clone(), 0);
+        let mut message = AssistantMessage::empty(
+            Api::GoogleGenerativeAi,
+            model.provider.clone(),
+            model.id.clone(),
+            0,
+        );
         message.content = content;
         Message::Assistant(Box::new(message))
     }
@@ -851,7 +954,10 @@ mod tests {
         let body = build_request(&model, &ctx, &SimpleStreamOptions::default());
         let parts = &body["contents"][1]["parts"];
         assert_eq!(parts[0]["thoughtSignature"], "sig-1");
-        assert_eq!(body["contents"][2]["parts"][0]["functionResponse"]["response"]["output"], "file body");
+        assert_eq!(
+            body["contents"][2]["parts"][0]["functionResponse"]["response"]["output"],
+            "file body"
+        );
 
         // Another model's call: its signature is useless, the bypass is sent.
         call.thought_signature = Some("foreign".into());
@@ -861,7 +967,10 @@ mod tests {
             assistant(&other, vec![Content::ToolCall(call)]),
         ]);
         let body = build_request(&model, &ctx, &SimpleStreamOptions::default());
-        assert_eq!(body["contents"][1]["parts"][0]["thoughtSignature"], SKIP_SIGNATURE);
+        assert_eq!(
+            body["contents"][1]["parts"][0]["thoughtSignature"],
+            SKIP_SIGNATURE
+        );
     }
 
     #[test]

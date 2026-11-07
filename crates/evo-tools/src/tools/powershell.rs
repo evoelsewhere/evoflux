@@ -101,7 +101,15 @@ impl AgentTool for PowerShellTool {
                         if !crate::sandbox::policy().load_profile() {
                             args.push("-NoProfile".into());
                         }
-                        args.extend(["-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand"].map(String::from));
+                        args.extend(
+                            [
+                                "-NonInteractive",
+                                "-ExecutionPolicy",
+                                "Bypass",
+                                "-EncodedCommand",
+                            ]
+                            .map(String::from),
+                        );
                         args
                     },
                 }),
@@ -141,9 +149,11 @@ impl AgentTool for PowerShellTool {
 [Showing the last {shown} of {total} lines. Full output: {}]",
                     path.display()
                 )),
-                None => output.push_str(&format!("
+                None => output.push_str(&format!(
+                    "
 
-[Showing the last {shown} of {total} lines.]")),
+[Showing the last {shown} of {total} lines.]"
+                )),
             }
         }
         Ok(AgentToolResult {

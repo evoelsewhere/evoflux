@@ -4,8 +4,8 @@
 //! environment that exposes the runtime to the agent, and the Office skills
 //! embedded in the binary.
 //!
-//! Design: `docs/features/office/sdd.md` (ADR 0008) and
-//! `docs/features/office-v3-parity/sdd.md`. The management RPCs
+//! Design: `docs/features/office/spec.md` (ADR 0008) and
+//! `docs/features/office-v3-parity/spec.md`. The management RPCs
 //! (`office_status`, `office_install`, …) mirror the language-server ones: the
 //! UI starts an install and polls the status.
 
@@ -187,7 +187,7 @@ pub async fn convert(path: &str) -> Result<Value, String> {
 
 // ── Native preview, versions and file events (v3 parity) ─────────────────────
 //
-// Design: `docs/features/office-v3-parity/sdd.md`. Wire types:
+// Design: `docs/features/office-v3-parity/spec.md`. Wire types:
 // `evo_protocol::office`.
 
 /// Where native (HTML) renders are cached.
@@ -657,6 +657,13 @@ pub fn extract_bundled_skills(base: &Path) -> std::io::Result<PathBuf> {
 
 /// The folder holding the embedded skills, extracted on first use.
 pub fn bundled_skill_dirs() -> Vec<PathBuf> {
+    // Unit tests build their own skill sets. The extraction is cached per
+    // process in whichever agent dir the first caller had, so it would leak the
+    // bundled skills into later tests depending on their order. The tests of
+    // the bundled skills call `extract_bundled_skills` directly.
+    if cfg!(test) {
+        return Vec::new();
+    }
     static DIR: OnceLock<Option<PathBuf>> = OnceLock::new();
     DIR.get_or_init(|| match extract_bundled_skills(&agent_dir()) {
         Ok(dir) => Some(dir),

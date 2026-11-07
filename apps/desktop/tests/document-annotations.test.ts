@@ -1,5 +1,5 @@
 // Area edits: the annotation message block, its parser, the batch store and
-// the annotator's geometry (docs/features/office-v3-parity/sdd.md, FR-10;
+// the annotator's geometry (docs/features/office-v3-parity/spec.md, FR-10;
 // ported from v3 web/src/__tests__/components/InputBarAnnotations.test.tsx).
 // Run with `bun test` in apps/desktop.
 

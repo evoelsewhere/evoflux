@@ -264,8 +264,14 @@ pub(crate) fn build_request(model: &Model, ctx: &Context, opts: &SimpleStreamOpt
         }
     }
     // Converse requires the conversation to open with a user turn.
-    if messages.first().is_some_and(|first| first["role"] != "user") {
-        messages.insert(0, json!({"role": "user", "content": [{"text": "(continue)"}]}));
+    if messages
+        .first()
+        .is_some_and(|first| first["role"] != "user")
+    {
+        messages.insert(
+            0,
+            json!({"role": "user", "content": [{"text": "(continue)"}]}),
+        );
     }
 
     let mut body = Map::new();
@@ -657,7 +663,13 @@ impl StreamState {
                 partial: Arc::new(placeholder.clone()),
             },
         };
-        self.blocks.insert(index, Block { content_index, kind });
+        self.blocks.insert(
+            index,
+            Block {
+                content_index,
+                kind,
+            },
+        );
         let event = match event {
             AssistantMessageEvent::TextStart { content_index, .. } => {
                 AssistantMessageEvent::TextStart {
@@ -699,7 +711,9 @@ impl StreamState {
                 if let Some(tool) = payload.pointer("/start/toolUse") {
                     let content_index = self.output.content.len();
                     self.output.content.push(Content::tool_call(
-                        tool.get("toolUseId").and_then(Value::as_str).unwrap_or_default(),
+                        tool.get("toolUseId")
+                            .and_then(Value::as_str)
+                            .unwrap_or_default(),
                         tool.get("name").and_then(Value::as_str).unwrap_or_default(),
                         json!({}),
                     ));
@@ -737,8 +751,7 @@ impl StreamState {
                 } else if let Some(reasoning) = delta.get("reasoningContent") {
                     let content_index = self.open(producer, index, BlockKind::Thinking).await;
                     let text = reasoning.get("text").and_then(Value::as_str);
-                    if let Some(Content::Thinking(t)) = self.output.content.get_mut(content_index)
-                    {
+                    if let Some(Content::Thinking(t)) = self.output.content.get_mut(content_index) {
                         if let Some(text) = text {
                             t.thinking.push_str(text);
                         }
@@ -961,11 +974,15 @@ async fn run_stream(
             .await;
         return;
     };
-    if let Some(profile) = credential.strip_prefix(super::aws_credentials::PROFILE_CREDENTIAL_PREFIX) {
+    if let Some(profile) =
+        credential.strip_prefix(super::aws_credentials::PROFILE_CREDENTIAL_PREFIX)
+    {
         match super::aws_credentials::resolve(&http, profile).await {
             Ok(iam) => credential = encode_iam_credential(&iam),
             Err(error) => {
-                state.error(producer, format!("AWS credentials: {error}"), false).await;
+                state
+                    .error(producer, format!("AWS credentials: {error}"), false)
+                    .await;
                 return;
             }
         }
@@ -983,7 +1000,11 @@ async fn run_stream(
         Ok(bytes) => bytes,
         Err(error) => {
             state
-                .error(producer, format!("failed to encode request: {error}"), false)
+                .error(
+                    producer,
+                    format!("failed to encode request: {error}"),
+                    false,
+                )
                 .await;
             return;
         }
@@ -1114,7 +1135,9 @@ async fn run_stream(
                         .or_else(|| payload.get("Message"))
                         .and_then(Value::as_str)
                         .unwrap_or("Bedrock stream error");
-                    state.error(producer, format!("{kind}: {text}"), false).await;
+                    state
+                        .error(producer, format!("{kind}: {text}"), false)
+                        .await;
                     return;
                 }
                 _ => {
@@ -1157,7 +1180,10 @@ mod tests {
     #[test]
     fn decodes_split_frames() {
         let bytes = frame(
-            &[(":message-type", "event"), (":event-type", "contentBlockDelta")],
+            &[
+                (":message-type", "event"),
+                (":event-type", "contentBlockDelta"),
+            ],
             br#"{"contentBlockIndex":0,"delta":{"text":"hi"}}"#,
         );
         let mut decoder = EventStreamDecoder::default();
@@ -1180,7 +1206,15 @@ mod tests {
         };
         let url = reqwest::Url::parse("https://example.amazonaws.com/").unwrap();
         // 20150830T123600Z
-        let headers = sigv4_headers(&credential, "us-east-1", "service", "GET", &url, b"", 1_440_938_160);
+        let headers = sigv4_headers(
+            &credential,
+            "us-east-1",
+            "service",
+            "GET",
+            &url,
+            b"",
+            1_440_938_160,
+        );
         assert_eq!(headers["x-amz-date"], "20150830T123600Z");
         assert!(headers["authorization"].starts_with(
             "AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20150830/us-east-1/service/aws4_request, SignedHeaders=host;x-amz-content-sha256;x-amz-date, Signature="

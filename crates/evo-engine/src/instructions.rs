@@ -116,7 +116,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         save(dir.path(), "project", "Use tabs.\r\nBe brief.").unwrap();
         let path = dir.path().join("AGENTS.md");
-        assert_eq!(std::fs::read_to_string(&path).unwrap(), "Use tabs.\nBe brief.\n");
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "Use tabs.\nBe brief.\n"
+        );
         save(dir.path(), "project", "  \n").unwrap();
         assert!(!path.exists());
         save(dir.path(), "project", "").unwrap();

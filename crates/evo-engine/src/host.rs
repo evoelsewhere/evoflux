@@ -878,14 +878,14 @@ async fn list_models(search: &str, args: &Args, cwd: &Path) -> i32 {
 
     fn format_tokens(value: u64) -> String {
         if value >= 1_000_000 {
-            let whole = value % 1_000_000 == 0;
+            let whole = value.is_multiple_of(1_000_000);
             if whole {
                 format!("{}M", value / 1_000_000)
             } else {
                 format!("{:.1}M", value as f64 / 1_000_000.0)
             }
         } else if value >= 1_000 {
-            let whole = value % 1_000 == 0;
+            let whole = value.is_multiple_of(1_000);
             if whole {
                 format!("{}K", value / 1_000)
             } else {

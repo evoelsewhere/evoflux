@@ -11,8 +11,25 @@ use crate::catalog::{self, SERVERS};
 const MAX_DEPTH: usize = 4;
 const MAX_FILES: usize = 20_000;
 const SKIP: &[&str] = &[
-    "node_modules", "target", ".git", "dist", "build", "out", ".next", "vendor", "venv", ".venv", "__pycache__",
-    "bin", "obj", ".gradle", ".idea", ".vscode", "coverage", ".turbo", ".cache",
+    "node_modules",
+    "target",
+    ".git",
+    "dist",
+    "build",
+    "out",
+    ".next",
+    "vendor",
+    "venv",
+    ".venv",
+    "__pycache__",
+    "bin",
+    "obj",
+    ".gradle",
+    ".idea",
+    ".vscode",
+    "coverage",
+    ".turbo",
+    ".cache",
 ];
 
 #[derive(Debug, Clone, Serialize)]
@@ -39,11 +56,15 @@ pub fn detect(root: &Path) -> Vec<Detected> {
     let mut seen = 0usize;
     let mut stack = vec![(root.to_path_buf(), 0usize)];
     while let Some((dir, depth)) = stack.pop() {
-        let Ok(entries) = std::fs::read_dir(&dir) else { continue };
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
         for entry in entries.flatten() {
             let path = entry.path();
             let name = entry.file_name().to_string_lossy().into_owned();
-            let Ok(kind) = entry.file_type() else { continue };
+            let Ok(kind) = entry.file_type() else {
+                continue;
+            };
             if kind.is_dir() {
                 if depth < MAX_DEPTH && !SKIP.contains(&name.as_str()) && !name.starts_with('.') {
                     stack.push((path, depth + 1));
@@ -74,7 +95,11 @@ pub fn detect(root: &Path) -> Vec<Detected> {
             // Markers alone count only with at least one file (package.json
             // also marks HTML/CSS/JSON projects otherwise).
             let counts = files >= 2 || (files >= 1 && !found.is_empty());
-            counts.then(|| Detected { server: server.id, files, markers: found })
+            counts.then_some(Detected {
+                server: server.id,
+                files,
+                markers: found,
+            })
         })
         .collect();
     out.sort_by(|a, b| b.files.cmp(&a.files));

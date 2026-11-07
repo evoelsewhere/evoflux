@@ -35,9 +35,7 @@ async fn run_bash(
 ) -> Result<evo_agent::types::AgentToolResult, AgentError> {
     let signal = CancellationToken::new();
     let on_update = Arc::new(|_p| ());
-    let prepared = tool
-        .prepare_arguments(params.clone())
-        .unwrap_or_else(|_| params);
+    let prepared = tool.prepare_arguments(params.clone()).unwrap_or(params);
     tool.execute("bash-x", prepared, signal, on_update).await
 }
 

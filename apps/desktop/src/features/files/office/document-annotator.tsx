@@ -1,5 +1,5 @@
 // DeckAnnotator: select part of a slide or sheet in the Files viewer and tell
-// the agent what to change there (docs/features/office-v3-parity/sdd.md,
+// the agent what to change there (docs/features/office-v3-parity/spec.md,
 // FR-10; port of v3 web/src/components/document-annotator.tsx).
 //
 // While annotating, hovering a slide outlines the shape under the pointer

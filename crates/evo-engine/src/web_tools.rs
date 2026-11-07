@@ -30,11 +30,19 @@ fn strings(params: &Value, key: &str) -> Vec<String> {
     params
         .get(key)
         .and_then(Value::as_array)
-        .map(|a| a.iter().filter_map(Value::as_str).map(str::to_string).collect())
+        .map(|a| {
+            a.iter()
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect()
+        })
         .unwrap_or_default()
 }
 
-async fn cancellable<T>(signal: &CancellationToken, work: impl std::future::Future<Output = T>) -> Result<T, AgentError> {
+async fn cancellable<T>(
+    signal: &CancellationToken,
+    work: impl std::future::Future<Output = T>,
+) -> Result<T, AgentError> {
     tokio::select! {
         _ = signal.cancelled() => Err(AgentError::Tool("cancelled".into())),
         out = work => Ok(out),
@@ -95,16 +103,31 @@ impl AgentTool for WebSearchTool {
         _on_update: Arc<dyn Fn(ToolResultPartial) + Send + Sync>,
     ) -> Result<AgentToolResult, AgentError> {
         let query = evo_web::Query {
-            query: params.get("query").and_then(Value::as_str).unwrap_or("").to_string(),
-            max_results: params.get("max_results").and_then(Value::as_u64).unwrap_or(8) as usize,
+            query: params
+                .get("query")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string(),
+            max_results: params
+                .get("max_results")
+                .and_then(Value::as_u64)
+                .unwrap_or(8) as usize,
             allowed_domains: strings(&params, "allowed_domains"),
             blocked_domains: strings(&params, "blocked_domains"),
-            recency: params.get("recency").and_then(Value::as_str).map(str::to_string),
+            recency: params
+                .get("recency")
+                .and_then(Value::as_str)
+                .map(str::to_string),
         };
-        let found = cancellable(&signal, evo_web::search(&query)).await?.map_err(AgentError::Tool)?;
+        let found = cancellable(&signal, evo_web::search(&query))
+            .await?
+            .map_err(AgentError::Tool)?;
         let results = found.results;
         let text = if results.is_empty() {
-            format!("No results for \"{}\". Try other words, or fewer domain limits.", query.query)
+            format!(
+                "No results for \"{}\". Try other words, or fewer domain limits.",
+                query.query
+            )
         } else {
             let mut text = String::new();
             for (i, r) in results.iter().enumerate() {
@@ -178,10 +201,14 @@ impl AgentTool for WebFetchTool {
     ) -> Result<AgentToolResult, AgentError> {
         let url = params.get("url").and_then(Value::as_str).unwrap_or("");
         let offset = params.get("offset").and_then(Value::as_u64).unwrap_or(0) as usize;
-        let page = cancellable(&signal, evo_web::fetch(url)).await?.map_err(AgentError::Tool)?;
+        let page = cancellable(&signal, evo_web::fetch(url))
+            .await?
+            .map_err(AgentError::Tool)?;
         let total = page.content.chars().count();
         if offset > 0 && offset >= total {
-            return Err(AgentError::Validation(format!("offset {offset} is past the end ({total} characters)")));
+            return Err(AgentError::Validation(format!(
+                "offset {offset} is past the end ({total} characters)"
+            )));
         }
         let window: String = page.content.chars().skip(offset).take(WINDOW).collect();
         let end = offset + window.chars().count();
@@ -189,9 +216,13 @@ impl AgentTool for WebFetchTool {
         let mut text = format!(
             "<web_page url=\"{}\"{}>\n{}\n</web_page>",
             escape(&page.final_url),
-            page.title.as_deref().map(|t| format!(" title=\"{}\"", escape(t))).unwrap_or_default(),
+            page.title
+                .as_deref()
+                .map(|t| format!(" title=\"{}\"", escape(t)))
+                .unwrap_or_default(),
             if window.trim().is_empty() {
-                "(no readable text: the page may need JavaScript — try the browser tools)".to_string()
+                "(no readable text: the page may need JavaScript — try the browser tools)"
+                    .to_string()
             } else {
                 window
             }
@@ -201,7 +232,9 @@ impl AgentTool for WebFetchTool {
                 "\n[Characters {offset}–{end} of {total}. Call web_fetch with offset {end} for the rest.]"
             ));
         } else if offset > 0 {
-            text.push_str(&format!("\n[Characters {offset}–{end} of {total}: the end of the page.]"));
+            text.push_str(&format!(
+                "\n[Characters {offset}–{end} of {total}: the end of the page.]"
+            ));
         }
         if page.cut {
             text.push_str("\n[The page was larger than 5 MB; only the start was read.]");

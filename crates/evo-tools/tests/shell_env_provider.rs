@@ -18,7 +18,10 @@ async fn the_provider_is_asked_for_every_command() {
     let mut outputs = Vec::new();
     for text in ["first", "second"] {
         *value.lock().unwrap() = text.to_string();
-        match env.exec("echo \"[$EVO_TEST_PROVIDED]\"", ShellExecOptions::default()).await {
+        match env
+            .exec("echo \"[$EVO_TEST_PROVIDED]\"", ShellExecOptions::default())
+            .await
+        {
             Ok(out) => outputs.push(out.stdout),
             Err(_) => return, // no bash here
         }
@@ -31,15 +34,23 @@ async fn the_provider_is_asked_for_every_command() {
 async fn path_folders_are_appended_after_the_inherited_ones() {
     let dir = std::env::temp_dir().join("evo-provided-bin");
     let appended = dir.clone();
-    let env = OsExecutionEnv::with_cwd(std::env::temp_dir()).with_shell_env_provider(Arc::new(move || ShellEnv {
-        vars: vec![],
-        path_append: vec![appended.clone()],
-    }));
-    let Ok(out) = env.exec("echo \"$PATH\"", ShellExecOptions::default()).await else {
+    let env = OsExecutionEnv::with_cwd(std::env::temp_dir()).with_shell_env_provider(Arc::new(
+        move || ShellEnv {
+            vars: vec![],
+            path_append: vec![appended.clone()],
+        },
+    ));
+    let Ok(out) = env
+        .exec("echo \"$PATH\"", ShellExecOptions::default())
+        .await
+    else {
         return;
     };
     let leaf = dir.file_name().unwrap().to_string_lossy().to_string();
     let path = out.stdout;
     let at = path.find(&leaf).expect("the folder is on PATH");
-    assert!(at > path.len() / 3, "appended near the end, not first: {path}");
+    assert!(
+        at > path.len() / 3,
+        "appended near the end, not first: {path}"
+    );
 }

@@ -1,5 +1,5 @@
 //! Office documents on the wire: the native/exact preview, document versions
-//! and the file-change event (design: `docs/features/office-v3-parity/sdd.md`).
+//! and the file-change event (design: `docs/features/office-v3-parity/spec.md`).
 //!
 //! Requests are ordinary JSONL commands (`{"id":…,"type":…,…}`) answered with a
 //! `response` whose `data` is the shape below. `path` in a request may be

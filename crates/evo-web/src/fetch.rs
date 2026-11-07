@@ -19,7 +19,11 @@ pub const TIMEOUT: Duration = Duration::from_secs(20);
 pub const MAX_BYTES: usize = 5 * 1024 * 1024;
 pub const CACHE_FOR: Duration = Duration::from_secs(15 * 60);
 const MAX_URL: usize = 2000;
-pub const USER_AGENT: &str = concat!("evo/", env!("CARGO_PKG_VERSION"), " (+https://github.com/evoelsewhere/evo-harness)");
+pub const USER_AGENT: &str = concat!(
+    "evo/",
+    env!("CARGO_PKG_VERSION"),
+    " (+https://github.com/evoelsewhere/evo-harness)"
+);
 
 #[derive(Debug, Clone)]
 pub struct Page {
@@ -42,7 +46,9 @@ pub fn client() -> &'static reqwest::Client {
         let mut headers = HeaderMap::new();
         headers.insert(
             ACCEPT,
-            HeaderValue::from_static("text/html,application/xhtml+xml,text/plain;q=0.9,application/json;q=0.8,*/*;q=0.5"),
+            HeaderValue::from_static(
+                "text/html,application/xhtml+xml,text/plain;q=0.9,application/json;q=0.8,*/*;q=0.5",
+            ),
         );
         headers.insert(ACCEPT_LANGUAGE, HeaderValue::from_static("en,*;q=0.5"));
         reqwest::Client::builder()
@@ -72,7 +78,11 @@ pub fn parse_url(raw: &str) -> Result<Url, String> {
     if raw.len() > MAX_URL {
         return Err(format!("the URL is longer than {MAX_URL} characters"));
     }
-    let with_scheme = if raw.contains("://") { raw.to_string() } else { format!("https://{raw}") };
+    let with_scheme = if raw.contains("://") {
+        raw.to_string()
+    } else {
+        format!("https://{raw}")
+    };
     let mut url = Url::parse(&with_scheme).map_err(|e| format!("not a URL: {e}"))?;
     url.set_fragment(None);
     check_url(&url)?;
@@ -97,9 +107,14 @@ pub async fn read_capped(mut response: reqwest::Response) -> Result<(Vec<u8>, bo
 pub fn decode(bytes: &[u8], content_type: &str) -> String {
     let label = content_type
         .split(';')
-        .find_map(|p| p.trim().strip_prefix("charset=").map(|c| c.trim_matches('"').to_string()))
+        .find_map(|p| {
+            p.trim()
+                .strip_prefix("charset=")
+                .map(|c| c.trim_matches('"').to_string())
+        })
         .or_else(|| {
-            let head = String::from_utf8_lossy(&bytes[..bytes.len().min(2048)]).to_ascii_lowercase();
+            let head =
+                String::from_utf8_lossy(&bytes[..bytes.len().min(2048)]).to_ascii_lowercase();
             let at = head.find("charset=")?;
             let rest = head[at + 8..].trim_start_matches(['"', '\'']);
             let end = rest.find(|c: char| !(c.is_ascii_alphanumeric() || c == '-' || c == '_'))?;
@@ -159,9 +174,17 @@ pub async fn fetch(raw: &str) -> Result<Page, String> {
         .unwrap_or("")
         .to_ascii_lowercase();
     let (bytes, cut) = read_capped(response).await?;
-    let mime = content_type.split(';').next().unwrap_or("").trim().to_string();
+    let mime = content_type
+        .split(';')
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_string();
     let looks_html = mime.contains("html")
-        || (mime.is_empty() && String::from_utf8_lossy(&bytes[..bytes.len().min(512)]).to_ascii_lowercase().contains("<html"));
+        || (mime.is_empty()
+            && String::from_utf8_lossy(&bytes[..bytes.len().min(512)])
+                .to_ascii_lowercase()
+                .contains("<html"));
     let (title, content) = if looks_html {
         let html = decode(&bytes, &content_type);
         let base = Url::parse(&final_url).unwrap_or(url.clone());
@@ -178,11 +201,21 @@ pub async fn fetch(raw: &str) -> Result<Page, String> {
     } else if mime == "application/pdf" {
         return Err("this is a PDF; web_fetch reads web pages and text. Open it in the browser, or download it and read the file".into());
     } else {
-        return Err(format!("{mime} is not a page web_fetch can read; open it in the browser instead"));
+        return Err(format!(
+            "{mime} is not a page web_fetch can read; open it in the browser instead"
+        ));
     };
     if !status.is_success() {
         let snippet: String = content.chars().take(500).collect();
-        return Err(format!("HTTP {} from {final_url}{}", status.as_u16(), if snippet.is_empty() { String::new() } else { format!(":\n{snippet}") }));
+        return Err(format!(
+            "HTTP {} from {final_url}{}",
+            status.as_u16(),
+            if snippet.is_empty() {
+                String::new()
+            } else {
+                format!(":\n{snippet}")
+            }
+        ));
     }
     let page = Page {
         url: key.clone(),
@@ -205,7 +238,10 @@ mod tests {
 
     #[test]
     fn urls_get_a_scheme_and_lose_fragments() {
-        assert_eq!(parse_url("example.com/a#b").unwrap().as_str(), "https://example.com/a");
+        assert_eq!(
+            parse_url("example.com/a#b").unwrap().as_str(),
+            "https://example.com/a"
+        );
         assert!(parse_url("http://127.0.0.1:3000").is_err());
         assert!(parse_url(&format!("https://e.com/{}", "a".repeat(2100))).is_err());
     }

@@ -19,7 +19,9 @@ use crate::catalog::Server;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 
 pub fn uri_of(path: &Path) -> String {
-    Url::from_file_path(path).map(|u| u.to_string()).unwrap_or_else(|_| format!("file://{}", path.display()))
+    Url::from_file_path(path)
+        .map(|u| u.to_string())
+        .unwrap_or_else(|_| format!("file://{}", path.display()))
 }
 
 /// One spelling per file: servers write the same file as `file:///C:/a` or
@@ -86,7 +88,9 @@ impl Client {
             const CREATE_NO_WINDOW: u32 = 0x0800_0000;
             cmd.creation_flags(CREATE_NO_WINDOW);
         }
-        let mut child = cmd.spawn().map_err(|e| format!("{} could not start: {e}", server.name))?;
+        let mut child = cmd
+            .spawn()
+            .map_err(|e| format!("{} could not start: {e}", server.name))?;
         let mut stdin = child.stdin.take().ok_or("no stdin")?;
         let (writer, mut frames) = mpsc::unbounded_channel::<Vec<u8>>();
         let stdout = child.stdout.take().ok_or("no stdout")?;
@@ -139,8 +143,14 @@ impl Client {
             });
         }
         let root_uri = uri_of(root);
-        let name = root.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-        let init_options: Value = server.init_options.and_then(|o| serde_json::from_str(o).ok()).unwrap_or(Value::Null);
+        let name = root
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let init_options: Value = server
+            .init_options
+            .and_then(|o| serde_json::from_str(o).ok())
+            .unwrap_or(Value::Null);
         let result = client
             .request(
                 "initialize",
@@ -176,7 +186,8 @@ impl Client {
             )
             .await
             .map_err(|e| format!("{} did not initialize: {e}", server.name))?;
-        *client.capabilities.lock().unwrap() = result.get("capabilities").cloned().unwrap_or(Value::Null);
+        *client.capabilities.lock().unwrap() =
+            result.get("capabilities").cloned().unwrap_or(Value::Null);
         client.notify("initialized", json!({})).await?;
         Ok(client)
     }
@@ -187,7 +198,13 @@ impl Client {
 
     /// The server's last stderr lines, for error messages.
     pub fn stderr_tail(&self) -> String {
-        self.stderr.lock().unwrap().iter().cloned().collect::<Vec<_>>().join("\n")
+        self.stderr
+            .lock()
+            .unwrap()
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 
     fn write(&self, message: &Value) -> Result<(), String> {
@@ -202,24 +219,38 @@ impl Client {
         self.write(&json!({ "jsonrpc": "2.0", "method": method, "params": params }))
     }
 
-    pub async fn request(&self, method: &str, params: Value, timeout: Duration) -> Result<Value, String> {
+    pub async fn request(
+        &self,
+        method: &str,
+        params: Value,
+        timeout: Duration,
+    ) -> Result<Value, String> {
         if !self.alive() {
             return Err(format!("{} is not running", self.server.name));
         }
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let (tx, rx) = oneshot::channel();
         self.pending.lock().unwrap().insert(id, tx);
-        if let Err(e) = self.write(&json!({ "jsonrpc": "2.0", "id": id, "method": method, "params": params })) {
+        if let Err(e) =
+            self.write(&json!({ "jsonrpc": "2.0", "id": id, "method": method, "params": params }))
+        {
             self.pending.lock().unwrap().remove(&id);
             return Err(e);
         }
         match tokio::time::timeout(timeout, rx).await {
             Ok(Ok(result)) => result,
-            Ok(Err(_)) => Err(format!("{} stopped while answering {method}", self.server.name)),
+            Ok(Err(_)) => Err(format!(
+                "{} stopped while answering {method}",
+                self.server.name
+            )),
             Err(_) => {
                 self.pending.lock().unwrap().remove(&id);
                 let _ = self.notify("$/cancelRequest", json!({ "id": id })).await;
-                Err(format!("{} did not answer {method} within {}s", self.server.name, timeout.as_secs()))
+                Err(format!(
+                    "{} did not answer {method} within {}s",
+                    self.server.name,
+                    timeout.as_secs()
+                ))
             }
         }
     }
@@ -248,17 +279,33 @@ impl Client {
                     json!({ "textDocument": { "uri": uri, "version": version }, "contentChanges": [{ "text": text }] }),
                 )
                 .await?;
-                self.notify("textDocument/didSave", json!({ "textDocument": { "uri": uri } })).await?;
+                self.notify(
+                    "textDocument/didSave",
+                    json!({ "textDocument": { "uri": uri } }),
+                )
+                .await?;
                 Ok((uri, version))
             }
             None => {
-                let ext = if path.file_name().is_some_and(|n| n.to_string_lossy().to_ascii_lowercase().starts_with("dockerfile")) {
+                let ext = if path.file_name().is_some_and(|n| {
+                    n.to_string_lossy()
+                        .to_ascii_lowercase()
+                        .starts_with("dockerfile")
+                }) {
                     "dockerfile".to_string()
                 } else {
-                    path.extension().map(|e| e.to_string_lossy().into_owned()).unwrap_or_default()
+                    path.extension()
+                        .map(|e| e.to_string_lossy().into_owned())
+                        .unwrap_or_default()
                 };
                 let language = self.server.language_id(&ext).unwrap_or("plaintext");
-                open.insert(uri.clone(), Open { version: 1, text: text.clone() });
+                open.insert(
+                    uri.clone(),
+                    Open {
+                        version: 1,
+                        text: text.clone(),
+                    },
+                );
                 drop(open);
                 self.notify(
                     "textDocument/didOpen",
@@ -267,7 +314,11 @@ impl Client {
                 .await?;
                 // Servers that check on save (rust-analyzer runs `cargo check`)
                 // report their full diagnostics after a save.
-                self.notify("textDocument/didSave", json!({ "textDocument": { "uri": uri } })).await?;
+                self.notify(
+                    "textDocument/didSave",
+                    json!({ "textDocument": { "uri": uri } }),
+                )
+                .await?;
                 Ok((uri, 1))
             }
         }
@@ -293,7 +344,9 @@ impl Client {
             && self.started.elapsed() < WARMUP
             && self.alive()
         {
-            let _ = tokio::time::timeout(Duration::from_millis(200), self.progress_changed.notified()).await;
+            let _ =
+                tokio::time::timeout(Duration::from_millis(200), self.progress_changed.notified())
+                    .await;
         }
         loop {
             if !self.indexing() {
@@ -303,13 +356,23 @@ impl Client {
             if left.is_zero() {
                 return false;
             }
-            let _ = tokio::time::timeout(left.min(Duration::from_millis(500)), self.progress_changed.notified()).await;
+            let _ = tokio::time::timeout(
+                left.min(Duration::from_millis(500)),
+                self.progress_changed.notified(),
+            )
+            .await;
         }
     }
 
     /// Diagnostics for `uri` at `version` (or newer), waiting up to `max`;
     /// `None` when none arrived in time.
-    pub async fn diagnostics_for(&self, uri: &str, version: i64, sent_at: Instant, max: Duration) -> Option<Vec<Value>> {
+    pub async fn diagnostics_for(
+        &self,
+        uri: &str,
+        version: i64,
+        sent_at: Instant,
+        max: Duration,
+    ) -> Option<Vec<Value>> {
         let deadline = Instant::now() + max;
         loop {
             if let Some((v, list, at, _)) = self.diagnostics.lock().unwrap().get(&uri_key(uri)) {
@@ -325,7 +388,11 @@ impl Client {
             if left.is_zero() {
                 return None;
             }
-            let _ = tokio::time::timeout(left.min(Duration::from_millis(300)), self.diagnostics_changed.notified()).await;
+            let _ = tokio::time::timeout(
+                left.min(Duration::from_millis(300)),
+                self.diagnostics_changed.notified(),
+            )
+            .await;
         }
     }
 
@@ -342,7 +409,9 @@ impl Client {
 
     pub async fn shutdown(&self) {
         if self.alive() {
-            let _ = self.request("shutdown", Value::Null, Duration::from_secs(3)).await;
+            let _ = self
+                .request("shutdown", Value::Null, Duration::from_secs(3))
+                .await;
             let _ = self.notify("exit", Value::Null).await;
         }
         self.alive.store(false, Ordering::Release);
@@ -352,7 +421,10 @@ impl Client {
     }
 
     fn handle(&self, message: Value) {
-        let method = message.get("method").and_then(Value::as_str).map(str::to_string);
+        let method = message
+            .get("method")
+            .and_then(Value::as_str)
+            .map(str::to_string);
         let id = message.get("id").cloned();
         match (method, id) {
             // A response to one of our requests.
@@ -360,7 +432,11 @@ impl Client {
                 let Some(id) = id.as_i64() else { return };
                 if let Some(tx) = self.pending.lock().unwrap().remove(&id) {
                     let result = match message.get("error") {
-                        Some(error) => Err(error.get("message").and_then(Value::as_str).unwrap_or("error").to_string()),
+                        Some(error) => Err(error
+                            .get("message")
+                            .and_then(Value::as_str)
+                            .unwrap_or("error")
+                            .to_string()),
                         None => Ok(message.get("result").cloned().unwrap_or(Value::Null)),
                     };
                     let _ = tx.send(result);
@@ -371,7 +447,10 @@ impl Client {
                 let params = message.get("params").cloned().unwrap_or(Value::Null);
                 let result = match method.as_str() {
                     "workspace/configuration" => {
-                        let n = params.get("items").and_then(Value::as_array).map_or(1, Vec::len);
+                        let n = params
+                            .get("items")
+                            .and_then(Value::as_array)
+                            .map_or(1, Vec::len);
                         Value::Array(vec![Value::Null; n])
                     }
                     "workspace/workspaceFolders" => json!([{
@@ -387,14 +466,28 @@ impl Client {
                 let params = message.get("params").cloned().unwrap_or(Value::Null);
                 match method.as_str() {
                     "textDocument/publishDiagnostics" => {
-                        let uri = params.get("uri").and_then(Value::as_str).unwrap_or("").to_string();
+                        let uri = params
+                            .get("uri")
+                            .and_then(Value::as_str)
+                            .unwrap_or("")
+                            .to_string();
                         let version = params.get("version").and_then(Value::as_i64);
-                        let list = params.get("diagnostics").and_then(Value::as_array).cloned().unwrap_or_default();
-                        self.diagnostics.lock().unwrap().insert(uri_key(&uri), (version, list, Instant::now(), uri));
+                        let list = params
+                            .get("diagnostics")
+                            .and_then(Value::as_array)
+                            .cloned()
+                            .unwrap_or_default();
+                        self.diagnostics
+                            .lock()
+                            .unwrap()
+                            .insert(uri_key(&uri), (version, list, Instant::now(), uri));
                         self.diagnostics_changed.notify_waiters();
                     }
                     "$/progress" => {
-                        let token = params.get("token").map(|t| t.to_string()).unwrap_or_default();
+                        let token = params
+                            .get("token")
+                            .map(|t| t.to_string())
+                            .unwrap_or_default();
                         match params.pointer("/value/kind").and_then(Value::as_str) {
                             Some("begin") => {
                                 self.progress.lock().unwrap().insert(token);
@@ -455,7 +548,9 @@ async fn read_loop(client: std::sync::Weak<Client>, stdout: tokio::process::Chil
         if reader.read_exact(&mut body).await.is_err() {
             continue;
         }
-        let Ok(message) = serde_json::from_slice::<Value>(&body) else { continue };
+        let Ok(message) = serde_json::from_slice::<Value>(&body) else {
+            continue;
+        };
         let Some(c) = client.upgrade() else { return };
         c.handle(message);
     }

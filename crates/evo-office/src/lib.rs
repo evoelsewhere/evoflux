@@ -3,7 +3,7 @@
 //! A leaf crate: it knows the pinned manifest ([`manifest`]), how to install the
 //! archive safely ([`Runtime::start_install`]) and how to run `soffice` headless
 //! ([`Runtime::convert_to_pdf`]). It knows nothing about chats, RPC or the
-//! desktop app. Design: `docs/features/office/sdd.md`, ADR 0008.
+//! desktop app. Design: `docs/features/office/spec.md`, ADR 0008.
 
 mod convert;
 mod install;

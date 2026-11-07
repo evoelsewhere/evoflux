@@ -387,10 +387,10 @@ impl ResponsesStreamState {
                 .clone()
                 .filter(|(_, slot)| {
                     if call_id.is_some() || name.is_some() {
-                        call_id.map_or(true, |call_id| slot.call_id.as_deref() == Some(call_id))
-                            && name.map_or(true, |name| slot.name == name)
+                        call_id.is_none_or(|call_id| slot.call_id.as_deref() == Some(call_id))
+                            && name.is_none_or(|name| slot.name == name)
                     } else {
-                        item_id.map_or(true, |item_id| slot.item_id.as_deref() == Some(item_id))
+                        item_id.is_none_or(|item_id| slot.item_id.as_deref() == Some(item_id))
                     }
                 })
                 .map(|(index, _)| *index)
@@ -593,7 +593,7 @@ impl ResponsesStreamState {
             .filter(|index| {
                 self.slots
                     .get(index)
-                    .map_or(true, |slot| slot.kind == kind && slot.custom == custom)
+                    .is_none_or(|slot| slot.kind == kind && slot.custom == custom)
             })
             .or_else(|| item_id.and_then(|id| self.find_by_item_id(id, custom)))
             .or_else(|| self.find_open_delta_slot(value, kind, custom))
@@ -1927,7 +1927,6 @@ fn build_request(model: &Model, ctx: &Context, opts: &SimpleStreamOptions) -> Va
 /// id metadata so the provider can correlate the item across turns.
 fn text_message_item(text: &crate::types::TextContent, fallback_id: &str) -> Value {
     let (raw_id, phase) = parse_text_signature(text.text_signature.as_deref())
-        .map(|(id, phase)| (id, phase))
         .unwrap_or_else(|| (fallback_id.to_string(), None));
     let id = bounded_message_id(&raw_id);
     let mut item = json!({
@@ -2296,7 +2295,7 @@ fn response_terminal_status<'a>(
         .get("status")
         .and_then(Value::as_str)
         .or_else(|| event.get("status").and_then(Value::as_str))
-        .or_else(|| match kind {
+        .or(match kind {
             "response.incomplete" => Some("incomplete"),
             "response.completed" | "response.done" => Some("completed"),
             _ => None,
@@ -3156,7 +3155,7 @@ mod tests {
         let raw_item_id = format!("fc_{}", "x".repeat(400));
         let mut source = AssistantMessage::empty(Api::AnthropicMessages, "anthropic", "claude", 1);
         source.content = vec![Content::tool_call(
-            &format!("call_original|{raw_item_id}"),
+            format!("call_original|{raw_item_id}"),
             "read",
             json!({}),
         )];

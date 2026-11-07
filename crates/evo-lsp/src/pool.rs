@@ -18,7 +18,11 @@ pub struct Pool {
 fn marker_in(dir: &Path, marker: &str) -> bool {
     match marker.strip_prefix('*') {
         Some(suffix) => std::fs::read_dir(dir)
-            .map(|entries| entries.flatten().any(|e| e.file_name().to_string_lossy().ends_with(suffix)))
+            .map(|entries| {
+                entries
+                    .flatten()
+                    .any(|e| e.file_name().to_string_lossy().ends_with(suffix))
+            })
             .unwrap_or(false),
         None => dir.join(marker).exists(),
     }
@@ -61,7 +65,11 @@ pub struct Running {
 
 impl Pool {
     pub fn new(lsp_dir: PathBuf) -> Self {
-        Pool { lsp_dir, clients: tokio::sync::Mutex::new(HashMap::new()), disabled: Mutex::new(HashSet::new()) }
+        Pool {
+            lsp_dir,
+            clients: tokio::sync::Mutex::new(HashMap::new()),
+            disabled: Mutex::new(HashSet::new()),
+        }
     }
 
     pub fn set_disabled(&self, ids: impl IntoIterator<Item = String>) {
@@ -77,11 +85,16 @@ impl Pool {
         let server: &'static Server = catalog::for_file(file).ok_or_else(|| {
             format!(
                 "no language server handles {} files",
-                file.extension().map(|e| format!(".{}", e.to_string_lossy())).unwrap_or_else(|| "these".into())
+                file.extension()
+                    .map(|e| format!(".{}", e.to_string_lossy()))
+                    .unwrap_or_else(|| "these".into())
             )
         })?;
         if self.is_disabled(server.id) {
-            return Err(format!("{} is switched off in Customize → Code intelligence", server.name));
+            return Err(format!(
+                "{} is switched off in Customize → Code intelligence",
+                server.name
+            ));
         }
         let located = install::locate(server, &self.lsp_dir).ok_or_else(|| {
             format!(
@@ -115,18 +128,33 @@ impl Pool {
             .lock()
             .await
             .values()
-            .map(|c| Running { server: c.server.id, root: c.root.clone(), indexing: c.indexing(), alive: c.alive() })
+            .map(|c| Running {
+                server: c.server.id,
+                root: c.root.clone(),
+                indexing: c.indexing(),
+                alive: c.alive(),
+            })
             .collect()
     }
 
     pub async fn clients(&self) -> Vec<Arc<Client>> {
-        self.clients.lock().await.values().filter(|c| c.alive()).cloned().collect()
+        self.clients
+            .lock()
+            .await
+            .values()
+            .filter(|c| c.alive())
+            .cloned()
+            .collect()
     }
 
     /// Stop the servers of `id` (after an uninstall), or all.
     pub async fn stop(&self, id: Option<&str>) {
         let mut clients = self.clients.lock().await;
-        let keys: Vec<_> = clients.keys().filter(|(s, _)| id.is_none_or(|i| i == s)).cloned().collect();
+        let keys: Vec<_> = clients
+            .keys()
+            .filter(|(s, _)| id.is_none_or(|i| i == s))
+            .cloned()
+            .collect();
         for key in keys {
             if let Some(client) = clients.remove(&key) {
                 client.shutdown().await;
@@ -150,9 +178,15 @@ mod tests {
         // A workspace at the chat's folder covers its members.
         std::fs::write(cwd.join("Cargo.toml"), "").unwrap();
         assert_eq!(find_root(&file, &["Cargo.toml"], cwd), cwd.to_path_buf());
-        assert_eq!(find_root(&cwd.join("x.py"), &["pyproject.toml"], cwd), cwd.to_path_buf());
+        assert_eq!(
+            find_root(&cwd.join("x.py"), &["pyproject.toml"], cwd),
+            cwd.to_path_buf()
+        );
         std::fs::create_dir_all(cwd.join("app")).unwrap();
         std::fs::write(cwd.join("app/App.csproj"), "").unwrap();
-        assert_eq!(find_root(&cwd.join("app/Program.cs"), &["*.csproj"], cwd), cwd.join("app"));
+        assert_eq!(
+            find_root(&cwd.join("app/Program.cs"), &["*.csproj"], cwd),
+            cwd.join("app")
+        );
     }
 }

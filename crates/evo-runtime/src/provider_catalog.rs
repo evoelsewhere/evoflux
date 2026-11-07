@@ -21,9 +21,7 @@
 use std::collections::BTreeMap;
 use std::sync::OnceLock;
 
-use evo_ai::model::{
-    OpenaiCompletionsCompat, OpenaiResponsesCompat, StreamingProtocolCompat,
-};
+use evo_ai::model::{OpenaiCompletionsCompat, OpenaiResponsesCompat, StreamingProtocolCompat};
 use evo_ai::{Api, Model};
 
 use crate::models_dev::{DevModel, ModelsDev};
@@ -90,7 +88,10 @@ pub struct DiscoveredModel {
 /// A thinking-level map from efforts a provider listed (`["low","high","none"]`).
 pub fn thinking_map_from_efforts(efforts: &[String]) -> Option<evo_ai::types::ThinkingLevelMap> {
     use evo_ai::types::ThinkingLevel;
-    let named: Vec<String> = efforts.iter().map(|e| e.trim().to_ascii_lowercase()).collect();
+    let named: Vec<String> = efforts
+        .iter()
+        .map(|e| e.trim().to_ascii_lowercase())
+        .collect();
     let levels = [
         (ThinkingLevel::Minimal, "minimal"),
         (ThinkingLevel::Low, "low"),
@@ -99,12 +100,18 @@ pub fn thinking_map_from_efforts(efforts: &[String]) -> Option<evo_ai::types::Th
         (ThinkingLevel::Xhigh, "xhigh"),
         (ThinkingLevel::Max, "max"),
     ];
-    if !levels.iter().any(|(_, name)| named.iter().any(|n| n == name)) {
+    if !levels
+        .iter()
+        .any(|(_, name)| named.iter().any(|n| n == name))
+    {
         return None;
     }
     let mut map = evo_ai::types::ThinkingLevelMap::new();
     for (level, name) in levels {
-        map.insert(level, named.iter().any(|n| n == name).then(|| name.to_string()));
+        map.insert(
+            level,
+            named.iter().any(|n| n == name).then(|| name.to_string()),
+        );
     }
     if !named.iter().any(|n| n == "none" || n == "off") {
         map.insert(ThinkingLevel::Off, None);
@@ -342,18 +349,31 @@ impl CatalogProvider {
 
     /// Wire API for `model_id`, or `None` when it needs a protocol evo lacks.
     /// Precedence: catalog route, the provider's own report, models.dev, default.
-    pub fn api_for(&self, model_id: &str, reported: Option<&str>, dev_npm: Option<&str>) -> Option<Api> {
+    pub fn api_for(
+        &self,
+        model_id: &str,
+        reported: Option<&str>,
+        dev_npm: Option<&str>,
+    ) -> Option<Api> {
         if let Some(route) = self.route(model_id) {
             return route.api.as_deref().map(parse_api);
         }
         if let Some(api) = reported {
             return Some(parse_api(api));
         }
-        Some(dev_npm.and_then(api_for_npm).unwrap_or_else(|| self.default_api()))
+        Some(
+            dev_npm
+                .and_then(api_for_npm)
+                .unwrap_or_else(|| self.default_api()),
+        )
     }
 
     /// A user-set endpoint: saved override, then `<baseUrlEnv>`.
-    pub fn override_base_url(&self, state: &ProviderState<'_>, values: &dyn ValueSource) -> Option<String> {
+    pub fn override_base_url(
+        &self,
+        state: &ProviderState<'_>,
+        values: &dyn ValueSource,
+    ) -> Option<String> {
         let raw = state
             .base_url
             .map(str::trim)
@@ -373,7 +393,11 @@ impl CatalogProvider {
     }
 
     /// The endpoint in effect: an override, else the catalog's.
-    pub fn effective_base_url(&self, state: &ProviderState<'_>, values: &dyn ValueSource) -> String {
+    pub fn effective_base_url(
+        &self,
+        state: &ProviderState<'_>,
+        values: &dyn ValueSource,
+    ) -> String {
         self.override_base_url(state, values)
             .unwrap_or_else(|| self.base_url.clone())
     }
@@ -431,7 +455,12 @@ impl CatalogProvider {
         headers
     }
 
-    fn compat_for(&self, api: &Api, id: &str, dev: Option<&DevModel>) -> Option<StreamingProtocolCompat> {
+    fn compat_for(
+        &self,
+        api: &Api,
+        id: &str,
+        dev: Option<&DevModel>,
+    ) -> Option<StreamingProtocolCompat> {
         match api {
             Api::OpenaiCompletions => {
                 let mut compat: OpenaiCompletionsCompat = self
@@ -439,7 +468,8 @@ impl CatalogProvider {
                     .clone()
                     .and_then(|value| serde_json::from_value(value).ok())
                     .unwrap_or_default();
-                if dev.and_then(|dev| dev.interleaved_field.as_deref()) == Some("reasoning_content") {
+                if dev.and_then(|dev| dev.interleaved_field.as_deref()) == Some("reasoning_content")
+                {
                     compat.requires_reasoning_content = Some(true);
                 }
                 let lower = id.to_ascii_lowercase();
@@ -448,7 +478,8 @@ impl CatalogProvider {
                     .iter()
                     .any(|prefix| lower.starts_with(&prefix.to_ascii_lowercase()))
                 {
-                    compat.max_tokens_field = Some(evo_ai::model::MaxTokensField::MaxCompletionTokens);
+                    compat.max_tokens_field =
+                        Some(evo_ai::model::MaxTokensField::MaxCompletionTokens);
                 }
                 if self
                     .preserve_thinking_prefixes
@@ -515,7 +546,13 @@ impl CatalogProvider {
         if root.is_empty() {
             return None;
         }
-        let mut model = Model::new(id, name, api.clone(), self.id.clone(), Self::model_base_url(&api, &root));
+        let mut model = Model::new(
+            id,
+            name,
+            api.clone(),
+            self.id.clone(),
+            Self::model_base_url(&api, &root),
+        );
         if let Some(dev) = dev {
             model.reasoning = dev.reasoning;
             model.thinking_level_map = dev.thinking_level_map();
@@ -531,7 +568,11 @@ impl CatalogProvider {
             if let Some(reasoning) = reported.reasoning {
                 model.reasoning = model.reasoning || reasoning;
             }
-            if let Some(map) = reported.efforts.as_deref().and_then(thinking_map_from_efforts) {
+            if let Some(map) = reported
+                .efforts
+                .as_deref()
+                .and_then(thinking_map_from_efforts)
+            {
                 model.reasoning = true;
                 model.thinking_level_map = Some(map);
             }
@@ -589,7 +630,14 @@ impl CatalogProvider {
                         .map(|dev| dev.name.as_str())
                         .or(found.name.as_deref())
                         .unwrap_or(&found.id);
-                    self.build_model(&found.id, name, dev, Some(found), override_base.as_deref(), &headers)
+                    self.build_model(
+                        &found.id,
+                        name,
+                        dev,
+                        Some(found),
+                        override_base.as_deref(),
+                        &headers,
+                    )
                 })
                 .collect(),
             None if self.requires_model_list => Vec::new(),
@@ -600,7 +648,14 @@ impl CatalogProvider {
                         .iter()
                         .filter(|model| self.uses_dev_model(model))
                         .filter_map(|dev| {
-                            self.build_model(&dev.id, &dev.name, Some(dev), None, override_base.as_deref(), &headers)
+                            self.build_model(
+                                &dev.id,
+                                &dev.name,
+                                Some(dev),
+                                None,
+                                override_base.as_deref(),
+                                &headers,
+                            )
                         })
                         .collect()
                 })
@@ -613,7 +668,11 @@ impl CatalogProvider {
 
     /// The declaration that makes this provider resolvable, or `None` when
     /// evo cannot connect to it yet.
-    pub fn declaration(&self, state: &ProviderState<'_>, values: &dyn ValueSource) -> Option<ProviderDeclaration> {
+    pub fn declaration(
+        &self,
+        state: &ProviderState<'_>,
+        values: &dyn ValueSource,
+    ) -> Option<ProviderDeclaration> {
         if !self.supported {
             return None;
         }
@@ -660,18 +719,29 @@ mod tests {
         let anthropic = find("anthropic").unwrap();
         let models = anthropic.models(&state(), &NoEnv);
         assert!(models.len() > 3);
-        let model = models.iter().find(|m| m.reasoning && m.thinking_level_map.is_some()).unwrap();
+        let model = models
+            .iter()
+            .find(|m| m.reasoning && m.thinking_level_map.is_some())
+            .unwrap();
         assert!(model.context_window > 0 && model.cost_configured);
         assert_eq!(model.base_url, "https://api.anthropic.com");
     }
 
     #[test]
     fn cloud_providers_are_declared() {
-        assert!(find("bedrock").unwrap().declaration(&state(), &NoEnv).is_some());
+        assert!(find("bedrock")
+            .unwrap()
+            .declaration(&state(), &NoEnv)
+            .is_some());
         let vertex = find("vertexai").unwrap();
         assert!(vertex.declaration(&state(), &NoEnv).is_some());
         let models = vertex.models(&state(), &NoEnv);
-        assert!(!models.is_empty() && models.iter().all(|m| m.id.starts_with("gemini") && m.api == Api::GoogleGenerativeAi));
+        assert!(
+            !models.is_empty()
+                && models
+                    .iter()
+                    .all(|m| m.id.starts_with("gemini") && m.api == Api::GoogleGenerativeAi)
+        );
     }
 
     #[test]
@@ -680,7 +750,11 @@ mod tests {
         let map = thinking_map_from_efforts(&["low".into(), "HIGH".into()]).unwrap();
         assert_eq!(map[&ThinkingLevel::High], Some("high".to_string()));
         assert_eq!(map[&ThinkingLevel::Medium], None);
-        assert_eq!(map[&ThinkingLevel::Off], None, "no 'none': cannot stop thinking");
+        assert_eq!(
+            map[&ThinkingLevel::Off],
+            None,
+            "no 'none': cannot stop thinking"
+        );
         let map = thinking_map_from_efforts(&["none".into(), "medium".into()]).unwrap();
         assert!(!map.contains_key(&ThinkingLevel::Off));
         assert!(thinking_map_from_efforts(&["none".into()]).is_none());
@@ -692,21 +766,34 @@ mod tests {
             efforts: Some(vec!["low".into(), "medium".into()]),
             ..Default::default()
         }];
-        let state = ProviderState { discovered: Some(&discovered), session_id: "s", ..Default::default() };
+        let state = ProviderState {
+            discovered: Some(&discovered),
+            session_id: "s",
+            ..Default::default()
+        };
         let model = copilot.models(&state, &NoEnv).remove(0);
         assert!(model.reasoning);
-        assert_eq!(model.thinking_level_map.unwrap()[&ThinkingLevel::Medium], Some("medium".to_string()));
+        assert_eq!(
+            model.thinking_level_map.unwrap()[&ThinkingLevel::Medium],
+            Some("medium".to_string())
+        );
     }
 
     #[test]
     fn vertex_endpoints() {
-        assert_eq!(vertex_base_url("", ""), "https://aiplatform.googleapis.com/v1/publishers/google");
+        assert_eq!(
+            vertex_base_url("", ""),
+            "https://aiplatform.googleapis.com/v1/publishers/google"
+        );
         let regional = vertex_base_url("proj-1", "us-central1");
         assert_eq!(
             regional,
             "https://us-central1-aiplatform.googleapis.com/v1/projects/proj-1/locations/us-central1/publishers/google"
         );
-        assert_eq!(vertex_parts(&regional), Some(("proj-1".into(), "us-central1".into())));
+        assert_eq!(
+            vertex_parts(&regional),
+            Some(("proj-1".into(), "us-central1".into()))
+        );
         assert_eq!(
             vertex_base_url("proj-1", "global"),
             "https://aiplatform.googleapis.com/v1/projects/proj-1/locations/global/publishers/google"
@@ -719,8 +806,10 @@ mod tests {
         let gemini = find("googlegenai").unwrap();
         let models = gemini.models(&state(), &NoEnv);
         assert!(!models.is_empty());
-        assert!(models.iter().all(|model| model.api == Api::GoogleGenerativeAi
-            && model.base_url == "https://generativelanguage.googleapis.com/v1beta"));
+        assert!(models
+            .iter()
+            .all(|model| model.api == Api::GoogleGenerativeAi
+                && model.base_url == "https://generativelanguage.googleapis.com/v1beta"));
     }
 
     #[test]
@@ -732,9 +821,15 @@ mod tests {
             .find(|m| m.api == Api::AnthropicMessages)
             .expect("an Anthropic-routed model");
         assert!(!routed.base_url.ends_with("/v1"));
-        let glm = models.iter().find(|m| m.api == Api::OpenaiCompletions).unwrap();
+        let glm = models
+            .iter()
+            .find(|m| m.api == Api::OpenaiCompletions)
+            .unwrap();
         assert!(glm.base_url.ends_with("/chat/completions"));
-        assert_eq!(glm.headers.as_ref().unwrap()["x-opencode-session"], "evo-test");
+        assert_eq!(
+            glm.headers.as_ref().unwrap()["x-opencode-session"],
+            "evo-test"
+        );
     }
 
     #[test]
@@ -755,8 +850,14 @@ mod tests {
         );
         let foundry = find("foundry").unwrap();
         let deployments = vec![
-            DiscoveredModel { id: "gpt-5.1".into(), ..Default::default() },
-            DiscoveredModel { id: "claude-sonnet-4-6".into(), ..Default::default() },
+            DiscoveredModel {
+                id: "gpt-5.1".into(),
+                ..Default::default()
+            },
+            DiscoveredModel {
+                id: "claude-sonnet-4-6".into(),
+                ..Default::default()
+            },
         ];
         let state = ProviderState {
             base_url: Some("my-res"),
@@ -767,10 +868,19 @@ mod tests {
         let models = foundry.models(&state, &NoEnv);
         let claude = models.iter().find(|m| m.id.starts_with("claude")).unwrap();
         assert_eq!(claude.api, Api::AnthropicMessages);
-        assert_eq!(claude.base_url, "https://my-res.services.ai.azure.com/anthropic");
+        assert_eq!(
+            claude.base_url,
+            "https://my-res.services.ai.azure.com/anthropic"
+        );
         let gpt = models.iter().find(|m| m.id == "gpt-5.1").unwrap();
-        assert_eq!(gpt.base_url, "https://my-res.services.ai.azure.com/openai/v1/chat/completions");
-        assert!(find("foundry").unwrap().models(&ProviderState::default(), &NoEnv).is_empty());
+        assert_eq!(
+            gpt.base_url,
+            "https://my-res.services.ai.azure.com/openai/v1/chat/completions"
+        );
+        assert!(find("foundry")
+            .unwrap()
+            .models(&ProviderState::default(), &NoEnv)
+            .is_empty());
     }
 
     #[test]
@@ -778,10 +888,19 @@ mod tests {
         let codex = find("codex").unwrap();
         let models = codex.models(&state(), &NoEnv);
         assert!(!models.is_empty());
-        assert!(models.iter().all(|m| m.id.starts_with("gpt-5") || m.id.starts_with("codex-")));
+        assert!(models
+            .iter()
+            .all(|m| m.id.starts_with("gpt-5") || m.id.starts_with("codex-")));
         let model = &models[0];
-        assert_eq!(model.base_url, "https://chatgpt.com/backend-api/codex/responses");
-        assert!(model.sampling_params.as_ref().unwrap().contains_key("include"));
+        assert_eq!(
+            model.base_url,
+            "https://chatgpt.com/backend-api/codex/responses"
+        );
+        assert!(model
+            .sampling_params
+            .as_ref()
+            .unwrap()
+            .contains_key("include"));
     }
 
     #[test]
@@ -809,7 +928,12 @@ mod tests {
         use evo_ai::model::MaxTokensField;
         for id in ["deepseek", "stepfun"] {
             for model in find(id).unwrap().models(&state(), &NoEnv) {
-                assert_eq!(max_tokens_field(&model), Some(MaxTokensField::MaxTokens), "{id} {}", model.id);
+                assert_eq!(
+                    max_tokens_field(&model),
+                    Some(MaxTokensField::MaxTokens),
+                    "{id} {}",
+                    model.id
+                );
             }
         }
         let qwen = find("qwencloud").unwrap();
@@ -828,7 +952,10 @@ mod tests {
         // A Foundry deployment named by its owner is in no database; it must
         // not end up with max_tokens 1 or a zero context window.
         let foundry = find("foundry").unwrap();
-        let deployments = vec![DiscoveredModel { id: "claude-team-prod".into(), ..Default::default() }];
+        let deployments = vec![DiscoveredModel {
+            id: "claude-team-prod".into(),
+            ..Default::default()
+        }];
         let state = ProviderState {
             base_url: Some("my-res"),
             discovered: Some(&deployments),

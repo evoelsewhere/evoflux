@@ -144,7 +144,7 @@ impl AgentTool for GrepTool {
 
         let cancel = Some(&signal);
         let effective_limit = input.limit.unwrap_or(DEFAULT_LIMIT).max(1) as usize;
-        let context_val = input.context.unwrap_or(0).min(u32::MAX) as usize;
+        let context_val = input.context.unwrap_or(0) as usize;
 
         // Compile the regex. `literal` ⇒ escape; `ignore_case` ⇒ case-insensitive.
         let pattern = if input.literal.unwrap_or(false) {
@@ -213,7 +213,7 @@ impl AgentTool for GrepTool {
                     Ok(e) => e,
                     Err(_) => continue, // unreadable dir — skip (TS relies on rg to ignore)
                 };
-                entries.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+                entries.sort_by_key(|a| a.name.to_lowercase());
                 for entry in entries {
                     if matches >= effective_limit {
                         match_limit_reached = true;

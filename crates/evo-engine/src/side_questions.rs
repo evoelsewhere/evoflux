@@ -606,7 +606,8 @@ async fn worker(thread: Arc<Thread>, _permit: OwnedSemaphorePermit) {
         let execution_scope = request.child.execution_scope.clone();
         let cleanup = request.child.harness.clone();
         let job = request.job.clone();
-        let address = crate::mesh::Address::session(&thread.session_id).child(crate::mesh::NodeKind::Side, &job.id);
+        let address = crate::mesh::Address::session(&thread.session_id)
+            .child(crate::mesh::NodeKind::Side, &job.id);
         {
             let weak = Arc::downgrade(&job);
             let title: String = job.question.chars().take(80).collect();
@@ -690,7 +691,11 @@ fn announce(address: &crate::mesh::Address, job: &Job) {
             "cancelled" => RunStatus::Cancelled,
             _ => RunStatus::Failed,
         };
-        let usage = state.response.as_ref().map(|r| crate::mesh::usage_of(&r.usage)).unwrap_or_default();
+        let usage = state
+            .response
+            .as_ref()
+            .map(|r| crate::mesh::usage_of(&r.usage))
+            .unwrap_or_default();
         (status, state.text.clone(), state.error.clone(), usage)
     };
     let router = crate::mesh::router();

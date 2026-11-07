@@ -62,7 +62,13 @@ pub async fn breakdown(
     // ---- tools ----
     let active = lane.get_active_tools().await.unwrap_or_default();
     let plugin_names: std::collections::HashSet<String> = snapshot
-        .map(|snapshot| snapshot.tools().iter().map(|tool| tool.tool.name.clone()).collect())
+        .map(|snapshot| {
+            snapshot
+                .tools()
+                .iter()
+                .map(|tool| tool.tool.name.clone())
+                .collect()
+        })
         .unwrap_or_default();
     let mut tools: Vec<(String, i64, bool)> = harness
         .get_tools()
@@ -71,14 +77,23 @@ pub async fn breakdown(
         .iter()
         .map(|tool| tool.tool.schema())
         .filter(|schema| active.is_empty() || active.contains(&schema.name))
-        .map(|schema| (schema.name.clone(), tool_tokens(schema), plugin_names.contains(&schema.name)))
+        .map(|schema| {
+            (
+                schema.name.clone(),
+                tool_tokens(schema),
+                plugin_names.contains(&schema.name),
+            )
+        })
         .collect();
     tools.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
     let builtin_tools: i64 = tools.iter().filter(|t| !t.2).map(|t| t.1).sum();
     let plugin_tools: i64 = tools.iter().filter(|t| t.2).map(|t| t.1).sum();
 
     // ---- skills (listed only when the model can read them) ----
-    let resources = harness.get_resources().await.unwrap_or_else(|_| evo_harness::types::AgentHarnessResources::empty());
+    let resources = harness
+        .get_resources()
+        .await
+        .unwrap_or_else(|_| evo_harness::types::AgentHarnessResources::empty());
     let readable = active.is_empty() || active.iter().any(|name| name == "read");
     let skills: Vec<(String, i64)> = if readable {
         resources
@@ -88,7 +103,12 @@ pub async fn breakdown(
             .iter()
             .filter(|skill| skill.disable_model_invocation != Some(true))
             .map(|skill| {
-                let listing = evo_harness::system_prompt::compose_system_prompt(None, std::slice::from_ref(skill), None, None);
+                let listing = evo_harness::system_prompt::compose_system_prompt(
+                    None,
+                    std::slice::from_ref(skill),
+                    None,
+                    None,
+                );
                 (skill.name.clone(), tokens(&listing))
             })
             .collect()
@@ -98,28 +118,48 @@ pub async fn breakdown(
     let skill_tokens: i64 = skills.iter().map(|s| s.1).sum();
 
     // ---- system prompt and the files folded into it ----
-    let base = harness.get_system_prompt().await.ok().flatten().unwrap_or_default();
+    let base = harness
+        .get_system_prompt()
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or_default();
     let base_tokens = tokens(&base);
     let files: Vec<(String, i64)> = resources
         .context_files
         .iter()
-        .filter_map(|path| std::fs::read_to_string(path).ok().map(|text| (path.clone(), tokens(&text))))
+        .filter_map(|path| {
+            std::fs::read_to_string(path)
+                .ok()
+                .map(|text| (path.clone(), tokens(&text)))
+        })
         .collect();
     let file_tokens: i64 = files.iter().map(|f| f.1).sum::<i64>().min(base_tokens);
     let system_tokens = base_tokens - file_tokens;
 
     let overhead = system_tokens + file_tokens + skill_tokens + builtin_tools + plugin_tools;
     let (total, messages) = if reported {
-        (estimate.tokens.max(overhead), (estimate.tokens - overhead).max(0))
+        (
+            estimate.tokens.max(overhead),
+            (estimate.tokens - overhead).max(0),
+        )
     } else {
         (estimate.tokens + overhead, estimate.tokens)
     };
-    let reserve = if settings.enabled { settings.reserve_tokens } else { 0 };
-    let free = (window - total - reserve).max(0);
-    let percent = |value: i64| if window > 0 { (value as f64) * 100.0 / (window as f64) } else { 0.0 };
-    let category = |id: &str, label: &str, value: i64| {
-        json!({"id": id, "label": label, "tokens": value, "percent": (percent(value) * 10.0).round() / 10.0})
+    let reserve = if settings.enabled {
+        settings.reserve_tokens
+    } else {
+        0
     };
+    let free = (window - total - reserve).max(0);
+    let percent = |value: i64| {
+        if window > 0 {
+            (value as f64) * 100.0 / (window as f64)
+        } else {
+            0.0
+        }
+    };
+    let category = |id: &str, label: &str, value: i64| json!({"id": id, "label": label, "tokens": value, "percent": (percent(value) * 10.0).round() / 10.0});
 
     json!({
         "window": window,

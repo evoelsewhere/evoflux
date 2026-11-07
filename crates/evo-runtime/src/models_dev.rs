@@ -16,7 +16,9 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, OnceLock};
 
 use evo_ai::model::AnthropicMessagesCompat;
-use evo_ai::{InputModality, ModelCost, ModelCostRates, ModelCostTier, ThinkingLevel, ThinkingLevelMap};
+use evo_ai::{
+    InputModality, ModelCost, ModelCostRates, ModelCostTier, ThinkingLevel, ThinkingLevelMap,
+};
 use serde_json::Value;
 
 const SNAPSHOT: &str = include_str!("../data/models_dev_snapshot.json");
@@ -81,7 +83,10 @@ fn level(name: &str) -> Option<ThinkingLevel> {
 }
 
 fn positive(value: Option<&Value>) -> Option<u64> {
-    value.and_then(Value::as_f64).filter(|v| *v > 0.0).map(|v| v as u64)
+    value
+        .and_then(Value::as_f64)
+        .filter(|v| *v > 0.0)
+        .map(|v| v as u64)
 }
 
 fn rates(value: &Value) -> Option<ModelCostRates> {
@@ -140,14 +145,23 @@ fn parse_model(id: &str, value: &Value) -> DevModel {
         context_window: positive(value.pointer("/limit/context")).unwrap_or(0),
         max_tokens: positive(value.pointer("/limit/output")).unwrap_or(0),
         cost: value.get("cost").and_then(cost),
-        npm: value.pointer("/provider/npm").and_then(Value::as_str).map(str::to_string),
-        api: value.pointer("/provider/api").and_then(Value::as_str).map(str::to_string),
+        npm: value
+            .pointer("/provider/npm")
+            .and_then(Value::as_str)
+            .map(str::to_string),
+        api: value
+            .pointer("/provider/api")
+            .and_then(Value::as_str)
+            .map(str::to_string),
         deprecated: text("status").as_deref() == Some("deprecated"),
         ..Default::default()
     };
     model.interleaved_field = match value.get("interleaved") {
         Some(Value::Bool(true)) => Some("reasoning_content".into()),
-        Some(Value::Object(object)) => object.get("field").and_then(Value::as_str).map(str::to_string),
+        Some(Value::Object(object)) => object
+            .get("field")
+            .and_then(Value::as_str)
+            .map(str::to_string),
         _ => None,
     };
     // `reasoning_options` lists every control a model accepts at once:
@@ -184,7 +198,11 @@ fn parse_model(id: &str, value: &Value) -> DevModel {
             }
         }
         if model.efforts.is_empty() && budget {
-            model.efforts = vec![ThinkingLevel::Low, ThinkingLevel::Medium, ThinkingLevel::High];
+            model.efforts = vec![
+                ThinkingLevel::Low,
+                ThinkingLevel::Medium,
+                ThinkingLevel::High,
+            ];
         }
         model.efforts.sort();
         model.efforts.dedup();
@@ -195,20 +213,34 @@ fn parse_model(id: &str, value: &Value) -> DevModel {
 impl ModelsDev {
     /// Parse a models.dev `api.json` document (or the trimmed snapshot).
     pub fn parse(text: &str) -> Result<Self, String> {
-        let document: Value =
-            serde_json::from_str(text).map_err(|error| format!("invalid models.dev JSON: {error}"))?;
+        let document: Value = serde_json::from_str(text)
+            .map_err(|error| format!("invalid models.dev JSON: {error}"))?;
         let object = document
             .as_object()
             .ok_or_else(|| "models.dev JSON is not an object".to_string())?;
         let mut providers = BTreeMap::new();
         for (key, value) in object {
-            let Some(provider) = value.as_object() else { continue };
-            let text = |name: &str| provider.get(name).and_then(Value::as_str).map(str::to_string);
-            let id = text("id").unwrap_or_else(|| key.clone()).to_ascii_lowercase();
+            let Some(provider) = value.as_object() else {
+                continue;
+            };
+            let text = |name: &str| {
+                provider
+                    .get(name)
+                    .and_then(Value::as_str)
+                    .map(str::to_string)
+            };
+            let id = text("id")
+                .unwrap_or_else(|| key.clone())
+                .to_ascii_lowercase();
             let mut models: Vec<DevModel> = provider
                 .get("models")
                 .and_then(Value::as_object)
-                .map(|models| models.iter().map(|(id, model)| parse_model(id, model)).collect())
+                .map(|models| {
+                    models
+                        .iter()
+                        .map(|(id, model)| parse_model(id, model))
+                        .collect()
+                })
                 .unwrap_or_default();
             models.sort_by(|a, b| a.id.cmp(&b.id));
             providers.insert(
@@ -221,7 +253,12 @@ impl ModelsDev {
                     env: provider
                         .get("env")
                         .and_then(Value::as_array)
-                        .map(|env| env.iter().filter_map(Value::as_str).map(str::to_string).collect())
+                        .map(|env| {
+                            env.iter()
+                                .filter_map(Value::as_str)
+                                .map(str::to_string)
+                                .collect()
+                        })
                         .unwrap_or_default(),
                     doc: text("doc"),
                     models,
@@ -238,7 +275,9 @@ impl ModelsDev {
     pub fn bundled() -> Arc<ModelsDev> {
         static BUNDLED: OnceLock<Arc<ModelsDev>> = OnceLock::new();
         BUNDLED
-            .get_or_init(|| Arc::new(Self::parse(SNAPSHOT).expect("bundled models.dev snapshot parses")))
+            .get_or_init(|| {
+                Arc::new(Self::parse(SNAPSHOT).expect("bundled models.dev snapshot parses"))
+            })
             .clone()
     }
 
@@ -258,7 +297,10 @@ impl ModelsDev {
     }
 
     pub fn model_count(&self) -> usize {
-        self.providers.values().map(|provider| provider.models.len()).sum()
+        self.providers
+            .values()
+            .map(|provider| provider.models.len())
+            .sum()
     }
 }
 
@@ -296,7 +338,14 @@ impl DevModel {
             let supported = self.efforts.contains(&level);
             map.insert(
                 level,
-                supported.then(|| serde_json::to_value(level).ok()?.as_str().map(str::to_string)).flatten(),
+                supported
+                    .then(|| {
+                        serde_json::to_value(level)
+                            .ok()?
+                            .as_str()
+                            .map(str::to_string)
+                    })
+                    .flatten(),
             );
         }
         if !self.can_disable {
@@ -348,10 +397,23 @@ mod tests {
                 "provider": {"npm": "@ai-sdk/anthropic", "api": "https://x/anthropic/v1"}
             }),
         );
-        assert_eq!(model.efforts, [ThinkingLevel::Low, ThinkingLevel::Medium, ThinkingLevel::High]);
+        assert_eq!(
+            model.efforts,
+            [
+                ThinkingLevel::Low,
+                ThinkingLevel::Medium,
+                ThinkingLevel::High
+            ]
+        );
         assert!(model.can_disable && !model.effort_control && model.vision);
-        assert_eq!(model.interleaved_field.as_deref(), Some("reasoning_content"));
-        assert_eq!(model.cost.as_ref().unwrap().tiers[0].input_tokens_above, 200_000);
+        assert_eq!(
+            model.interleaved_field.as_deref(),
+            Some("reasoning_content")
+        );
+        assert_eq!(
+            model.cost.as_ref().unwrap().tiers[0].input_tokens_above,
+            200_000
+        );
         assert_eq!(model.npm.as_deref(), Some("@ai-sdk/anthropic"));
         let map = model.thinking_level_map().unwrap();
         assert_eq!(map[&ThinkingLevel::Medium].as_deref(), Some("medium"));

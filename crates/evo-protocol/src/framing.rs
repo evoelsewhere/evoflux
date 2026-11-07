@@ -198,7 +198,7 @@ mod tests {
 
     #[test]
     fn rejects_oversized() {
-        let frame = encode_frame(&vec![0u8; 32]).unwrap();
+        let frame = encode_frame(&[0u8; 32]).unwrap();
         assert!(assert_complete_frame(&frame, 16).is_err());
         let mut decoder = FrameDecoder::new(16);
         assert!(decoder.push(&frame).is_err());

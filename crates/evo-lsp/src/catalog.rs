@@ -20,7 +20,10 @@ pub enum Install {
     /// The latest GitHub release: the asset whose name contains every part of
     /// the platform's pattern, unpacked when it is a zip or tar.gz; the binary
     /// found by name inside.
-    GithubRelease { repo: &'static str, assets: &'static [Asset] },
+    GithubRelease {
+        repo: &'static str,
+        assets: &'static [Asset],
+    },
     /// Comes with a toolchain; only found on PATH.
     System { hint: &'static str },
 }
@@ -58,7 +61,10 @@ pub struct Server {
 impl Server {
     pub fn language_id(&self, extension: &str) -> Option<&'static str> {
         let ext = extension.to_ascii_lowercase();
-        self.extensions.iter().find(|(e, _)| *e == ext).map(|(_, id)| *id)
+        self.extensions
+            .iter()
+            .find(|(e, _)| *e == ext)
+            .map(|(_, id)| *id)
     }
 }
 
@@ -386,7 +392,10 @@ mod tests {
 
     #[test]
     fn files_map_to_servers() {
-        assert_eq!(for_file(Path::new("src/main.rs")).unwrap().id, "rust-analyzer");
+        assert_eq!(
+            for_file(Path::new("src/main.rs")).unwrap().id,
+            "rust-analyzer"
+        );
         assert_eq!(for_file(Path::new("App.TSX")).unwrap().id, "typescript");
         assert_eq!(for_file(Path::new("Dockerfile")).unwrap().id, "dockerfile");
         assert!(for_file(Path::new("notes.xyz")).is_none());

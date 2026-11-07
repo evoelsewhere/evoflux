@@ -37,13 +37,14 @@ apps/desktop/           desktop app (its own Cargo workspace in src-tauri/, bun 
   src/                  React UI — see apps/desktop/README.md for the UI map and layout rules
   src-tauri/            Rust shell: engine bridge, windows, terminal, files, browser, MCP, plugins
 examples/plugin-stub/   minimal cdylib plugin used by extension tests
-docs/                   design docs: ADD, ADRs, one SDD per feature (rules in docs/README.md)
+docs/                   ADD, ADRs, and spec / plan / tasks per feature (rules in docs/README.md)
 DESIGN.md               visual design language for the desktop UI
 ```
 
 Start with `docs/architecture/README.md` (the ADD: processes, crate layers,
 interfaces, data), `apps/desktop/README.md` (UI map, source layout) and the
-SDD of the feature you are changing (`docs/features/README.md` lists them).
+spec, plan and tasks of the feature you are changing
+(`docs/features/README.md` lists them).
 Some crate READMEs and `crates/evo-engine/embedded-docs/` still mention the
 old `evo` CLI/TUI; treat those parts as stale, not as current behaviour.
 
@@ -150,31 +151,53 @@ Desktop shell Rust: `cd apps/desktop/src-tauri && cargo check`.
 - Commits use Conventional Commit subjects (`feat(scope): …`, `fix(scope): …`,
   `refactor(scope)!: …`). Commit or push only when asked.
 
-## Design documents (SDD and ADD)
+## Spec-Driven Development (SDD)
 
-Full rules: [docs/README.md](docs/README.md). The short version:
+evo is built spec first, by agents. Full rules and workflow:
+[docs/README.md](docs/README.md). The short version:
 
-- **New feature → SDD first.** Copy `docs/templates/sdd.md` to
-  `docs/features/<slug>/sdd.md`, add a row to `docs/features/README.md`, fill
-  requirements and design, status `Draft`. Ask the user to review it; write
-  code only after it is `Accepted`. Bug fixes and refactors don't need a new
-  SDD but must keep an existing one true.
-- **Keep the SDD in step with the code**, in the same commit: design changes
-  while building go into the SDD; when done, status `Implemented`, as-built
-  notes (section 10) and the checks that ran (section 8).
+- **The spec is the source of truth.** Each feature is a folder
+  `docs/features/<slug>/` with `spec.md` (what and why), `plan.md` (how) and
+  `tasks.md` (the work), from `docs/templates/`. Code follows the spec, never
+  the other way round.
+- **Workflow:** specify → clarify → plan → tasks → implement → verify.
+  1. *Specify*: write `spec.md` from the request, add a row to
+     `docs/features/README.md`, status `Draft`. Write every unknown as
+     `[NEEDS CLARIFICATION: …]` with a proposed answer — never guess.
+  2. *Clarify*: ask the user the open questions; record each answer in the
+     spec. **Gate A:** the user accepts the spec.
+  3. *Plan*: write `plan.md`, starting with the architecture check against the
+     rules above and the ADD. **Gate B:** the user accepts the plan; status
+     `Accepted`. No code before this gate.
+  4. *Tasks*: write `tasks.md` — phases with "done when", small tasks
+     (`Tn [FR-n] … — paths — check`), tests before code, `[P]` only for
+     independent tasks with disjoint files, one verification row per
+     requirement.
+  5. *Implement*: status `In progress`; work tasks in order, tick each in the
+     same commit as its code and name the task IDs in the commit. If the plan
+     or spec turns out wrong, fix the document first or in the same commit.
+  6. *Verify*: run each check, record `passed (YYYY-MM-DD)` or `not run`;
+     status `Implemented` when every requirement passes and the plan matches
+     the code (deviations in its as-built notes).
+- **Later changes** edit the spec first (new `FR-n`, History line), then the
+  plan, then new tasks. Bug fixes and refactors need no new spec but must keep
+  the existing spec, plan and tasks true.
+- **Parallel agents** take only `[P]` tasks of one phase and never edit the
+  same files; the feature's owner agent merges, ticks and runs the checks.
 - **Architecture change → ADD + ADR.** A new crate, process, protocol plane,
   persistent store, dependency direction, trust boundary or toolchain updates
   `docs/architecture/README.md` and adds an ADR from `docs/templates/adr.md`.
   Accepted ADRs are not edited; a new one supersedes them.
-- Keep every numbered template section (`n/a — reason` if empty), link the
-  ADD/ADRs instead of copying them, and link the SDD from the code's module
-  doc comment.
+- Keep every numbered template section (`n/a — reason` if empty), never
+  renumber `FR-n` / `Tn`, link the ADD/ADRs instead of copying them, and link
+  the spec (with requirement IDs) from the code's module doc comment.
 
 ## Handoff
 
 - Run `git diff --check` and the checks for every layer you touched.
-- Check that the feature's SDD (and the ADD, if the architecture changed)
-  describes what was built.
+- Check that the feature's spec, plan and tasks (and the ADD, if the
+  architecture changed) describe what was built: tasks ticked, verification
+  results recorded, deviations in the plan's as-built notes.
 - Report exactly which checks ran and which did not; separate pre-existing
   failures from ones your change caused.
 - For UI changes, verify in the running app rather than only by type-checking.

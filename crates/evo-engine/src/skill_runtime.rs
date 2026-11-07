@@ -67,7 +67,9 @@ pub fn record(name: &str) {
     let entry = all.entry(name.to_string()).or_default();
     entry.uses += 1;
     entry.last_used = now_ms();
-    let Ok(text) = serde_json::to_string_pretty(&all) else { return };
+    let Ok(text) = serde_json::to_string_pretty(&all) else {
+        return;
+    };
     if let Some(dir) = path.parent() {
         let _ = std::fs::create_dir_all(dir);
     }
@@ -96,7 +98,11 @@ fn cut(text: &str, max: usize) -> String {
 
 /// Cut descriptions and, past `budget` characters, list the least used
 /// model-visible skills by name only.
-pub fn apply_budget(skills: &mut [Skill], budget: usize, usage: &HashMap<String, Usage>) -> Vec<String> {
+pub fn apply_budget(
+    skills: &mut [Skill],
+    budget: usize,
+    usage: &HashMap<String, Usage>,
+) -> Vec<String> {
     for skill in skills.iter_mut() {
         skill.description = cut(&skill.description, MAX_LISTED_DESCRIPTION);
     }
@@ -114,7 +120,11 @@ pub fn apply_budget(skills: &mut [Skill], budget: usize, usage: &HashMap<String,
     // Least used first; among equals, the longest description first.
     order.sort_by_key(|&i| {
         let u = usage.get(&skills[i].name).copied().unwrap_or_default();
-        (u.uses, u.last_used, std::cmp::Reverse(skills[i].description.len()))
+        (
+            u.uses,
+            u.last_used,
+            std::cmp::Reverse(skills[i].description.len()),
+        )
     });
     let mut trimmed = Vec::new();
     for i in order {
@@ -166,10 +176,17 @@ async fn run(command: &str, cwd: &Path, skill_dir: &Path) -> String {
         Err(_) => format!("[`{command}` timed out after {}s]", SHELL_TIMEOUT.as_secs()),
         Ok(Err(error)) => format!("[`{command}` could not run: {error}]"),
         Ok(Ok(output)) => {
-            let mut text = String::from_utf8_lossy(&output.stdout).trim_end().to_string();
-            let err = String::from_utf8_lossy(&output.stderr).trim_end().to_string();
+            let mut text = String::from_utf8_lossy(&output.stdout)
+                .trim_end()
+                .to_string();
+            let err = String::from_utf8_lossy(&output.stderr)
+                .trim_end()
+                .to_string();
             if !output.status.success() {
-                let code = output.status.code().map_or("signal".into(), |c| c.to_string());
+                let code = output
+                    .status
+                    .code()
+                    .map_or("signal".into(), |c| c.to_string());
                 if !err.is_empty() {
                     if !text.is_empty() {
                         text.push('\n');
@@ -265,9 +282,11 @@ pub fn find(name: &str) -> Option<Skill> {
     if name.contains(':') {
         return None;
     }
-    let mut found = skills
-        .iter()
-        .filter(|s| s.name.rsplit_once(':').is_some_and(|(_, last)| last == name));
+    let mut found = skills.iter().filter(|s| {
+        s.name
+            .rsplit_once(':')
+            .is_some_and(|(_, last)| last == name)
+    });
     match (found.next(), found.next()) {
         (Some(one), None) => Some(one.clone()),
         _ => None,
@@ -277,15 +296,14 @@ pub fn find(name: &str) -> Option<Skill> {
 /// For a prompt `/name args` naming a skill: count the run, and when the
 /// skill has shell lines, the expanded text to send instead.
 pub async fn on_prompt(text: &str, cwd: &Path) -> Option<String> {
-    let (name, args) = evo_harness::skills::parse_slash_command(text)
-        .or_else(|| {
-            // `/skill:name args`
-            let rest = text.strip_prefix("/skill:")?;
-            Some(match rest.split_once(char::is_whitespace) {
-                Some((name, args)) => (name, args.trim()),
-                None => (rest, ""),
-            })
-        })?;
+    let (name, args) = evo_harness::skills::parse_slash_command(text).or_else(|| {
+        // `/skill:name args`
+        let rest = text.strip_prefix("/skill:")?;
+        Some(match rest.split_once(char::is_whitespace) {
+            Some((name, args)) => (name, args.trim()),
+            None => (rest, ""),
+        })
+    })?;
     let skill = find(name)?;
     record(&skill.name);
     let source = tokio::fs::read_to_string(&skill.file_path).await.ok()?;
@@ -317,8 +335,20 @@ mod tests {
             skill("never", &"c".repeat(100)),
         ];
         let usage = HashMap::from([
-            ("often".to_string(), Usage { uses: 9, last_used: 5 }),
-            ("rare".to_string(), Usage { uses: 1, last_used: 5 }),
+            (
+                "often".to_string(),
+                Usage {
+                    uses: 9,
+                    last_used: 5,
+                },
+            ),
+            (
+                "rare".to_string(),
+                Usage {
+                    uses: 1,
+                    last_used: 5,
+                },
+            ),
         ]);
         // About 145 each, 434 in all: 350 drops one description, 250 a second.
         let trimmed = apply_budget(&mut skills, 350, &usage);
@@ -332,7 +362,10 @@ mod tests {
     fn long_descriptions_are_cut() {
         let mut skills = vec![skill("long", &"x".repeat(5000))];
         apply_budget(&mut skills, usize::MAX, &HashMap::new());
-        assert_eq!(skills[0].description.chars().count(), MAX_LISTED_DESCRIPTION);
+        assert_eq!(
+            skills[0].description.chars().count(),
+            MAX_LISTED_DESCRIPTION
+        );
     }
 
     #[tokio::test]

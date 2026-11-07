@@ -1,5 +1,5 @@
 // Fetch one preview of an Office file from the engine (RPC `office_preview`,
-// crates/evo-engine/src/office.rs; docs/features/office-v3-parity/sdd.md §5.3)
+// crates/evo-engine/src/office.rs; docs/features/office-v3-parity/plan.md §3.3)
 // and turn it into the HTML document the viewer shows: the engine's cached
 // native render as it is, or its exact-pages PDF turned into v3's exact-pages
 // document (exact-pages.ts).

@@ -1741,7 +1741,7 @@ pub fn estimate_context_tokens(messages: &[Message], system_prompt: Option<&str>
             }
         }
     }
-    (chars + 3) / 4
+    chars.div_ceil(4)
 }
 
 fn clamp_max_tokens_to_context_with_tokens(model: &Model, tokens: u64, max_tokens: u64) -> u64 {
@@ -1903,7 +1903,7 @@ fn build_params_internal(
         && !build_params_diagnostics_detail_enabled()
         // serde_json rejects non-finite f64 values. The owned request path
         // reports that encoding error; do not turn it into a fast-path panic.
-        && opts.temperature.map_or(true, f64::is_finite))
+        && opts.temperature.is_none_or(f64::is_finite))
     .then(|| canonical_text_message_count(&ctx.messages, model))
     .flatten();
     let direct_text = direct_text_message_count.is_some();
@@ -2016,14 +2016,14 @@ fn build_params_internal(
             });
         }
         Some(blocks)
-    } else if let Some(sp) = &ctx.system_prompt {
-        Some(vec![AnthropicSystemBlock {
-            kind: "text".into(),
-            text: sanitize_surrogates(sp),
-            cache_control: cache_ref.cloned(),
-        }])
     } else {
-        None
+        ctx.system_prompt.as_ref().map(|sp| {
+            vec![AnthropicSystemBlock {
+                kind: "text".into(),
+                text: sanitize_surrogates(sp),
+                cache_control: cache_ref.cloned(),
+            }]
+        })
     };
 
     // Temperature: only when not thinking and the model supports it.

@@ -5,7 +5,7 @@
 //! model's models.dev price at that moment. The desktop reads totals, a time
 //! series split by model (hour, day or week buckets) and breakdowns by model,
 //! chat and source for its Usage page ([`summary`], [`events`]).
-//! Design: `docs/features/usage-and-cost/sdd.md`.
+//! Design: `docs/features/usage-and-cost/spec.md`.
 
 use rusqlite::types::Value as SqlValue;
 use rusqlite::{params, params_from_iter, Connection, Row};

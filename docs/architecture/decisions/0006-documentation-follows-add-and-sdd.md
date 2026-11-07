@@ -2,7 +2,7 @@
 
 | | |
 | --- | --- |
-| Status | Accepted |
+| Status | Superseded by [0011](0011-features-follow-spec-driven-development.md) |
 | Date | 2026-11-06 |
 | ADD sections | [11. Architecture decisions](../README.md#11-architecture-decisions) |
 | Related | [docs/README.md](../../README.md) |

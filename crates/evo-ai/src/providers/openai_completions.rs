@@ -547,11 +547,7 @@ fn chat_completions_url(base_url: &str) -> String {
     // only `/chat/completions`). Do not turn the latter into `/v3/v1/...`.
     if base.ends_with("/chat/completions") {
         base.to_string()
-    } else if base
-        .rsplit('/')
-        .next()
-        .is_some_and(|segment| is_version_segment(segment))
-    {
+    } else if base.rsplit('/').next().is_some_and(is_version_segment) {
         format!("{base}/chat/completions")
     } else {
         format!("{base}/v1/chat/completions")
@@ -723,7 +719,10 @@ fn apply_thinking_fields(
             effort(body);
         }
         Format::Budget => {
-            toggle(body, json!({"type": "enabled", "budget_tokens": thinking_budget(model, opts)}));
+            toggle(
+                body,
+                json!({"type": "enabled", "budget_tokens": thinking_budget(model, opts)}),
+            );
             effort(body);
         }
         Format::Glm => toggle(body, json!({"type": "enabled", "clear_thinking": false})),
@@ -937,7 +936,7 @@ impl StreamState {
             producer.commit_metadata(&self.output);
             return;
         };
-        if chunk.get("usage").map_or(true, Value::is_null) {
+        if chunk.get("usage").is_none_or(Value::is_null) {
             if let Some(usage) = choice.get("usage").filter(|v| !v.is_null()) {
                 self.output.usage = parse_usage(usage);
             }
@@ -1181,7 +1180,7 @@ impl StreamState {
             .await;
             return;
         }
-        let reason = self.finish_reason.unwrap_or_else(|| {
+        let reason = self.finish_reason.unwrap_or({
             if self.tools.is_empty() {
                 DoneReason::Stop
             } else {
@@ -1524,19 +1523,28 @@ mod tests {
     ) -> Value {
         let mut model = model();
         model.max_tokens = 32_000;
-        model.compat = Some(crate::model::StreamingProtocolCompat::OpenaiCompletions(OpenaiCompletionsCompat {
-            thinking_format: Some(format),
-            preserve_thinking: Some(true),
-            ..Default::default()
-        }));
+        model.compat = Some(crate::model::StreamingProtocolCompat::OpenaiCompletions(
+            OpenaiCompletionsCompat {
+                thinking_format: Some(format),
+                preserve_thinking: Some(true),
+                ..Default::default()
+            },
+        ));
         if efforts {
             let mut map = crate::types::ThinkingLevelMap::new();
-            for (level, name) in [(ThinkingLevel::Low, "low"), (ThinkingLevel::Medium, "medium"), (ThinkingLevel::High, "high")] {
+            for (level, name) in [
+                (ThinkingLevel::Low, "low"),
+                (ThinkingLevel::Medium, "medium"),
+                (ThinkingLevel::High, "high"),
+            ] {
                 map.insert(level, Some(name.into()));
             }
             model.thinking_level_map = Some(map);
         }
-        let opts = SimpleStreamOptions { reasoning: Some(level), ..Default::default() };
+        let opts = SimpleStreamOptions {
+            reasoning: Some(level),
+            ..Default::default()
+        };
         build_request(&model, ctx, &opts)
     }
 
@@ -1545,9 +1553,15 @@ mod tests {
         use crate::model::OpenaiThinkingFormat as F;
         let ctx = Context::new(vec![Message::User(UserMessage::new("hi", 0))]);
         let glm = dialect_body(F::Glm, false, ThinkingLevel::High, &ctx);
-        assert_eq!(glm["thinking"], json!({"type": "enabled", "clear_thinking": false}));
+        assert_eq!(
+            glm["thinking"],
+            json!({"type": "enabled", "clear_thinking": false})
+        );
         assert!(glm.get("reasoning_effort").is_none());
-        assert_eq!(dialect_body(F::Glm, false, ThinkingLevel::Off, &ctx)["thinking"], json!({"type": "disabled"}));
+        assert_eq!(
+            dialect_body(F::Glm, false, ThinkingLevel::Off, &ctx)["thinking"],
+            json!({"type": "disabled"})
+        );
 
         let budget = dialect_body(F::Budget, false, ThinkingLevel::Medium, &ctx);
         assert_eq!(budget["thinking"]["type"], "enabled");
@@ -1556,10 +1570,15 @@ mod tests {
         let qwen = dialect_body(F::Qwen, true, ThinkingLevel::Medium, &ctx);
         assert_eq!(qwen["enable_thinking"], true);
         assert_eq!(qwen["reasoning_effort"], "medium");
-        assert!(qwen.get("preserve_thinking").is_none(), "nothing to preserve yet");
+        assert!(
+            qwen.get("preserve_thinking").is_none(),
+            "nothing to preserve yet"
+        );
         let qwen_off = dialect_body(F::Qwen, false, ThinkingLevel::Off, &ctx);
         assert_eq!(qwen_off["enable_thinking"], false);
-        assert!(dialect_body(F::Qwen, false, ThinkingLevel::High, &ctx).get("reasoning_effort").is_none());
+        assert!(dialect_body(F::Qwen, false, ThinkingLevel::High, &ctx)
+            .get("reasoning_effort")
+            .is_none());
 
         let mut reply = AssistantMessage::empty(Api::OpenaiCompletions, "gateway", "gpt-test", 0);
         reply.content = vec![Content::thinking("earlier reasoning"), Content::text("ok")];
@@ -1568,14 +1587,22 @@ mod tests {
             Message::Assistant(Box::new(reply)),
             Message::User(UserMessage::new("again", 0)),
         ]);
-        assert_eq!(dialect_body(F::Qwen, true, ThinkingLevel::Low, &history)["preserve_thinking"], true);
+        assert_eq!(
+            dialect_body(F::Qwen, true, ThinkingLevel::Low, &history)["preserve_thinking"],
+            true
+        );
 
         let kimi_fixed = dialect_body(F::Kimi, false, ThinkingLevel::High, &ctx);
-        assert!(kimi_fixed.get("thinking").is_none() && kimi_fixed.get("reasoning_effort").is_none());
+        assert!(
+            kimi_fixed.get("thinking").is_none() && kimi_fixed.get("reasoning_effort").is_none()
+        );
         let kimi = dialect_body(F::Kimi, true, ThinkingLevel::High, &ctx);
         assert_eq!(kimi["reasoning_effort"], "high");
         assert!(kimi.get("thinking").is_none());
-        assert_eq!(dialect_body(F::Kimi, true, ThinkingLevel::Off, &ctx)["thinking"], json!({"type": "disabled"}));
+        assert_eq!(
+            dialect_body(F::Kimi, true, ThinkingLevel::Off, &ctx)["thinking"],
+            json!({"type": "disabled"})
+        );
     }
 
     fn model() -> Model {

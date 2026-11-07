@@ -1,4 +1,4 @@
-// Unit tests for the Files tool's git helpers (docs/features/files-git/sdd.md).
+// Unit tests for the Files tool's git helpers (docs/features/files-git/spec.md).
 // Run with `bun test` in apps/desktop.
 
 import { describe, expect, test } from "bun:test";

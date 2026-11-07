@@ -1,4 +1,4 @@
-// A `show_widget` widget in the chat (docs/features/office-v3-parity/sdd.md,
+// A `show_widget` widget in the chat (docs/features/office-v3-parity/spec.md,
 // FR-13; port of v3 web/src/components/WidgetRenderer.tsx).
 //
 // The model's HTML runs in an iframe with `sandbox="allow-scripts"` only: an

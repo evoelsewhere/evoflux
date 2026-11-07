@@ -75,7 +75,11 @@ pub fn status() -> Status {
         .ok()
     });
     Status {
-        source: if row.is_some() { "models.dev" } else { "bundled" },
+        source: if row.is_some() {
+            "models.dev"
+        } else {
+            "bundled"
+        },
         fetched_at: row.map(|(fetched, _)| fetched),
         checked_at: row.map(|(_, checked)| checked),
         model_count,
@@ -93,7 +97,7 @@ fn due() -> bool {
             )
             .ok()
         })
-        .map_or(true, |checked| now() - checked >= REFRESH_INTERVAL_SECS)
+        .is_none_or(|checked| now() - checked >= REFRESH_INTERVAL_SECS)
 }
 
 /// Revalidate the cached document. Returns `Ok(true)` when new data was

@@ -5,7 +5,7 @@
 | Status | Accepted |
 | Date | 2026-11-06 (recorded; in effect since the desktop shell was introduced) |
 | ADD sections | [4. Process view](../README.md#4-process-view) |
-| Related | [Session mesh SDD](../../features/session-mesh-protocol/sdd.md) |
+| Related | [Session mesh spec](../../features/session-mesh-protocol/spec.md) |
 
 ## Context
 

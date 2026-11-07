@@ -190,6 +190,7 @@ pub struct BedrockCompat {
 /// Per-API compat blob. Matches the TS `compat?` discriminator on `Model`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(Default)]
 pub enum StreamingProtocolCompat {
     AnthropicMessages(AnthropicMessagesCompat),
     OpenaiCompletions(OpenaiCompletionsCompat),
@@ -198,13 +199,8 @@ pub enum StreamingProtocolCompat {
     /// Custom / unknown API compat (opaque passthrough).
     Other(serde_json::Value),
     /// No compat configured (default for faux and simple providers).
+    #[default]
     None,
-}
-
-impl Default for StreamingProtocolCompat {
-    fn default() -> Self {
-        StreamingProtocolCompat::None
-    }
 }
 
 impl StreamingProtocolCompat {

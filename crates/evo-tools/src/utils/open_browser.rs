@@ -120,7 +120,7 @@ pub fn open_file(path: &str) -> Result<(), String> {
     {
         ("xdg-open", vec![path])
     } else {
-        return Err(format!("Unsupported platform for opening file"));
+        return Err("Unsupported platform for opening file".to_string());
     };
 
     match Command::new(cmd).args(&args).spawn() {

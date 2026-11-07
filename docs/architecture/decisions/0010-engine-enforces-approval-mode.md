@@ -5,7 +5,7 @@
 | Status | Accepted |
 | Date | 2026-11-07 |
 | ADD sections | [8. Interfaces](../README.md#8-interfaces), [9. Cross-cutting concepts](../README.md#9-cross-cutting-concepts) |
-| Related | [Approval modes SDD](../../features/approval-modes/sdd.md), [0005](0005-real-engine-and-live-reload.md) |
+| Related | [Approval modes spec](../../features/approval-modes/spec.md), [0005](0005-real-engine-and-live-reload.md) |
 
 ## Context
 

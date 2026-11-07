@@ -314,7 +314,7 @@ fn apply_replacements_preserving_unchanged_lines(
     }
     // Group replacements by line range.
     let mut sorted = replacements.to_vec();
-    sorted.sort_by(|a, b| a.match_index.cmp(&b.match_index));
+    sorted.sort_by_key(|a| a.match_index);
     let mut groups: Vec<(usize, usize, Vec<MatchedEdit>)> = Vec::new();
     for r in &sorted {
         let range =

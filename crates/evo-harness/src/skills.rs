@@ -222,7 +222,10 @@ pub fn substitute_skill_arguments(skill: &Skill, args: &str) -> (String, bool) {
             continue;
         }
         if command_file && rest.starts_with('$') {
-            let digits: String = rest[1..].chars().take_while(|c| c.is_ascii_digit()).collect();
+            let digits: String = rest[1..]
+                .chars()
+                .take_while(|c| c.is_ascii_digit())
+                .collect();
             if let Ok(index) = digits.parse::<usize>() {
                 out.push_str(parts.get(index).map(String::as_str).unwrap_or(""));
                 used = true;

@@ -1,6 +1,6 @@
 // What the Files tree shows of git: changed files, folders holding changes,
 // ignored paths. Pure functions over `git_status` / `git_ignored` output; the
-// store keeps the result per tree root. Design: docs/features/files-git/sdd.md.
+// store keeps the result per tree root. Design: docs/features/files-git/spec.md.
 
 import type { RepoStatus } from "@/lib/git";
 

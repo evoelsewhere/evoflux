@@ -843,7 +843,7 @@ fn assemble_headers(
     // `api_key = None` here and rely on their own `x-api-key` / `authorization`
     // header surviving the merges above.
     if let Some(key) = api_key {
-        headers.retain(|(k, _)| k.to_ascii_lowercase() != "x-api-key");
+        headers.retain(|(k, _)| !k.eq_ignore_ascii_case("x-api-key"));
         headers.push(("x-api-key".into(), key.into()));
     }
 

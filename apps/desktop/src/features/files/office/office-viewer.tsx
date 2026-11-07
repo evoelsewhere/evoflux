@@ -37,7 +37,7 @@ import { adjacentCellName, clearSearchMarks, markSearchMatches } from "./search"
 
 // The Files tool's viewer for Word, Excel and PowerPoint files (port of v3
 // web/src/components/workspace-document-preview.tsx;
-// docs/features/office-v3-parity/sdd.md FR-4, FR-5, FR-8).
+// docs/features/office-v3-parity/spec.md FR-4, FR-5, FR-8).
 //
 // Rendering stays in the engine's inert, self-contained HTML document
 // (`office_preview`: the native render, or exact pages from the LibreOffice

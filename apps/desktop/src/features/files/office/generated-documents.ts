@@ -1,6 +1,6 @@
 // Live previews for Office files the agent writes (port of v3
 // web/src/hooks/useGeneratedDocumentWatcher.ts; docs/features/office-v3-parity
-// /sdd.md FR-9). The engine reports Office files changing in a chat's folder
+// /spec.md FR-9). The engine reports Office files changing in a chat's folder
 // (`office_file_changed`, stores/office-events.ts) — it sees files written by
 // a script mid-run, long before the tool call ends. For each change:
 //

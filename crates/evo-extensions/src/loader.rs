@@ -631,6 +631,12 @@ pub fn load_session_mixed_guarded(
     }
 }
 
+// Silence the unused-default-import warning for NullDiagnostics re-exported by the crate.
+#[allow(dead_code)]
+fn _ensure_nulldiagnostics_referenced() -> Arc<dyn PluginDiagnostics> {
+    Arc::new(NullDiagnostics)
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -1535,10 +1541,4 @@ pub extern "C" fn evo_plugin_register(api: *const u8) -> i32 {{
         assert!(!is_cdylib(Path::new("foo.md")));
         assert!(!is_cdylib(Path::new("foo")));
     }
-}
-
-// Silence the unused-default-import warning for NullDiagnostics re-exported by the crate.
-#[allow(dead_code)]
-fn _ensure_nulldiagnostics_referenced() -> Arc<dyn PluginDiagnostics> {
-    Arc::new(NullDiagnostics)
 }
