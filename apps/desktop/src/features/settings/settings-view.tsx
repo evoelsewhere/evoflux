@@ -1,122 +1,149 @@
 import * as React from "react";
-import { ArrowLeftIcon, SearchIcon, XIcon } from "lucide-react";
-import { Kbd } from "@/components/ui/kbd";
-import {
-  Sidebar,
-  SidebarContent,
-  SidebarGroup,
-  SidebarGroupContent,
-  SidebarGroupLabel,
-  SidebarHeader,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  useSidebar,
-} from "@/components/ui/sidebar";
-import { SidebarResizer } from "@/features/shell/sidebar-resizer";
-import { TitleBarActions } from "@/features/shell/title-bar";
-import { WindowControls } from "@/features/shell/window-controls";
-import { inTauri, isMac } from "@/lib/platform";
+import { Dialog as DialogPrimitive } from "@base-ui/react/dialog";
+import { ArrowUpRightIcon, SearchIcon, XIcon } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogOverlay, DialogPortal, DialogTitle } from "@/components/ui/dialog";
+import { REPOSITORY_URL, openLink } from "@/features/shell/app-commands";
 import { cn } from "@/lib/utils";
 import { useUiStore } from "@/stores/ui-store";
 import { matchesQuery, settingsGroups, settingsPages } from "./settings-registry";
 
-/** Settings navigation, in place of the chat sidebar while settings are open. */
-export function SettingsSidebar() {
-  const section = useUiStore((s) => s.settingsSection);
-  const openSettings = useUiStore((s) => s.openSettings);
+const FOOTER_LINKS = [
+  { label: "Documentation", url: `${REPOSITORY_URL}#readme` },
+  { label: "Report an issue", url: `${REPOSITORY_URL}/issues/new` },
+];
+
+/**
+ * Settings as a modal over the app: a title bar with the close button, the
+ * section list on the left (search, groups split by a rule, links at the
+ * bottom) and the open section scrolling on the right.
+ */
+export function SettingsDialog() {
+  const open = useUiStore((s) => s.settingsOpen);
   const closeSettings = useUiStore((s) => s.closeSettings);
-  const [query, setQuery] = React.useState("");
-  const visible = settingsPages.filter((page) => matchesQuery(page, query));
 
   return (
-    <Sidebar className="border-r-0 group-data-[side=left]:border-r-0">
-      <div
-        data-tauri-drag-region
-        className={cn("drag-region flex h-12 shrink-0 items-center px-2", isMac && inTauri && "pl-[76px]")}
-      >
-        <TitleBarActions />
-      </div>
-      <SidebarHeader className="gap-2 pt-0">
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton onClick={closeSettings} className="h-8 text-[13px] font-medium">
-              <ArrowLeftIcon />
-              <span>Back to app</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
-        <label className="flex h-8 items-center gap-2 rounded-lg bg-sidebar-accent/60 px-2.5 text-sm text-sidebar-foreground transition-colors focus-within:bg-sidebar-accent focus-within:shadow-[0_0_0_1px_var(--ring)]">
-          <SearchIcon className="size-4 shrink-0" />
-          <input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && visible[0]) openSettings(visible[0].id);
-              if (event.key === "Escape") setQuery("");
-            }}
-            placeholder="Search settings…"
-            className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-sidebar-foreground/70 focus-visible:shadow-none"
-          />
-          {query && (
-            <button
-              type="button"
-              aria-label="Clear search"
-              onClick={() => setQuery("")}
-              className="text-muted-foreground hover:text-foreground"
-            >
-              <XIcon className="size-3.5" />
-            </button>
+    <Dialog open={open} onOpenChange={(next) => !next && closeSettings()}>
+      <DialogPortal>
+        <DialogOverlay className="bg-black/50 supports-backdrop-filter:backdrop-blur-[2px]" />
+        <DialogPrimitive.Popup
+          data-slot="settings-dialog"
+          className={cn(
+            "fixed top-1/2 left-1/2 z-50 flex h-[min(820px,calc(100%-4rem))] w-[min(1040px,calc(100%-3rem))] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-xl bg-background text-foreground shadow-modal outline-none",
+            "duration-100 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
           )}
-        </label>
-      </SidebarHeader>
-
-      <SidebarContent className="gap-0 pt-2">
-        {settingsGroups.map((group) => {
-          const pages = visible.filter((page) => page.group === group);
-          if (pages.length === 0) return null;
-          return (
-            <SidebarGroup key={group} className="py-1">
-              <SidebarGroupLabel className="h-7 text-[11px] font-semibold tracking-wider uppercase">
-                {group}
-              </SidebarGroupLabel>
-              <SidebarGroupContent>
-                <SidebarMenu>
-                  {pages.map((page) => (
-                    <SidebarMenuItem key={page.id}>
-                      <SidebarMenuButton
-                        isActive={page.id === section}
-                        onClick={() => openSettings(page.id)}
-                        className="h-8 text-[13px] data-active:font-medium data-active:[&>svg]:text-brand"
-                      >
-                        <page.icon />
-                        <span>{page.title}</span>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  ))}
-                </SidebarMenu>
-              </SidebarGroupContent>
-            </SidebarGroup>
-          );
-        })}
-        {visible.length === 0 && (
-          <p className="px-4 py-2 text-xs text-muted-foreground">No settings match “{query}”.</p>
-        )}
-      </SidebarContent>
-
-      <SidebarResizer />
-    </Sidebar>
+        >
+          <header className="flex h-12 shrink-0 items-center justify-between border-b pr-2.5 pl-4">
+            <DialogTitle className="text-[15px] font-semibold">Settings</DialogTitle>
+            <DialogPrimitive.Close
+              render={<Button variant="ghost" size="icon-sm" className="text-muted-foreground hover:text-foreground" />}
+            >
+              <XIcon className="size-[18px]" />
+              <span className="sr-only">Close</span>
+            </DialogPrimitive.Close>
+          </header>
+          <div className="flex min-h-0 flex-1">
+            <SettingsNav />
+            <SettingsContent />
+          </div>
+        </DialogPrimitive.Popup>
+      </DialogPortal>
+    </Dialog>
   );
 }
 
-/** The settings page: a header bar over a scrolling card with the open section. */
-export function SettingsPage() {
+function SettingsNav() {
   const section = useUiStore((s) => s.settingsSection);
-  const closeSettings = useUiStore((s) => s.closeSettings);
-  const { state, isMobile } = useSidebar();
+  const openSettings = useUiStore((s) => s.openSettings);
+  const [query, setQuery] = React.useState("");
+  const visible = settingsPages.filter((page) => matchesQuery(page, query));
+  const groups = settingsGroups
+    .map((group) => visible.filter((page) => page.group === group))
+    .filter((pages) => pages.length > 0);
+
+  return (
+    <nav aria-label="Settings sections" className="flex w-56 shrink-0 flex-col border-r p-2.5">
+      <label className="flex h-8 items-center gap-2 rounded-lg px-2.5 text-sm shadow-[0_0_0_1px_var(--input)] transition-shadow focus-within:shadow-[0_0_0_1px_var(--ring)]">
+        <SearchIcon className="size-4 shrink-0 text-muted-foreground" />
+        <input
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && visible[0]) openSettings(visible[0].id);
+            // The first Escape clears the search; the next one closes settings.
+            if (event.key === "Escape" && query) {
+              event.stopPropagation();
+              setQuery("");
+            }
+          }}
+          placeholder="Search"
+          aria-label="Search settings"
+          className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-muted-foreground focus-visible:shadow-none"
+        />
+        {query && (
+          <button
+            type="button"
+            aria-label="Clear search"
+            onClick={() => setQuery("")}
+            className="text-muted-foreground hover:text-foreground"
+          >
+            <XIcon className="size-3.5" />
+          </button>
+        )}
+      </label>
+
+      <div className="mt-2 min-h-0 flex-1 overflow-y-auto">
+        {groups.map((pages, index) => (
+          <React.Fragment key={pages[0].group}>
+            {index > 0 && <div aria-hidden className="mx-2.5 my-2 h-px bg-border" />}
+            <ul className="flex flex-col gap-0.5">
+              {pages.map((page) => {
+                const active = page.id === section;
+                return (
+                  <li key={page.id}>
+                    <button
+                      type="button"
+                      aria-current={active ? "page" : undefined}
+                      onClick={() => openSettings(page.id)}
+                      className={cn(
+                        "flex h-8 w-full items-center gap-3 rounded-lg px-2.5 text-left text-sm transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+                        active ? "bg-accent font-medium text-foreground" : "text-foreground/85 hover:bg-accent/60 hover:text-foreground",
+                      )}
+                    >
+                      <page.icon className={cn("size-[18px] shrink-0", active ? "text-brand" : "text-muted-foreground")} />
+                      <span className="truncate">{page.title}</span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </React.Fragment>
+        ))}
+        {visible.length === 0 && <p className="px-2.5 py-2 text-xs text-muted-foreground">No settings match “{query}”.</p>}
+      </div>
+
+      <ul className="flex flex-col gap-0.5 pt-2">
+        {FOOTER_LINKS.map((link) => (
+          <li key={link.label}>
+            <button
+              type="button"
+              onClick={() => openLink(link.url)}
+              className="flex h-7 w-full items-center justify-between rounded-md px-2.5 text-[13px] text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
+            >
+              {link.label}
+              <ArrowUpRightIcon className="size-4" />
+            </button>
+          </li>
+        ))}
+      </ul>
+    </nav>
+  );
+}
+
+function SettingsContent() {
+  const section = useUiStore((s) => s.settingsSection);
   const page = settingsPages.find((p) => p.id === section) ?? settingsPages[0];
   const Section = page.component;
-  const clearTrafficLights = isMac && inTauri && (state === "collapsed" || isMobile);
   const scroller = React.useRef<HTMLDivElement>(null);
 
   // Each section opens at its top.
@@ -125,45 +152,10 @@ export function SettingsPage() {
     void scroller.current?.scrollTo({ top: 0 });
   }, [section]);
 
-  // Escape leaves settings unless something on the page (a menu, a field) handled it.
-  React.useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || event.defaultPrevented) return;
-      const target = event.target as HTMLElement | null;
-      if (target?.closest("input, textarea, [role=dialog], [role=menu], [role=listbox]")) return;
-      closeSettings();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [closeSettings]);
-
   return (
-    <div className="flex h-full min-w-0 flex-col">
-      <header
-        data-tauri-drag-region
-        className={cn(
-          "drag-region flex h-12 shrink-0 items-center gap-2 pl-4",
-          clearTrafficLights && "pl-20",
-          (isMac || !inTauri) && "pr-3",
-        )}
-      >
-        {(state === "collapsed" || isMobile) && <TitleBarActions className="mr-1" />}
-        <span className="text-sm font-medium">Settings</span>
-        <span className="text-sm text-muted-foreground">/</span>
-        <span className="truncate text-sm text-muted-foreground">{page.title}</span>
-        <div data-tauri-drag-region className="h-full flex-1" />
-        <span className="hidden items-center gap-1.5 text-xs text-muted-foreground sm:flex">
-          <Kbd>Esc</Kbd> to close
-        </span>
-        <WindowControls />
-      </header>
-      <div
-        ref={scroller}
-        className="min-h-0 flex-1 overflow-y-auto bg-background min-[900px]:rounded-t-xl"
-      >
-        <div className="mx-auto w-full max-w-3xl px-6 pt-10 pb-16 sm:px-10">
-          <Section />
-        </div>
+    <div ref={scroller} className="min-h-0 min-w-0 flex-1 overflow-y-auto">
+      <div className="mx-auto w-full max-w-3xl px-6 pt-6 pb-12">
+        <Section />
       </div>
     </div>
   );

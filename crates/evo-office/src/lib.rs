@@ -8,6 +8,8 @@
 mod convert;
 mod install;
 pub mod manifest;
+pub mod preview;
+pub mod versions;
 
 pub use convert::{export_filter, supports, CONVERSION_TIMEOUT};
 pub use install::{InstallJob, Installed, Phase, Runtime, Status};

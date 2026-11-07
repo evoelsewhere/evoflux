@@ -4,6 +4,7 @@ import { useEngineStore } from "@/stores/engine-store";
 import { cn } from "@/lib/utils";
 import type { QueuedMessage } from "./transcript";
 import { splitPrompt } from "./composer-input";
+import { parseAnnotatedMessage } from "@/lib/document-annotations";
 
 function RowButton({ label, onClick, children }: { label: string; onClick(): void; children: React.ReactNode }) {
   return (
@@ -47,7 +48,7 @@ export function QueuedMessages({ onEdit }: { onEdit(text: string): void }) {
   return (
     <div className="mx-2 mb-1.5 flex flex-col gap-1" aria-label="Waiting messages">
       {queued.map((item) => {
-        const { text, files, pasted } = splitPrompt(item.text);
+        const { text, files, pasted } = splitPrompt(parseAnnotatedMessage(item.text)?.text ?? item.text);
         const extra = files.length + pasted.length;
         return (
           <div

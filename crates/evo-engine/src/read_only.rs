@@ -26,6 +26,7 @@ const SAFE_TOOLS: &[&str] = &[
     "find",
     "ls",
     "docs",
+    "document_preview",
     "lsp",
     "web_search",
     "web_fetch",

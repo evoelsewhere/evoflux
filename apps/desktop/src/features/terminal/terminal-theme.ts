@@ -67,10 +67,10 @@ export function terminalTheme(): ITheme {
     // The panel's own colour, opaque: `minimumContrastRatio` measures text
     // against this, and a transparent background counts as black there, so
     // dark text on the light theme was lightened to grey.
-    background: cssVar("--background", dark ? "#0a0a0a" : "#fafafa"),
+    background: cssVar("--background", dark ? "#191919" : "#fafafa"),
     foreground,
     cursor: foreground,
-    cursorAccent: dark ? "#0a0a0a" : "#ffffff",
+    cursorAccent: dark ? "#191919" : "#ffffff",
     selectionBackground: withAlpha(accent, dark ? 0.35 : 0.25),
     selectionInactiveBackground: withAlpha(dark ? "#ffffff" : "#000000", 0.12),
     scrollbarSliderBackground: withAlpha(dark ? "#ffffff" : "#000000", 0.12),

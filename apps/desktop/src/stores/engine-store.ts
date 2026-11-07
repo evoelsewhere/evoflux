@@ -55,6 +55,7 @@ import { isUiTool, runUiTool, UI_TOOLS } from "@/features/browser/agent-tools";
 import { isSchedulerTool, runSchedulerTool, SCHEDULER_TOOLS } from "@/features/scheduler/agent-tools";
 import { isUserTool, runUserTool, USER_TOOLS } from "@/features/chat/user-tools";
 import { useUiStore } from "@/stores/ui-store";
+import { emitOfficeFileChanged } from "@/stores/office-events";
 import { connectorsChanged, useConnectorsStore } from "@/stores/connectors-store";
 import { useCustomizeStore } from "@/stores/customize-store";
 import {
@@ -1044,6 +1045,11 @@ ${sessions.length === 1 ? "A nested session" : "Nested sessions"} finished a tur
       if (typeof message.requestId === "string") dropApprovals(message.requestId);
       return;
     }
+    if (message.type === "office_file_changed") {
+      // Office files saved in the chat's folder: the Files tool re-renders and auto-opens (stores/office-events.ts).
+      emitOfficeFileChanged(chat, message.changes);
+      return;
+    }
     if (message.type === "providers_changed") {
       // A sign-in finished or models.dev brought new data: this engine already
       // swapped its provider runtimes; the others reload, and the UI refreshes.
@@ -1230,7 +1236,10 @@ ${sessions.length === 1 ? "A nested session" : "Nested sessions"} finished a tur
       }
       if (reusable) {
         sessions.select(reusable.id);
-        await activate(reusable.id, undefined, false);
+        // A draft left from an earlier run has no engine yet: start it in its
+        // folder, never in the app's own working directory.
+        const cwd = runtime(reusable.id)?.cwd ?? target?.path ?? (await localRoot());
+        await activate(reusable.id, cwd, false);
         return;
       }
       const cwd = target?.path ?? (await localRoot());

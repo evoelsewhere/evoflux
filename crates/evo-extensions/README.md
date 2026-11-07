@@ -85,7 +85,7 @@ evo dev                                   # build + watch + live reload
 
 ## License
 
-MIT. See [LICENSE](https://github.com/evoelsewhere/evo-harness/blob/main/LICENSE)
+Apache-2.0. See [LICENSE](https://github.com/evoelsewhere/evo-harness/blob/main/LICENSE)
 and [NOTICE](https://github.com/evoelsewhere/evo-harness/blob/main/NOTICE).
 
 Plugins may register the optional two-phase lifecycle hooks. Reload calls

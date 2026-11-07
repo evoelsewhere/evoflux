@@ -13,6 +13,7 @@ import {
   MessageCircleQuestionIcon,
   ScrollTextIcon,
   SearchIcon,
+  ShapesIcon,
   TerminalIcon,
   WrenchIcon,
 } from "lucide-react";
@@ -35,6 +36,7 @@ import { FileLink } from "./file-link";
 import { openLink } from "@/features/shell/app-commands";
 import { TodoList } from "@/features/chat/todo-bar";
 import { SentFiles } from "./sent-files";
+import { WidgetFrame } from "@/components/widget-frame";
 
 // shadcn/ui AI Elements · Tool on Trace, following a call through DeepSeek
 // Harness's phases: preparing (the model is still writing the arguments, so
@@ -60,6 +62,7 @@ type Kind =
   | "code"
   | "user"
   | "mcp"
+  | "visual"
   | "other";
 
 const kinds: Record<string, Kind> = {
@@ -79,6 +82,7 @@ const kinds: Record<string, Kind> = {
   message_session: "session",
   list_sessions: "session",
   show_file: "read",
+  document_preview: "read",
   terminal_run: "shell",
   terminal_read: "shell",
   browser_navigate: "browser",
@@ -102,6 +106,8 @@ const kinds: Record<string, Kind> = {
   notify: "user",
   mcp_search_tools: "mcp",
   mcp_call_tool: "mcp",
+  show_widget: "visual",
+  visualize_read_me: "visual",
 };
 
 const icons: Record<Kind, React.ComponentType<{ className?: string }>> = {
@@ -122,6 +128,7 @@ const icons: Record<Kind, React.ComponentType<{ className?: string }>> = {
   code: BracesIcon,
   user: BellIcon,
   mcp: PlugIcon,
+  visual: ShapesIcon,
   other: WrenchIcon,
 };
 
@@ -143,6 +150,7 @@ const verbs: Record<Kind, Record<ToolPart["phase"], string>> = {
   code: { preparing: "Checking code", running: "Checking code", done: "Checked code", error: "Code check failed" },
   user: { preparing: "Sending", running: "Sending", done: "Sent", error: "Could not send" },
   mcp: { preparing: "Calling", running: "Calling", done: "Called", error: "Failed" },
+  visual: { preparing: "Drawing", running: "Drawing", done: "Drew", error: "Failed to draw" },
   other: { preparing: "Calling", running: "Calling", done: "Called", error: "Failed" },
 };
 
@@ -165,6 +173,7 @@ export const activity: Record<Kind, { live: string; done: string }> = {
   code: { live: "Checking code", done: "checked code" },
   user: { live: "Reaching you", done: "reached you" },
   mcp: { live: "Using connectors", done: "used connectors" },
+  visual: { live: "Drawing widgets", done: "drew widgets" },
   other: { live: "Using tools", done: "used tools" },
 };
 
@@ -266,6 +275,33 @@ function memoryLabel(part: ToolPart, phase: ToolPart["phase"]): string {
   };
   const [doing, did] = verb[String(args.action ?? "")] ?? ["Using memory", "Used memory"];
   return `${phase === "error" ? "Memory failed" : live ? doing : did}${name ? ` · ${name}` : ""}`;
+}
+
+/** The first loading message of a `show_widget` call, from its arguments or the JSON still streaming. */
+function widgetLoading(part: ToolPart): string | undefined {
+  const args = (part.args && typeof part.args === "object" ? part.args : {}) as Record<string, unknown>;
+  if (Array.isArray(args.loading_messages) && typeof args.loading_messages[0] === "string") return args.loading_messages[0];
+  const raw = /"loading_messages"\s*:\s*\[\s*"((?:[^"\\]|\\.)*)"/.exec(part.argsText)?.[1];
+  if (raw === undefined) return undefined;
+  try {
+    return JSON.parse(`"${raw}"`) as string;
+  } catch {
+    return raw;
+  }
+}
+
+/** "Widget · Revenue by region", "Read the widget guide · chart, diagram". */
+function visualLabel(part: ToolPart, phase: ToolPart["phase"]): string {
+  const args = (part.args && typeof part.args === "object" ? part.args : {}) as Record<string, unknown>;
+  const live = phase === "preparing" || phase === "running";
+  if (part.name === "visualize_read_me") {
+    const modules = Array.isArray(args.modules) ? args.modules.map(String).join(", ") : "";
+    return `${phase === "error" ? "Could not read the widget guide" : live ? "Reading the widget guide" : "Read the widget guide"}${
+      modules ? ` · ${modules}` : ""
+    }`;
+  }
+  const title = typeof args.title === "string" ? args.title : partialField(part.argsText, "title");
+  return `${phase === "error" ? "Widget failed" : live ? "Building widget" : "Widget"}${title ? ` · ${title}` : ""}`;
 }
 
 /** A loaded skill's instructions without the `<skill …>` wrapper. */
@@ -486,6 +522,8 @@ export function Tool({
       ? browserLabel(part, phase)
       : kind === "web"
       ? webLabel(part, phase)
+      : kind === "visual"
+      ? visualLabel(part, phase)
       : `${verbs[kind][phase]} ${about ?? (kind === "other" ? part.name : "")}`.trim();
   // A file the call read or changed opens in the Files tool, at the line it touched.
   const fileTitle =
@@ -516,6 +554,25 @@ export function Tool({
     </TraceLine>
   );
 
+  // A widget shows under its line: a placeholder while the model writes it,
+  // then the widget itself (also when the chat is replayed: it is rebuilt
+  // from the call's arguments).
+  if (part.name === "show_widget" && !lineOnly && phase !== "error") {
+    const args = (part.args && typeof part.args === "object" ? part.args : {}) as Record<string, unknown>;
+    const html = phase !== "preparing" && typeof args.widget_code === "string" ? args.widget_code : "";
+    const loading = widgetLoading(part);
+    return (
+      <div className="flex flex-col gap-2">
+        {line}
+        <WidgetFrame
+          html={html}
+          title={typeof args.title === "string" && args.title ? args.title : "Widget"}
+          height={typeof args.height === "number" ? args.height : undefined}
+          loadingMessages={loading ? [loading] : undefined}
+        />
+      </div>
+    );
+  }
   // Not expandable while the model is still writing the call.
   if (phase === "preparing" || lineOnly) return line;
   // Files the agent sent stay open under the line: they are the result.

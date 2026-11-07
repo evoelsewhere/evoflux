@@ -1,5 +1,5 @@
 // Building blocks of a settings page: a section header, titled groups of
-// rows on a card, and the controls those rows use.
+// rows split by hairlines, and the controls those rows use.
 
 import * as React from "react";
 import { Radio } from "@base-ui/react/radio";
@@ -8,33 +8,30 @@ import { Slider } from "@base-ui/react/slider";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-/** The page's heading: an icon tile, the section name and a line about it. */
+/** The page's heading: the section name, a line about it, and optional actions. */
 export function SettingsHeader({
-  icon: Icon,
   title,
   description,
   children,
 }: {
-  icon: LucideIcon;
+  /** Kept for the call sites; the settings list beside the page shows the icon. */
+  icon?: LucideIcon;
   title: string;
   description: React.ReactNode;
   children?: React.ReactNode;
 }) {
   return (
-    <header className="flex items-start gap-4 border-b pb-6">
-      <div className="flex size-11 shrink-0 items-center justify-center rounded-lg bg-brand/10 text-brand ring-1 ring-brand/20 ring-inset">
-        <Icon className="size-5" />
-      </div>
+    <header className="flex items-start gap-4">
       <div className="min-w-0 flex-1">
-        <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
-        <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+        <h1 className="text-lg font-semibold tracking-tight">{title}</h1>
+        <p className="mt-0.5 text-[13px] text-muted-foreground">{description}</p>
       </div>
       {children}
     </header>
   );
 }
 
-/** A titled group of rows on one card. */
+/** A titled group of rows, split by hairlines. */
 export function SettingsGroup({
   title,
   description,
@@ -48,9 +45,9 @@ export function SettingsGroup({
 }) {
   return (
     <section id={id} className="scroll-mt-6">
-      <h2 className="text-sm font-semibold">{title}</h2>
-      {description && <p className="mt-1 max-w-lg text-[13px] text-muted-foreground">{description}</p>}
-      <div className="mt-3 divide-y overflow-hidden rounded-xl bg-card shadow-hairline">{children}</div>
+      <h2 className="text-[15px] font-semibold">{title}</h2>
+      {description && <p className="mt-1 max-w-xl text-[13px] text-muted-foreground">{description}</p>}
+      <div className="mt-1 divide-y">{children}</div>
     </section>
   );
 }
@@ -73,13 +70,13 @@ export function SettingsRow({
   labelId?: string;
 }) {
   return (
-    <div className="px-5 py-4">
+    <div className="py-3.5">
       <div className="flex items-center justify-between gap-6">
         <div className="min-w-0 flex-1">
-          <div id={labelId} className="text-sm font-medium">
+          <div id={labelId} className="text-sm">
             {label}
           </div>
-          {description && <p className="mt-0.5 max-w-md text-[13px] text-muted-foreground">{description}</p>}
+          {description && <p className="mt-1 max-w-xl text-[13px] text-muted-foreground">{description}</p>}
         </div>
         {control && <div className="shrink-0">{control}</div>}
       </div>

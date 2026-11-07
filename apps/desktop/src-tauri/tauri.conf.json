@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "evo-harness",
+  "productName": "Evo Harness",
   "mainBinaryName": "evo-harness",
   "version": "4.0.0",
   "identifier": "com.evoelsewhere.evo",
@@ -15,7 +15,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "evo-harness",
+        "title": "Evo Harness",
         "width": 1280,
         "height": 820,
         "minWidth": 760,
@@ -27,7 +27,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost; img-src 'self' data: asset: http://asset.localhost; style-src 'self' 'unsafe-inline'; font-src 'self' data:; worker-src 'self' blob:"
+      "csp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost; img-src 'self' data: asset: http://asset.localhost; style-src 'self' 'unsafe-inline'; font-src 'self' data:; worker-src 'self' blob:; frame-src 'self' data:"
     }
   },
   "bundle": {
@@ -44,7 +44,7 @@
       "icons/icon.ico"
     ],
     "category": "DeveloperTool",
-    "shortDescription": "evo-harness coding agent",
+    "shortDescription": "Evo Harness coding agent",
     "windows": {
       "nsis": {
         "installerIcon": "icons/icon.ico",

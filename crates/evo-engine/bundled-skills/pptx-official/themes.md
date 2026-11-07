@@ -137,9 +137,9 @@ Keep charts inside the same palette: series take accent, then muted, then
 positive/negative only where direction is the point. A default chart palette
 from the library is the fastest way to make a themed deck look untouched.
 
-Check the result rather than trusting these numbers: render the deck
-(`scripts/contact_sheet.py`), look at the image, and confirm the text you
-expect is present and inside its box. Contrast holds by construction, but only if the palette was applied.
+Check the result rather than trusting these numbers: run `document_preview`
+after generating and confirm the text you expect is present and inside its
+box. Contrast holds by construction, but only if the palette was applied.
 
 ## Quick three-colour palettes
 

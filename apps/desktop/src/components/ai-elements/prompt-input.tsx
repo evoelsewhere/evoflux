@@ -70,6 +70,7 @@ export function PromptInput({
   onPaste,
   header,
   dropActive,
+  canSubmitEmpty,
 }: {
   value: string;
   onChange(value: string): void;
@@ -90,13 +91,15 @@ export function PromptInput({
   header?: React.ReactNode;
   /** Files are being dragged over the window. */
   dropActive?: boolean;
+  /** Something besides text and attachments can be sent (document annotations). */
+  canSubmitEmpty?: boolean;
 }) {
   const formRef = React.useRef<HTMLFormElement>(null);
   const backdropRef = React.useRef<HTMLDivElement>(null);
   const token = highlight ? value.slice(0, highlight.length) : "";
   const rest = highlight ? value.slice(highlight.length) : "";
   const showHint = !!highlight?.hint && rest.trim() === "";
-  const canSend = !disabled && (value.trim().length > 0 || attachments.length > 0);
+  const canSend = !disabled && (value.trim().length > 0 || attachments.length > 0 || !!canSubmitEmpty);
   const queueNext = React.useRef(false);
 
   return (

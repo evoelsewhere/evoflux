@@ -41,6 +41,8 @@ const FINE_GRAINED_TOOL_STREAMING_BETA: &str = "fine-grained-tool-streaming-2025
 /// The interleaved-thinking Anthropic beta header applied for budget-based
 /// thinking models (adaptive-thinking models have it built in).
 const INTERLEAVED_THINKING_BETA: &str = "interleaved-thinking-2025-05-14";
+/// Lets a request set `thinking.block_binding`.
+const THINKING_BINDING_BETA: &str = "thinking-binding-controls-2026-08-01";
 
 // ----------------------------------------------------------------------------
 // Wire types — the Anthropic Messages-API request shape (a subset). Unnamed in
@@ -152,9 +154,54 @@ pub struct AnthropicTool {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum AnthropicThinking {
-    Adaptive { display: String },
-    Enabled { budget_tokens: u64, display: String },
+    Adaptive {
+        display: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        block_binding: Option<BlockBinding>,
+    },
+    Enabled {
+        budget_tokens: u64,
+        display: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        block_binding: Option<BlockBinding>,
+    },
     Disabled,
+}
+
+/// What the API does with a replayed thinking block whose conversation no
+/// longer matches the one that produced it (a different `system` prompt or
+/// tool set after an engine restart, a reload, or compaction).
+///
+/// The engine rebuilds the system prompt when a chat's engine starts (memory
+/// index, project instructions, skills), so an older chat's thinking blocks
+/// can stop matching. `drop_block` makes the API drop those blocks and answer
+/// instead of rejecting the request with a 400.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BlockBinding {
+    pub prefix_mismatch_behavior: String,
+}
+
+impl BlockBinding {
+    fn drop_block() -> Self {
+        Self {
+            prefix_mismatch_behavior: "drop_block".into(),
+        }
+    }
+}
+
+/// Whether requests to `model` may carry `thinking.block_binding`.
+fn sends_block_binding(model: &Model, compat: &AnthropicMessagesCompat) -> bool {
+    compat.supports_thinking_block_binding.unwrap_or_else(|| {
+        let url = model.base_url.trim().to_ascii_lowercase();
+        let host = url
+            .split("://")
+            .nth(1)
+            .unwrap_or(&url)
+            .split(['/', ':'])
+            .next()
+            .unwrap_or_default();
+        host == "api.anthropic.com"
+    })
 }
 
 /// A system-prompt text block (carrying optional cache control).
@@ -1905,14 +1952,19 @@ fn build_params_internal(
 
     // Thinking config.
     let thinking_enabled = opts.reasoning.is_some() && opts.reasoning != Some(ThinkingLevel::Off);
+    let block_binding = sends_block_binding(model, &compat);
     let mut thinking: Option<AnthropicThinking> = None;
     let mut output_config: Option<Value> = None;
 
     if model.reasoning {
         if thinking_enabled {
             let display = "summarized".to_string();
+            let block_binding = block_binding.then(BlockBinding::drop_block);
             if compat.adaptive_thinking() {
-                thinking = Some(AnthropicThinking::Adaptive { display });
+                thinking = Some(AnthropicThinking::Adaptive {
+                    display,
+                    block_binding,
+                });
                 if let Some(level) = opts.reasoning {
                     let effort = map_thinking_level_to_effort(model, level);
                     if effort == "xhigh" {
@@ -1938,6 +1990,7 @@ fn build_params_internal(
                 thinking = Some(AnthropicThinking::Enabled {
                     budget_tokens: budget,
                     display,
+                    block_binding,
                 });
             }
         } else if opts.reasoning == Some(ThinkingLevel::Off) && !off_mapped_to_null(model) {
@@ -2018,8 +2071,23 @@ fn build_params_internal(
     let use_fine_grained_tool_streaming_beta =
         !ctx.tools.is_empty() && !compat.eager_tool_input_streaming();
     let needs_interleaved_beta = thinking_enabled && !compat.adaptive_thinking();
-    let beta_header =
-        build_beta_header(use_fine_grained_tool_streaming_beta, needs_interleaved_beta);
+    let thinking_binding_beta = matches!(
+        &thinking,
+        Some(
+            AnthropicThinking::Adaptive {
+                block_binding: Some(_),
+                ..
+            } | AnthropicThinking::Enabled {
+                block_binding: Some(_),
+                ..
+            }
+        )
+    );
+    let beta_header = build_beta_header(
+        use_fine_grained_tool_streaming_beta,
+        needs_interleaved_beta,
+        thinking_binding_beta,
+    );
 
     let request = AnthropicRequest {
         model: model.id.clone(),
@@ -2067,13 +2135,20 @@ fn build_params_internal(
     }
 }
 
-fn build_beta_header(fine_grained: bool, interleaved: bool) -> Option<String> {
+fn build_beta_header(
+    fine_grained: bool,
+    interleaved: bool,
+    thinking_binding: bool,
+) -> Option<String> {
     let mut betas: Vec<&str> = Vec::new();
     if fine_grained {
         betas.push(FINE_GRAINED_TOOL_STREAMING_BETA);
     }
     if interleaved {
         betas.push(INTERLEAVED_THINKING_BETA);
+    }
+    if thinking_binding {
+        betas.push(THINKING_BINDING_BETA);
     }
     if betas.is_empty() {
         None
@@ -2190,10 +2265,7 @@ mod tests {
         assert_eq!(last["role"], json!("user"));
         let block = last["content"].as_array().unwrap().last().unwrap();
         assert_eq!(block["type"], json!("tool_result"));
-        assert_eq!(
-            block["cache_control"],
-            json!({ "type": "ephemeral", "ttl": "1h" })
-        );
+        assert_eq!(block["cache_control"], json!({ "type": "ephemeral" }));
     }
 
     #[test]
@@ -2530,6 +2602,44 @@ mod tests {
         let built = build_params(&model, &ctx, false, &opts);
         assert!(built.request.temperature.is_none());
         assert!(built.request.thinking.is_some());
+    }
+
+    fn adaptive_request(base_url: &str) -> BuiltParams {
+        let mut compat = AnthropicMessagesCompat::default();
+        compat.force_adaptive_thinking = Some(true);
+        let mut model = model_with_compat(compat);
+        model.reasoning = true;
+        model.base_url = base_url.into();
+        let ctx = crate::types::Context::new(vec![Message::User(UserMessage::new("hi", 0))]);
+        let mut opts = SimpleStreamOptions::default();
+        opts.reasoning = Some(ThinkingLevel::High);
+        build_params(&model, &ctx, false, &opts)
+    }
+
+    #[test]
+    fn first_party_thinking_drops_blocks_bound_to_another_prompt() {
+        let built = adaptive_request("https://api.anthropic.com");
+        let body = serde_json::to_value(&built.request).unwrap();
+        assert_eq!(
+            body["thinking"]["block_binding"],
+            json!({ "prefix_mismatch_behavior": "drop_block" })
+        );
+        assert!(built
+            .beta_header
+            .as_deref()
+            .is_some_and(|beta| beta.split(',').any(|b| b == THINKING_BINDING_BETA)));
+    }
+
+    #[test]
+    fn compatible_endpoints_get_no_block_binding() {
+        let built = adaptive_request("https://api.example.com/anthropic");
+        let body = serde_json::to_value(&built.request).unwrap();
+        assert!(body["thinking"].get("block_binding").is_none());
+        assert!(!built
+            .beta_header
+            .as_deref()
+            .unwrap_or_default()
+            .contains(THINKING_BINDING_BETA));
     }
 
     #[test]

@@ -378,7 +378,7 @@ uv run --with openpyxl python scripts/audit.py output.xlsx
 ```
 
 Then finish the one-pass QA checks in `SKILL.md` (reconcile, then
-render the pages and look at them), on the sheets you changed. If you touched a formula, spot-check its new value with:
+`document_preview`), on the sheets you changed. If you touched a formula, spot-check its new value with:
 
 ```python
 from openpyxl import load_workbook

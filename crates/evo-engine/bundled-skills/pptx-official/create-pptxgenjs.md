@@ -8,7 +8,6 @@ python-pptx exposes.
 
 - Project setup and running
 - Skeleton
-- Build
 - Text
 - Shapes and shadows
 - Images
@@ -34,7 +33,8 @@ bun add react-icons react react-dom sharp
 bun add mathjax-full
 ```
 
-Run the build with `bun run build_deck.ts` and type-check after every
+Run the build with `bun run build_deck.ts` (one slide file at a time for a
+new deck — see *Live build*), and type-check after every
 change with `bun tsc --noEmit` — it catches outdated PptxGenJS signatures
 before runtime.
 
@@ -58,30 +58,48 @@ slide.addText("Revenue grew 34% on 22% headcount", {
 await pres.writeFile({ fileName: "review.pptx" });
 ```
 
-## Build
+## Live build
 
-Write the whole deck as code and run it once. Put the palette, fonts and
-shared helpers in `theme.ts`, define one function per recurring slide shape,
-and keep the outline's slides in order in `build_deck.ts`. For a long deck,
-split slides into `slides/NN_*.ts` files, each
-`export default (pres: pptxgen) => { ... }` adding one slide, and have
-`build_deck.ts` load them in order:
+The user watches the deck take shape in the preview, one slide per step, so
+**write and add each slide in its own command**. Never generate every slide
+from one run: it finishes in a second and the user only sees the end result.
+Do not draft later slides ahead either: work out slide 1, write its file,
+build, and only then design slide 2.
 
-```typescript
-import { readdirSync } from "node:fs";
-import pptxgen from "pptxgenjs";
+1. Create the file with the outline's slide count. It opens in the preview
+   straight away, with a loading skeleton for each slide still to come:
 
-const pres = new pptxgen();
-pres.layout = "LAYOUT_WIDE";
-for (const file of readdirSync("slides").filter((f) => /^\d+_.*\.ts$/.test(f)).sort()) {
-  (await import(`./slides/${file}`)).default(pres);
-}
-await pres.writeFile({ fileName: "review.pptx" });
-```
+   ```bash
+   uv run --with python-pptx python <skill>/scripts/deck_live.py init review.pptx --slides 3
+   ```
 
-Run `bun run build_deck.ts`, then QA (see `SKILL.md`). To fix a slide, edit
-the generator and run it again; PptxGenJS cannot reopen a file, so every run
-rebuilds the whole deck.
+2. Write `build_deck.ts`, which loads every `slides/NN_*.ts` present (each
+   `export default (pres: pptxgen) => { ... }` adding one slide), writes the
+   deck and re-embeds the plan. PptxGenJS cannot reopen a file, so it
+   rebuilds the slides written so far:
+
+   ```typescript
+   import { readdirSync } from "node:fs";
+   import { execFileSync } from "node:child_process";
+   import pptxgen from "pptxgenjs";
+
+   const pres = new pptxgen();
+   pres.layout = "LAYOUT_WIDE";
+   for (const file of readdirSync("slides").filter((f) => /^\d+_.*\.ts$/.test(f)).sort()) {
+     (await import(`./slides/${file}`)).default(pres);
+   }
+   await pres.writeFile({ fileName: "review.pptx" });
+   execFileSync("uv", ["run", "--with", "python-pptx", "python",
+     "<skill>/scripts/deck_live.py", "mark", "review.pptx"], { stdio: "inherit" });
+   ```
+
+3. For each outline slide, in order: write its slide file, then run
+   `bun run build_deck.ts`. One slide file, one command, then the next
+   slide. Shared palette and helpers go in `slides/theme.ts`.
+4. After the last slide: `deck_live.py finish review.pptx`, then QA. To fix
+   slides, edit their files and run `bun run build_deck.ts` again: the
+   finished deck stays finished. Never run `init` again on a deck that has
+   slides.
 
 Available `pres.layout` values: `LAYOUT_16x9` (10 × 5.625), `LAYOUT_WIDE`
 (13.333 × 7.5), `LAYOUT_16x10` (10 × 6.25), `LAYOUT_4x3` (10 × 7.5). Use

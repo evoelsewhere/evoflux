@@ -73,11 +73,19 @@ def rasterise(pdf: Path, out_dir: Path, dpi: int,
             cmd += ["-f", str(first)]
         if last:
             cmd += ["-l", str(last)]
-        proc = subprocess.run([*cmd, str(pdf), str(out_dir / pdf.stem)],
-                              capture_output=True, text=True)
-        if proc.returncode != 0:
-            raise RenderFailed(f"pdftoppm returned {proc.returncode}: {proc.stderr.strip()}")
-        pages = sorted(out_dir.glob(f"{pdf.stem}-*.png"))
+        # Render into a scratch directory and move the pages over, so only this
+        # run's pages come back, never an earlier render's in `out_dir`.
+        pages = []
+        with tempfile.TemporaryDirectory(prefix="xlsx-png-") as scratch_str:
+            scratch = Path(scratch_str)
+            proc = subprocess.run([*cmd, str(pdf), str(scratch / pdf.stem)],
+                                  capture_output=True, text=True)
+            if proc.returncode != 0:
+                raise RenderFailed(f"pdftoppm returned {proc.returncode}: {proc.stderr.strip()}")
+            for page in sorted(scratch.glob(f"{pdf.stem}-*.png")):
+                target = out_dir / page.name
+                shutil.move(str(page), target)
+                pages.append(target)
     else:
         command = _pypdfium2_command()
         if command is None:

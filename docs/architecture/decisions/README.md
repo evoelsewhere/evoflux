@@ -16,6 +16,8 @@ consequences and the alternatives rejected. The
 | [0006](0006-documentation-follows-add-and-sdd.md) | Design documentation follows ADD, SDD and ADR | Accepted | 2026-11-06 |
 | [0007](0007-one-transcript-file-per-chat.md) | Each chat's transcript is a SQLite file of its own, written only by that chat's engine | Accepted | 2026-11-06 |
 | [0008](0008-optional-libreoffice-runtime.md) | Office documents use an optional, pinned LibreOffice runtime downloaded on demand | Accepted | 2026-11-07 |
+| [0009](0009-native-office-preview-renderer.md) | Office files render natively in the engine; LibreOffice gives exact pages | Accepted | 2026-11-07 |
+| [0010](0010-engine-enforces-approval-mode.md) | The engine enforces the approval mode on every tool call | Accepted | 2026-11-07 |
 
 ## Rules
 

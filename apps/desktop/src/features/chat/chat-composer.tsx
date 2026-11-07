@@ -22,12 +22,15 @@ import {
 import { InputGroupButton } from "@/components/ui/input-group";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { UNCONFIGURED_PROVIDER } from "@/engine/protocol";
+import { composeAnnotatedMessage } from "@/lib/document-annotations";
 import { mcp, type Connector } from "@/lib/mcp";
 import { cn } from "@/lib/utils";
+import { useAnnotationsStore } from "@/stores/annotations-store";
 import { useConnectorsStore } from "@/stores/connectors-store";
 import { useCustomizeStore } from "@/stores/customize-store";
 import { useEngineStore } from "@/stores/engine-store";
 import { useUiStore, type ApprovalMode } from "@/stores/ui-store";
+import { ComposerAnnotations } from "./annotation-chips";
 import { CommandMenu, commandItems, leadingCommand, matchCommands, type CommandItem } from "./command-menu";
 import {
   attachmentsFromPaths,
@@ -74,6 +77,7 @@ export function ChatComposer() {
   const queuedCount = useEngineStore((s) => s.transcript.queued?.length ?? 0);
   const [problem, setProblem] = React.useState<string | null>(null);
   const [dropping, setDropping] = React.useState(false);
+  const chatId = useEngineStore((s) => s.activeId);
   const approval = useUiStore((s) => s.approval);
   const setApproval = useUiStore((s) => s.setApproval);
   const ready = status === "ready";
@@ -191,29 +195,51 @@ export function ChatComposer() {
   }
 
   /**
-   * Send `message` with the attachments. While the agent works it is read at
-   * its next step, or with `queue` once it finishes; otherwise it starts a turn.
+   * Send `message` with the attachments and the chat's document annotations
+   * (their block goes last, docs/features/office-v3-parity/sdd.md). While the
+   * agent works it is read at its next step, or with `queue` once it
+   * finishes; otherwise it starts a turn.
    */
   async function send(message: string, queue = false) {
     const files = attachments;
+    const chat = useEngineStore.getState().activeId;
+    const annotations = chat ? (useAnnotationsStore.getState().pending[chat] ?? []) : [];
     setText("");
     setAttachments([]);
     setProblem(null);
+    if (chat && annotations.length > 0) useAnnotationsStore.getState().clear(chat);
     try {
       const prompt = await buildPrompt(await withResources(message), files);
+      const text = composeAnnotatedMessage(prompt.text, annotations);
       if (useEngineStore.getState().transcript.busy) {
-        await queueMessage(prompt.text, prompt.images, queue ? "followUp" : "steer");
+        await queueMessage(text, prompt.images, queue ? "followUp" : "steer");
       } else {
-        await sendPrompt(prompt.text, prompt.images);
+        await sendPrompt(text, prompt.images);
       }
       files.forEach(releaseAttachment);
     } catch (error) {
       // Put everything back so nothing is lost.
       setText((current) => current || message);
       setAttachments((current) => (current.length ? current : files));
+      if (chat) useAnnotationsStore.getState().restore(chat, annotations);
       setProblem(error instanceof Error ? error.message : String(error));
     }
   }
+
+  // The viewer's "Send now" sends the batch (with whatever is typed) through
+  // this composer, as Enter would.
+  const submitRequest = useAnnotationsStore((s) => s.submitRequest);
+  const pendingAnnotations = useAnnotationsStore((s) => (chatId ? (s.pending[chatId]?.length ?? 0) : 0));
+  const handledSubmit = React.useRef(submitRequest?.nonce ?? 0);
+  // The effect runs with this render's `send`, `text` and state.
+  React.useEffect(() => {
+    if (!submitRequest || submitRequest.chatId !== chatId) return;
+    if (submitRequest.nonce === handledSubmit.current) return;
+    handledSubmit.current = submitRequest.nonce;
+    // As v3: nothing is sent while the engine starts or a `/command` is being typed.
+    if (!ready || slash !== null) return;
+    void send(text, false);
+  }, [chatId, submitRequest]);
 
   /**
    * `@server:uri` of a connected connector: read the resource and add it to
@@ -323,6 +349,7 @@ export function ChatComposer() {
 
   return (
     <PromptInput
+      canSubmitEmpty={pendingAnnotations > 0}
       value={text}
       onChange={(value) => {
         if (!value.startsWith("/")) setMenuDismissed(false);
@@ -354,6 +381,7 @@ export function ChatComposer() {
               requestAnimationFrame(() => textareaRef.current?.focus());
             }}
           />
+          <ComposerAnnotations chatId={chatId} />
           {problem && (
             <p role="alert" className="mx-3 mb-1.5 text-xs text-destructive">
               {problem}

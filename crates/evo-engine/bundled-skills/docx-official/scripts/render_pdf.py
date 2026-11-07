@@ -26,7 +26,7 @@ def _find_soffice() -> str:
     override = os.environ.get("DOCX_SKILL_SOFFICE")
     if override:
         return override
-    bundled = os.environ.get("EVO_SOFFICE")  # app-managed LibreOffice: use only when present, else fall through
+    bundled = os.environ.get("EVO_SOFFICE")  # bundled runtime: use only when present, else fall through
     if bundled and Path(bundled).is_file():
         return bundled
     for candidate in ("soffice", "libreoffice"):

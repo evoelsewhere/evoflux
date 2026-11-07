@@ -287,7 +287,22 @@ pub fn workspaces_list(db: State<'_, Db>) -> Result<Vec<Workspace>, String> {
 
 #[tauri::command]
 pub fn workspace_ensure(db: State<'_, Db>, path: String) -> Result<Workspace, String> {
+    check_workspace_folder(&path)?;
     db.with(|conn| chats::ensure_workspace(conn, &path))
+}
+
+/// A workspace is an existing folder named by an absolute path. This keeps out
+/// a mangled path (say `C:Users…` with its backslashes eaten by a string
+/// escape), which would otherwise be stored and shown whole as the name.
+fn check_workspace_folder(path: &str) -> Result<(), String> {
+    let folder = std::path::Path::new(path);
+    if path.chars().any(char::is_control) || !folder.is_absolute() {
+        return Err(format!("not an absolute folder path: {path:?}"));
+    }
+    if !folder.is_dir() {
+        return Err(format!("no such folder: {path}"));
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -376,6 +391,16 @@ pub async fn chat_delete(db: State<'_, Db>, engines: State<'_, EngineState>, id:
     // The engine holds its transcript open; Windows will not delete it.
     engines.stop(&id).await;
     db.remove_transcript(&id);
+    // The chat's Office document versions (docs/features/office-v3-parity/sdd.md):
+    // kept by its engine under `<agent>/document-versions/<chat>`.
+    if !id.is_empty() && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+        let versions = crate::mcp::agent_dir().join("document-versions").join(&id);
+        if versions.is_dir() {
+            if let Err(error) = std::fs::remove_dir_all(&versions) {
+                db.log(NewLog::new("warn", "shell", format!("could not remove document versions: {error}")).chat(Some(&id)));
+            }
+        }
+    }
     db.log(NewLog::new("info", "shell", "deleted chat").chat(Some(&id)));
     Ok(())
 }
@@ -451,4 +476,19 @@ pub fn logs_export(app: AppHandle, db: State<'_, Db>, query: LogQuery) -> Result
     std::fs::write(&file, text).map_err(|e| e.to_string())?;
     let _ = app.opener().reveal_item_in_dir(&file);
     Ok(file.display().to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::check_workspace_folder;
+
+    #[test]
+    fn workspace_folder_must_be_an_existing_absolute_dir() {
+        let dir = std::env::temp_dir();
+        assert!(check_workspace_folder(dir.to_str().unwrap()).is_ok());
+        // Backslashes eaten by a JS string escape: drive-relative, with `\1` as U+0001.
+        assert!(check_workspace_folder("C:UsersHungKV4AppDataLocalTempclaude\u{1}cd6de").is_err());
+        assert!(check_workspace_folder("relative/folder").is_err());
+        assert!(check_workspace_folder(dir.join("evo-no-such-folder-9f3a").to_str().unwrap()).is_err());
+    }
 }

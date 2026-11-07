@@ -31,6 +31,10 @@ pub struct AnthropicMessagesCompat {
     pub supports_strict_tools: Option<bool>,
     /// Default: true for first-party Anthropic (except Haiku / Claude ≤ 4.4); false otherwise.
     pub supports_tool_references: Option<bool>,
+    /// `thinking.block_binding` (beta `thinking-binding-controls-2026-08-01`).
+    /// Default: true only for the first-party API (`api.anthropic.com`);
+    /// Anthropic-compatible endpoints elsewhere may reject the field.
+    pub supports_thinking_block_binding: Option<bool>,
 }
 
 impl AnthropicMessagesCompat {

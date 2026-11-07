@@ -384,5 +384,5 @@ uv run --with python-docx python scripts/extract_text.py out/report.docx | grep 
 ```
 
 If the audit fails or the grep matches anything, treat it as a build
-failure and fix before shipping. Then render the pages with `scripts/transcode.py out/report.docx --to png
---out-dir out/pages/` and look at them with the `read` tool.
+failure and fix before shipping. Then check the rendered layout with the
+`document_preview` tool.

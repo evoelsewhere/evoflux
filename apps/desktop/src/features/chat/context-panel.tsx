@@ -173,7 +173,7 @@ export function ContextPanel({ className }: { className?: string }) {
           <Button
             variant="ghost"
             size="icon-sm"
-            className={cn("size-7", className)}
+            className={cn("size-8", className)}
             aria-label={`${percentUsed}% of context used`}
           />
         }
@@ -198,7 +198,7 @@ function UsageRing({ percent }: { percent: number }) {
   const radius = 6;
   const circumference = 2 * Math.PI * radius;
   return (
-    <svg viewBox="0 0 16 16" className="size-3.5 -rotate-90" aria-hidden>
+    <svg viewBox="0 0 16 16" className="size-4 -rotate-90" aria-hidden>
       <circle cx="8" cy="8" r={radius} fill="none" stroke="currentColor" strokeOpacity={0.2} strokeWidth="2" />
       <circle
         cx="8"

@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Evo Harness crate layers</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    /* Dark skin from DESIGN.md / the app's .dark tokens: achromatic, one blue accent, Geist. */
+    :root {
+      --paper:       #191919;
+      --card:        #202020;
+      --ink:         #ededed;
+      --muted:       #a1a1a1;
+      --soft:        #8f8f8f;
+      --accent:      #3291ff;
+      --accent-tint: rgba(50,145,255,0.12);
+      --rule:        rgba(237,237,237,0.10);
+      --outline:     rgba(237,237,237,0.30);
+      --font-sans:   'Geist', system-ui, sans-serif;
+      --font-serif:  'Instrument Serif', serif;
+      --font-mono:   'Geist Mono', ui-monospace, monospace;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background: var(--paper);
+      color: var(--ink);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 3rem 2rem;
+    }
+
+    .frame { max-width: 1200px; width: 100%; }
+    .diagram-container { width: 100%; overflow-x: auto; }
+
+    .eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.66rem;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 0.5rem;
+    }
+
+    h1 {
+      font-family: var(--font-serif);
+      font-size: clamp(1.5rem, 2.4vw + 0.75rem, 2rem);
+      font-weight: 400;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      color: var(--ink);
+      margin-bottom: 1.5rem;
+    }
+
+    svg { width: 100%; min-width: 960px; display: block; }
+    @media print {
+      .diagram-container { overflow-x: visible; }
+      svg { min-width: 0; }
+    }
+
+    /* Diagram roles */
+    .bg          { fill: var(--paper); }
+    .layer       { fill: var(--card); }
+    .layer-focal { fill: var(--accent-tint); }
+    .focal-edge  { fill: none; stroke: var(--accent); stroke-width: 1.2; }
+    .outline     { fill: none; stroke: var(--outline); stroke-width: 1; }
+    .rule        { stroke: var(--rule); stroke-width: 1; }
+    .index       { fill: var(--muted); font: 500 8px var(--font-mono); letter-spacing: 0.14em; }
+    .index-focal { fill: var(--accent); font: 600 8px var(--font-mono); letter-spacing: 0.14em; }
+    .name        { fill: var(--ink); font: 600 16px var(--font-sans); }
+    .note        { fill: var(--muted); font: 400 11px var(--font-sans); }
+    .crates      { fill: var(--muted); font: 400 10px var(--font-mono); letter-spacing: 0.02em; }
+    .crates-focal { fill: var(--accent); font: 400 10px var(--font-mono); letter-spacing: 0.02em; }
+    .axis        { stroke: var(--outline); stroke-width: 1; }
+    .axis-head   { fill: var(--muted); }
+    .axis-label  { fill: var(--muted); font: 500 8px var(--font-mono); letter-spacing: 0.18em; }
+    .callout     { fill: var(--muted); font: italic 400 14px var(--font-serif); }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <p class="eyebrow">Layer stack · Evo Harness</p>
+    <h1>Crate layers point down</h1>
+
+    <div class="diagram-container">
+      <svg viewBox="0 0 960 520" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="crate-layers-dark-title crate-layers-dark-desc">
+        <title id="crate-layers-dark-title">Evo Harness crate layers</title>
+        <desc id="crate-layers-dark-desc">Six crate layers, each depending only on the ones below: app binaries, protocol, runtime, the agent loop with its tools, the LLM layer, and leaf service crates with no internal dependencies; the agent layer is highlighted.</desc>
+
+        <rect class="bg" width="100%" height="100%"/>
+
+        <!-- Direction indicator (left margin) -->
+        <text class="axis-label" x="40" y="60">DEPENDS ON</text>
+        <line class="axis" x1="80" y1="72" x2="80" y2="448"/>
+        <polygon class="axis-head" points="76,448 84,448 80,456"/>
+        <text class="axis-label" x="64" y="476">LEAF</text>
+
+        <!-- L6 App -->
+        <rect class="layer" x="128" y="72" width="792" height="64"/>
+        <line class="rule" x1="128" y1="136" x2="920" y2="136"/>
+        <text class="index" x="148" y="108">L6</text>
+        <text class="name" x="192" y="102">App</text>
+        <text class="note" x="192" y="120">the engine binary and the desktop shell</text>
+        <text class="crates" x="900" y="108" text-anchor="end">evo-engine · apps/desktop/src-tauri</text>
+
+        <!-- L5 Protocol -->
+        <rect class="layer" x="128" y="136" width="792" height="64"/>
+        <line class="rule" x1="128" y1="200" x2="920" y2="200"/>
+        <text class="index" x="148" y="172">L5</text>
+        <text class="name" x="192" y="166">Protocol</text>
+        <text class="note" x="192" y="184">JSONL contract between engine and clients</text>
+        <text class="crates" x="900" y="172" text-anchor="end">evo-protocol · evo-mesh</text>
+
+        <!-- L4 Runtime -->
+        <rect class="layer" x="128" y="200" width="792" height="64"/>
+        <line class="rule" x1="128" y1="264" x2="920" y2="264"/>
+        <text class="index" x="148" y="236">L4</text>
+        <text class="name" x="192" y="230">Runtime</text>
+        <text class="note" x="192" y="248">sessions, recovery, models, plugin host</text>
+        <text class="crates" x="900" y="228" text-anchor="end">evo-harness · evo-durable · evo-runtime</text>
+        <text class="crates" x="900" y="244" text-anchor="end">evo-extensions · evo-plugin-sdk</text>
+
+        <!-- L3 Agent (focal) -->
+        <rect class="layer" x="128" y="264" width="792" height="64"/>
+        <rect class="layer-focal" x="128" y="264" width="792" height="64"/>
+        <text class="index-focal" x="148" y="300">L3</text>
+        <text class="name" x="192" y="294">Agent</text>
+        <text class="note" x="192" y="312">provider-agnostic loop, tools, sandbox</text>
+        <text class="crates-focal" x="900" y="300" text-anchor="end">evo-agent · evo-tools · evo-worktrees</text>
+
+        <!-- L2 LLM -->
+        <rect class="layer" x="128" y="328" width="792" height="64"/>
+        <line class="rule" x1="128" y1="392" x2="920" y2="392"/>
+        <text class="index" x="148" y="364">L2</text>
+        <text class="name" x="192" y="358">LLM</text>
+        <text class="note" x="192" y="376">messages, providers, streaming</text>
+        <text class="crates" x="900" y="364" text-anchor="end">evo-ai</text>
+
+        <!-- L1 Leaf -->
+        <rect class="layer" x="128" y="392" width="792" height="64"/>
+        <text class="index" x="148" y="428">L1</text>
+        <text class="name" x="192" y="422">Leaf services</text>
+        <text class="note" x="192" y="440">no internal dependencies</text>
+        <text class="crates" x="900" y="420" text-anchor="end">evo-store · evo-mcp · evo-plugins · evo-hooks</text>
+        <text class="crates" x="900" y="436" text-anchor="end">evo-lsp · evo-web · evo-office · evo-telemetry</text>
+
+        <!-- Focal edge and outer silhouette, drawn last -->
+        <rect class="focal-edge" x="128" y="264" width="792" height="64"/>
+        <rect class="outline" x="128" y="72" width="792" height="384" rx="6"/>
+
+        <!-- Callout -->
+        <text class="callout" x="128" y="496">The desktop shell links a few lower crates directly, never evo-engine: it runs the engine as a child process.</text>
+      </svg>
+    </div>
+  </div>
+</body>
+</html>

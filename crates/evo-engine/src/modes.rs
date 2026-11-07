@@ -651,6 +651,17 @@ where
         })
     });
     let _provider_task = provider_task.map(|task| RetainedRpcTask::new(task, pump_stop.clone()));
+    // Office documents (`office.rs`): previews and versions answer during a
+    // run; a live engine also reports changed Office files in its folder.
+    let office_chat = crate::office::OfficeChat {
+        cwd: rpc_cwd(&rpc_providers),
+        session_id: harness.session().storage().metadata().id.clone(),
+        run_active: Arc::clone(&run_active),
+    };
+    crate::office::set_chat_id(&office_chat.session_id);
+    let _office_watch = rpc_providers
+        .reload
+        .and_then(|_| crate::office::watch_office_files(office_chat.clone(), stdout.clone()));
 
     // Background agents started by an earlier engine of this session ran in
     // that process and are gone: queue their missing reports for the next run.
@@ -834,6 +845,20 @@ where
                 } else if let Err(error) = result {
                     eprintln!("[evo] ui_dialog_response: {error}");
                 }
+                continue;
+            }
+            // Office preview and versions (`office.rs`): off the reader loop,
+            // since an exact conversion can take seconds.
+            "office_preview" | "document_versions_get" | "document_versions_act" => {
+                command_tasks.retain(|task| !task.is_finished());
+                let (out, chat, request, kind) = (stdout.clone(), office_chat.clone(), msg.clone(), kind.clone());
+                command_tasks.push(RetainedRpcTask::new(
+                    tokio::spawn(async move {
+                        let result = crate::office::rpc(&kind, &request, &chat).await;
+                        write_line(&out, &rpc_protocol::response(Some(id), &kind, result.map(Some))).await;
+                    }),
+                    writer_failed.clone(),
+                ));
                 continue;
             }
             "execute_command" => {

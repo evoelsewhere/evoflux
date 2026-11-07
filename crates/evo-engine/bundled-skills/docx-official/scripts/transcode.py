@@ -61,7 +61,7 @@ class LibreOfficeBackend:
         override = os.environ.get(cls._ENV_OVERRIDE)
         if override:
             return override
-        bundled = os.environ.get("EVO_SOFFICE")  # app-managed LibreOffice: use only when present, else fall through
+        bundled = os.environ.get("EVO_SOFFICE")  # bundled runtime: use only when present, else fall through
         if bundled and Path(bundled).is_file():
             return bundled
         for candidate in ("soffice", "libreoffice"):
@@ -146,14 +146,23 @@ class Transcode:
                 "available (needs `uv` on PATH). Install poppler-utils or uv, "
                 "or convert only as far as PDF."
             )
-        cmd = ["pdftoppm", "-png", "-r", str(self.dpi),
-               str(pdf), str(out_dir / pdf.stem)]
-        proc = subprocess.run(cmd, capture_output=True, text=True)
-        if proc.returncode != 0:
-            raise BackendFailure(
-                f"pdftoppm exit {proc.returncode}: {proc.stderr}"
-            )
-        pages = sorted(out_dir.glob(f"{pdf.stem}-*.png"))
+        # Render into a scratch directory and move the pages over, so only this
+        # run's pages come back: an earlier render into `out_dir` (a longer
+        # version, other padding) must not be returned as part of this one.
+        pages: list[Path] = []
+        with tempfile.TemporaryDirectory(prefix="pdftoppm-render-") as scratch_str:
+            scratch = Path(scratch_str)
+            cmd = ["pdftoppm", "-png", "-r", str(self.dpi),
+                   str(pdf), str(scratch / pdf.stem)]
+            proc = subprocess.run(cmd, capture_output=True, text=True)
+            if proc.returncode != 0:
+                raise BackendFailure(
+                    f"pdftoppm exit {proc.returncode}: {proc.stderr}"
+                )
+            for page in sorted(scratch.glob(f"{pdf.stem}-*.png")):
+                target = out_dir / page.name
+                shutil.move(str(page), target)
+                pages.append(target)
         if not pages:
             raise BackendFailure("pdftoppm produced no PNG output.")
         return pages
