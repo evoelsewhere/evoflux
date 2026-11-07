@@ -326,6 +326,7 @@ impl<'de> serde::Deserialize<'de> for PromptPayload {
 
 pub const SUPPORTED_EVENTS: &[&str] = &[
     "providers_changed",
+    "office_file_changed",
     "session_entry_committed",
     "external_tool_request",
     "external_tool_request_closed",

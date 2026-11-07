@@ -120,7 +120,7 @@ pub async fn chat_window_open(app: tauri::AppHandle, chat: String, title: String
     }
     let id = serde_json::to_string(&chat).map_err(|e| e.to_string())?;
     let window = WebviewWindowBuilder::new(&app, chat_window_label(&chat), WebviewUrl::App("index.html".into()))
-        .title(if title.trim().is_empty() { "evo".to_string() } else { format!("{title} — evo") })
+        .title(if title.trim().is_empty() { "Evo Harness".to_string() } else { format!("{title} — Evo Harness") })
         .inner_size(960.0, 780.0)
         .min_inner_size(520.0, 420.0)
         .decorations(false)

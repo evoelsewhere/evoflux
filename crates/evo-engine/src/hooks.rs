@@ -231,7 +231,7 @@ pub async fn session_end(reason: &str) {
 // ── Tool calls ──────────────────────────────────────────────────────────────
 
 /// Ask the person to allow a call (the approval prompt in the chat input).
-async fn confirm(
+pub(crate) async fn confirm(
     ui_dialog: &evo_extensions::UiDialogMailbox,
     tool_call_id: &str,
     tool: &str,

@@ -11,9 +11,14 @@ import { formatBytes } from "@/lib/format";
 import { useEngineStore } from "@/stores/engine-store";
 import { officeReady, useOffice } from "@/stores/office-store";
 import { OFFICE_FILE } from "./document-kinds";
+import { officeKind } from "./office/kinds";
+import { OfficeViewer } from "./office/office-viewer";
 import { readBytes } from "./fs";
 
-// Word, PowerPoint, Excel and OpenDocument files shown as pages: the engine
+// Word, PowerPoint and Excel files open in the native Office viewer
+// (office/office-viewer.tsx, docs/features/office-v3-parity/sdd.md): the
+// engine renders them to HTML, or to exact pages with the LibreOffice runtime.
+// Legacy and OpenDocument files are shown as pages: the engine
 // converts them to a PDF with the LibreOffice runtime (RPC `office_convert`,
 // cached), and pdf.js draws the PDF. Plain PDFs skip the conversion.
 // docs/features/office/sdd.md.
@@ -129,8 +134,39 @@ type Phase =
   | { kind: "ready"; doc: PDFDocumentProxy }
   | { kind: "error"; message: string };
 
-/** `version` (the file's mtime) re-renders the document when it changes on disk. */
-export function DocumentViewer({ path, version, size, onOpenExternal }: { path: string; version: number; size: number; onOpenExternal(): void }) {
+export interface DocumentViewerProps {
+  path: string;
+  /** The file's mtime: a new one re-renders the document. */
+  version: number;
+  size: number;
+  /** The chat's working folder (Office documents: annotations and versions name files relative to it). */
+  root: string;
+  onOpenExternal(): void;
+  /** An Office document started or stopped being built live by the agent (the Files tree steps aside). */
+  onLiveDeckChange?(live: boolean): void;
+}
+
+/** A document shown as pages: Word, Excel and PowerPoint in the native viewer, the rest through pdf.js. */
+export function DocumentViewer({ path, version, size, root, onOpenExternal, onLiveDeckChange }: DocumentViewerProps) {
+  const kind = officeKind(path);
+  const pages = <PdfPagesViewer path={path} version={version} size={size} onOpenExternal={onOpenExternal} />;
+  if (!kind) return pages;
+  return (
+    <OfficeViewer
+      key={path}
+      path={path}
+      kind={kind}
+      root={root}
+      size={size}
+      mtime={version}
+      onLiveDeckChange={onLiveDeckChange}
+      legacy={pages}
+    />
+  );
+}
+
+/** LibreOffice pages through pdf.js: PDFs, legacy and OpenDocument files, and Office files on an engine without the native preview. */
+function PdfPagesViewer({ path, version, size, onOpenExternal }: { path: string; version: number; size: number; onOpenExternal(): void }) {
   const office = OFFICE_FILE.test(path);
   const { status, error: statusError } = useOffice();
   const ready = officeReady(status);

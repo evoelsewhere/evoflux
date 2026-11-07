@@ -41,8 +41,8 @@ the user and wait. Rewriting an outline costs a sentence.
 **Phase 3 — Draft.** Write inside the approved tree using named styles, not
 direct formatting. Do not add sections the plan does not contain.
 
-**Phase 4 — Verify and repair.** Run the QA checklist, render the pages
-and look at them, fix what you find, run it again.
+**Phase 4 — Verify and repair.** Run the QA checklist and `document_preview`,
+fix what they report, run them again.
 
 **Phase 5 — Hand off.** File path, style basis, the checks that actually ran,
 and every placeholder still open.
@@ -111,9 +111,6 @@ uv run --with python-docx python scripts/annotate.py exploded/ "Please check" --
 # Render to PDF for a fidelity check (needs LibreOffice); writes output.pdf next to the source
 uv run --with python-docx python scripts/render_pdf.py output.docx
 
-# Render every page as a PNG to look at (needs LibreOffice); writes pages/output-<page>.png
-uv run --with python-docx python scripts/transcode.py output.docx --to png --out-dir pages/
-
 # Convert between formats via LibreOffice: docx, pdf, png, odt, html, txt
 uv run --with python-docx python scripts/transcode.py old.doc --to docx --out-dir converted/
 ```
@@ -165,21 +162,18 @@ Ask the user which one to use. If you cannot ask, default to the region implied 
    ```bash
    uv run --with python-docx python scripts/extract_text.py output.docx | grep -Ei "TODO|TBD|\{\{|lorem|xxxx"
    ```
-3. **Rendered layout** — render the pages and look at them:
-   ```bash
-   uv run --with python-docx python scripts/transcode.py output.docx --to png --out-dir pages/
-   ```
-   Open each `pages/*.png` with the `read` tool (it displays images). For a
-   long document, look at the first page, one page of every distinct layout
-   (table, figure, list), and the last page. Scan for:
+3. **Rendered layout** — run the `document_preview` tool on the file. It renders
+   the document with the host viewer engine, needs no office application, and
+   reports every page with its labelled elements, their text, and their
+   position as a percentage of the page, flagging anything outside it. Scan for:
    - headings stranded alone at the bottom of a page;
    - tables split awkwardly across pages;
    - images pushed onto their own page because they exceed the content width;
    - missing page numbers or wrong header/footer content.
 
-   LibreOffice's layout is close to Word's but not identical, so describe this
-   as a LibreOffice-rendered check. If LibreOffice is unavailable, say the
-   visual check was skipped.
+   It reports the host engine's layout rather than Word's, so describe it as a
+   rendered-layout check and never claim you looked at pixels. When LibreOffice
+   is available and fidelity matters, also run `scripts/render_pdf.py`.
 4. **Style hygiene** — every heading uses a real style, not bold large text.
    Save this as `check_styles.py` and run it with
    `uv run --with python-docx python check_styles.py`:

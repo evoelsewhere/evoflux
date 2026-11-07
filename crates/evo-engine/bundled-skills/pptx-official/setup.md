@@ -95,8 +95,8 @@ syntax; a type check catches these mismatches before runtime.
 `scripts/contact_sheet.py` also rasterise pages, with Poppler's `pdftoppm`
 when it is on `PATH` and otherwise with pypdfium2, which `uv` fetches on
 first use — so Poppler is optional wherever `uv` is available. The scripts
-find LibreOffice through `EVO_SOFFICE` (set by evo once its LibreOffice
-runtime is installed) or `PATH`.
+find LibreOffice through `EVO_SOFFICE` (set in evo once the exact
+renderer is installed from the document viewer) or `PATH`.
 
 ```bash
 # macOS

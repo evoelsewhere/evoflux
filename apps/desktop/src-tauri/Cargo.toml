@@ -3,7 +3,7 @@ name = "evo-desktop"
 version = "4.0.0"
 edition = "2021"
 rust-version = "1.89"
-license = "MIT"
+license = "Apache-2.0"
 description = "evo desktop app shell: runs evo-engine as a child process and bridges its JSONL protocol to the web UI"
 publish = false
 

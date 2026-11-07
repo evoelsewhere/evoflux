@@ -7,11 +7,12 @@ Write the generator to a `.py` file in the workspace and run it with
 `uv run --with openpyxl python build_model.py`; add `--with pandas` when it
 uses pandas, `--with xlsxwriter` for that engine, and `--with pillow` for
 images. Scripts run as `uv run --with openpyxl python scripts/<name>.py`.
-The snippets below show what goes inside the generator (see *Build*).
+A new workbook is built live, one sheet file per sheet (see *Live build*);
+the snippets below show what goes inside a sheet file's `build(wb)`.
 
 ## Contents
 
-- Build
+- Live build
 - Library choice
 - Minimum viable workbook
 - Writing data: list of dicts, DataFrame, multiple sheets
@@ -25,35 +26,56 @@ The snippets below show what goes inside the generator (see *Build*).
 - Full working example
 - After saving — always
 
-## Build
+## Live build
 
-Write the whole workbook as code and run it once. Put shared styles, number
-formats and helpers at the top of `build_model.py` (or in a `theme.py` beside
-it), create one worksheet per planned sheet in order, and save at the end.
-Formulas may refer to any sheet in the workbook; openpyxl does not evaluate
-them until `bake.py` recalculates.
+The user watches the workbook take shape in the preview, one sheet per step,
+so **write and add each sheet in its own command**. Never build every sheet
+from one script: it runs in a second and the user only sees the end result.
+Do not draft later sheets ahead either: finish sheet 1, add it, then design
+sheet 2.
 
-```python
-# build_model.py
-from openpyxl import Workbook
-from theme import HEADER_FONT          # helpers beside this file
+1. Create the file with the sheet plan's count. It opens in the preview
+   straight away, with a loading skeleton for each sheet still to come:
 
-wb = Workbook()
-inputs = wb.active
-inputs.title = "Inputs"
-model = wb.create_sheet("Model")
-model["A1"] = "Revenue"
-model["A1"].font = HEADER_FONT
-model["B1"] = "=SUM(Inputs!B2:B13)"
-wb.save("model.xlsx")
-```
+   ```bash
+   uv run --with openpyxl python <skill>/scripts/workbook_live.py init model.xlsx --sheets 3
+   ```
 
-```bash
-uv run --with openpyxl python build_model.py
-```
+2. Put shared styles, number formats and helpers in `sheets/theme.py`.
+3. For each planned sheet, in order: write one sheet file whose `build(wb)`
+   adds exactly one worksheet, then add it. Formulas may refer to sheets
+   added before it:
 
-Then Phase 4 (`bake.py`) and the QA checks. To fix a sheet, edit the
-generator and run it again; it rebuilds the workbook from scratch.
+   ```python
+   # sheets/02_model.py
+   from theme import HEADER_FONT          # helpers beside the sheet files
+
+   def build(wb):
+       ws = wb.create_sheet("Model")
+       ws["A1"] = "Revenue"
+       ws["A1"].font = HEADER_FONT
+       ws["B1"] = "=SUM(Inputs!B2:B13)"
+   ```
+
+   ```bash
+   uv run --with openpyxl python <skill>/scripts/workbook_live.py add model.xlsx sheets/02_model.py
+   ```
+
+   Add `--with pillow` to every `add` once a sheet holds images, so they
+   survive the later saves; add `--with pandas` when a sheet file uses it
+   (write frames with `openpyxl.utils.dataframe.dataframe_to_rows`, not
+   `df.to_excel`, which cannot write into the open workbook).
+4. After the last sheet: `workbook_live.py finish model.xlsx`, then Phase 4
+   (`bake.py`) and the QA checks. To fix one sheet, edit its file and re-add
+   it in place with `add model.xlsx sheets/02_model.py --replace 2`; after
+   changing `theme.py` or several sheets, `rebuild model.xlsx sheets/`. Both
+   keep the finished workbook finished, so the preview just redraws.
+
+Keep `--sheets` equal to the number of sheets you add. Never run `init`
+again on a workbook that has sheets: it refuses (`--force` would empty it
+and the user would watch it load from nothing). A sheet file that fails
+leaves the workbook as it was; fix it and run `add` again. `xlsxwriter`
+cannot reopen a file, so it is not for live builds.
 
 ## Library choice
 
@@ -474,4 +496,4 @@ uv run --with openpyxl python scripts/audit.py model.xlsx
 If `bake.py` reports errors, fix those cells and run it once more. A workbook
 shipped with `#REF!` in the middle of a formula is a bug, not a feature. Then
 finish the one-pass QA checks in `SKILL.md` (reconcile, then
-render the pages and look at them).
+`document_preview`).

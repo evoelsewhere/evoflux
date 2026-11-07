@@ -5,7 +5,6 @@
 - Which authoring surface?
 - Running a generator
 - Skeleton
-- Build
 - Text on a slide
 - CJK / East-Asian text (Chinese, Japanese, Korean)
 - Bulleted list
@@ -45,8 +44,8 @@ Slides, and LibreOffice open cleanly:
 Code goes into `.py` files in the workspace and runs with
 `uv run --with python-pptx python <file>.py`. `python-pptx` pulls in
 `lxml` and `Pillow`, which the image recipes below also use. A new deck is
-built by a generator script (see *Build*); the skeleton below shows the
-object model it uses.
+built as one slide file per slide (see *Live build*); the skeleton below
+shows the object model those files use.
 
 ## Skeleton
 
@@ -71,36 +70,53 @@ title_slide.placeholders[1].text = "What shipped, what slipped, what's next"
 prs.save("review.pptx")
 ```
 
-## Build
+## Live build
 
-Write the whole deck as code and run it once. Put the palette, fonts and
-shared helpers in `theme.py`, define one function per slide (or per recurring
-slide shape), and call them in outline order from `build_deck.py`:
+The user watches the deck take shape in the preview, one slide per step, so
+**write and add each slide in its own command**. Never generate every slide
+from one script: it runs in a second and the user only sees the end result.
+Do not draft later slides ahead either: work out slide 1, write its file,
+add it, and only then design slide 2. Keep `theme.py` small at first and
+extend it when a slide needs a new helper.
 
-```python
-# build_deck.py
-from pptx import Presentation
-from pptx.util import Inches, Pt
-from theme import INK, title_bar      # helpers beside this file
+1. Create the file with the outline's slide count. It opens in the preview
+   straight away, with a loading skeleton for each slide still to come:
 
-def shipped(prs):
-    slide = prs.slides.add_slide(prs.slide_layouts[6])
-    title_bar(slide, "What shipped")
-    ...
+   ```bash
+   uv run --with python-pptx python <skill>/scripts/deck_live.py init review.pptx --slides 3
+   ```
 
-prs = Presentation()
-prs.slide_width, prs.slide_height = Inches(13.333), Inches(7.5)
-for build in (title, shipped, next_steps):
-    build(prs)
-prs.save("review.pptx")
-```
+2. Put the palette, fonts and shared helpers in `slides/theme.py`.
+3. For each outline slide, in order: write one slide file that defines
+   `build(prs)` and adds exactly one slide, then add it. One file, one
+   command, then move on to the next slide:
 
-```bash
-uv run --with python-pptx python build_deck.py
-```
+   ```python
+   # slides/02_shipped.py
+   from pptx.util import Inches, Pt
+   from theme import INK, title_bar      # helpers beside the slide files
 
-Then run the QA steps in `SKILL.md`. To fix a slide, edit the generator and
-run it again; it rebuilds the whole deck from scratch.
+   def build(prs):
+       slide = prs.slides.add_slide(prs.slide_layouts[6])
+       title_bar(slide, "What shipped")
+       ...
+   ```
+
+   ```bash
+   uv run --with python-pptx python <skill>/scripts/deck_live.py add review.pptx slides/02_shipped.py
+   ```
+
+4. After the last slide: `deck_live.py finish review.pptx`, then run the QA
+   steps. To fix one slide, edit its file and re-add it in place with
+   `add review.pptx slides/02_shipped.py --replace 2`. After changing
+   `theme.py` or several slides, rebuild them all in one save with
+   `rebuild review.pptx slides/`. Both keep the finished deck finished, so
+   the preview just redraws.
+
+Keep `--slides` equal to the number of slides you add. Never run `init`
+again on a deck that has slides: it refuses (`--force` would empty the deck
+and the user would watch it load from nothing). A slide file that fails
+leaves the deck as it was; fix it and run `add` again.
 
 ## Text on a slide
 

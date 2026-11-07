@@ -151,7 +151,7 @@ CLI or TUI front end ([ADR 0001](decisions/0001-desktop-app-is-the-only-front-en
 | `evo-hooks` | Hook commands and web requests on agent events |
 | `evo-lsp` | Language-server catalog, installers, LSP client |
 | `evo-web` | Guarded page fetching as Markdown, web search |
-| `evo-office` | Optional pinned LibreOffice runtime: verified install and headless Office to PDF conversion |
+| `evo-office` | Office documents: the native preview renderer (DOCX/PPTX/XLSX → script-free HTML, package preflight, cache, inspection; [ADR 0009](decisions/0009-native-office-preview-renderer.md)), document versions, and the optional pinned LibreOffice runtime (verified install, headless Office to PDF conversion) |
 | `evo-worktrees` | Managed Git worktrees for subagents and nested sessions |
 | `evo-telemetry` | Span/event contracts with a no-op default |
 | `evo-engine` | Composes everything into the headless application and its RPC server |
@@ -224,6 +224,7 @@ has a local router for its in-process nodes. Design:
 | `~/.evo/agent/mcp.json`, `mcp-auth.json` | connectors and their OAuth tokens | shell |
 | `~/.evo/agent/{skills,plugins,lsp,memory}`, `projects/<folder>/memory` | personal skills, plugins, language servers, memory | engine / shell |
 | `~/.evo/agent/AGENTS.md` | personal instructions for every chat | engine |
+| `~/.evo/agent/{runtimes,cache/office,bundled-skills,document-versions/<chat>}` | LibreOffice runtime, Office preview cache (native HTML, exact PDFs), extracted Office skills, copies of Office files saved in a chat (versions) | engine (`office.rs`, `evo-office`); the shell removes a chat's versions with the chat |
 | `<project>/AGENTS.md`, `<project>/.evo/`, `.mcp.json` | project instructions, commands, agents, settings, connectors | the user (read by the engine after trust) |
 | managed worktrees | delegated work in isolation | `evo-worktrees` |
 

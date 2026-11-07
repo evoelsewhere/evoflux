@@ -253,6 +253,5 @@ uv run --with python-pptx python scripts/diagnose.py output.pptx
 uv run --with python-pptx python scripts/dump_text.py output.pptx --notes | grep -Ei "\{\{|TODO|TBD|lorem|click to add"
 ```
 
-Then render the changed slides (`scripts/contact_sheet.py` for an overview,
-`scripts/render_slides.py --first N --last N` for single slides), look at the
-images with the `read` tool, and fix only what the checks report; a grep with no match exits non-zero, which is the check passing.
+Then run the `document_preview` tool on the output and fix only what they
+report; a grep with no match exits non-zero, which is the check passing.

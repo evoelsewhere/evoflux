@@ -4,7 +4,7 @@
 //!
 //! The retention comes from the caller's `SimpleStreamOptions.cache_retention`
 //! (no env-var lookup in the provider layer). `CacheRetention` defaults to
-//! `Long` (1h), so an unset preference gets the 1h tier on models that support it.
+//! `Short` (5m); callers forward `Long` for the 1h tier.
 
 use crate::model::{AnthropicMessagesCompat, Model, StreamingProtocolCompat};
 use crate::provider::CacheRetention;
@@ -88,7 +88,7 @@ impl CacheControlOption {
 /// Resolve the retention preference to use for this call. Mirrors the TS
 /// `resolveCacheRetention`: the caller-supplied `cache_retention` wins. No
 /// env-var fallback is modeled here (no ambient env in the provider layer);
-/// callers that want 5m retention forward `CacheRetention::Short`.
+/// callers that want 1h retention forward `CacheRetention::Long`.
 pub fn resolve_cache_retention(cache_retention: CacheRetention) -> CacheRetention {
     cache_retention
 }

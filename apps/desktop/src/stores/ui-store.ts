@@ -7,7 +7,7 @@ export type PanelId = "terminal" | "browser" | "files" | "side-chat" | "memory";
 /** Panels that exist; a saved tab for any other (Plugins moved to Customize, Scheduler to its page) is dropped. */
 const PANEL_IDS: readonly string[] = ["terminal", "browser", "files", "side-chat", "memory"];
 export type ApprovalMode = "ask" | "auto-edits" | "auto";
-export type SettingsSection = "general" | "appearance" | "providers" | "office" | "engine" | "sandbox" | "logs" | "about";
+export type SettingsSection = "general" | "appearance" | "providers" | "engine" | "sandbox" | "logs" | "about";
 export type CustomizeSection = "instructions" | "skills" | "agents" | "connectors" | "plugins" | "hooks" | "languages";
 
 export const SIDEBAR_WIDTH = { min: 220, default: 272, max: 420 } as const;
@@ -59,6 +59,9 @@ interface UiStore {
   /** The app "Open in" used last; the toolbar's one-click target. */
   openInApp: string | null;
   setOpenInApp(id: string): void;
+  /** The app "Open in" always uses (Settings → General); null follows the one used last. */
+  openInDefault: string | null;
+  setOpenInDefault(id: string | null): void;
   /** Agents may start nested sessions without asking (otherwise they propose). */
   autoStartSessions: boolean;
   setAutoStartSessions(on: boolean): void;
@@ -137,6 +140,8 @@ export const useUiStore = create<UiStore>()(
       zoom: 1,
       openInApp: null,
       setOpenInApp: (openInApp) => set({ openInApp }),
+      openInDefault: null,
+      setOpenInDefault: (openInDefault) => set({ openInDefault }),
       autoStartSessions: false,
       setAutoStartSessions: (autoStartSessions) => set({ autoStartSessions }),
       proposals: {},
@@ -203,6 +208,7 @@ export const useUiStore = create<UiStore>()(
         pinnedModels: state.pinnedModels,
         zoom: state.zoom,
         openInApp: state.openInApp,
+        openInDefault: state.openInDefault,
         autoStartSessions: state.autoStartSessions,
         proposals: state.proposals,
         settledWorktrees: state.settledWorktrees,

@@ -41,7 +41,7 @@ class BridgeError(RuntimeError):
 
 
 def _which_soffice() -> str:
-    bundled = os.environ.get("EVO_SOFFICE")  # app-managed LibreOffice: use only when present, else fall through
+    bundled = os.environ.get("EVO_SOFFICE")  # bundled runtime: use only when present, else fall through
     if bundled and Path(bundled).is_file():
         return bundled
     for name in ("soffice", "libreoffice"):
@@ -142,13 +142,21 @@ def _rasterize(pdf_path: Path, out_dir: Path, image_ext: str, *,
         args += ["-f", str(first)]
     if last is not None:
         args += ["-l", str(last)]
-    args += [str(pdf_path), str(prefix)]
-
-    result = subprocess.run(args, capture_output=True, text=True)
-    if result.returncode != 0:
-        raise BridgeError(f"pdftoppm exited {result.returncode}: {result.stderr}")
-
-    return sorted(out_dir.glob(f"slide-*.{file_ext}"))
+    # Render into a scratch directory and move the pages over, so only this
+    # run's pages come back: an earlier render into `out_dir` (other slides,
+    # other padding) must not be returned as part of this one.
+    kept: list[Path] = []
+    with tempfile.TemporaryDirectory(prefix="pdftoppm-render-") as scratch_str:
+        scratch = Path(scratch_str)
+        args += [str(pdf_path), str(scratch / prefix.name)]
+        result = subprocess.run(args, capture_output=True, text=True)
+        if result.returncode != 0:
+            raise BridgeError(f"pdftoppm exited {result.returncode}: {result.stderr}")
+        for page in sorted(scratch.glob(f"slide-*.{file_ext}")):
+            target = out_dir / page.name
+            shutil.move(str(page), target)
+            kept.append(target)
+    return kept
 
 
 def _rasterize_pypdfium2(pdf_path: Path, out_dir: Path, file_ext: str,

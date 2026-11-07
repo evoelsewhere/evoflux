@@ -168,7 +168,7 @@ function HeaderIcon({
             onClick={onClick}
             // Pressed in the accent colour (Settings → Appearance), like the side panel's tool rail.
             className={cn(
-              "no-drag size-7 text-muted-foreground",
+              "no-drag size-8 text-muted-foreground",
               pressed && "bg-brand/15 text-brand hover:bg-brand/20 hover:text-brand",
             )}
           />
@@ -235,7 +235,7 @@ export function WorkspaceToolbar() {
       <div className="min-w-4 flex-1" />
 
       {/* Workspace tools in one group: Open in, context used, summary, side panel. */}
-      <div className="no-drag flex h-8 shrink-0 items-center gap-0.5 rounded-lg p-0.5 shadow-border-small">
+      <div className="no-drag flex h-9 shrink-0 items-center gap-0.5 rounded-lg p-0.5 shadow-border-small">
         {cwd && (
           <>
             <OpenInMenu cwd={cwd} />
@@ -251,11 +251,11 @@ export function WorkspaceToolbar() {
         {/* The overlay summary ignores presses here, so this button can close it. */}
         <span data-summary-toggle className="contents">
           <HeaderIcon label={summaryShown ? "Hide summary" : "Show summary"} pressed={summaryShown} onClick={() => toggleSummary()}>
-            <SummaryIcon open={summaryShown} className="size-4" />
+            <SummaryIcon open={summaryShown} className="size-[18px]" />
           </HeaderIcon>
         </span>
         <HeaderIcon label={`Side panel (${modKey} J)`} pressed={rightPanelOpen} onClick={() => toggleRightPanel()}>
-          <SidePanelIcon open={rightPanelOpen} className="size-4" />
+          <SidePanelIcon open={rightPanelOpen} className="size-[18px]" />
         </HeaderIcon>
       </div>
 

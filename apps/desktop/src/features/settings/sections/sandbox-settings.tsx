@@ -216,7 +216,7 @@ function ExistingWorktrees() {
   React.useEffect(load, [load]);
   if (!cwd || list.length === 0) return null;
   return (
-    <div className="flex flex-col gap-1.5 px-5 py-4">
+    <div className="flex flex-col gap-1.5 py-3.5">
       <p className="text-[13px] font-medium">Worktrees of this repository</p>
       {list.map((worktree) => (
         <div key={worktree.path} className="flex items-center gap-2 text-[13px]">
@@ -372,7 +372,7 @@ export function SandboxSettings() {
             />
           }
         />
-        <div className="px-5 py-4">
+        <div className="py-3.5">
           <p className="flex gap-2.5 rounded-lg bg-status-warn/10 px-3.5 py-3 text-[13px] text-foreground ring-1 ring-status-warn/25 ring-inset">
             <TriangleAlertIcon className="mt-0.5 size-4 shrink-0 text-status-warn" />
             Commands run directly on this computer and can reach files or the network through the programs they start.

@@ -35,9 +35,9 @@ uv run --with python-pptx python scripts/dump_text.py template.pptx --notes --nu
 
 Pair `template.contact-sheet.jpg` with `tpl.txt`: the visual layout of each
 slide alongside its text is what you need to decide "the section 2 divider is
-slide 4, the two-column team slide is slide 7," and so on. Open the
-contact sheet with the `read` tool (it displays images). When LibreOffice is
-unavailable, rely on the text dump alone.
+slide 4, the two-column team slide is slide 7," and so on. When LibreOffice
+is unavailable, run the `document_preview` tool on the template instead; it
+lists each slide's elements with their text and position.
 
 ### Fill via python-pptx
 
@@ -290,7 +290,6 @@ uv run --with python-pptx python scripts/diagnose.py output.pptx
 uv run --with python-pptx python scripts/dump_text.py output.pptx --notes | grep -Ei "\{\{|TODO|TBD|lorem|click to add"
 ```
 
-Then render the changed slides (`scripts/contact_sheet.py` for an overview,
-`scripts/render_slides.py --first N --last N` for single slides), look at the
-images with the `read` tool, and fix only what the checks report. The most common failure is placeholder text that survived template
+Then run the `document_preview` tool on the output and fix only what they
+report. The most common failure is placeholder text that survived template
 fill, which the grep catches.

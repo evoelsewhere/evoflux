@@ -6,8 +6,10 @@ import { Bubble, BubbleContent } from "@/components/ui/bubble";
 import { Button } from "@/components/ui/button";
 import { Message, MessageContent, MessageFooter } from "@/components/ui/message";
 import { fileName } from "@/features/files/fs";
+import { parseAnnotatedMessage } from "@/lib/document-annotations";
 import { cn } from "@/lib/utils";
 import { useEngineStore } from "@/stores/engine-store";
+import { SentAnnotations } from "./annotation-chips";
 import { splitPrompt } from "./composer-input";
 import type { Turn } from "./transcript";
 
@@ -99,7 +101,9 @@ export function UserPrompt({ turn }: { turn: Turn }) {
   const [copied, setCopied] = React.useState(false);
   const [editing, setEditing] = React.useState(false);
   const [problem, setProblem] = React.useState<string | null>(null);
-  const { text, pasted, files } = React.useMemo(() => splitPrompt(turn.prompt), [turn.prompt]);
+  // Document annotations ride the message as a machine block: shown as a chip.
+  const annotated = React.useMemo(() => parseAnnotatedMessage(turn.prompt), [turn.prompt]);
+  const { text, pasted, files } = React.useMemo(() => splitPrompt(annotated?.text ?? turn.prompt), [annotated, turn.prompt]);
   const images = turn.images ?? [];
 
   React.useEffect(() => {
@@ -172,6 +176,7 @@ export function UserPrompt({ turn }: { turn: Turn }) {
             ))}
           </div>
         )}
+        {annotated && annotated.annotations.length > 0 && <SentAnnotations annotations={annotated.annotations} />}
         {problem && <p className="text-xs text-destructive">{problem}</p>}
         <MessageFooter className="gap-0.5 px-0 opacity-0 transition-opacity group-focus-within/prompt:opacity-100 group-hover/prompt:opacity-100">
           <MessageAction

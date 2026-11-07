@@ -7,7 +7,7 @@ import { ChatView } from "@/features/chat/chat-view";
 import { SummaryCard } from "@/features/chat/summary-card";
 import { RightPanel, ToolRail } from "@/features/panels/right-panel";
 import { CommandPalette } from "@/features/sessions/command-palette";
-import { SettingsPage, SettingsSidebar } from "@/features/settings/settings-view";
+import { SettingsDialog } from "@/features/settings/settings-view";
 import { AppSidebar } from "@/features/shell/app-sidebar";
 import { Toaster } from "@/features/notifications/toaster";
 import { WindowTitleBar, WorkspaceToolbar } from "@/features/shell/workspace-header";
@@ -182,7 +182,6 @@ export function App() {
   const sidebarOpen = useUiStore((s) => s.sidebarOpen);
   const sidebarWidth = useUiStore((s) => s.sidebarWidth);
   const setSidebarOpen = useUiStore((s) => s.setSidebarOpen);
-  const settingsOpen = useUiStore((s) => s.settingsOpen);
   const customizeOpen = useUiStore((s) => s.customizeOpen);
   const schedulerOpen = useUiStore((s) => s.schedulerOpen);
   const usageOpen = useUiStore((s) => s.usageOpen);
@@ -198,11 +197,9 @@ export function App() {
       className="h-full min-h-0"
       style={{ "--sidebar-width": `${sidebarWidth}px` } as React.CSSProperties}
     >
-      {!solo && (settingsOpen ? <SettingsSidebar /> : <AppSidebar />)}
+      {!solo && <AppSidebar />}
       <SidebarInset ref={insetRef} className="min-h-0 min-w-0 bg-transparent">
-        {settingsOpen ? (
-          <SettingsPage />
-        ) : schedulerOpen && !solo ? (
+        {schedulerOpen && !solo ? (
           <div className="flex h-full min-w-0 flex-col">
             <WindowTitleBar />
             <div className="min-h-0 flex-1">
@@ -231,6 +228,7 @@ export function App() {
         )}
       </SidebarInset>
       <CommandPalette />
+      <SettingsDialog />
       <MacMenu />
       <Toaster />
     </SidebarProvider>

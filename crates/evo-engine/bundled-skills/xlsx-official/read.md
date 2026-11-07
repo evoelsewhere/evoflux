@@ -235,17 +235,15 @@ for name, df in sheets.items():
 df.to_csv("out.tsv", sep="\t", index=False)
 ```
 
-### PDF and page images (for visual QA)
+### PDF (for visual QA)
 
 ```bash
-uv run --with openpyxl python scripts/pdf_out.py input.xlsx          # input.pdf
-uv run --with openpyxl python scripts/pdf_out.py input.xlsx --png    # also input-<page>.png
+uv run --with openpyxl python scripts/pdf_out.py input.xlsx
 ```
 
 Requires LibreOffice (through `EVO_SOFFICE` or `PATH`); see
-`scripts/runtime/libreoffice.py` for how it is located. The PNG pages come
-from Poppler's `pdftoppm`, or from pypdfium2 fetched by `uv` when Poppler is
-missing; look at them with the `read` tool.
+`scripts/runtime/libreoffice.py` for how it is located. Without it, the
+`document_preview` tool still gives a rendered-layout check.
 
 ### Plain text summary
 

@@ -296,7 +296,7 @@ function ProviderSection({
   if (rows.length === 0) return null;
   return (
     <section>
-      <h2 className="text-sm font-semibold">{title}</h2>
+      <h2 className="text-[15px] font-semibold">{title}</h2>
       {description && <p className="mt-1 max-w-lg text-[13px] text-muted-foreground">{description}</p>}
       <div className="mt-3 divide-y overflow-hidden rounded-xl bg-card shadow-hairline">
         {rows.map((row) => (

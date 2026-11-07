@@ -108,7 +108,10 @@ function TurnMeta({ turn }: { turn: Turn }) {
 }
 
 type Process = (ReasoningPart | ToolPart)[];
-type Segment = { kind: "process"; key: string; parts: Process } | { kind: "text"; key: string; text: string; streaming: boolean };
+type Segment =
+  | { kind: "process"; key: string; parts: Process }
+  | { kind: "text"; key: string; text: string; streaming: boolean }
+  | { kind: "widget"; key: string; part: ToolPart };
 
 /** Consecutive reasoning and tool parts form one group; text breaks it. */
 function segments(parts: Part[]): Segment[] {
@@ -116,6 +119,12 @@ function segments(parts: Part[]): Segment[] {
   for (const part of parts) {
     if (part.kind === "text") {
       if (part.text) out.push({ kind: "text", key: part.key, text: part.text, streaming: part.streaming });
+      continue;
+    }
+    // A `show_widget` widget is part of the answer: it stands on its own and
+    // stays in sight when the turn folds (docs/features/office-v3-parity/sdd.md).
+    if (part.kind === "tool" && part.name === "show_widget") {
+      out.push({ kind: "widget", key: part.key, part });
       continue;
     }
     const last = out.at(-1);
@@ -224,6 +233,7 @@ export function AssistantMessage({ turn }: { turn: Turn }) {
       ? all.filter(
           (segment) =>
             segment.kind === "text" ||
+            segment.kind === "widget" ||
             segment.parts.some(
               (part) =>
                 part.kind === "tool" &&
@@ -274,6 +284,10 @@ export function AssistantMessage({ turn }: { turn: Turn }) {
             <Markdown key={segment.key} streaming={segment.streaming}>
               {segment.text}
             </Markdown>
+          ) : segment.kind === "widget" ? (
+            <Trace key={segment.key}>
+              <Tool part={segment.part} streaming={running} />
+            </Trace>
           ) : (
             <ProcessGroup
               key={segment.key}

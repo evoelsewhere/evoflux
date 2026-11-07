@@ -10,6 +10,10 @@ homepage.workspace = true
 description = "Optional pinned LibreOffice runtime for evo: verified install and headless Office to PDF conversion"
 
 [dependencies]
+base64 = { workspace = true }
+regex = { workspace = true }
+roxmltree = "0.20"
+zip = { version = "2", default-features = false, features = ["deflate"] }
 flate2 = "1"
 reqwest = { workspace = true }
 serde = { workspace = true }

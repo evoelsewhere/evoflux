@@ -60,13 +60,13 @@ const percent = (value: number) => `${Math.round(value * 100)}%`;
 /** A small picture of the app in one colour scheme, for the scheme cards. */
 function SchemePreview({ scheme }: { scheme: "light" | "dark" | "split" }) {
   const pane = (dark: boolean) => (
-    <div className={cn("flex h-full flex-1 gap-1 p-1.5", dark ? "bg-[#0a0a0a]" : "bg-[#f2f2f2]")}>
+    <div className={cn("flex h-full flex-1 gap-1 p-1.5", dark ? "bg-[#191919]" : "bg-[#f2f2f2]")}>
       <div className="flex w-1/3 flex-col gap-1">
         <div className={cn("h-1 w-3/4 rounded-full", dark ? "bg-white/25" : "bg-black/20")} />
         <div className={cn("h-1 w-1/2 rounded-full", dark ? "bg-white/15" : "bg-black/10")} />
         <div className={cn("h-1 w-2/3 rounded-full", dark ? "bg-white/15" : "bg-black/10")} />
       </div>
-      <div className={cn("flex flex-1 flex-col justify-end gap-1 rounded-sm p-1", dark ? "bg-[#161616]" : "bg-white")}>
+      <div className={cn("flex flex-1 flex-col justify-end gap-1 rounded-sm p-1", dark ? "bg-[#242424]" : "bg-white")}>
         <div className={cn("h-1 w-4/5 rounded-full", dark ? "bg-white/20" : "bg-black/15")} />
         <div className="h-1.5 w-1/3 self-end rounded-full bg-brand" />
       </div>

@@ -242,8 +242,8 @@ Under the hood: `soffice --convert-to pdf` → `pdftoppm` → Pillow tiles
 the PNGs into a single JPEG with slide-number labels.
 
 Use thumbnails to **pick a template slide layout** ("which of these
-looks like a section divider?"). For the visual QA pass over a generated deck
-(*QA checks* in `SKILL.md`), look at the contact sheet, then render just the
+looks like a section divider?"). A pixel pass over a generated deck is only
+for when the user asks for one (*QA checks* in `SKILL.md`); render just the
 slides in question, since slide images are expensive in context:
 
 ```bash
@@ -267,7 +267,8 @@ uv run --with python-pptx python scripts/render_slides.py input.pptx --out slide
 `render_slides.py` renders via LibreOffice → PDF, then rasters each page
 with Poppler's `pdftoppm`, or with pypdfium2 fetched by `uv` when Poppler is
 missing. It needs LibreOffice (through `EVO_SOFFICE` or `PATH`) and one
-of those rasterisers. View the resulting images with the `read` tool.
+of those rasterisers. Without them, the `document_preview` tool still gives
+a rendered-layout check of every slide.
 
 ## Detecting broken files
 

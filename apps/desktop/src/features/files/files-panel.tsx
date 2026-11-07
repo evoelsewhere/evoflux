@@ -627,7 +627,7 @@ function revealInTree(root: string, path: string, scroller: HTMLElement | null) 
 
 // ── Open file ───────────────────────────────────────────────────────────────
 
-function FileView({ file, root }: { file: OpenFile; root: string }) {
+function FileView({ file, root, onLiveDeckChange }: { file: OpenFile; root: string; onLiveDeckChange?(live: boolean): void }) {
   const autoSave = useFilesStore((s) => s.autoSave);
   const reveal = useFilesStore((s) => (s.reveal?.path === file.path ? s.reveal : null));
   const { save, load, markDirty, setAutoSave, consumeReveal, checkDisk } = useFilesStore.getState();
@@ -779,6 +779,8 @@ function FileView({ file, root }: { file: OpenFile; root: string }) {
               path={file.path}
               version={content.mtime}
               size={content.size}
+              root={root}
+              onLiveDeckChange={onLiveDeckChange}
               onOpenExternal={() => void openPath(file.path).catch(() => undefined)}
             />
           </React.Suspense>
@@ -998,6 +1000,16 @@ export function FilesPanel() {
   const [width, setWidth] = React.useState(0);
   // Narrow panels: whether the tree is shown over the open file.
   const [treeOver, setTreeOver] = React.useState(false);
+  // A deck or workbook the agent is building takes the whole panel: the tree
+  // steps aside until it is finished, unless you toggle it meanwhile (v3).
+  // Not saved: the stored `treeVisible` stays your own choice.
+  const [liveTreeHidden, setLiveTreeHidden] = React.useState(false);
+  const treeVisibleRef = React.useRef(treeVisible);
+  treeVisibleRef.current = treeVisible;
+  const handleLiveDeckChange = React.useCallback((live: boolean) => {
+    if (live) setLiveTreeHidden(treeVisibleRef.current);
+    else setLiveTreeHidden(false);
+  }, []);
   const containerRef = React.useRef<HTMLDivElement>(null);
   const inputRef = React.useRef<HTMLInputElement>(null);
 
@@ -1033,7 +1045,7 @@ export function FilesPanel() {
 
   const split = width === 0 || width >= SPLIT_MIN;
   // Narrow: the tree fills the panel until a file is open, then shows on demand.
-  const showTree = split ? treeVisible : !file || treeOver;
+  const showTree = split ? treeVisible && !liveTreeHidden : !file || treeOver;
   const treeAside = split ? Math.min(Math.max(treeWidth, TREE_MIN), Math.max(TREE_MIN, width - EDITOR_MIN)) : undefined;
 
   // Opening a file in a narrow panel puts the tree away.
@@ -1046,8 +1058,20 @@ export function FilesPanel() {
     if (!useFilesStore.getState().active) inputRef.current?.focus();
   }, []);
 
-  const toggleTree = () => (split ? setTreeVisible(!treeVisible) : setTreeOver((v) => !v));
-  const showTreeNow = () => (split ? setTreeVisible(true) : setTreeOver(true));
+  const toggleTree = () => {
+    // Choosing yourself overrides what a live build did to the tree.
+    if (split && liveTreeHidden) {
+      setLiveTreeHidden(false);
+      return;
+    }
+    if (split) setTreeVisible(!treeVisible);
+    else setTreeOver((v) => !v);
+  };
+  const showTreeNow = () => {
+    setLiveTreeHidden(false);
+    if (split) setTreeVisible(true);
+    else setTreeOver(true);
+  };
 
   function searchInFiles() {
     showTreeNow();
@@ -1135,7 +1159,7 @@ export function FilesPanel() {
       <div ref={containerRef} className="relative flex min-h-0 flex-1">
         {(split || !showTree || treeOver) && (
           <section aria-label="Open file" className="min-w-0 flex-1">
-            {file ? <FileView key={file.path} file={file} root={root} /> : <NoFileOpen />}
+            {file ? <FileView key={file.path} file={file} root={root} onLiveDeckChange={handleLiveDeckChange} /> : <NoFileOpen />}
           </section>
         )}
         {showTree && (

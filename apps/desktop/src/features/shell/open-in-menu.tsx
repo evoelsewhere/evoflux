@@ -28,15 +28,29 @@ export function AppIcon({ app, className }: { app: OpenApp; className?: string }
 }
 
 /**
- * Open the workspace folder in another app: one click reopens it in the app
- * used last (the file manager until then); the chevron lists every file
- * manager, editor and terminal the shell found.
+ * The toolbar's one-click target: the default app from Settings → General if
+ * it is still installed, else the app used last, else the file manager.
+ */
+export function primaryOpenApp(apps: OpenApp[], defaultId: string | null, lastId: string | null): OpenApp | undefined {
+  return (
+    apps.find((a) => a.id === defaultId) ??
+    apps.find((a) => a.id === lastId) ??
+    apps.find((a) => a.kind === "fileManager") ??
+    apps[0]
+  );
+}
+
+/**
+ * Open the workspace folder in another app: one click opens it in the default
+ * app (see `primaryOpenApp`); the chevron lists every file manager, editor and
+ * terminal the shell found.
  */
 export function OpenInMenu({ cwd }: { cwd: string }) {
   const apps = useOpenApps();
   const lastId = useUiStore((s) => s.openInApp);
+  const defaultId = useUiStore((s) => s.openInDefault);
   const setLast = useUiStore((s) => s.setOpenInApp);
-  const primary = apps.find((a) => a.id === lastId) ?? apps.find((a) => a.kind === "fileManager") ?? apps[0];
+  const primary = primaryOpenApp(apps, defaultId, lastId);
   const places = apps.filter((a) => a.kind !== "terminal");
   const terminals = apps.filter((a) => a.kind === "terminal");
 
@@ -64,13 +78,13 @@ export function OpenInMenu({ cwd }: { cwd: string }) {
             <Button
               variant="ghost"
               size="sm"
-              className="h-7 rounded-r-none pr-1 pl-2 text-muted-foreground"
+              className="h-8 rounded-r-none pr-1 pl-2 text-muted-foreground"
               aria-label={primary ? `Open in ${primary.name}` : "Show in file manager"}
               onClick={() => (primary ? launch(primary) : void revealItemInDir(cwd))}
             />
           }
         >
-          {primary ? <AppIcon app={primary} /> : <FolderIcon />}
+          {primary ? <AppIcon app={primary} className="size-[18px]" /> : <FolderIcon className="size-[18px]" />}
         </TooltipTrigger>
         <TooltipContent>{primary ? `Open in ${primary.name}` : "Show in file manager"}</TooltipContent>
       </Tooltip>
@@ -80,7 +94,7 @@ export function OpenInMenu({ cwd }: { cwd: string }) {
             <Button
               variant="ghost"
               size="icon-sm"
-              className="h-7 w-5 rounded-l-none text-muted-foreground data-popup-open:bg-accent"
+              className="h-8 w-5 rounded-l-none text-muted-foreground data-popup-open:bg-accent"
               aria-label="Open in…"
             />
           }

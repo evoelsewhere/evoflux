@@ -89,7 +89,7 @@ function RailButton({
               if (event.button === 1 && open) closeTab(panel.id);
             }}
             className={cn(
-              "no-drag relative flex size-8 shrink-0 items-center justify-center rounded-lg outline-none transition-colors focus-visible:ring-2 focus-visible:ring-brand/40",
+              "no-drag relative flex size-9 shrink-0 items-center justify-center rounded-lg outline-none transition-colors focus-visible:ring-2 focus-visible:ring-brand/40",
               active
                 ? "bg-brand/15 text-brand hover:bg-brand/20"
                 : chosen
@@ -99,7 +99,7 @@ function RailButton({
           />
         }
       >
-        <panel.icon className="size-4" />
+        <panel.icon className="size-[18px]" />
         {open && !active && !chosen && (
           <span
             aria-label="Open"
@@ -178,11 +178,11 @@ export function ToolRail({ className }: { className?: string }) {
               aria-expanded={expanded}
               // Expanding with nothing chosen yet shows the tool list.
               onClick={() => (expanded ? toggleRightPanel(false) : activePanel ? toggleRightPanel(true) : openPanel(null))}
-              className="no-drag text-foreground/75 hover:text-foreground"
+              className="no-drag size-9 text-foreground/75 hover:text-foreground"
             />
           }
         >
-          {expanded ? <PanelRightCloseIcon /> : <PanelRightOpenIcon />}
+          {expanded ? <PanelRightCloseIcon className="size-[18px]" /> : <PanelRightOpenIcon className="size-[18px]" />}
         </TooltipTrigger>
         <TooltipContent side="left" className="flex items-center gap-2">
           {label} <Kbd>{modKey}+J</Kbd>

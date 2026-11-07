@@ -291,6 +291,7 @@ fn builtin_tool_snippet(name: &str) -> Option<&'static str> {
         "ask_user" => "Ask the person a question with options when a choice is theirs",
         "update_todos" => "Keep a visible task list for multi-step work",
         "lsp" => "Code intelligence: diagnostics, definitions, references, hover, symbols",
+        "document_preview" => "Render a .docx/.pdf/.pptx/.xlsx and report its laid-out pages and elements",
         "web_fetch" => "Read a public web page as Markdown",
         _ => return None,
     })
@@ -1245,6 +1246,8 @@ pub async fn build_prepared(
         });
     // `PreToolUse` hooks run in front of it (block, ask, allow, rewrite).
     let before_tool_call = crate::hooks::before_tool_call(before_tool_call, ui_dialog_mailbox.clone());
+    // Before anything else: ask before a shell command stops this app or engine.
+    let before_tool_call = crate::self_kill::before_tool_call(before_tool_call, ui_dialog_mailbox.clone());
     // `ask_user` puts its questions through the same dialog channel.
     crate::interaction::set_mailbox(ui_dialog_mailbox.clone());
 
@@ -2935,6 +2938,15 @@ fn build_tools(
     // Working with the person (`interaction.rs`).
     all.push(("ask_user", HarnessTool::new(crate::interaction::create_ask_user_tool())));
     all.push(("update_todos", HarnessTool::new(crate::interaction::create_update_todos_tool())));
+    // Inline HTML widgets in the chat (`visualize_tool.rs`); both only read.
+    all.push(("visualize_read_me", HarnessTool::new(crate::visualize_tool::create_read_me_tool()).with_replay(ToolReplay::Safe)));
+    all.push(("show_widget", HarnessTool::new(crate::visualize_tool::create_show_widget_tool()).with_replay(ToolReplay::Safe)));
+    // Layout check of a rendered document (`document_preview_tool.rs`); only reads.
+    all.push((
+        "document_preview",
+        HarnessTool::new(crate::document_preview_tool::create_document_preview_tool(ctx.env().cwd().to_path_buf()))
+            .with_replay(ToolReplay::Safe),
+    ));
     // Code intelligence from language servers (`lsp_tool.rs`).
     all.push((
         "lsp",

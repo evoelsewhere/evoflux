@@ -358,6 +358,10 @@ impl Runtime {
         } else if received < asset.size {
             let client = reqwest::Client::builder()
                 .user_agent("evo")
+                // Over HTTP/2 the GitHub release CDN stops sending after a few
+                // tens of MB and the read times out ("error decoding response
+                // body"); HTTP/1.1 streams the whole archive.
+                .http1_only()
                 .connect_timeout(Duration::from_secs(30))
                 .read_timeout(Duration::from_secs(120))
                 .build()

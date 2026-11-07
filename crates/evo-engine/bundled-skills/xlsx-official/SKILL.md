@@ -44,9 +44,12 @@ the source data with its reason. Wait for approval. Silent cleaning is how an
 irreproducible number reaches a decision.
 
 **Phase 3 — Build.** Drivers as labelled input cells, results as formulas, one
-grain per sheet, palette and number formats as the conventions below. Write the generator (see
-[create.md](create.md)), run it once, and fix errors until the workbook is
-written.
+grain per sheet, palette and number formats as the conventions below. Build a
+new workbook live, one sheet per command: `scripts/workbook_live.py init
+--sheets N` first so the file exists immediately, then one sheet file and one
+`workbook_live.py add` per sheet, and `workbook_live.py finish` at the end.
+The user watches the preview fill in while you write; see *Live build* in
+[create.md](create.md).
 
 **Phase 4 — Recalculate and reconcile.** `openpyxl` writes formulas and never
 evaluates them, so a workbook it produced carries no computed values until
@@ -57,8 +60,9 @@ total.
 
 **Phase 5 — Verify and repair.** Run the QA checks below once, fix what they
 report, and re-check only the sheets you changed; stop after two repair
-rounds and report what is still open. Repair by editing the generator
-and re-running it, then `bake.py` again.
+rounds and report what is still open. Repair a live-built workbook in place
+(`workbook_live.py add BOOK FILE --replace N`, or `rebuild BOOK sheets/`);
+never run `init` again on a workbook that has sheets.
 
 **Phase 6 — Hand off.** File path, whether formulas actually recalculated,
 what reconciled, and every assumption and unresolved figure.
@@ -117,8 +121,6 @@ uv run --with openpyxl python scripts/csv_out.py input.xlsx out_dir/
 uv run --with openpyxl python scripts/csv_out.py input.xlsx out.csv --sheet 0
 # PDF for a fidelity check (writes output.pdf next to it)
 uv run --with openpyxl python scripts/pdf_out.py output.xlsx
-# PDF plus one PNG per page to look at (writes output-<page>.png)
-uv run --with openpyxl python scripts/pdf_out.py output.xlsx --png
 # Unpack to XML parts / repack
 uv run --with openpyxl python scripts/explode.py input.xlsx unpacked/
 uv run --with openpyxl python scripts/assemble.py unpacked/ output.xlsx
@@ -203,16 +205,18 @@ re-renders).
    wb = load_workbook("output.xlsx", data_only=True)
    assert wb["Summary"]["B10"].value == expected_total
    ```
-4. **Rendered layout.** Render the workbook to page images and look at them:
-   `uv run --with openpyxl python scripts/pdf_out.py output.xlsx --png --dest qa/`
-   (add `--first N --last M` for large workbooks), then open each `qa/*.png`
-   with the `read` tool (it displays images). Look for columns clipped at
-   default widths, `########` (column too narrow), formulas showing as text
-   (missing `=` or a leading apostrophe), and missing print titles or print
-   areas on large sheets. Look at the sheets you built, not necessarily every
-   page of a long data sheet. LibreOffice's layout is close to Excel's but
-   not identical, so describe this as a LibreOffice-rendered check; without
-   LibreOffice, say the visual check was skipped.
+4. **Rendered layout.** Run the `document_preview` tool on the workbook. It
+   renders with the host viewer engine, needs no office application, and
+   reports every page with its labelled elements, their text, and their
+   position as a percentage of the page, flagging anything outside it. Look
+   for columns clipped at default widths, `########` (column too narrow),
+   formulas showing as text (missing `=` or a leading apostrophe), and missing
+   print titles or print areas on large sheets. It reports the host engine's
+   layout, not Excel's, so describe it as a rendered-layout check and never
+   claim you looked at pixels. A LibreOffice export (`scripts/pdf_out.py`) or
+   any image render is not part of QA: produce one only when the user asks
+   for it (`scripts/pdf_out.py --png` also writes one PNG per page, which
+   the `read` tool displays).
 
 ## Common formula pitfalls
 

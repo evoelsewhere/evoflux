@@ -15,8 +15,8 @@
 evo v3 could open, render and edit Word, PowerPoint and Excel files because it
 shipped an optional, downloadable LibreOffice runtime plus three Office skills.
 v4 has neither. This feature brings that capability to the Rust engine: the
-person installs a trimmed LibreOffice runtime from Settings with one click
-(checksum-pinned, resumable, cancellable); the Files tool then previews
+person opens an Office file in Files, which offers a trimmed LibreOffice runtime
+to install with one click (checksum-pinned, resumable, cancellable); Files then previews
 `.docx/.pptx/.xlsx` (and legacy/ODF siblings) as Office lays them out; agent
 shells see the runtime (`EVO_SOFFICE`, PATH); and the `docx`, `pptx` and `xlsx`
 skills ship with the app.
@@ -29,8 +29,9 @@ so and offers the install, nothing else.
 
 ### 2.1 Goals
 
-- Install, cancel, resume, uninstall and report the runtime from Settings, with
-  byte progress; no restart needed to use it.
+- Install, cancel and resume the runtime from the Files preview of an Office
+  file, with byte progress; no restart needed to use it. There is no settings
+  page; `office_uninstall` stays an RPC without UI.
 - Exact Office → PDF conversion with a hardened LibreOffice profile, serialized,
   with a timeout that kills the whole process tree.
 - Files preview of Office documents (and of plain PDFs) in the desktop app.
@@ -41,7 +42,7 @@ so and offers the install, nothing else.
 ### 2.2 Non-goals
 
 - A fallback HTML renderer, live "deck/workbook under construction" previews and
-  annotation-driven editing (all v3 viewer features).
+  annotation-driven editing (all v3 viewer features) — later brought back by [Office documents: v3 behaviour](../office-v3-parity/sdd.md) (ADR 0009).
 - Editing Office files in the app. The agent edits through the skills.
 - Bundling LibreOffice in the installer (size); it stays an on-demand download.
 - A system-installed LibreOffice as the preview engine. Only the pinned runtime
@@ -94,7 +95,7 @@ so and offers the install, nothing else.
 ### 5.1 Overview
 
 ```text
-Settings ──RPC──► engine ──► evo-office::Runtime ──► <agent>/runtimes/libreoffice/
+Files (install prompt) ──RPC──► engine ──► evo-office::Runtime ──► <agent>/runtimes/libreoffice/
 Files ──office_convert──► engine office.rs (cache) ──► soffice --headless --convert-to pdf
 Files ◄── pdf path ───────┘      └─ fs_read_bytes (shell) ──► pdf.js pages
 agent bash/powershell ◄── EVO_SOFFICE, PATH (shell-env provider reads install.json)
@@ -118,8 +119,8 @@ to run `soffice`, not chats, RPC or the desktop. The engine owns the single
 | engine | `crates/evo-engine/bundled-skills/` | The three skills |
 | crate | `crates/evo-tools/src/os_env.rs` | `OsExecutionEnv::with_shell_env_provider` (dynamic env) |
 | desktop shell | `apps/desktop/src-tauri/src/files.rs` | `fs_read_bytes` (raw bytes over IPC) |
-| desktop UI | `apps/desktop/src/features/settings/sections/office-settings.tsx` | Install, progress, cancel, retry, uninstall |
-| desktop UI | `apps/desktop/src/features/files/document-viewer.tsx` | Convert via engine, render PDF pages with pdf.js |
+| desktop UI | `apps/desktop/src/features/files/document-viewer.tsx` | Install prompt when no runtime; convert via engine, render PDF pages with pdf.js |
+| desktop UI | `apps/desktop/src/components/office-install.tsx` | Install, progress, cancel, retry (used by the viewer) |
 
 ### 5.3 Interfaces
 
@@ -203,8 +204,8 @@ the provider reads `install.json`, so installing mid-chat works.
 
 ### 5.8 Configuration
 
-No settings keys. `EVO_OFFICE_MANIFEST` (env, tests only). The Settings section
-"Office" edits the install state live.
+No settings keys and no settings page. `EVO_OFFICE_MANIFEST` (env, tests only).
+The install prompt in the Files preview edits the install state live.
 
 ## 6. Alternatives considered
 
@@ -224,7 +225,7 @@ No settings keys. `EVO_OFFICE_MANIFEST` (env, tests only). The Settings section
 | 1 | `evo-office`: manifest, install, convert + tests; ADR; ADD | `crates/evo-office` | `cargo test -p evo-office` passes |
 | 2 | Engine: `office.rs`, RPC, shell-env provider, preview cache | engine, `evo-tools` | engine tests pass |
 | 3 | Embedded skills + loader dir | `bundled-skills/`, engine | FR-10 test |
-| 4 | Desktop: Settings section, document viewer, `fs_read_bytes` | `apps/desktop` | manual check in the app |
+| 4 | Desktop: install prompt and document viewer in Files, `fs_read_bytes` | `apps/desktop` | manual check in the app |
 | 5 | Runtime build script and release workflow ported from v3 | `scripts/office-runtime`, `.github/workflows` | docs updated |
 
 ## 8. Verification
@@ -245,6 +246,11 @@ No settings keys. `EVO_OFFICE_MANIFEST` (env, tests only). The Settings section
 ## 10. As-built notes
 
 - Install progress is polled (700 ms) like Code intelligence; no protocol event.
+- The runtime is downloaded over HTTP/1.1: over HTTP/2 the GitHub release CDN
+  stopped sending after 20–40 MB and the read timed out ("error decoding
+  response body"); resume then repeated the stall. Found in the live check.
+- The Settings → Office page was dropped after review: the install lives only in
+  the Files preview of an Office file, so there is no UI to remove the runtime.
 - Preview cache and extraction dirs follow the SDD. The embedded skills are
   extracted to `<agent>/bundled-skills/<content hash>/` and appended last to the
   skill directories, so a user skill of the same name wins.
@@ -261,3 +267,4 @@ No settings keys. `EVO_OFFICE_MANIFEST` (env, tests only). The Settings section
 ## 11. History
 
 - 2026-11-07 — Draft and Accepted (scope and trade-offs delegated by the owner).
+- 2026-11-07 — Live check: HTTP/1.1 download fix; Settings → Office removed, install from the Files preview only.

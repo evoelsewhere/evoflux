@@ -22,15 +22,14 @@ pub const DEFAULT_STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(300);
 /// `Long` requests 1h ephemeral cache control on Anthropic (subject to compat);
 /// `Short` requests the default ephemeral; `None` disables cache control.
 ///
-/// The default is `Long`: in an interactive app the gap between turns (reading
-/// the answer, reviewing a diff) often exceeds 5 minutes, so a 5m cache expires
-/// and the whole conversation is re-written. A 1h write costs more than a 5m
-/// write but is repaid by the first read that would otherwise have missed.
+/// The default is `Short` (5m): an agent loop's requests come seconds apart,
+/// and a 5m write costs 1.25x input against 2x for a 1h write. A pause longer
+/// than 5 minutes re-writes the conversation once.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum CacheRetention {
     None,
-    Short,
     #[default]
+    Short,
     Long,
 }
 

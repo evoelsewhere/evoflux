@@ -180,7 +180,7 @@ export function LogsSettings() {
             </div>
           }
         />
-        {notice && <p className="px-5 pb-3 font-mono text-xs break-all text-muted-foreground">{notice}</p>}
+        {notice && <p className="pb-3 font-mono text-xs break-all text-muted-foreground">{notice}</p>}
       </SettingsGroup>
 
       <section className="flex min-h-0 flex-col gap-3">
