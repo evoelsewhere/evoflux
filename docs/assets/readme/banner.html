@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Evo Harness banner</title>
+  <!-- Source of banner-light.png / banner-dark.png. Open with #dark for the dark one. -->
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    /* Tokens from DESIGN.md and the app's light / .dark themes. */
+    :root {
+      --bg: #fafafa;
+      --ink: #171717;
+      --muted: #4d4d4d;
+      --soft: #666666;
+      --accent: #0072f5;
+      --line: rgba(0, 0, 0, 0.08);
+      --grid: rgba(0, 0, 0, 0.045);
+      --glow: rgba(0, 114, 245, 0.13);
+      --pill: #ffffff;
+      --frame-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08), 0 2px 2px rgba(0, 0, 0, 0.04), 0 32px 64px -24px rgba(0, 0, 0, 0.22);
+      --logo-ring: transparent;
+    }
+    :root[data-theme="dark"] {
+      --bg: #0a0a0a;
+      --ink: #ededed;
+      --muted: #a1a1a1;
+      --soft: #8f8f8f;
+      --accent: #3291ff;
+      --line: rgba(255, 255, 255, 0.10);
+      --grid: rgba(255, 255, 255, 0.05);
+      --glow: rgba(50, 145, 255, 0.16);
+      --pill: #171717;
+      --frame-shadow: 0 0 0 1px rgba(255, 255, 255, 0.12), 0 32px 80px -24px rgba(0, 0, 0, 0.9);
+      --logo-ring: rgba(255, 255, 255, 0.14);
+    }
+
+    body { background: var(--bg); }
+
+    .banner {
+      position: relative;
+      width: 1600px;
+      height: 800px;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: 'Geist', system-ui, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* Quiet grid that fades out away from the screenshot. */
+    .banner::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background-image:
+        linear-gradient(to right, var(--grid) 1px, transparent 1px),
+        linear-gradient(to bottom, var(--grid) 1px, transparent 1px);
+      background-size: 48px 48px;
+      background-position: -1px -1px;
+      mask-image: radial-gradient(ellipse 70% 80% at 62% 45%, #000 30%, transparent 80%);
+    }
+    .banner::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(ellipse 45% 55% at 78% 62%, var(--glow), transparent 70%);
+      pointer-events: none;
+    }
+
+    .copy {
+      position: absolute;
+      z-index: 2;
+      left: 88px;
+      top: 0;
+      bottom: 0;
+      width: 520px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    .pill {
+      align-self: flex-start;
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      height: 32px;
+      padding: 0 14px 0 12px;
+      border-radius: 999px;
+      background: var(--pill);
+      box-shadow: 0 0 0 1px var(--line);
+      font: 500 14px 'Geist Mono', ui-monospace, monospace;
+      color: var(--muted);
+      letter-spacing: 0.01em;
+      margin-bottom: 36px;
+    }
+    .pill .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+
+    .brand { display: flex; align-items: center; gap: 20px; margin-bottom: 28px; }
+    .brand svg { width: 72px; height: 72px; flex: none; border-radius: 18px; box-shadow: 0 0 0 1px var(--logo-ring); }
+    h1 {
+      font-size: 68px;
+      line-height: 1;
+      font-weight: 600;
+      letter-spacing: -0.045em;
+    }
+
+    .tagline {
+      font-size: 30px;
+      line-height: 1.3;
+      font-weight: 400;
+      letter-spacing: -0.02em;
+      color: var(--muted);
+      margin-bottom: 40px;
+    }
+
+    ul { list-style: none; display: grid; gap: 14px; margin-bottom: 44px; }
+    li {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      font-size: 20px;
+      letter-spacing: -0.01em;
+      color: var(--ink);
+    }
+    li::before {
+      content: "";
+      width: 18px;
+      height: 2px;
+      border-radius: 2px;
+      background: var(--accent);
+      flex: none;
+    }
+
+    .platforms {
+      font: 500 14px 'Geist Mono', ui-monospace, monospace;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--soft);
+    }
+
+    .shot {
+      position: absolute;
+      z-index: 1;
+      left: 668px;
+      top: 104px;
+      width: 1176px;
+      border-radius: 14px;
+      overflow: hidden;
+      box-shadow: var(--frame-shadow);
+      background: var(--bg);
+    }
+    .shot img { display: block; width: 100%; height: auto; }
+  </style>
+</head>
+<body>
+  <div class="banner" id="banner">
+    <div class="copy">
+      <span class="pill"><span class="dot"></span>v4 · Rust engine + desktop app</span>
+      <div class="brand">
+        <svg viewBox="64 64 896 896" aria-hidden="true">
+          <rect x="64" y="64" width="896" height="896" rx="200" fill="#171717"/>
+          <g transform="translate(512 512) scale(9.739) rotate(-30) scale(1.25)" fill="none" stroke-width="8" stroke-linecap="round">
+            <path d="M8 -17H-9A8 8 0 0 0 -17 -9V5" stroke="#ffffff"/>
+            <path d="M8 -17H-9A8 8 0 0 0 -17 -9V5" stroke="#ffffff" transform="rotate(180)"/>
+            <path d="M-3 0H3" stroke="#0072F5"/>
+          </g>
+        </svg>
+        <h1>Evo Harness</h1>
+      </div>
+      <p class="tagline">A local-first desktop workspace for AI&nbsp;agents.</p>
+      <ul>
+        <li>One engine process per chat</li>
+        <li>Bring any model, facts from models.dev</li>
+        <li>Files, terminal, browser and git beside the chat</li>
+      </ul>
+      <p class="platforms">Windows · macOS · Linux</p>
+    </div>
+    <div class="shot"><img id="shot" src="app-light.png" alt=""></div>
+  </div>
+  <script>
+    if (location.hash === "#dark") {
+      document.documentElement.dataset.theme = "dark";
+      document.getElementById("shot").src = "app-dark.png";
+    }
+  </script>
+</body>
+</html>

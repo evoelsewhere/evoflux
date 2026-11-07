@@ -1,5 +1,8 @@
 <div align="center">
-  <img src="apps/desktop/src-tauri/icons/icon.png" width="128" alt="Evo Harness" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/readme/banner-dark.png">
+    <img src="docs/assets/readme/banner-light.png" width="800" alt="Evo Harness: a chat that added a retry to web_fetch, next to the edited fetch.rs with its git changes in the Files panel" />
+  </picture>
 
   **A local-first desktop workspace for AI agents.**
 
@@ -124,7 +127,7 @@ the harness handles context, tools, permissions, memory and verification.
 crates/         Rust workspace: engine, protocol, agent loop, tools, providers
 apps/desktop/   Tauri 2 shell (src-tauri/) and React 19 UI (src/)
 examples/       minimal native plugin used by extension tests
-scripts/        build scripts for the Office runtime
+scripts/        Office runtime build, README screenshots
 docs/           architecture (ADD, ADRs) and feature designs (SDDs)
 ```
 
@@ -135,7 +138,8 @@ The crates are released together and depend only on the layers below them:
   <img src="docs/assets/readme/crate-layers.png" width="960" alt="Evo Harness crate layers, top to bottom: App (evo-engine, apps/desktop/src-tauri); Protocol (evo-protocol, evo-mesh); Runtime (evo-harness, evo-durable, evo-runtime, evo-extensions, evo-plugin-sdk); Agent (evo-agent, evo-tools, evo-worktrees); LLM (evo-ai); Leaf services with no internal dependencies (evo-store, evo-mcp, evo-plugins, evo-hooks, evo-lsp, evo-web, evo-office, evo-telemetry)." />
 </picture>
 
-Diagram sources are in [`docs/assets/readme/`](docs/assets/readme/).
+Diagram and banner sources are in [`docs/assets/readme/`](docs/assets/readme/);
+[`scripts/readme-shots/`](scripts/readme-shots/) regenerates the screenshots.
 
 ## Contributing
 
