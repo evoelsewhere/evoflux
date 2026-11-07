@@ -174,6 +174,7 @@ pub fn run() {
             files::fs_list_dir,
             files::fs_stat,
             files::fs_read_file,
+            files::fs_read_bytes,
             files::fs_write_file,
             files::fs_save_paste,
             files::fs_search,

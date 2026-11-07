@@ -157,6 +157,23 @@ pub fn fs_read_file(path: String) -> Result<FileContent, String> {
     }
 }
 
+/// Largest file `fs_read_bytes` returns.
+const MAX_BYTES: u64 = 200 * 1024 * 1024;
+
+/// The raw bytes of a file (for viewers that parse it themselves, like the PDF
+/// pages of the document viewer). Sent as a binary IPC response, not JSON.
+#[tauri::command]
+pub fn fs_read_bytes(path: String) -> Result<tauri::ipc::Response, String> {
+    let meta = std::fs::metadata(&path).map_err(|e| format!("could not open {path}: {e}"))?;
+    if !meta.is_file() {
+        return Err(format!("{path} is not a file"));
+    }
+    if meta.len() > MAX_BYTES {
+        return Err(format!("{path} is larger than {} MB", MAX_BYTES / 1024 / 1024));
+    }
+    std::fs::read(&path).map(tauri::ipc::Response::new).map_err(|e| e.to_string())
+}
+
 /// Save `text` to `path`. With `expected_mtime`, refuse (error starting with
 /// `conflict:`) when the file changed on disk since it was loaded.
 #[tauri::command]

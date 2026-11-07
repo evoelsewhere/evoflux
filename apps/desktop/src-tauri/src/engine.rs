@@ -280,6 +280,15 @@ pub async fn engine_start(
     if let Some(dir) = cwd.as_deref().filter(|dir| !dir.is_empty()) {
         command.current_dir(dir);
     }
+    // Lets the engine's shell tools recognise a command that would kill this
+    // app (and with it every chat) and ask before running it.
+    command.env("EVO_HOST_PID", std::process::id().to_string());
+    if let Some(name) = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.file_name().map(|name| name.to_string_lossy().into_owned()))
+    {
+        command.env("EVO_HOST_EXE", name);
+    }
     #[cfg(windows)]
     {
         // Do not flash a console window for the child process.
