@@ -1,5 +1,10 @@
 name: Build desktop packages
 
+# Packages the evo desktop app (apps/desktop) for every platform: the Tauri
+# shell plus the evo-engine sidecar it runs one process per chat
+# (apps/desktop/src-tauri/src/engine.rs). Tag pushes (`v*`) publish a GitHub
+# release; manual runs only upload the build artifacts.
+
 on:
   push:
     tags:
@@ -35,10 +40,11 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  PYTHON_VERSION: "3.12"
-  GO_VERSION: "1.26.6"
   BUN_VERSION: latest
-  SIDECAR_DIR: desktop/sidecar-bundle
+  CARGO_TERM_COLOR: always
+  DESKTOP_DIR: apps/desktop
+  TAURI_DIR: apps/desktop/src-tauri
+  BUNDLE_DIR: apps/desktop/src-tauri/target/release/bundle
   SIGNING_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.signing || 'auto' }}
 
 jobs:
@@ -54,28 +60,22 @@ jobs:
         env:
           SELECTED_PLATFORM: ${{ github.event_name == 'workflow_dispatch' && inputs.platform || 'all' }}
         run: |
+          mac_intel='{"name":"DMG · Intel","os":"macos-15-intel","artifact":"evo-macos-intel","architecture":"x86_64","dmg_architecture":"x64"}'
+          mac_arm='{"name":"DMG · Apple Silicon","os":"macos-15","artifact":"evo-macos-apple-silicon","architecture":"arm64","dmg_architecture":"aarch64"}'
+          windows='{"name":"NSIS · Windows x64","os":"windows-2022","artifact":"evo-windows-x64","architecture":"x86_64"}'
+          linux='{"name":"DEB · Linux x64","os":"ubuntu-22.04","artifact":"evo-linux-x64","architecture":"x86_64","deb_architecture":"amd64"}'
           case "$SELECTED_PLATFORM" in
-            all)
-              matrix='{"include":[{"name":"DMG · Intel","os":"macos-15-intel","artifact":"evoflux-macos-intel","architecture":"x86_64","dmg_architecture":"x64"},{"name":"DMG · Apple Silicon","os":"macos-15","artifact":"evoflux-macos-apple-silicon","architecture":"arm64","dmg_architecture":"aarch64"},{"name":"NSIS · Windows x64","os":"windows-2022","artifact":"evoflux-windows-x64","architecture":"x86_64"},{"name":"DEB · Linux x64","os":"ubuntu-22.04","artifact":"evoflux-linux-x64","architecture":"x86_64","deb_architecture":"amd64"}]}'
-              ;;
-            macos-intel)
-              matrix='{"include":[{"name":"DMG · Intel","os":"macos-15-intel","artifact":"evoflux-macos-intel","architecture":"x86_64","dmg_architecture":"x64"}]}'
-              ;;
-            macos-apple-silicon)
-              matrix='{"include":[{"name":"DMG · Apple Silicon","os":"macos-15","artifact":"evoflux-macos-apple-silicon","architecture":"arm64","dmg_architecture":"aarch64"}]}'
-              ;;
-            windows-x64)
-              matrix='{"include":[{"name":"NSIS · Windows x64","os":"windows-2022","artifact":"evoflux-windows-x64","architecture":"x86_64"}]}'
-              ;;
-            linux-x64)
-              matrix='{"include":[{"name":"DEB · Linux x64","os":"ubuntu-22.04","artifact":"evoflux-linux-x64","architecture":"x86_64","deb_architecture":"amd64"}]}'
-              ;;
+            all) entries="$mac_intel,$mac_arm,$windows,$linux" ;;
+            macos-intel) entries="$mac_intel" ;;
+            macos-apple-silicon) entries="$mac_arm" ;;
+            windows-x64) entries="$windows" ;;
+            linux-x64) entries="$linux" ;;
             *)
               echo "Unsupported platform: $SELECTED_PLATFORM" >&2
               exit 1
               ;;
           esac
-          echo "value=$matrix" >> "$GITHUB_OUTPUT"
+          echo "value={\"include\":[$entries]}" >> "$GITHUB_OUTPUT"
 
   build:
     name: ${{ matrix.name }}
@@ -165,82 +165,17 @@ jobs:
             Write-Host "Building an unsigned NSIS installer."
           }
 
-      - name: Resolve updater signing
-        id: updater_signing
-        shell: bash
-        env:
-          UPDATER_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          UPDATER_PUBLIC_KEY: ${{ secrets.TAURI_SIGNING_PUBLIC_KEY }}
-        run: |
-          missing=()
-          [[ -n "$UPDATER_PRIVATE_KEY" ]] || missing+=(TAURI_SIGNING_PRIVATE_KEY)
-          [[ -n "$UPDATER_PUBLIC_KEY" ]] || missing+=(TAURI_SIGNING_PUBLIC_KEY)
-
-          enabled=false
-          if [[ "$GITHUB_REF" == refs/tags/* && ${#missing[@]} -gt 0 ]]; then
-            echo "Tagged releases require updater signing; missing: ${missing[*]}" >&2
-            exit 1
-          elif [[ ${#missing[@]} -eq 0 ]]; then
-            enabled=true
-          fi
-
-          echo "enabled=$enabled" >> "$GITHUB_OUTPUT"
-          if [[ "$enabled" == "true" ]]; then
-            normalized_public_key="$(python - <<'PY'
-          import base64
-          import binascii
-          import os
-
-          value = os.environ["UPDATER_PUBLIC_KEY"].strip()
-          try:
-              decoded = base64.b64decode(value, validate=True).decode("utf-8").strip()
-          except (binascii.Error, ValueError, UnicodeDecodeError):
-              decoded = value
-
-          if decoded.startswith("untrusted comment:"):
-              public_key = decoded
-          elif "\n" not in decoded and decoded.startswith("RW"):
-              public_key = f"untrusted comment: minisign public key\n{decoded}"
-          else:
-              raise SystemExit("TAURI_SIGNING_PUBLIC_KEY is not a minisign public key")
-
-          print(base64.b64encode(f"{public_key}\n".encode()).decode())
-          PY
-            )"
-            echo "::add-mask::$normalized_public_key"
-            echo "EVOFLUX_UPDATER_PUBLIC_KEY=$normalized_public_key" >> "$GITHUB_ENV"
-            echo "Signed updater artifacts are enabled."
-          else
-            echo "Updater artifacts are disabled for this non-release build."
-          fi
-
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v6
-
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Set up Go for embedded tailnet
-        uses: actions/setup-go@v6
-        with:
-          go-version: ${{ env.GO_VERSION }}
-          cache-dependency-path: desktop/tailnet/go.sum
-
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: ${{ env.BUN_VERSION }}
 
+      # rust-toolchain.toml pins the toolchain; rustup installs it on first use.
       - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Build web interface
-        working-directory: web
+        shell: bash
         run: |
-          bun install --frozen-lockfile
-          bun run build
+          rustup show active-toolchain || rustup toolchain install
+          rustc -vV
 
       - name: Install Linux desktop build dependencies
         if: runner.os == 'Linux'
@@ -254,30 +189,15 @@ jobs:
             file \
             libayatana-appindicator3-dev \
             libgtk-3-dev \
-            libpipewire-0.3-dev \
             librsvg2-dev \
             libssl-dev \
             libwebkit2gtk-4.1-dev \
-            libxcb-randr0-dev \
-            libxcb1-dev \
             libxdo-dev \
             patchelf \
             wget \
             xauth \
             xdg-utils \
-            xdotool \
             xvfb
-
-      - name: Run Linux packaging regression tests
-        if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          uv sync --frozen
-          uv run pytest --no-cov -q \
-            tests/desktop/test_install_sh.py \
-            tests/scripts/test_build_tailnet.py \
-            tests/scripts/test_build_sidecar.py \
-            tests/scripts/test_desktop_packages_workflow.py
 
       - name: Cache Cargo
         uses: actions/cache@v4
@@ -285,30 +205,22 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            desktop/src-tauri/target
-          key: desktop-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('desktop/src-tauri/Cargo.lock') }}
+            target
+            ${{ env.TAURI_DIR }}/target
+          key: desktop-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', 'apps/desktop/src-tauri/Cargo.lock', 'rust-toolchain.toml') }}
           restore-keys: |
             desktop-${{ runner.os }}-${{ runner.arch }}-
 
-      - name: Cache Tauri CLI
-        id: cache-tauri-cli
-        uses: actions/cache@v4
-        with:
-          path: ~/.cargo/bin/cargo-tauri*
-          key: tauri-cli-v2-${{ runner.os }}-${{ runner.arch }}
+      - name: Install frontend dependencies
+        working-directory: ${{ env.DESKTOP_DIR }}
+        run: bun install --frozen-lockfile
 
-      - name: Install Tauri CLI
-        if: steps.cache-tauri-cli.outputs.cache-hit != 'true'
-        shell: bash
-        run: cargo install tauri-cli --version "^2" --locked
-
-      - name: Build native Python sidecar
-        shell: bash
-        run: |
-          python scripts/build_sidecar.py \
-            --root . \
-            --out "$SIDECAR_DIR" \
-            --python-version "$PYTHON_VERSION"
+      # Builds `evo-engine --release` and stages it as
+      # src-tauri/binaries/evo-engine-<host-triple>, which `bundle.externalBin`
+      # ships next to the app executable.
+      - name: Build evo-engine sidecar
+        working-directory: ${{ env.DESKTOP_DIR }}
+        run: bun run engine:sidecar:release
 
       - name: Import Windows signing certificate
         if: runner.os == 'Windows' && steps.windows_signing.outputs.enabled == 'true'
@@ -317,7 +229,7 @@ jobs:
           WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
           WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
         run: |
-          $pfxPath = Join-Path $env:RUNNER_TEMP "evoflux-signing.pfx"
+          $pfxPath = Join-Path $env:RUNNER_TEMP "evo-signing.pfx"
           try {
             $base64 = $env:WINDOWS_CERTIFICATE -replace '\s', ''
             [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($base64))
@@ -343,91 +255,42 @@ jobs:
 
       - name: Remove stale bundle outputs
         shell: bash
-        run: rm -rf desktop/src-tauri/target/release/bundle
+        run: rm -rf "$BUNDLE_DIR"
 
       - name: Write platform bundle override
         shell: bash
         env:
-          UPDATER_ENABLED: ${{ steps.updater_signing.outputs.enabled }}
           MAC_SIGNING_ENABLED: ${{ steps.mac_signing.outputs.enabled }}
           WINDOWS_SIGNING_ENABLED: ${{ steps.windows_signing.outputs.enabled }}
         run: |
-          python - <<'PY'
-          import json
-          import os
-          from pathlib import Path
+          bundle='{}'
+          if [[ "$RUNNER_OS" == "macOS" && "$MAC_SIGNING_ENABLED" != "true" ]]; then
+            bundle='{"macOS":{"signingIdentity":"-"}}'
+          elif [[ "$RUNNER_OS" == "Windows" && "$WINDOWS_SIGNING_ENABLED" == "true" ]]; then
+            bundle="{\"windows\":{\"certificateThumbprint\":\"$WINDOWS_CERT_THUMBPRINT\",\"digestAlgorithm\":\"sha256\",\"timestampUrl\":\"http://timestamp.digicert.com\"}}"
+          fi
+          path="$RUNNER_TEMP/evo-bundle-override.json"
+          printf '{"bundle":%s}\n' "$bundle" > "$path"
+          cat "$path"
+          echo "TAURI_BUNDLE_CONFIG=$path" >> "$GITHUB_ENV"
 
-          bundle = {
-              # Debian packages are updated through apt/manual package install,
-              # not by replacing package-manager-owned files in place.
-              "createUpdaterArtifacts": (
-                  os.environ["UPDATER_ENABLED"] == "true"
-                  and os.environ["RUNNER_OS"] != "Linux"
-              )
-          }
-          if os.environ["RUNNER_OS"] == "macOS" and os.environ.get("MAC_SIGNING_ENABLED") != "true":
-              bundle["macOS"] = {"signingIdentity": "-"}
-          if os.environ["RUNNER_OS"] == "Windows" and os.environ.get("WINDOWS_SIGNING_ENABLED") == "true":
-              bundle["windows"] = {
-                  "certificateThumbprint": os.environ["WINDOWS_CERT_THUMBPRINT"],
-                  "digestAlgorithm": "sha256",
-                  "timestampUrl": "http://timestamp.digicert.com",
-              }
-
-          config = {"bundle": bundle}
-          if os.environ["UPDATER_ENABLED"] == "true":
-              config["plugins"] = {
-                  "updater": {
-                      "pubkey": os.environ["EVOFLUX_UPDATER_PUBLIC_KEY"],
-                  }
-              }
-
-          path = Path(os.environ["RUNNER_TEMP"]) / "evoflux-bundle-override.json"
-          path.write_text(json.dumps(config), encoding="utf-8")
-          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as env_file:
-              env_file.write(f"TAURI_BUNDLE_CONFIG={path}\n")
-          PY
-
+      # `tauri build` runs `beforeBuildCommand` (`bun run build`: typecheck +
+      # vite) before compiling the shell.
       - name: Build signed macOS app
         if: runner.os == 'macOS' && steps.mac_signing.outputs.enabled == 'true'
-        working-directory: desktop/src-tauri
+        working-directory: ${{ env.DESKTOP_DIR }}
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: cargo tauri build --bundles app --verbose --config "$TAURI_BUNDLE_CONFIG"
+        run: bun run tauri build --bundles app --verbose --config "$TAURI_BUNDLE_CONFIG"
 
       - name: Build ad-hoc macOS app
         if: runner.os == 'macOS' && steps.mac_signing.outputs.enabled != 'true'
-        working-directory: desktop/src-tauri
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: cargo tauri build --bundles app --verbose --config "$TAURI_BUNDLE_CONFIG"
-
-      - name: Prepare macOS updater assets
-        if: runner.os == 'macOS' && steps.updater_signing.outputs.enabled == 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          shopt -s nullglob
-          archives=(desktop/src-tauri/target/release/bundle/macos/*.app.tar.gz)
-          if [[ ${#archives[@]} -ne 1 || ! -f "${archives[0]}.sig" ]]; then
-            echo "Expected one signed macOS updater archive." >&2
-            exit 1
-          fi
-          config=desktop/src-tauri/tauri.conf.json
-          product_name="$(python -c 'import json,sys; print(json.load(open(sys.argv[1]))["productName"])' "$config")"
-          version="$(python -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' "$config")"
-          updater_dir=desktop/src-tauri/target/release/bundle/updater
-          updater_path="$updater_dir/${product_name}_${version}_${{ matrix.dmg_architecture }}.app.tar.gz"
-          mkdir -p "$updater_dir"
-          mv "${archives[0]}" "$updater_path"
-          mv "${archives[0]}.sig" "$updater_path.sig"
+        working-directory: ${{ env.DESKTOP_DIR }}
+        run: bun run tauri build --bundles app --verbose --config "$TAURI_BUNDLE_CONFIG"
 
       - name: Create DMG without mounting a volume
         if: runner.os == 'macOS'
@@ -435,11 +298,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          config=desktop/src-tauri/tauri.conf.json
-          product_name="$(python -c 'import json,sys; print(json.load(open(sys.argv[1]))["productName"])' "$config")"
-          version="$(python -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' "$config")"
-          source_dir=desktop/src-tauri/target/release/bundle/macos
-          dmg_dir=desktop/src-tauri/target/release/bundle/dmg
+          config="$TAURI_DIR/tauri.conf.json"
+          product_name="$(jq -r .productName "$config")"
+          version="$(jq -r .version "$config")"
+          source_dir="$BUNDLE_DIR/macos"
+          dmg_dir="$BUNDLE_DIR/dmg"
           dmg_path="$dmg_dir/${product_name}_${version}_${{ matrix.dmg_architecture }}.dmg"
 
           app_path="$(find "$source_dir" -maxdepth 1 -name '*.app' -print -quit)"
@@ -481,25 +344,22 @@ jobs:
       - name: Build Windows NSIS installer
         if: runner.os == 'Windows'
         shell: pwsh
-        working-directory: desktop/src-tauri
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: cargo tauri build --bundles nsis --verbose --config $env:TAURI_BUNDLE_CONFIG
+        working-directory: ${{ env.DESKTOP_DIR }}
+        run: bun run tauri build --bundles nsis --verbose --config $env:TAURI_BUNDLE_CONFIG
 
       - name: Build Linux DEB package
         if: runner.os == 'Linux'
         shell: bash
-        working-directory: desktop/src-tauri
-        run: cargo tauri build --bundles deb --verbose --config "$TAURI_BUNDLE_CONFIG"
+        working-directory: ${{ env.DESKTOP_DIR }}
+        run: bun run tauri build --bundles deb --verbose --config "$TAURI_BUNDLE_CONFIG"
 
-      - name: Verify Linux DEB contents and dependencies
+      - name: Verify Linux DEB contents
         if: runner.os == 'Linux'
         shell: bash
         run: |
           set -euo pipefail
           shopt -s nullglob
-          packages=(desktop/src-tauri/target/release/bundle/deb/*.deb)
+          packages=("$BUNDLE_DIR"/deb/*.deb)
           if [[ ${#packages[@]} -ne 1 ]]; then
             echo "Expected exactly one DEB package, found ${#packages[@]}." >&2
             exit 1
@@ -507,191 +367,87 @@ jobs:
 
           package="${packages[0]}"
           dpkg-deb --info "$package"
-          architecture="$(dpkg-deb -f "$package" Architecture)"
-          depends="$(dpkg-deb -f "$package" Depends)"
-          [[ "$architecture" == "${{ matrix.deb_architecture }}" ]]
-          grep -Eq '(^|, )xdotool([ ,]|$)' <<<"$depends"
-          grep -Eq '(^|, )xdg-utils([ ,]|$)' <<<"$depends"
+          [[ "$(dpkg-deb -f "$package" Architecture)" == "${{ matrix.deb_architecture }}" ]]
 
-          package_root="$RUNNER_TEMP/evoflux-deb-root"
+          package_root="$RUNNER_TEMP/evo-deb-root"
           rm -rf "$package_root"
           mkdir -p "$package_root"
           dpkg-deb --extract "$package" "$package_root"
-
-          executable="$(find "$package_root/usr/bin" -maxdepth 1 -type f -perm -111 -print -quit)"
-          product_dir="$(find "$package_root/usr/lib" -mindepth 1 -maxdepth 1 -type d -print -quit)"
-          if [[ -z "$executable" || -z "$product_dir" ]]; then
-            echo "DEB is missing its desktop executable or product resource directory." >&2
+          ls -la "$package_root/usr/bin"
+          [[ -x "$package_root/usr/bin/evo-engine" ]] || {
+            echo "DEB is missing the evo-engine sidecar." >&2
             exit 1
-          fi
-          [[ -x "$product_dir/sidecar/python/bin/python3" ]]
-          [[ -f "$product_dir/sidecar/site-packages/app/cli/__main__.py" ]]
-          [[ -x "$product_dir/sidecar/tailnet/evoflux-tailnet" ]]
-          [[ -f "$product_dir/sidecar/tailnet/LICENSE.tailscale" ]]
-          [[ -x "$product_dir/sidecar/ripgrep/rg" ]]
-          [[ -f "$product_dir/sidecar/ripgrep/LICENSE-MIT" ]]
+          }
 
-      - name: Smoke-test first Linux DEB launch
+      - name: Smoke-test Linux DEB launch
         if: runner.os == 'Linux'
         shell: bash
         run: |
           set -euo pipefail
-          shopt -s nullglob
-          packages=(desktop/src-tauri/target/release/bundle/deb/*.deb)
-          package="${packages[0]}"
+          package="$(find "$BUNDLE_DIR/deb" -name '*.deb' -print -quit)"
           package_name="$(dpkg-deb -f "$package" Package)"
           sudo apt-get install -y "$PWD/$package"
 
-          executable="$(dpkg -L "$package_name" | awk '/^\/usr\/bin\// { print; exit }')"
+          executable="$(dpkg -L "$package_name" | grep '^/usr/bin/' | grep -v '/evo-engine$' | head -n1)"
           if [[ -z "$executable" || ! -x "$executable" ]]; then
-            echo "Installed EvoFlux executable was not found." >&2
+            echo "Installed desktop executable was not found." >&2
             dpkg -L "$package_name" >&2
             exit 1
           fi
+          /usr/bin/evo-engine --version
 
-          smoke_root="$RUNNER_TEMP/evoflux-linux-first-launch"
-          export XDG_CONFIG_HOME="$smoke_root/xdg-config"
-          export XDG_DATA_HOME="$smoke_root/xdg-data"
-          export XDG_CACHE_HOME="$smoke_root/xdg-cache"
-          export XDG_STATE_HOME="$smoke_root/xdg-state"
-          export EVOFLUX_DATA_DIR="$smoke_root/data"
-          export EVOFLUX_CONFIG_DIR="$smoke_root/config"
-          export EVOFLUX_STATE_DIR="$smoke_root/state"
-          export EVOFLUX_CACHE_DIR="$smoke_root/cache"
-          export EVOFLUX_WIKI_DIR="$smoke_root/wiki"
-          export EVOFLUX_WORKSPACE_DIR="$smoke_root/workspace"
+          smoke_root="$RUNNER_TEMP/evo-linux-first-launch"
+          export HOME="$smoke_root/home"
           export WEBKIT_DISABLE_COMPOSITING_MODE=1
-          mkdir -p "$smoke_root"
-
-          desktop_log="$smoke_root/desktop.log"
-          setsid dbus-run-session -- xvfb-run -a "$executable" >"$desktop_log" 2>&1 &
+          mkdir -p "$HOME"
+          log="$smoke_root/desktop.log"
+          setsid dbus-run-session -- xvfb-run -a "$executable" >"$log" 2>&1 &
           app_pid=$!
-          cleanup() {
-            kill -TERM -- "-$app_pid" 2>/dev/null || true
-            wait "$app_pid" 2>/dev/null || true
-          }
-          trap cleanup EXIT
-
-          deadline=$((SECONDS + 120))
-          ready=false
-          backend_log=""
-          while (( SECONDS < deadline )); do
-            backend_log="$(find "$smoke_root" -name backend.log -type f -print -quit)"
-            if [[ -n "$backend_log" ]] && grep -q 'startup_timing phase=server_ready' "$backend_log"; then
-              ready=true
-              break
-            fi
-            if ! kill -0 "$app_pid" 2>/dev/null; then
-              echo "EvoFlux exited before the bundled backend became ready." >&2
-              cat "$desktop_log" >&2 || true
-              [[ -n "$backend_log" ]] && cat "$backend_log" >&2 || true
-              exit 1
-            fi
-            sleep 1
-          done
-
-          if [[ "$ready" != "true" ]]; then
-            echo "First Linux launch did not become ready within 120 seconds." >&2
-            cat "$desktop_log" >&2 || true
-            [[ -n "$backend_log" ]] && cat "$backend_log" >&2 || true
+          sleep 20
+          if ! kill -0 "$app_pid" 2>/dev/null; then
+            echo "evo exited during its first launch." >&2
+            cat "$log" >&2 || true
             exit 1
           fi
-          echo "First Linux DEB launch reached backend-ready state."
+          kill -TERM -- "-$app_pid" 2>/dev/null || true
+          echo "First Linux launch stayed up for 20 seconds."
 
-      - name: Validate Windows updater asset
-        if: runner.os == 'Windows' && steps.updater_signing.outputs.enabled == 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          shopt -s nullglob
-          signatures=(desktop/src-tauri/target/release/bundle/nsis/*-setup.exe.sig)
-          if [[ ${#signatures[@]} -ne 1 ]]; then
-            echo "Expected one signed Windows updater artifact." >&2
-            exit 1
-          fi
-
-      - name: Smoke-test first Windows app launch
+      - name: Smoke-test Windows install and launch
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $smokeRoot = Join-Path $env:RUNNER_TEMP "evoflux-first-launch"
-          $env:EVOFLUX_DATA_DIR = Join-Path $smokeRoot "data"
-          $env:EVOFLUX_CONFIG_DIR = Join-Path $smokeRoot "config"
-          $env:EVOFLUX_STATE_DIR = Join-Path $smokeRoot "state"
-          $env:EVOFLUX_CACHE_DIR = Join-Path $smokeRoot "cache"
-          $env:EVOFLUX_WIKI_DIR = Join-Path $smokeRoot "wiki"
-          $env:EVOFLUX_WORKSPACE_DIR = Join-Path $smokeRoot "workspace"
-          New-Item $smokeRoot -ItemType Directory -Force | Out-Null
-
-          $tauriConfig = Get-Content `
-            "desktop/src-tauri/tauri.conf.json" `
-            -Raw | ConvertFrom-Json
-          $windowsLocalAppData = [Environment]::GetFolderPath(
-            [Environment+SpecialFolder]::LocalApplicationData
-          )
-          $appLogDir = Join-Path `
-            $windowsLocalAppData `
-            "$($tauriConfig.identifier)/logs"
-          $backendLog = Join-Path $appLogDir "backend.log"
-          Remove-Item $appLogDir -Recurse -Force -ErrorAction SilentlyContinue
-
-          $installers = @(
-            Get-ChildItem `
-              "desktop/src-tauri/target/release/bundle/nsis/*-setup.exe" `
-              -File
-          )
+          $tauriConfig = Get-Content "$env:TAURI_DIR/tauri.conf.json" -Raw | ConvertFrom-Json
+          $installers = @(Get-ChildItem "$env:BUNDLE_DIR/nsis/*-setup.exe" -File)
           if ($installers.Count -ne 1) {
             throw "Expected exactly one NSIS installer, found $($installers.Count)."
           }
-          $installerProcess = Start-Process `
-            -FilePath $installers[0].FullName `
-            -ArgumentList "/S" `
-            -PassThru `
-            -Wait
-          if ($installerProcess.ExitCode -ne 0) {
-            throw "Silent NSIS installation failed with exit code $($installerProcess.ExitCode)."
+          $installer = Start-Process -FilePath $installers[0].FullName -ArgumentList "/S" -PassThru -Wait
+          if ($installer.ExitCode -ne 0) {
+            throw "Silent NSIS installation failed with exit code $($installer.ExitCode)."
           }
 
-          $uninstallKey = `
-            "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\$($tauriConfig.productName)"
-          $installLocation = (
-            Get-ItemPropertyValue `
-              -Path $uninstallKey `
-              -Name InstallLocation `
-              -ErrorAction Stop
-          ).Trim('"')
-          $executable = Join-Path `
-            $installLocation `
-            "$($tauriConfig.mainBinaryName).exe"
-          if (-not (Test-Path $executable)) {
-            throw "Installed executable was not found at '$executable'."
+          $uninstallKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\$($tauriConfig.productName)"
+          $installLocation = (Get-ItemPropertyValue -Path $uninstallKey -Name InstallLocation -ErrorAction Stop).Trim('"')
+          Get-ChildItem $installLocation | Format-Table Name, Length
+          $engine = Join-Path $installLocation "evo-engine.exe"
+          if (-not (Test-Path $engine)) {
+            throw "The evo-engine sidecar was not installed at '$engine'."
+          }
+          $executable = Get-ChildItem $installLocation -Filter *.exe |
+            Where-Object { $_.Name -ne "evo-engine.exe" -and $_.Name -notlike "uninstall*" } |
+            Select-Object -First 1
+          if (-not $executable) {
+            throw "Installed desktop executable was not found in '$installLocation'."
           }
 
-          $process = Start-Process -FilePath $executable -PassThru
+          $process = Start-Process -FilePath $executable.FullName -PassThru
           try {
-            $deadline = (Get-Date).AddSeconds(120)
-            $ready = $false
-            $lastLog = ""
-            while ((Get-Date) -lt $deadline) {
-              $process.Refresh()
-              if (Test-Path $backendLog) {
-                $lastLog = Get-Content $backendLog -Raw -ErrorAction SilentlyContinue
-                if ($lastLog -match "startup_timing phase=server_ready") {
-                  $ready = $true
-                }
-              }
-              if ($ready) {
-                break
-              }
-              if ($process.HasExited) {
-                throw "EvoFlux exited before the bundled backend became ready.`n$lastLog"
-              }
-              Start-Sleep -Seconds 1
+            Start-Sleep -Seconds 20
+            $process.Refresh()
+            if ($process.HasExited) {
+              throw "evo exited during its first launch (exit code $($process.ExitCode))."
             }
-            if (-not $ready) {
-              throw "First Windows launch did not become ready within 120 seconds.`n$lastLog"
-            }
-            Write-Host "First Windows launch reached backend-ready state."
+            Write-Host "First Windows launch stayed up for 20 seconds."
           } finally {
             if (-not $process.HasExited) {
               Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
@@ -703,20 +459,22 @@ jobs:
         if: runner.os == 'macOS'
         shell: bash
         run: |
-          app_path="$(find desktop/src-tauri/target/release/bundle/macos -maxdepth 1 -name '*.app' -print -quit)"
-          dmg_path="$(find desktop/src-tauri/target/release/bundle/dmg -maxdepth 1 -name '*.dmg' -print -quit)"
+          set -euo pipefail
+          app_path="$(find "$BUNDLE_DIR/macos" -maxdepth 1 -name '*.app' -print -quit)"
+          dmg_path="$(find "$BUNDLE_DIR/dmg" -maxdepth 1 -name '*.dmg' -print -quit)"
           if [[ -z "$app_path" || -z "$dmg_path" ]]; then
             echo "Tauri completed without producing both an app and a DMG." >&2
             exit 1
           fi
 
-          binary="$app_path/Contents/MacOS/EvoFlux"
-          file "$binary" | tee "$RUNNER_TEMP/evoflux-architecture.txt"
-          grep -q "${{ matrix.architecture }}" "$RUNNER_TEMP/evoflux-architecture.txt"
+          executable="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app_path/Contents/Info.plist")"
+          for binary in "$app_path/Contents/MacOS/$executable" "$app_path/Contents/MacOS/evo-engine"; do
+            file "$binary" | tee "$RUNNER_TEMP/evo-architecture.txt"
+            grep -q "${{ matrix.architecture }}" "$RUNNER_TEMP/evo-architecture.txt"
+          done
           codesign --verify --deep --strict --verbose=2 "$app_path"
           # macOS runners can briefly report a freshly-created DMG as
-          # unavailable while diskimages-helper finishes flushing it. Retry
-          # the verification without weakening the final integrity gate.
+          # unavailable while diskimages-helper finishes flushing it.
           verified=false
           for attempt in 1 2 3 4 5; do
             echo "Verifying DMG (attempt ${attempt}/5)..."
@@ -742,44 +500,25 @@ jobs:
         if: runner.os == 'Windows' && steps.windows_signing.outputs.enabled == 'true'
         shell: pwsh
         run: |
-          $files = @(Get-ChildItem desktop/src-tauri/target/release/bundle/nsis/*-setup.exe)
-          if ($files.Count -eq 0) {
-            throw "Tauri completed without producing an NSIS installer."
-          }
-          foreach ($file in $files) {
+          foreach ($file in @(Get-ChildItem "$env:BUNDLE_DIR/nsis/*-setup.exe")) {
             $signature = Get-AuthenticodeSignature $file.FullName
             if ($signature.Status -ne "Valid") {
               throw "Invalid Authenticode signature on '$($file.Name)': $($signature.Status)"
             }
           }
 
-      - name: Generate macOS checksums
-        if: runner.os == 'macOS'
+      - name: Generate checksums
         shell: bash
         run: |
-          cd desktop/src-tauri/target/release/bundle/dmg
-          shasum -a 256 ./*.dmg > "$RUNNER_TEMP/${{ matrix.artifact }}-SHA256SUMS.txt"
-
-      - name: Generate Windows checksums
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $files = @(Get-ChildItem desktop/src-tauri/target/release/bundle/nsis/*-setup.exe)
-          if ($files.Count -eq 0) {
-            throw "Tauri completed without producing an NSIS installer."
-          }
-          $lines = $files | ForEach-Object {
-            $hash = (Get-FileHash -Algorithm SHA256 $_.FullName).Hash.ToLowerInvariant()
-            "$hash  $($_.Name)"
-          }
-          $lines | Set-Content "$env:RUNNER_TEMP/${{ matrix.artifact }}-SHA256SUMS.txt"
-
-      - name: Generate Linux checksums
-        if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          cd desktop/src-tauri/target/release/bundle/deb
-          sha256sum ./*.deb > "$RUNNER_TEMP/${{ matrix.artifact }}-SHA256SUMS.txt"
+          set -euo pipefail
+          case "$RUNNER_OS" in
+            macOS) dir="$BUNDLE_DIR/dmg"; pattern='*.dmg'; sum='shasum -a 256' ;;
+            Windows) dir="$BUNDLE_DIR/nsis"; pattern='*-setup.exe'; sum='sha256sum' ;;
+            Linux) dir="$BUNDLE_DIR/deb"; pattern='*.deb'; sum='sha256sum' ;;
+          esac
+          cd "$dir"
+          $sum $pattern > "$RUNNER_TEMP/${{ matrix.artifact }}-SHA256SUMS.txt"
+          cat "$RUNNER_TEMP/${{ matrix.artifact }}-SHA256SUMS.txt"
 
       - name: Upload DMG
         if: runner.os == 'macOS'
@@ -787,9 +526,7 @@ jobs:
         with:
           name: ${{ matrix.artifact }}
           path: |
-            desktop/src-tauri/target/release/bundle/dmg/*.dmg
-            desktop/src-tauri/target/release/bundle/updater/*.app.tar.gz
-            desktop/src-tauri/target/release/bundle/updater/*.app.tar.gz.sig
+            ${{ env.BUNDLE_DIR }}/dmg/*.dmg
             ${{ runner.temp }}/${{ matrix.artifact }}-SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 14
@@ -800,8 +537,7 @@ jobs:
         with:
           name: ${{ matrix.artifact }}
           path: |
-            desktop/src-tauri/target/release/bundle/nsis/*-setup.exe
-            desktop/src-tauri/target/release/bundle/nsis/*-setup.exe.sig
+            ${{ env.BUNDLE_DIR }}/nsis/*-setup.exe
             ${{ runner.temp }}/${{ matrix.artifact }}-SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 14
@@ -812,7 +548,7 @@ jobs:
         with:
           name: ${{ matrix.artifact }}
           path: |
-            desktop/src-tauri/target/release/bundle/deb/*.deb
+            ${{ env.BUNDLE_DIR }}/deb/*.deb
             ${{ runner.temp }}/${{ matrix.artifact }}-SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 14
@@ -838,19 +574,18 @@ jobs:
         id: version
         shell: bash
         run: |
-          python - <<'PY'
+          python3 - <<'PY'
           import json
           import os
           import tomllib
           from pathlib import Path
 
           root = Path.cwd()
+          desktop = root / "apps/desktop"
           versions = {
-              "pyproject.toml": tomllib.loads((root / "pyproject.toml").read_text())["project"]["version"],
-              "app/version.txt": (root / "app/version.txt").read_text().strip(),
-              "web/package.json": json.loads((root / "web/package.json").read_text())["version"],
-              "desktop/src-tauri/Cargo.toml": tomllib.loads((root / "desktop/src-tauri/Cargo.toml").read_text())["package"]["version"],
-              "desktop/src-tauri/tauri.conf.json": json.loads((root / "desktop/src-tauri/tauri.conf.json").read_text())["version"],
+              "apps/desktop/package.json": json.loads((desktop / "package.json").read_text())["version"],
+              "apps/desktop/src-tauri/Cargo.toml": tomllib.loads((desktop / "src-tauri/Cargo.toml").read_text())["package"]["version"],
+              "apps/desktop/src-tauri/tauri.conf.json": json.loads((desktop / "src-tauri/tauri.conf.json").read_text())["version"],
           }
           unique = set(versions.values())
           if len(unique) != 1:
@@ -863,7 +598,7 @@ jobs:
               output.write(f"value={version}\n")
           PY
 
-      - name: Create draft release and release notes
+      - name: Create draft release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
@@ -875,25 +610,13 @@ jobs:
               echo "Release $TAG is already published; refusing to replace immutable assets." >&2
               exit 1
             fi
-            gh release edit "$TAG" --title "EvoFlux v$VERSION"
+            gh release edit "$TAG" --title "evo v$VERSION"
           else
             gh release create "$TAG" \
               --draft \
               --generate-notes \
-              --title "EvoFlux v$VERSION"
+              --title "evo v$VERSION"
           fi
-          gh release view "$TAG" --json body --jq .body > release-notes.md
-
-      - name: Generate updater manifest
-        run: |
-          python scripts/generate_updater_manifest.py \
-            --artifacts-dir release-assets \
-            --repository "$GITHUB_REPOSITORY" \
-            --tag "$GITHUB_REF_NAME" \
-            --version "${{ steps.version.outputs.value }}" \
-            --notes-file release-notes.md \
-            --pub-date "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
-            --output release-assets/latest.json
 
       - name: Upload assets and publish release
         env:

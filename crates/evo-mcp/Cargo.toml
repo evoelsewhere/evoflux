@@ -1,0 +1,30 @@
+[package]
+name = "evo-mcp"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+version = "0.1.0"
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "MCP client and connection pool for evo's connectors"
+
+[dependencies]
+rmcp = { version = "3.9", default-features = false, features = [
+    "base64",
+    "client",
+    "transport-child-process",
+    "transport-streamable-http-client-reqwest",
+    "reqwest",
+    "auth",
+] }
+async-trait = "0.1"
+http = "1"
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+
+[dev-dependencies]
+rmcp = { version = "3.9", default-features = false, features = ["base64", "client", "server", "transport-io"] }
+tempfile = { workspace = true }

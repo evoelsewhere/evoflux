@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Evo Harness architecture</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    /* Skin from DESIGN.md: achromatic, one blue accent, Geist. */
+    :root {
+      --paper:       #fafafa;
+      --card:        #ffffff;
+      --ink:         #171717;
+      --muted:       #4d4d4d;
+      --soft:        #666666;
+      --accent:      #0062d1;
+      --accent-tint: rgba(0,114,245,0.07);
+      --accent-soft: rgba(0,98,209,0.45);
+      --zone-fill:   rgba(23,23,23,0.02);
+      --zone-stroke: rgba(23,23,23,0.12);
+      --store-fill:  rgba(23,23,23,0.05);
+      --ext-fill:    rgba(23,23,23,0.03);
+      --ext-stroke:  rgba(23,23,23,0.30);
+      --rule:        rgba(23,23,23,0.10);
+      --font-sans:   'Geist', system-ui, sans-serif;
+      --font-serif:  'Instrument Serif', serif;
+      --font-mono:   'Geist Mono', ui-monospace, monospace;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background: var(--paper);
+      color: var(--ink);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 3rem 2rem;
+    }
+
+    .frame { max-width: 1200px; width: 100%; }
+    .diagram-container { width: 100%; overflow-x: auto; }
+
+    .eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.66rem;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 0.5rem;
+    }
+
+    h1 {
+      font-family: var(--font-serif);
+      font-size: clamp(1.5rem, 2.4vw + 0.75rem, 2rem);
+      font-weight: 400;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      color: var(--ink);
+      margin-bottom: 1.5rem;
+    }
+
+    svg { width: 100%; min-width: 960px; display: block; }
+    @media print {
+      .diagram-container { overflow-x: visible; }
+      svg { min-width: 0; }
+    }
+
+    /* Diagram roles */
+    .bg          { fill: var(--paper); }
+    .mask        { fill: var(--paper); }
+    .zone        { fill: var(--zone-fill); stroke: var(--zone-stroke); stroke-width: 0.8; }
+    .zone-label  { fill: var(--soft); font: 500 8px var(--font-mono); letter-spacing: 0.14em; }
+    .n-backend   { fill: var(--card); stroke: var(--ink); stroke-width: 1; }
+    .n-store     { fill: var(--store-fill); stroke: var(--muted); stroke-width: 1; }
+    .n-ext       { fill: var(--ext-fill); stroke: var(--ext-stroke); stroke-width: 1; }
+    .n-focal     { fill: var(--accent-tint); stroke: var(--accent); stroke-width: 1.2; }
+    .n-shadow    { fill: var(--paper); stroke: var(--accent-soft); stroke-width: 1; }
+    .tag         { fill: none; stroke: var(--muted); stroke-opacity: 0.5; stroke-width: 0.8; }
+    .tag-focal   { fill: none; stroke: var(--accent); stroke-opacity: 0.6; stroke-width: 0.8; }
+    .tag-text    { fill: var(--muted); font: 500 7px var(--font-mono); letter-spacing: 0.08em; }
+    .tag-text-focal { fill: var(--accent); font: 500 7px var(--font-mono); letter-spacing: 0.08em; }
+    .name        { fill: var(--ink); font: 600 12px var(--font-sans); }
+    .sub         { fill: var(--muted); font: 400 9px var(--font-mono); }
+    .sub-focal   { fill: var(--accent); font: 400 9px var(--font-mono); }
+    .wire        { fill: none; stroke: var(--muted); stroke-width: 1.2; }
+    .wire-accent { fill: none; stroke: var(--accent); stroke-width: 1.4; }
+    .wire-dashed { fill: none; stroke: var(--muted); stroke-width: 1; stroke-dasharray: 4,3; }
+    .label       { fill: var(--soft); font: 400 8px var(--font-mono); letter-spacing: 0.06em; }
+    .label-accent { fill: var(--accent); font: 500 8px var(--font-mono); letter-spacing: 0.06em; }
+    .head        { fill: var(--muted); }
+    .head-accent { fill: var(--accent); }
+    .rule        { stroke: var(--rule); stroke-width: 0.8; }
+    .legend-key  { fill: var(--muted); font: 500 8px var(--font-mono); letter-spacing: 0.14em; }
+    .legend-text { fill: var(--muted); font: 400 9px var(--font-mono); }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <p class="eyebrow">Architecture · Evo Harness</p>
+    <h1>How Evo Harness runs on your machine</h1>
+
+    <div class="diagram-container">
+      <svg viewBox="0 0 960 504" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="architecture-title architecture-desc">
+        <title id="architecture-title">How Evo Harness runs on your machine</title>
+        <desc id="architecture-desc">The desktop app's React UI talks to the Tauri shell, which starts one evo-engine process per chat and relays JSONL to it; the engine works on project folders, saves sessions to local state, and calls model providers using model data from models.dev, while the shell hosts the shared connector pool.</desc>
+        <defs>
+          <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto-start-reverse"><polygon class="head" points="0 0, 8 3, 0 6"/></marker>
+          <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon class="head-accent" points="0 0, 8 3, 0 6"/></marker>
+        </defs>
+
+        <rect class="bg" width="100%" height="100%"/>
+
+        <!-- Zones -->
+        <rect class="zone" x="40" y="72" width="648" height="356" rx="8"/>
+        <text class="zone-label" x="56" y="92">YOUR MACHINE</text>
+        <rect class="zone" x="64" y="112" width="392" height="108" rx="8"/>
+        <text class="zone-label" x="80" y="128">DESKTOP APP · TAURI 2</text>
+        <rect class="zone" x="712" y="112" width="208" height="216" rx="8"/>
+        <text class="zone-label" x="728" y="128">EXTERNAL</text>
+
+        <!-- Connectors (drawn before nodes) -->
+        <!-- React UI <-> Tauri shell -->
+        <line class="wire" x1="232" y1="174" x2="280" y2="174" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+        <rect class="mask" x="244" y="154" width="24" height="12" rx="2"/>
+        <text class="label" x="256" y="163" text-anchor="middle">IPC</text>
+
+        <!-- Tauri shell -> evo-engine (headline) -->
+        <line class="wire-accent" x1="432" y1="174" x2="504" y2="174" marker-end="url(#arrow-accent)"/>
+        <rect class="mask" x="452" y="154" width="32" height="12" rx="2"/>
+        <text class="label-accent" x="468" y="163" text-anchor="middle">JSONL</text>
+
+        <!-- Tauri shell -> Connectors -->
+        <path class="wire" d="M332,204 V264 Q332,272 324,272 H168 Q160,272 160,280 V336" marker-end="url(#arrow)"/>
+        <rect class="mask" x="214" y="252" width="64" height="12" rx="2"/>
+        <text class="label" x="246" y="261" text-anchor="middle">SHARED POOL</text>
+
+        <!-- Tauri shell -> Local state -->
+        <line class="wire" x1="380" y1="204" x2="380" y2="336" marker-end="url(#arrow)"/>
+
+        <!-- evo-engine -> Local state -->
+        <path class="wire" d="M556,204 V264 Q556,272 548,272 H436 Q428,272 428,280 V336" marker-end="url(#arrow)"/>
+        <rect class="mask" x="468" y="252" width="48" height="12" rx="2"/>
+        <text class="label" x="492" y="261" text-anchor="middle">SESSIONS</text>
+
+        <!-- evo-engine -> Project folders -->
+        <line class="wire" x1="612" y1="204" x2="612" y2="336" marker-end="url(#arrow)"/>
+        <rect class="mask" x="620" y="264" width="32" height="12" rx="2"/>
+        <text class="label" x="636" y="273" text-anchor="middle">TOOLS</text>
+
+        <!-- evo-engine -> Model providers -->
+        <line class="wire" x1="664" y1="164" x2="736" y2="164" marker-end="url(#arrow)"/>
+        <rect class="mask" x="684" y="144" width="32" height="12" rx="2"/>
+        <text class="label" x="700" y="153" text-anchor="middle">HTTPS</text>
+
+        <!-- evo-engine -> models.dev (passive data) -->
+        <path class="wire-dashed" d="M664,184 H692 Q700,184 700,192 V270 Q700,278 708,278 H736" marker-end="url(#arrow)"/>
+
+        <!-- Nodes -->
+        <!-- React UI -->
+        <rect class="mask" x="88" y="144" width="144" height="60" rx="6"/>
+        <rect class="n-backend" x="88" y="144" width="144" height="60" rx="6"/>
+        <rect class="tag" x="96" y="150" width="20" height="12" rx="2"/>
+        <text class="tag-text" x="106" y="159" text-anchor="middle">UI</text>
+        <text class="name" x="160" y="178" text-anchor="middle">React UI</text>
+        <text class="sub" x="160" y="194" text-anchor="middle">React 19 · webview</text>
+
+        <!-- Tauri shell -->
+        <rect class="mask" x="280" y="144" width="152" height="60" rx="6"/>
+        <rect class="n-backend" x="280" y="144" width="152" height="60" rx="6"/>
+        <rect class="tag" x="288" y="150" width="32" height="12" rx="2"/>
+        <text class="tag-text" x="304" y="159" text-anchor="middle">SHELL</text>
+        <text class="name" x="356" y="178" text-anchor="middle">Tauri shell</text>
+        <text class="sub" x="356" y="194" text-anchor="middle">Rust · windows · pty</text>
+
+        <!-- evo-engine (focal), with a card behind it for "one per chat" -->
+        <rect class="n-shadow" x="512" y="136" width="144" height="60" rx="6"/>
+        <rect class="mask" x="504" y="144" width="160" height="60" rx="6"/>
+        <rect class="n-focal" x="504" y="144" width="160" height="60" rx="6"/>
+        <rect class="tag-focal" x="512" y="150" width="24" height="12" rx="2"/>
+        <text class="tag-text-focal" x="524" y="159" text-anchor="middle">RPC</text>
+        <text class="name" x="584" y="178" text-anchor="middle">evo-engine</text>
+        <text class="sub-focal" x="584" y="194" text-anchor="middle">one process per chat</text>
+
+        <!-- Connectors (MCP) -->
+        <rect class="mask" x="88" y="336" width="144" height="60" rx="6"/>
+        <rect class="n-ext" x="88" y="336" width="144" height="60" rx="6"/>
+        <rect class="tag" x="96" y="342" width="24" height="12" rx="2"/>
+        <text class="tag-text" x="108" y="351" text-anchor="middle">MCP</text>
+        <text class="name" x="160" y="370" text-anchor="middle">Connectors</text>
+        <text class="sub" x="160" y="386" text-anchor="middle">stdio · HTTP · OAuth</text>
+
+        <!-- Local state -->
+        <rect class="mask" x="304" y="336" width="160" height="60" rx="6"/>
+        <rect class="n-store" x="304" y="336" width="160" height="60" rx="6"/>
+        <rect class="tag" x="312" y="342" width="20" height="12" rx="2"/>
+        <text class="tag-text" x="322" y="351" text-anchor="middle">DB</text>
+        <text class="name" x="384" y="370" text-anchor="middle">Local state</text>
+        <text class="sub" x="384" y="386" text-anchor="middle">~/.evo/agent · evo.db</text>
+
+        <!-- Project folders -->
+        <rect class="mask" x="504" y="336" width="160" height="60" rx="6"/>
+        <rect class="n-store" x="504" y="336" width="160" height="60" rx="6"/>
+        <rect class="tag" x="512" y="342" width="20" height="12" rx="2"/>
+        <text class="tag-text" x="522" y="351" text-anchor="middle">FS</text>
+        <text class="name" x="584" y="370" text-anchor="middle">Project folders</text>
+        <text class="sub" x="584" y="386" text-anchor="middle">files · git · worktrees</text>
+
+        <!-- Model providers -->
+        <rect class="mask" x="736" y="144" width="160" height="60" rx="6"/>
+        <rect class="n-ext" x="736" y="144" width="160" height="60" rx="6"/>
+        <rect class="tag" x="744" y="150" width="24" height="12" rx="2"/>
+        <text class="tag-text" x="756" y="159" text-anchor="middle">LLM</text>
+        <text class="name" x="816" y="178" text-anchor="middle">Model providers</text>
+        <text class="sub" x="816" y="194" text-anchor="middle">hosted · cloud · local</text>
+
+        <!-- models.dev -->
+        <rect class="mask" x="736" y="248" width="160" height="60" rx="6"/>
+        <rect class="n-ext" x="736" y="248" width="160" height="60" rx="6"/>
+        <rect class="tag" x="744" y="254" width="28" height="12" rx="2"/>
+        <text class="tag-text" x="758" y="263" text-anchor="middle">DATA</text>
+        <text class="name" x="816" y="282" text-anchor="middle">models.dev</text>
+        <text class="sub" x="816" y="298" text-anchor="middle">limits · costs · thinking</text>
+
+        <!-- Legend -->
+        <line class="rule" x1="40" y1="452" x2="920" y2="452"/>
+        <text class="legend-key" x="40" y="480">LEGEND</text>
+
+        <rect class="n-focal" x="112" y="470" width="16" height="12" rx="2"/>
+        <text class="legend-text" x="136" y="480">engine</text>
+
+        <rect class="n-backend" x="200" y="470" width="16" height="12" rx="2"/>
+        <text class="legend-text" x="224" y="480">app process</text>
+
+        <rect class="n-store" x="320" y="470" width="16" height="12" rx="2"/>
+        <text class="legend-text" x="344" y="480">local data</text>
+
+        <rect class="n-ext" x="432" y="470" width="16" height="12" rx="2"/>
+        <text class="legend-text" x="456" y="480">outside the app</text>
+
+        <line class="wire-accent" x1="568" y1="476" x2="596" y2="476" marker-end="url(#arrow-accent)"/>
+        <text class="legend-text" x="604" y="480">engine protocol</text>
+
+        <line class="wire" x1="712" y1="476" x2="740" y2="476" marker-end="url(#arrow)"/>
+        <text class="legend-text" x="748" y="480">calls</text>
+
+        <line class="wire-dashed" x1="800" y1="476" x2="828" y2="476" marker-end="url(#arrow)"/>
+        <text class="legend-text" x="836" y="480">reads data</text>
+      </svg>
+    </div>
+  </div>
+</body>
+</html>

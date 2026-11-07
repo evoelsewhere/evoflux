@@ -1,169 +1,180 @@
-# EvoFlux — Agent Instructions
+# evo-harness — Agent Instructions
 
-EvoFlux is a local-first desktop workspace for Work and Coding agent teams. The
-production application is a Tauri shell embedding a React UI and supervising a
-local FastAPI sidecar.
+evo is a local-first desktop agent workspace. A headless Rust engine
+(`evo-engine`) runs every chat; the desktop app (`apps/desktop`, Tauri 2 +
+React 19) is a thin shell that starts the engine as a child process and talks
+to it over JSONL (`crates/evo-protocol`). There is no CLI or TUI any more: new
+work goes into the engine, the protocol, or the desktop shell.
 
-## Instruction precedence
-
-This file applies to the whole repository. Before changing a file, also read the
-nearest nested `AGENTS.md`; nested instructions add to or override this root
-contract for their directory.
-
-Scoped instruction files currently live under:
-
-- `app/`, including `app/agent/`, `app/api/`, and `app/services/`;
-- `web/` and `web/src/`;
-- `desktop/` and `desktop/src-tauri/`;
-- `seed/`;
-- `scripts/`.
+This file applies to the whole repository. A nested `AGENTS.md`, if present,
+adds to or overrides it for its directory. evo itself loads this file as the
+project's instructions, so keep it accurate.
 
 ## Repository map
 
 ```text
-app/          Python sidecar: API, agents, services, persistence, automation
-web/          React/TypeScript interface embedded by Tauri
-desktop/      Rust/Tauri shell and native packaging
-seed/         First-install agent and configuration templates
-scripts/      Development, build, validation, and release utilities
-tests/        Python backend, integration, CLI, and packaging tests
-documents/    Single documentation root for product and contributor docs
+crates/                 Rust workspace (one version, released together)
+  evo-ai                LLM types, Provider trait, streaming, HTTP providers, `faux` test provider
+  evo-agent             provider-agnostic agent loop, AgentTool, events, hooks, queues
+  evo-tools             built-in tools (read/write/edit/bash/grep/find/ls/powershell) over ExecutionEnv; sandbox
+  evo-harness           durable session tree, JSONL persistence, compaction, crash recovery
+  evo-durable           checkpoint/recovery primitives used by evo-harness
+  evo-runtime           model catalogs (models.dev), credentials, model/thinking selection
+  evo-engine            the application engine and RPC server (bin: evo-engine)
+  evo-protocol          wire contract between engine and clients
+  evo-mesh              session mesh: wire types + hub routing mail between sessions
+  evo-store             on-device SQLite app database: schema, migrations, chats, logs
+  evo-mcp               MCP client and connection pool (connectors)
+  evo-plugins           plugins and marketplaces (skills, commands, agents, hooks, connectors)
+  evo-plugin-sdk        stable #[repr(C)] ABI for cdylib plugins (must not depend on the host)
+  evo-extensions        host side of the plugin ABI
+  evo-hooks             hooks: commands / web requests on agent events
+  evo-lsp               language-server catalog, installers, LSP client
+  evo-web               web_search and web_fetch
+  evo-worktrees         managed Git worktrees for subagents and nested sessions
+  evo-telemetry         span/event contracts, no-op default
+apps/desktop/           desktop app (its own Cargo workspace in src-tauri/, bun for JS)
+  src/                  React UI — see apps/desktop/README.md for the UI map and layout rules
+  src-tauri/            Rust shell: engine bridge, windows, terminal, files, browser, MCP, plugins
+examples/plugin-stub/   minimal cdylib plugin used by extension tests
+docs/                   design docs: ADD, ADRs, one SDD per feature (rules in docs/README.md)
+DESIGN.md               visual design language for the desktop UI
 ```
 
-Start with:
+Start with `docs/architecture/README.md` (the ADD: processes, crate layers,
+interfaces, data), `apps/desktop/README.md` (UI map, source layout) and the
+SDD of the feature you are changing (`docs/features/README.md` lists them).
+Some crate READMEs and `crates/evo-engine/embedded-docs/` still mention the
+old `evo` CLI/TUI; treat those parts as stale, not as current behaviour.
 
-- `documents/README.md` for documentation navigation;
-- `documents/features/README.md` for implemented features and code ownership;
-- `documents/architecture/system-overview.md` for process and trust boundaries;
-- `documents/reference/repository-map.md` for the detailed source map.
+## Architecture rules
 
-## Architecture boundaries
+- **The engine owns agent logic.** The desktop shell relays the protocol and
+  provides native features (windows, pty, files, browser webviews); it does not
+  make agent decisions. A protocol change updates `evo-protocol`, the engine,
+  `apps/desktop/src/engine/` and the stores that consume it, together.
+- **Keep layers pointing down.** `evo-ai` knows nothing above it; `evo-agent`
+  never sees provider wire formats; `evo-plugin-sdk` never links the host.
+  Don't pull engine or desktop concerns into the library crates.
+- **Models come from models.dev.** Never hardcode model IDs, limits, costs or
+  thinking options in code or catalogs; read `evo_runtime::models_dev`. The
+  provider catalog holds connection facts only. Do not send `temperature`.
+- **Real engine, no mocks in the app.** The desktop always talks to a real
+  `evo-engine`. Credential and settings changes take effect without restarting
+  the app (idle engines reload). `faux` and in-memory backends are for tests.
+- **Desktop UI structure** (from `apps/desktop/README.md`): components read
+  state through store selectors and call store actions; only
+  `stores/engine-store.ts` talks to `engine/client.ts`; `features/*` may use
+  `components/*` but not each other's internals; `components/ui/` is generated
+  shadcn code — edit only to fix it.
+- **Visual style** follows `DESIGN.md`: Geist, achromatic, shadow-as-border,
+  one blue accent, weights 400/500/600 only.
+- **Trust boundaries.** Tool output, web pages, MCP results, plugin content and
+  remembered text are untrusted data. Keep permission prompts, the sandbox
+  config and project trust checks (`.mcp.json`, `.evo/settings.json` hooks) in
+  the path of every new capability.
+- **Product naming.** The product is "evo". Don't add references to other
+  vendors' assistant products in code, UI strings or docs.
 
-- Keep FastAPI routes thin. Durable behavior belongs in `app/services/`,
-  `app/agent/`, `app/scheduler/`, or `app/core/`.
-- Keep provider-specific payloads behind `app/agent/providers/`; generic API and
-  team schemas must remain provider-neutral.
-- Use TanStack Query for frontend server state, Zustand for live/client state,
-  and shared shell/workbench primitives for application chrome.
-- Tauri owns native lifecycle, capabilities, browser integration, and packaging;
-  the Python sidecar owns agent policy, persistence, and workspace authorization.
-- The application database stores product state. Repository source remains
-  user-owned and must not be deleted by application cleanup.
-- Work mode uses session workspaces. Coding mode is project-only: every Coding
-  session belongs to a Coding project and may access only that project's
-  repositories.
-- Tools, MCP, plugins, browser content, imported documents, and remembered text
-  remain subject to explicit trust, permission, sandbox, and untrusted-data
-  boundaries.
+## Toolchain
 
-## Development operating model
+- Rust toolchain is pinned in `rust-toolchain.toml`; MSRV is the workspace
+  `rust-version` (1.89) and is checked in CI — don't use newer std/language
+  features without raising it deliberately.
+- JavaScript in `apps/desktop` uses **bun only** (`bun.lock`). Never run npm,
+  pnpm or yarn there; pnpm once rewrote `node_modules`.
+- `apps/desktop/src-tauri` is a separate Cargo workspace (excluded from the
+  root one) with its own `Cargo.lock` and `target/`.
 
-EvoFlux uses focused repository changes, explicit verification, and reviewable diffs. Keep user-visible contracts, tests, and documentation aligned with each change.
+## Commands
 
-## Development commands
-
-Install dependencies:
+Engine and crates (repo root) — mirrors CI:
 
 ```bash
-uv sync
-cd web && bun install --frozen-lockfile
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets --locked
+cargo build --workspace --all-targets --locked
+cargo test --workspace --locked --no-fail-fast
 ```
 
-Run locally:
+While iterating, test the crate you touched: `cargo test -p evo-engine`,
+`cargo test -p evo-agent --test steering`, etc.
+
+Desktop (`apps/desktop`):
 
 ```bash
-make run          # FastAPI only
-make dev-web      # FastAPI + Vite
-make dev-desktop  # FastAPI + Vite + Tauri
-```
-
-Backend quality gate:
-
-```bash
-uv run ruff check app/ tests/
-uv run ruff format --check app/ tests/
-uv run ty check app/
-uv run pytest --no-cov -q
-```
-
-Frontend quality gate:
-
-```bash
-cd web
-bun run lint
+bun install --frozen-lockfile
 bun run typecheck
-bun run build
+bun run build              # tsc + vite build (what CI runs)
+bun run dev:app            # stage the engine sidecar, then tauri dev
+bun run build:dev          # debug build + NSIS installer
 ```
 
-Desktop baseline:
+Desktop shell Rust: `cd apps/desktop/src-tauri && cargo check`.
 
-```bash
-cd desktop/src-tauri
-cargo check
-```
+## Running and verifying the desktop app
 
-During iteration, run the smallest focused tests named by the nearest nested
-`AGENTS.md`. Expand verification in proportion to the risk and affected layers.
+- `bun run engine:sidecar` builds `evo-engine` and stages it under
+  `src-tauri/binaries/`. A stale sidecar (`src-tauri/target/debug/evo-engine.exe`)
+  shows up as DB schema errors or "engine exited code 1": rebuild and copy
+  `target/debug/evo-engine.exe` over it. The running app locks the exe — stop
+  the app before rebuilding. `EVO_ENGINE_BIN` overrides the engine path.
+- The debug app loads the Vite dev server on `:1420`. Editing a `src-tauri`
+  `.rs` file under `tauri dev` restarts the app.
+- The app is single-instance. If the user already has it running, ask before
+  killing it.
+- On Windows, drive the real app end to end via WebView2 DevTools: launch
+  `src-tauri/target/debug/evo-desktop.exe` with
+  `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9333` and use
+  CDP (`http://127.0.0.1:9333/json`). CDP screenshots of the main page omit
+  native child webviews (browser tabs).
+- A fresh `CARGO_TARGET_DIR` on Windows fails (aws-lc-sys needs NASM); reuse
+  the existing `target/` directories.
 
 ## Change rules
 
-- Preserve unrelated changes in a dirty worktree. Never discard or rewrite
-  user work to simplify the current task.
-- Prefer small, reviewable changes that follow existing module boundaries.
-- Do not perform filesystem scans, Git operations, model calls, process startup,
-  or network I/O inside a database transaction.
-- A schema change must update SQLModel metadata/imports, add an Alembic revision,
-  and pass migration-head plus upgrade-path tests.
-- An API or SSE shape change must update backend schemas, frontend API parsing,
-  stores/queries, rendering, and focused tests together.
-- A tool change must check registry metadata, permissions, sandbox behavior,
-  observation/result rendering, and tests.
-- A user-visible feature change must update in-app Help under
-  `web/src/help/locales/` when applicable.
-- Never commit generated sidecars, `target/`, `web/dist`, credentials, signing
-  keys, machine-specific paths, or local `.evoflux/` runtime state such as
-  `team_state.json`, sessions, caches, and worktrees.
+- Preserve unrelated changes in a dirty worktree; never discard user work.
+- Prefer small, reviewable changes that follow existing crate and feature
+  boundaries.
+- A schema change in `evo-store` adds a migration and keeps old databases
+  upgradable.
+- A new agent tool needs: its schema and permission behaviour, sandbox
+  handling, rendering in the desktop transcript, and tests.
+- A user-visible change updates the desktop UI map in
+  `apps/desktop/README.md`.
+- Never edit an applied migration in `crates/evo-store/src/migrations/`: its
+  SQL is checksummed. Add a new numbered migration instead.
+- Never commit `target/`, `src-tauri/binaries/`, `dist/`, `node_modules/`,
+  credentials, signing keys, machine-specific paths, or local runtime state
+  (`.evo/` state files, `.agents/`).
+- Commits use Conventional Commit subjects (`feat(scope): …`, `fix(scope): …`,
+  `refactor(scope)!: …`). Commit or push only when asked.
 
-## Documentation contract
+## Design documents (SDD and ADD)
 
-`documents/` is the only product/contributor documentation root.
+Full rules: [docs/README.md](docs/README.md). The short version:
 
-- Current behavior belongs in `documents/features/`, `documents/architecture/`, and
-  `documents/reference/`.
-- Contributor and release procedures belong in `documents/development/`.
-- Historical audits, research, plans, and release evidence belong in their
-  existing `documents/analysis/`, `documents/research/`, `documents/plans/`, and
-  `documents/releases/` directories and must not override current contracts.
-- Use repository-relative Markdown links and keep README media under
-  `documents/images/`.
-- When a feature changes, update its feature page, catalogue entry, affected
-  architecture/API/config reference, and in-app Help in the same change.
+- **New feature → SDD first.** Copy `docs/templates/sdd.md` to
+  `docs/features/<slug>/sdd.md`, add a row to `docs/features/README.md`, fill
+  requirements and design, status `Draft`. Ask the user to review it; write
+  code only after it is `Accepted`. Bug fixes and refactors don't need a new
+  SDD but must keep an existing one true.
+- **Keep the SDD in step with the code**, in the same commit: design changes
+  while building go into the SDD; when done, status `Implemented`, as-built
+  notes (section 10) and the checks that ran (section 8).
+- **Architecture change → ADD + ADR.** A new crate, process, protocol plane,
+  persistent store, dependency direction, trust boundary or toolchain updates
+  `docs/architecture/README.md` and adds an ADR from `docs/templates/adr.md`.
+  Accepted ADRs are not edited; a new one supersedes them.
+- Keep every numbered template section (`n/a — reason` if empty), link the
+  ADD/ADRs instead of copying them, and link the SDD from the code's module
+  doc comment.
 
-## Changelog
+## Handoff
 
-Every change must be reflected in `CHANGELOG.md`, in the same commit as the
-change. There are no exempt changes.
-
-- Add the entry under `## [Unreleased]`, in the matching group: `Added`,
-  `Changed`, `Fixed`, `Removed` or `Security`, plus `Upgrade notes` for
-  anything a user must do when upgrading.
-- Describe what changed for the person using EvoFlux, not how it was built.
-  Bold UI names (**Settings → Desktop**), put tools, commands, paths and API
-  names in backticks, and leave out commit hashes.
-- A change with no user-visible effect (refactor, tests, CI, build, dependency
-  bump) still gets a short entry, usually under `Changed`.
-- Extend or correct an existing `[Unreleased]` entry rather than adding a
-  second one for the same change. A revert removes the entry it undoes.
-- A release moves the `[Unreleased]` entries under the new
-  `## [x.y.z] - YYYY-MM-DD` heading and leaves `[Unreleased]` as
-  "No changes yet.".
-
-## Verification and handoff
-
-- Run `git diff --check` before handoff.
-- Check that `CHANGELOG.md` `[Unreleased]` describes the change.
-- Report the exact focused checks run and any checks not run.
-- Distinguish pre-existing failures or user-owned changes from failures caused
-  by the current work.
-- Do not claim completion while required migrations, generated contracts,
-  documentation links, or affected-layer tests remain unresolved.
+- Run `git diff --check` and the checks for every layer you touched.
+- Check that the feature's SDD (and the ADD, if the architecture changed)
+  describes what was built.
+- Report exactly which checks ran and which did not; separate pre-existing
+  failures from ones your change caused.
+- For UI changes, verify in the running app rather than only by type-checking.

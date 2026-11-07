@@ -1,3 +1,3 @@
-# Auto detect text files and perform LF normalization
-* text=auto
-*.sh text eol=lf
+# SQL migrations are embedded byte for byte (include_str!) and checksummed in
+# evo.db. Keep them LF in every checkout, whatever core.autocrlf says.
+*.sql text eol=lf

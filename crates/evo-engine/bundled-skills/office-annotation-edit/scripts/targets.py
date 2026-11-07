@@ -1,0 +1,238 @@
+#!/usr/bin/env python3
+"""Describe the shapes an evo annotation points at.
+
+Given a deck, a 1-based slide number and the annotation's shape ids and/or
+selected area (percent of the slide), print JSON describing each target:
+id, name, kind, box (percent and EMU), text, solid fills and, for charts, the
+chart type with its series and their colours. With only an area, every shape
+the box covers is listed, most-covered first, with the share of the shape
+inside the box.
+
+Usage:
+    python targets.py deck.pptx --slide 7 --shape 12
+    python targets.py deck.pptx --slide 7 --area 8.1,21.5,84,52.3
+    python targets.py deck.pptx --slide 7 --shape 12 --shape 14 --area 8,20,80,50
+
+Groups are searched recursively; a shape inside a group reports the group's
+id as ``group``. Run with ``uv run --with python-pptx python targets.py …``.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+from pptx import Presentation
+from pptx.enum.shapes import MSO_SHAPE_TYPE
+
+
+def _parse_area(value: str) -> tuple[float, float, float, float]:
+    try:
+        x, y, w, h = (float(part) for part in value.split(","))
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("area is x,y,w,h in percent") from exc
+    return x, y, w, h
+
+
+_P = "{http://schemas.openxmlformats.org/presentationml/2006/main}"
+_A = "{http://schemas.openxmlformats.org/drawingml/2006/main}"
+# Maps a shape's own coordinates to slide EMU: x * sx + tx, y * sy + ty.
+_IDENTITY = (1.0, 1.0, 0.0, 0.0)
+
+
+def _child_transform(group, outer: tuple) -> tuple:
+    """The transform of ``group``'s children: their offsets and sizes are in the
+    group's child space (chOff/chExt), which the group maps onto its own box."""
+    xfrm = group._element.find(f"{_P}grpSpPr/{_A}xfrm")
+    parts = {} if xfrm is None else {
+        child.tag[len(_A):]: child for child in xfrm if child.tag.startswith(_A)
+    }
+    try:
+        ox, oy = int(parts["off"].get("x")), int(parts["off"].get("y"))
+        cx, cy = int(parts["ext"].get("cx")), int(parts["ext"].get("cy"))
+        chx, chy = int(parts["chOff"].get("x")), int(parts["chOff"].get("y"))
+        chcx, chcy = int(parts["chExt"].get("cx")), int(parts["chExt"].get("cy"))
+    except (KeyError, TypeError, ValueError):
+        return outer  # no child space: children use the parent's coordinates
+    scale_x = cx / chcx if chcx else 1.0
+    scale_y = cy / chcy if chcy else 1.0
+    sx, sy, tx, ty = outer
+    return (
+        sx * scale_x,
+        sy * scale_y,
+        sx * (ox - chx * scale_x) + tx,
+        sy * (oy - chy * scale_y) + ty,
+    )
+
+
+def _walk(shapes, group=None, transform=_IDENTITY):
+    for shape in shapes:
+        yield shape, group, transform
+        if shape.shape_type == MSO_SHAPE_TYPE.GROUP:
+            yield from _walk(shape.shapes, group=shape.shape_id,
+                             transform=_child_transform(shape, transform))
+
+
+def _box(shape, width: int, height: int, transform=_IDENTITY) -> dict | None:
+    if shape.left is None or shape.top is None or not shape.width or not shape.height:
+        return None
+    sx, sy, tx, ty = transform
+    left, top = round(shape.left * sx + tx), round(shape.top * sy + ty)
+    w, h = round(shape.width * sx), round(shape.height * sy)
+    return {
+        "x": round(100 * left / width, 2),
+        "y": round(100 * top / height, 2),
+        "w": round(100 * w / width, 2),
+        "h": round(100 * h / height, 2),
+        "emu": [left, top, w, h],
+    }
+
+
+def _overlap(box: dict, area: tuple[float, float, float, float]) -> float:
+    ax, ay, aw, ah = area
+    left, top = max(box["x"], ax), max(box["y"], ay)
+    right = min(box["x"] + box["w"], ax + aw)
+    bottom = min(box["y"] + box["h"], ay + ah)
+    if right <= left or bottom <= top:
+        return 0.0
+    return (right - left) * (bottom - top) / max(box["w"] * box["h"], 1e-9)
+
+
+def _solid_fill(fill) -> str | None:
+    try:
+        if (
+            fill.type == 1 and fill.fore_color and fill.fore_color.type is not None
+        ):  # SOLID
+            color = fill.fore_color
+            return f"#{color.rgb}" if color.type == 1 else f"theme:{color.theme_color}"
+    except (AttributeError, TypeError, ValueError):
+        return None
+    return None
+
+
+def _kind(shape) -> str:
+    if getattr(shape, "has_chart", False) and shape.has_chart:
+        return "chart"
+    if getattr(shape, "has_table", False) and shape.has_table:
+        return "table"
+    if shape.shape_type == MSO_SHAPE_TYPE.PICTURE:
+        return "picture"
+    if shape.shape_type == MSO_SHAPE_TYPE.GROUP:
+        return "group"
+    if getattr(shape, "is_placeholder", False) and shape.is_placeholder:
+        return "placeholder"
+    if getattr(shape, "has_text_frame", False) and shape.has_text_frame:
+        return "text"
+    return "shape"
+
+
+def _chart(shape) -> dict:
+    chart = shape.chart
+    series = []
+    for plot in chart.plots:
+        for item in plot.series:
+            entry = {"name": item.name, "values": list(item.values)[:24]}
+            try:
+                entry["fill"] = _solid_fill(item.format.fill)
+            except (AttributeError, ValueError):
+                entry["fill"] = None
+            series.append(entry)
+    return {"type": str(chart.chart_type), "series": series}
+
+
+def describe(shape, group, width: int, height: int, transform=_IDENTITY) -> dict:
+    info: dict = {
+        "id": shape.shape_id,
+        "name": shape.name,
+        "kind": _kind(shape),
+        "box": _box(shape, width, height, transform),
+    }
+    if group is not None:
+        info["group"] = group
+    if getattr(shape, "has_text_frame", False) and shape.has_text_frame:
+        info["text"] = shape.text_frame.text[:500]
+    if getattr(shape, "is_placeholder", False) and shape.is_placeholder:
+        info["placeholder"] = {
+            "idx": shape.placeholder_format.idx,
+            "type": str(shape.placeholder_format.type),
+        }
+    try:
+        fill = _solid_fill(shape.fill)
+        if fill:
+            info["fill"] = fill
+    except (AttributeError, TypeError):
+        pass
+    if info["kind"] == "chart":
+        info["chart"] = _chart(shape)
+    if info["kind"] == "table":
+        table = shape.table
+        info["table"] = {"rows": len(table.rows), "columns": len(table.columns)}
+    return info
+
+
+def main(argv: list[str] | None = None) -> int:
+    # Slide text is often not ASCII; a Windows console defaults to a legacy code page.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+    parser = argparse.ArgumentParser(
+        description="Describe the shapes an evo annotation points at."
+    )
+    parser.add_argument("deck", type=Path)
+    parser.add_argument("--slide", type=int, required=True, help="1-based slide number")
+    parser.add_argument(
+        "--shape", type=int, action="append", default=[], help="shape id"
+    )
+    parser.add_argument("--area", type=_parse_area, help="x,y,w,h in percent")
+    args = parser.parse_args(argv)
+    if not args.shape and args.area is None:
+        parser.error("give --shape and/or --area")
+
+    prs = Presentation(str(args.deck))
+    if not 1 <= args.slide <= len(prs.slides):
+        print(
+            f"slide {args.slide} not found; the deck has {len(prs.slides)}",
+            file=sys.stderr,
+        )
+        return 2
+    width, height = int(prs.slide_width or 0), int(prs.slide_height or 0)
+    if width <= 0 or height <= 0:
+        print("the deck has no slide size", file=sys.stderr)
+        return 2
+    slide = prs.slides[args.slide - 1]
+    shapes = list(_walk(slide.shapes))
+
+    result: dict = {
+        "slide": args.slide,
+        "slide_size_emu": [width, height],
+        "targets": [],
+    }
+    by_id = {shape.shape_id: (shape, group, transform) for shape, group, transform in shapes}
+    missing = [shape_id for shape_id in args.shape if shape_id not in by_id]
+    for shape_id in args.shape:
+        if shape_id in by_id:
+            shape, group, transform = by_id[shape_id]
+            result["targets"].append(describe(shape, group, width, height, transform))
+    if args.area is not None:
+        covered = []
+        for shape, group, transform in shapes:
+            if shape.shape_id in args.shape:
+                continue
+            box = _box(shape, width, height, transform)
+            share = _overlap(box, args.area) if box else 0.0
+            if share > 0.05:
+                info = describe(shape, group, width, height, transform)
+                info["covered"] = round(share, 2)
+                covered.append(info)
+        covered.sort(key=lambda item: item["covered"], reverse=True)
+        result["in_area"] = covered
+    if missing:
+        result["missing_shape_ids"] = missing
+    json.dump(result, sys.stdout, ensure_ascii=False, indent=1)
+    print()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

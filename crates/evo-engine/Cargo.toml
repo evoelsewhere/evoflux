@@ -1,0 +1,73 @@
+[package]
+name = "evo-engine"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Headless evo application engine: sessions, configuration, credentials, resources, extensions and the RPC server"
+readme = "README.md"
+publish = false
+
+[dependencies]
+evo-protocol = { workspace = true }
+evo-telemetry = { workspace = true }
+evo-ai = { workspace = true, features = ["providers"] }
+evo-runtime = { workspace = true }
+evo-agent = { workspace = true }
+evo-tools = { workspace = true }
+evo-worktrees = { workspace = true }
+evo-hooks = { workspace = true }
+evo-web = { workspace = true }
+evo-lsp = { workspace = true }
+evo-office = { workspace = true }
+include_dir = "0.7"
+evo-plugins = { workspace = true }
+evo-harness = { workspace = true }
+evo-plugin-sdk = { workspace = true, features = ["binary"] }
+evo-extensions = { workspace = true }
+tokio = { workspace = true, features = ["signal", "io-std", "net"] }
+tokio-util = { workspace = true }
+async-trait = { workspace = true }
+futures = { workspace = true }
+fs2 = { workspace = true }
+globset = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+semver = { workspace = true }
+indexmap = { workspace = true }
+schemars = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+uuid = { workspace = true }
+reqwest = { workspace = true }
+sha2 = "0.10"
+percent-encoding = "2"
+# X25519 + AES-256-GCM for the Xiaomi MiMo sign-in (already in the tree via rustls).
+ring = "0.17"
+flate2 = "1"
+tar = "0.4"
+zip = { version = "2.4", default-features = false, features = ["deflate"] }
+dirs = { workspace = true }
+rpassword = { workspace = true }
+tempfile = { workspace = true }
+base64 = { workspace = true }
+png = { workspace = true }
+rusqlite = { workspace = true }
+evo-store = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_System_JobObjects",
+    "Win32_System_Pipes",
+    "Win32_System_SystemInformation",
+    "Win32_System_Threading",
+] }
+
+[features]
+# Explicit new-session print opt-in only; never enabled by default.
+experimental-native-store = ["evo-harness/experimental-native-store"]

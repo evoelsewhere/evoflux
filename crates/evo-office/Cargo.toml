@@ -1,0 +1,31 @@
+[package]
+name = "evo-office"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+version = "0.1.0"
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Optional pinned LibreOffice runtime for evo: verified install and headless Office to PDF conversion"
+
+[dependencies]
+base64 = { workspace = true }
+regex = { workspace = true }
+roxmltree = "0.20"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+flate2 = "1"
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = "0.10"
+tar = "0.4"
+tempfile = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+tracing = { workspace = true }
+url = "2"
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

@@ -1,16 +1,19 @@
 <div align="center">
-  <img src="documents/images/intro/evoflux-intro-preview.gif" width="800" alt="EvoFlux intro: agent teams, Computer App Control, and WebBridge" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/readme/banner-dark.png">
+    <img src="docs/assets/readme/banner-light.png" width="800" alt="Evo Harness: a chat that added a retry to web_fetch, next to the edited fetch.rs with its git changes in the Files panel" />
+  </picture>
 
-  **A local-first desktop workspace for AI agent teams.**
+  **A local-first desktop workspace for AI agents.**
 
-  EvoFlux brings agent conversations, files, terminal, browser, git, and
-  verification into one workspace. Use Work for general tasks and Coding for
-  repository-aware development.
+  Evo Harness brings agent chats, files, terminal, browser, git, connectors
+  and skills into one desktop app. A headless Rust engine runs every chat on your
+  machine; the desktop app is a thin shell around it.
 
   [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-2563EB.svg)](LICENSE)
-  [![Desktop app](https://img.shields.io/badge/Product-Desktop-1764FF)](desktop/)
-  [![Python 3.12+](https://img.shields.io/badge/Python-3.12+-3776AB?logo=python&logoColor=white)](pyproject.toml)
-  [![Tauri v2](https://img.shields.io/badge/Tauri-v2-FFC131?logo=tauri&logoColor=white)](desktop/)
+  [![Desktop app](https://img.shields.io/badge/Product-Desktop-1764FF)](apps/desktop/)
+  [![Rust 1.89+](https://img.shields.io/badge/Rust-1.89+-000000?logo=rust&logoColor=white)](Cargo.toml)
+  [![Tauri v2](https://img.shields.io/badge/Tauri-v2-FFC131?logo=tauri&logoColor=white)](apps/desktop/)
 
   **[Website](https://evoelsewhere.asia/)** · **[Download](#download)** ·
   **[Run from source](#run-from-source)** · **[Documentation](#documentation)**
@@ -18,118 +21,135 @@
 
 ## Highlights
 
-- **Work and Coding modes** for cowork tasks and persistent repositories.
-- **Lead-and-specialist teams** with per-agent models, skills, tools, and
-  permissions.
-- **Bring your own model** from around 200 hosted, cloud, routed, or local
-  providers, chosen per agent.
-- **Repository-aware Coding** with code search, symbol relationships, LSP
-  feedback, git workflows, and reviewable diffs.
-- **Computer App Control** lets an agent operate one desktop app window on
-  Windows or macOS through its accessibility tree, in the background, while
-  you watch a live preview and approve each action.
-- **WebBridge** lets agents work in your real Chrome or Edge, with your
-  existing sign-ins, through a paired, policy-checked relay.
-- **Local control** with inspectable history, permissions, sandboxing, and
-  outbound secret and PII redaction.
-- **Memory, plugins, MCP, scheduling, and a built-in browser** are available
-  as integrated workspace capabilities.
+- **One engine process per chat.** A crashing chat, tool or plugin does not
+  take the window down, and sessions are saved as they run and resume after a
+  crash.
+- **Bring your own model** from hosted, cloud or local providers. Models,
+  limits, costs and thinking options come from models.dev, not from code.
+- **Subagents and nested sessions** for delegated work, with read-only
+  explore and plan agents, background agents and isolated Git worktrees you
+  review before applying.
+- **Workspace tools beside the chat:** Files with a code editor and Git
+  changes, Terminal, a built-in Browser the agent can drive, and a side chat.
+- **Customize** with skills, connectors (MCP, with OAuth), plugins from
+  marketplaces, hooks and native plugins.
+- **Office documents:** Word, PowerPoint and Excel open as pages in Files,
+  and bundled skills create and edit them.
+- **Code intelligence** through language servers for 21 languages.
+- **Local control** with permission prompts, a sandbox, project trust, and a
+  history of usage and cost per response.
+- **Memory, Scheduler, web search and web fetch** are built in.
 
 ## Download
 
 Download the latest desktop release from
-[GitHub Releases](https://github.com/evoelsewhere/evoflux/releases). Packages
-are available for macOS, Windows, and Linux. The desktop packages include the
-native Python sidecar.
+[GitHub Releases](https://github.com/evoelsewhere/evo-harness/releases).
+Packages are available for macOS (Intel and Apple Silicon), Windows and
+Linux. Each package includes the `evo-engine` sidecar.
 
 Linux packages should be installed through the system package manager, for
 example:
 
 ```sh
-sudo apt install ./EvoFlux_*_amd64.deb
+sudo apt install ./Evo*_amd64.deb
 ```
 
-WebBridge is an optional browser companion distributed separately in the
-[evo-webbridge repository](https://github.com/evoelsewhere/evo-webbridge).
+The LibreOffice runtime for Office document previews is optional. The app
+offers to install it the first time you open an Office file.
 
 ## Run from source
 
 ### Requirements
 
-- Python 3.12+
-- [uv](https://docs.astral.sh/uv/)
+- Rust (the toolchain is pinned in `rust-toolchain.toml`; MSRV 1.89)
 - [Bun](https://bun.sh/)
-- Rust and the [Tauri CLI](https://v2.tauri.app/start/prerequisites/)
-- Tauri prerequisites for your operating system
+- [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) for your
+  operating system
+- On Windows, [NASM](https://www.nasm.us/) for a clean build
 
 ### Setup
 
 ```sh
-git clone https://github.com/evoelsewhere/evoflux.git
-cd evoflux
+git clone https://github.com/evoelsewhere/evo-harness.git
+cd evo-harness/apps/desktop
 
-uv sync
-cd web && bun install && cd ..
+bun install
 ```
 
 Start the development app with:
 
 ```sh
-# React UI + local API
-make dev-web
-
-# React UI + local API + Tauri desktop shell
-make dev-desktop
+# Build evo-engine, stage it as the sidecar, then run the Tauri app
+bun run dev:app
 ```
 
-`make dev` is an alias for `make dev-web`. EvoFlux is developed and shipped as
-a desktop product; the web development server is an internal development
-surface.
+Use bun only in `apps/desktop`; do not use npm, pnpm or yarn there.
+`bun run build:app` builds a release with installers for the current
+platform. The engine and library crates build and test from the repository
+root:
 
-On first launch, connect a model provider, then start a Work session or open a
-repository in Coding mode.
+```sh
+cargo build --workspace
+cargo test --workspace
+```
+
+On first launch, connect a model provider in **Settings → Providers**, then
+open a folder and start a chat.
 
 ## Documentation
 
 The README stays intentionally high-level. Detailed contracts and guides live
-under [`documents/`](documents/):
+under [`docs/`](docs/):
 
-- [Documentation index](documents/README.md)
-- [Agent Plugins guide](documents/guides/agent-plugins.md)
-- [Coding architecture](documents/architecture/)
-- [Development guide](documents/development/README.md)
+- [Documentation index](docs/README.md)
+- [Architecture (ADD) and decisions (ADRs)](docs/architecture/README.md)
+- [Feature catalogue (SDDs)](docs/features/README.md)
+- [Desktop UI map and source layout](apps/desktop/README.md)
+- [Visual design language](DESIGN.md)
+- [Contributor and agent guide](AGENTS.md)
 
 ## Architecture at a glance
 
-```text
-Tauri desktop shell
-        ↓
-React UI  ↔  local FastAPI sidecar
-        ↓
-local state, agent runtime, repositories, and model providers
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/readme/architecture-dark.png">
+  <img src="docs/assets/readme/architecture.png" width="960" alt="Evo Harness architecture: the React UI talks to the Tauri shell over IPC; the shell starts one evo-engine process per chat and relays JSONL to it, and hosts the shared connector pool; the engine works on project folders, saves sessions to local state, calls model providers over HTTPS and reads model data from models.dev." />
+</picture>
 
-The app keeps the main runtime and project state on the user's machine. Model
-providers are replaceable, while the harness handles context, tools,
-permissions, memory, and verification.
+The engine owns agent behaviour: the agent loop, tools, sessions, compaction,
+skills, hooks, memory, model selection and credentials. The shell owns native
+features (windows, terminals, files, browser webviews, the MCP connection
+pool, plugins) and relays the protocol. Model providers are replaceable, while
+the harness handles context, tools, permissions, memory and verification.
 
 ## Project layout
 
 ```text
-app/        FastAPI sidecar, agents, coding tools, memory, scheduler, MCP
-web/        React interface
-desktop/    Tauri shell and Python sidecar packaging
-seed/       Work and Coding blueprints, skills, and config
-tests/      Backend and frontend tests
-documents/  Architecture, feature contracts, guides, and records
+crates/         Rust workspace: engine, protocol, agent loop, tools, providers
+apps/desktop/   Tauri 2 shell (src-tauri/) and React 19 UI (src/)
+examples/       minimal native plugin used by extension tests
+scripts/        Office runtime build, README screenshots
+docs/           architecture (ADD, ADRs) and feature designs (SDDs)
 ```
+
+The crates are released together and depend only on the layers below them:
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/readme/crate-layers-dark.png">
+  <img src="docs/assets/readme/crate-layers.png" width="960" alt="Evo Harness crate layers, top to bottom: App (evo-engine, apps/desktop/src-tauri); Protocol (evo-protocol, evo-mesh); Runtime (evo-harness, evo-durable, evo-runtime, evo-extensions, evo-plugin-sdk); Agent (evo-agent, evo-tools, evo-worktrees); LLM (evo-ai); Leaf services with no internal dependencies (evo-store, evo-mcp, evo-plugins, evo-hooks, evo-lsp, evo-web, evo-office, evo-telemetry)." />
+</picture>
+
+Diagram and banner sources are in [`docs/assets/readme/`](docs/assets/readme/);
+[`scripts/readme-shots/`](scripts/readme-shots/) regenerates the screenshots.
 
 ## Contributing
 
 Issues and pull requests are welcome. Keep changes focused and include the
-smallest relevant test run. Report vulnerabilities privately through GitHub
-Security Advisories.
+smallest relevant test run. [AGENTS.md](AGENTS.md) lists the checks for each
+layer and the design-document workflow. Report vulnerabilities privately
+through GitHub Security Advisories.
 
 ## License
 
-EvoFlux is released under the [Apache License 2.0](LICENSE).
+Evo Harness is released under the [Apache License 2.0](LICENSE). Parts of the
+`evo-*` crates are derived from MIT-licensed upstream work; see
+[NOTICE](NOTICE).

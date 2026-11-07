@@ -1,0 +1,443 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/geist";
+@import "@fontsource-variable/geist-mono";
+
+@custom-variant dark (&:is(.dark *));
+
+/* motion-safe / motion-reduce follow Settings → Appearance → Animations,
+   which falls back to the OS preference when set to "system". */
+@custom-variant motion-reduce {
+  :root[data-motion="reduced"] & {
+    @slot;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :root[data-motion="system"] & {
+      @slot;
+    }
+  }
+}
+@custom-variant motion-safe {
+  :root[data-motion="full"] & {
+    @slot;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    :root[data-motion="system"] & {
+      @slot;
+    }
+  }
+}
+
+/*
+ * Design language: see /DESIGN.md (Vercel / Geist).
+ * Achromatic surfaces, one interactive accent (#0072F5), shadow-as-border,
+ * 6px radius, weights 400/500/600 only, colour only in status dots.
+ */
+
+@theme inline {
+  /* Set from Settings → Appearance (stores/appearance-store.ts). */
+  --font-sans: var(--app-font-sans);
+  --font-heading: var(--app-font-sans);
+  --font-mono: var(--app-font-mono);
+
+  --color-brand: var(--brand);
+  --color-brand-foreground: var(--brand-foreground);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-link: var(--link);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  /* Status dots only (DESIGN.md §2). */
+  --color-status-ok: #45a557;
+  --color-status-warn: #ff990a;
+  --color-status-error: #e5484d;
+  /* Unread and other news follow the Accent colour from Settings. */
+  --color-status-info: var(--brand);
+
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 2);
+  --radius-2xl: calc(var(--radius) * 2);
+  --radius-3xl: calc(var(--radius) * 2);
+  --radius-4xl: calc(var(--radius) * 2);
+
+  --shadow-border: 0 0 0 1px var(--hairline);
+  --shadow-border-small: 0 0 0 1px var(--hairline), 0 2px 2px #0000000a;
+  --shadow-border-medium: 0 0 0 1px var(--hairline), 0 2px 2px #0000000a, 0 8px 8px -8px #0000000a;
+  --shadow-menu: 0 0 0 1px var(--hairline), 0 1px 1px #00000005, 0 4px 8px -4px #0000000a,
+    0 16px 24px -8px #0000000f;
+  --shadow-modal: 0 0 0 1px var(--hairline), 0 1px 1px #00000005, 0 8px 16px -4px #0000000a,
+    0 24px 32px -8px #0000000f;
+
+  --ease-swift: cubic-bezier(0.175, 0.885, 0.32, 1.1);
+}
+
+:root {
+  --radius: 6px;
+
+  --app-font-sans: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
+  --app-font-mono: "Geist Mono Variable", ui-monospace, SFMono-Regular, "Roboto Mono", monospace;
+  --chat-width: 50rem;
+
+  /* The interactive accent (DESIGN.md §2): links, focus, selection, active
+     controls. Settings → Appearance swaps the light/dark pair. */
+  --brand: var(--brand-light, #0072f5);
+  /* Code editor tokens (features/files/code-editor.tsx). */
+  --syn-keyword: #c2185b;
+  --syn-string: #297a3a;
+  --syn-number: #0068d6;
+  --syn-comment: #8f8f8f;
+  --syn-function: #7d00cc;
+  --syn-type: #a35200;
+  --syn-property: #0b7f9e;
+  --syn-tag: #d93036;
+  --syn-heading: #171717;
+  --brand-foreground: var(--brand-light-foreground, #ffffff);
+
+  --background: #fafafa;
+  --foreground: #171717;
+  --card: #ffffff;
+  --card-foreground: #171717;
+  --popover: #ffffff;
+  --popover-foreground: #171717;
+  --primary: #171717;
+  --primary-foreground: #fafafa;
+  --secondary: #f2f2f2;
+  --secondary-foreground: #171717;
+  --muted: #f2f2f2;
+  --muted-foreground: #8f8f8f;
+  --accent: #ebebeb;
+  --accent-foreground: #171717;
+  --destructive: #e5484d;
+  --border: #00000014;
+  --hairline: #00000014;
+  --input: #ebebeb;
+  --ring: var(--brand);
+  --link: var(--brand);
+  --chart-1: #171717;
+  --chart-2: #4d4d4d;
+  --chart-3: #8f8f8f;
+  --chart-4: #c7c7c7;
+  --chart-5: #ebebeb;
+
+  /* Sidebar sits on the system material (Mica / vibrancy) when available. */
+  --sidebar: #f2f2f2;
+  --sidebar-solid: #f2f2f2;
+  --sidebar-translucent: transparent;
+  --sidebar-foreground: #4d4d4d;
+  --sidebar-primary: #171717;
+  --sidebar-primary-foreground: #fafafa;
+  --sidebar-accent: rgb(0 0 0 / 0.06);
+  --sidebar-accent-foreground: #171717;
+  --sidebar-border: #00000014;
+  --sidebar-ring: var(--brand);
+}
+
+.dark {
+  --brand: var(--brand-dark, #3291ff);
+  --syn-keyword: #f472b6;
+  --syn-string: #62c073;
+  --syn-number: #52a8ff;
+  --syn-comment: #707070;
+  --syn-function: #bf7af0;
+  --syn-type: #ffb224;
+  --syn-property: #3ec5e0;
+  --syn-tag: #ff6369;
+  --syn-heading: #ededed;
+  --brand-foreground: var(--brand-dark-foreground, #ffffff);
+
+  --background: #191919;
+  --foreground: #ededed;
+  --card: #202020;
+  --card-foreground: #ededed;
+  --popover: #202020;
+  --popover-foreground: #ededed;
+  --primary: #ededed;
+  --primary-foreground: #191919;
+  --secondary: #292929;
+  --secondary-foreground: #ededed;
+  --muted: #292929;
+  --muted-foreground: #8f8f8f;
+  --accent: #2e2e2e;
+  --accent-foreground: #ededed;
+  --destructive: #e5484d;
+  --border: #ffffff1a;
+  --hairline: #ffffff1a;
+  --input: #ffffff24;
+  --ring: var(--brand);
+  --link: var(--brand);
+  --chart-1: #ededed;
+  --chart-2: #a1a1a1;
+  --chart-3: #6e6e6e;
+  --chart-4: #474747;
+  --chart-5: #2e2e2e;
+
+  --sidebar: #202020;
+  --sidebar-solid: #202020;
+  --sidebar-translucent: transparent;
+  --sidebar-foreground: #a1a1a1;
+  --sidebar-primary: #ededed;
+  --sidebar-primary-foreground: #191919;
+  --sidebar-accent: rgb(255 255 255 / 0.07);
+  --sidebar-accent-foreground: #ededed;
+  --sidebar-border: #ffffff1a;
+  --sidebar-ring: var(--brand);
+}
+
+/* With a system material the window is transparent: only the sidebar shows it,
+   every other surface paints its own background. */
+:root[data-material="mica"],
+:root[data-material="vibrancy"] {
+  --sidebar: var(--sidebar-translucent);
+}
+
+/* The overlay sidebar on narrow windows covers content, so it stays solid. */
+[data-sidebar="sidebar"][data-mobile="true"] {
+  background: var(--sidebar-solid);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html,
+  body,
+  #root {
+    @apply h-full overflow-hidden;
+  }
+  html {
+    @apply font-sans antialiased;
+    font-feature-settings: "liga";
+  }
+  body {
+    @apply bg-background text-foreground;
+    -webkit-user-select: none;
+    user-select: none;
+    cursor: default;
+  }
+  :root[data-material="mica"] body,
+  :root[data-material="vibrancy"] body {
+    background: transparent;
+  }
+  /* No system material: the window surface takes the sidebar tone so the
+     content cards still read as cards. */
+  :root[data-material="none"] body {
+    background: var(--sidebar);
+  }
+  /* Double-ring focus (DESIGN.md §4). */
+  :focus-visible {
+    outline: none;
+    box-shadow:
+      0 0 0 2px var(--background),
+      0 0 0 4px var(--ring);
+  }
+  input,
+  textarea,
+  [contenteditable],
+  [data-selectable] {
+    -webkit-user-select: text;
+    user-select: text;
+    cursor: auto;
+  }
+  ::selection {
+    background: color-mix(in oklab, var(--brand) 28%, transparent);
+  }
+  code,
+  kbd,
+  pre {
+    @apply font-mono;
+  }
+  /* Three-weight rule: nothing heavier than semibold. */
+  b,
+  strong {
+    font-weight: 600;
+  }
+}
+
+/*
+ * Scrollbars: a slim pill floating in a transparent gutter, no arrow buttons.
+ * Faint at rest, firmer while the scroller is hovered, solid while dragged.
+ * Uses the ::-webkit-scrollbar pseudos (WebView2, WKWebView and WebKitGTK all
+ * support them). Do not set scrollbar-width / scrollbar-color on scrollers:
+ * Chromium then ignores these pseudos and falls back to the system bar.
+ */
+:root {
+  --scrollbar-size: 10px;
+  --scrollbar-inset: 3px;
+  --scrollbar-thumb: color-mix(in oklab, var(--foreground) 12%, transparent);
+  --scrollbar-thumb-hover: color-mix(in oklab, var(--foreground) 22%, transparent);
+  --scrollbar-thumb-active: color-mix(in oklab, var(--foreground) 34%, transparent);
+}
+
+@layer base {
+  ::-webkit-scrollbar {
+    width: var(--scrollbar-size);
+    height: var(--scrollbar-size);
+    background: transparent;
+  }
+  ::-webkit-scrollbar-track,
+  ::-webkit-scrollbar-track-piece,
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-button {
+    display: none;
+    width: 0;
+    height: 0;
+  }
+  ::-webkit-scrollbar-thumb {
+    min-width: 32px;
+    min-height: 32px;
+    border: var(--scrollbar-inset) solid transparent;
+    border-radius: 9999px;
+    background-color: var(--scrollbar-thumb);
+    background-clip: padding-box;
+  }
+  :hover::-webkit-scrollbar-thumb {
+    background-color: var(--scrollbar-thumb-hover);
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    border-width: calc(var(--scrollbar-inset) - 1px);
+    background-color: var(--scrollbar-thumb-hover);
+  }
+  ::-webkit-scrollbar-thumb:active {
+    border-width: calc(var(--scrollbar-inset) - 1px);
+    background-color: var(--scrollbar-thumb-active);
+  }
+}
+
+/* Tailwind's own scrollbar-thin / scrollbar-thumb-* / scrollbar-track-* set
+   those standard properties, so they bring the system bar back. Use these. */
+
+/* Narrower bar for dense surfaces (code blocks, the transcript). */
+@utility scrollbar-slim {
+  --scrollbar-size: 8px;
+  --scrollbar-inset: 2px;
+}
+
+/* Keeps the gutter but hides the thumb (e.g. while auto-scrolling). */
+@utility scrollbar-thumb-hidden {
+  &::-webkit-scrollbar-thumb,
+  &:hover::-webkit-scrollbar-thumb {
+    background-color: transparent;
+  }
+}
+
+@utility shadow-hairline {
+  box-shadow: var(--shadow-border);
+}
+
+@utility drag-region {
+  -webkit-app-region: drag;
+}
+
+@utility no-drag {
+  -webkit-app-region: no-drag;
+}
+
+/* While a pane edge is being dragged: no layout transitions, steady cursor. */
+:root[data-resizing] * {
+  transition: none !important;
+  cursor: col-resize !important;
+  user-select: none !important;
+}
+
+/* Side panel open/close: panels ease their width for one transition only. */
+[data-animating] > [data-panel] {
+  transition: flex-grow 240ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* Settings → Appearance → Motion. "system" follows the OS preference. */
+:root[data-motion="reduced"] *,
+:root[data-motion="reduced"] *::before,
+:root[data-motion="reduced"] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  :root[data-motion="system"] *,
+  :root[data-motion="system"] *::before,
+  :root[data-motion="system"] *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Side panel terminal (features/terminal): the card paints the background,
+   xterm's viewport stays transparent over it. */
+.evo-terminal .xterm .xterm-viewport {
+  background-color: transparent !important;
+}
+.evo-terminal .xterm {
+  height: 100%;
+}
+
+/* Files tool editor: the editor shows its own cursor and active line. */
+.cm-editor .cm-content:focus-visible {
+  box-shadow: none;
+}
+
+/* An agent's eyes blink now and then while it runs (components/icons/agent-icon.tsx). */
+@keyframes agent-blink {
+  0%,
+  88%,
+  100% {
+    transform: scaleY(1);
+  }
+  92% {
+    transform: scaleY(0.12);
+  }
+}
+
+/* Chart series colours (Usage page): one hue per model, always in this order,
+   validated for colour-vision deficiency on the light and dark surfaces
+   (adjacent ΔE ≥ 8). Models past the fourth fold into a neutral "Other". */
+:root {
+  --viz-1: #2a78d6;
+  --viz-2: #eb6834;
+  --viz-3: #1baf7a;
+  --viz-4: #eda100;
+  --viz-other: #9a9a9a;
+}
+.dark {
+  --viz-1: #3987e5;
+  --viz-2: #d95926;
+  --viz-3: #199e70;
+  --viz-4: #c98500;
+  --viz-other: #6b6b6b;
+}

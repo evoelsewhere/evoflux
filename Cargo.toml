@@ -1,0 +1,74 @@
+[workspace]
+resolver = "2"
+members = ["crates/*", "examples/plugin-stub"]
+# The desktop shell is its own Cargo workspace: it runs the engine as a child
+# process and needs platform webview libraries the engine crates do not.
+exclude = ["apps/desktop/src-tauri"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.89"
+license = "Apache-2.0"
+authors = ["evo contributors"]
+repository = "https://github.com/evoelsewhere/evo-harness"
+homepage = "https://github.com/evoelsewhere/evo-harness"
+
+[workspace.dependencies]
+# Internal crates
+evo-agent = { path = "crates/evo-agent", version = "0.1.0" }
+evo-ai = { path = "crates/evo-ai", version = "0.1.0" }
+evo-durable = { path = "crates/evo-durable", version = "0.1.0" }
+evo-engine = { path = "crates/evo-engine", version = "0.1.0" }
+evo-extensions = { path = "crates/evo-extensions", version = "0.1.0" }
+evo-harness = { path = "crates/evo-harness", version = "0.1.0" }
+evo-plugin-sdk = { path = "crates/evo-plugin-sdk", version = "0.1.0" }
+evo-protocol = { path = "crates/evo-protocol", version = "0.1.0" }
+evo-runtime = { path = "crates/evo-runtime", version = "0.1.0" }
+evo-store = { path = "crates/evo-store", version = "0.1.0" }
+evo-telemetry = { path = "crates/evo-telemetry", version = "0.1.0" }
+evo-tools = { path = "crates/evo-tools", version = "0.1.0" }
+evo-worktrees = { path = "crates/evo-worktrees", version = "0.1.0" }
+evo-mesh = { path = "crates/evo-mesh", version = "0.1.0" }
+evo-hooks = { path = "crates/evo-hooks", version = "0.1.0" }
+evo-web = { path = "crates/evo-web", version = "0.1.0" }
+evo-lsp = { path = "crates/evo-lsp", version = "0.1.0" }
+evo-office = { path = "crates/evo-office", version = "0.1.0" }
+evo-plugins = { path = "crates/evo-plugins", version = "0.1.0" }
+
+# Third-party crates
+async-trait = "0.1"
+base64 = "0.23"
+bytes = "1"
+ciborium = "0.2"
+dirs = "7"
+eventsource-stream = "0.2"
+fs2 = "0.4"
+futures = "0.3"
+globset = "0.4"
+indexmap = { version = "2", features = ["serde"] }
+jsonschema = { version = "0.60", default-features = false }
+png = "0.18"
+regex = "1"
+reqwest = { version = "0.13", features = ["json", "stream"] }
+rpassword = "7"
+rusqlite = { version = "0.41", features = ["bundled", "fallible_uint"] }
+schemars = "1"
+semver = "1"
+serde = { version = "1", features = ["derive", "rc"] }
+serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
+tempfile = "3"
+thiserror = "2"
+tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["rt"] }
+tracing = "0.1"
+uuid = { version = "1", features = ["v4", "v7", "serde"] }
+yaml_serde = "0.10"
+
+# Keep debug builds small: full DWARF for every dependency made target/ grow to
+# 150+ GB. Line tables still give file:line in backtraces and panics.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false

@@ -1,0 +1,23 @@
+[package]
+name = "evo-web"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+version = "0.1.0"
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Web tools for evo: safe page fetching as Markdown, and web search"
+
+[dependencies]
+encoding_rs = "0.8"
+htmd = "0.5"
+reqwest = { workspace = true }
+scraper = "0.25"
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+url = "2"
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
