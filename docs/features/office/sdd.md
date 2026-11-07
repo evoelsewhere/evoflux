@@ -2,7 +2,7 @@
 
 | | |
 | --- | --- |
-| Status | Accepted |
+| Status | Implemented (live check in the app pending) |
 | Area | crate `evo-office`, engine, RPC, desktop shell, desktop UI |
 | Created | 2026-11-07 |
 | Updated | 2026-11-07 |
@@ -231,11 +231,11 @@ No settings keys. `EVO_OFFICE_MANIFEST` (env, tests only). The Settings section
 
 | Requirement | Test or check | Result |
 | --- | --- | --- |
-| FR-1…FR-5 | `cargo test -p evo-office` | not run |
-| FR-6, FR-7 | `cargo test -p evo-office convert`, `-p evo-engine office` | not run |
-| FR-8 | `cargo test -p evo-tools shell_env_provider` + manual | not run |
-| FR-9 | Manual in the running app (real runtime) | not run |
-| FR-10 | `cargo test -p evo-engine bundled_skills` | not run |
+| FR-1…FR-5 | `cargo test -p evo-office` | passed (2026-11-07) |
+| FR-6, FR-7 | `cargo test -p evo-office convert`, `-p evo-engine office` | passed (2026-11-07) |
+| FR-8 | `cargo test -p evo-tools shell_env_provider` + manual | passed (2026-11-07) |
+| FR-9 | Manual in the running app (real runtime) | not run: the installed app holds the single instance |
+| FR-10 | `cargo test -p evo-engine office` | passed (2026-11-07) |
 
 ## 9. Open questions
 
@@ -244,7 +244,19 @@ No settings keys. `EVO_OFFICE_MANIFEST` (env, tests only). The Settings section
 
 ## 10. As-built notes
 
-Empty until implementation lands.
+- Install progress is polled (700 ms) like Code intelligence; no protocol event.
+- Preview cache and extraction dirs follow the SDD. The embedded skills are
+  extracted to `<agent>/bundled-skills/<content hash>/` and appended last to the
+  skill directories, so a user skill of the same name wins.
+- `evo-tools` gained `ShellEnvProvider` (per-command env, PATH appended).
+- `fs_read_bytes` and `worker-src blob:` in the CSP serve pdf.js; the viewer is
+  lazy-loaded.
+- Phase 5: only the build script is ported (`scripts/office-runtime/build_runtime.py`);
+  the release workflow and `verify` script are not (they depended on the v3 app).
+  The existing release `office-runtime-26.8.0` is what is pinned.
+- Skills: v3 live-build scripts and `document_preview` steps were replaced by
+  render-to-PNG (`transcode.py`, `contact_sheet.py`, `render_slides.py`,
+  `pdf_out.py --png`) viewed with `read`; `EVOFLUX_*` variables became `EVO_SOFFICE`.
 
 ## 11. History
 
