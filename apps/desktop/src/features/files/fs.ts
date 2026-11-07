@@ -44,6 +44,8 @@ export interface GrepHit {
 export const listDir = (path: string) => invoke<DirEntry[]>("fs_list_dir", { path });
 export const statFile = (path: string) => invoke<FileStat>("fs_stat", { path });
 export const readFile = (path: string) => invoke<FileContent>("fs_read_file", { path });
+/** The file's raw bytes (documents the UI parses itself; at most 200 MB). */
+export const readBytes = (path: string) => invoke<ArrayBuffer>("fs_read_bytes", { path });
 /** Resolves to the new mtime; rejects with `conflict: …` when the file changed since `expectedMtime`. */
 export const writeFile = (path: string, text: string, expectedMtime?: number) =>
   invoke<number>("fs_write_file", { path, text, expectedMtime: expectedMtime ?? null });

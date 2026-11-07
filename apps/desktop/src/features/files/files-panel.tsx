@@ -42,6 +42,7 @@ import { cn } from "@/lib/utils";
 import { useEngineStore } from "@/stores/engine-store";
 import { useFilesStore, type OpenFile } from "@/stores/files-store";
 import { CodeEditor, dropEditorState } from "./code-editor";
+import { isDocument } from "./document-kinds";
 import {
   fileName,
   grepFiles,
@@ -104,6 +105,9 @@ function IconButton({
   );
 }
 
+// pdf.js is large: load it when the first document is opened.
+const DocumentViewer = React.lazy(() => import("./document-viewer").then((m) => ({ default: m.DocumentViewer })));
+
 const IMAGE = /\.(png|jpe?g|gif|webp|bmp|ico|avif|svg)$/i;
 const MARKDOWN = /\.(md|mdx|markdown)$/i;
 const TEXT = /\.(txt|rst|log)$|^(license|notice|readme|changelog|authors)(\.|$)/i;
@@ -118,7 +122,7 @@ const SHEET = /\.(csv|tsv|xlsx?|ods)$/i;
 function FileKindIcon({ name, className }: { name: string; className?: string }) {
   const Icon = IMAGE.test(name)
     ? ImageIcon
-    : MARKDOWN.test(name) || TEXT.test(name)
+    : MARKDOWN.test(name) || TEXT.test(name) || (isDocument(name) && !SHEET.test(name))
       ? FileTextIcon
       : JSON_FILE.test(name)
         ? FileJsonIcon
@@ -763,6 +767,21 @@ function FileView({ file, root }: { file: OpenFile; root: string }) {
               Try again
             </Button>
           </Empty>
+        ) : content && isDocument(file.path) ? (
+          <React.Suspense
+            fallback={
+              <div className="flex h-full items-center justify-center">
+                <Spinner className="size-4 text-muted-foreground" />
+              </div>
+            }
+          >
+            <DocumentViewer
+              path={file.path}
+              version={content.mtime}
+              size={content.size}
+              onOpenExternal={() => void openPath(file.path).catch(() => undefined)}
+            />
+          </React.Suspense>
         ) : content?.kind === "image" ? (
           <div className="flex h-full items-center justify-center overflow-auto bg-[repeating-conic-gradient(var(--muted)_0_25%,transparent_0_50%)] bg-size-[16px_16px] p-4">
             <img src={content.dataUrl} alt={fileName(file.path)} className="max-h-full max-w-full object-contain" />

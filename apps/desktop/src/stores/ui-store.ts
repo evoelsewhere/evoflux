@@ -7,7 +7,7 @@ export type PanelId = "terminal" | "browser" | "files" | "side-chat" | "memory";
 /** Panels that exist; a saved tab for any other (Plugins moved to Customize, Scheduler to its page) is dropped. */
 const PANEL_IDS: readonly string[] = ["terminal", "browser", "files", "side-chat", "memory"];
 export type ApprovalMode = "ask" | "auto-edits" | "auto";
-export type SettingsSection = "general" | "appearance" | "providers" | "engine" | "sandbox" | "logs" | "about";
+export type SettingsSection = "general" | "appearance" | "providers" | "office" | "engine" | "sandbox" | "logs" | "about";
 export type CustomizeSection = "instructions" | "skills" | "agents" | "connectors" | "plugins" | "hooks" | "languages";
 
 export const SIDEBAR_WIDTH = { min: 220, default: 272, max: 420 } as const;
